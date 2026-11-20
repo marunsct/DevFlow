@@ -495,6 +495,8 @@ With `CONTESTED_TESTS_CONFIRMED` (off until measured), rulings that quote identi
 
 A finding of the suite's dry run carries the cause when the runner's error is a known one (`spec_dry_run.SUITE_KNOWN_ERRORS`), and is never held back, since it is what running the test's own code did (LF.1183). Any other suite-check finding that comes back with the same check, wording and tests after a repair changed the suite is not sent to the authors again: it goes to the QA lead as a suspected false finding and is recorded (`suspected false finding`, a `withheld` row in `check-findings.jsonl`; LF.1177). The suite writer's system prompt names only its acceptance folder (LF.1178).
 
+A 5xx from the edge or server-error probe reaches its fixer with what the server printed for that request (LF.1185; an HTML error page is cut to its title).
+
 ### 6.6 Brownfield: the regression contract
 
 For every seeded run the regression baseline is built in (`REGRESSION_CONTRACT` in `BUILT_IN`), and intake, stack selection, the architect and the lead read a code map of the seeded codebase (`agents/code_map.py`, no model call: every module with its public names up to 80 source files, by directory past that, at most 6,000 characters). With `PULL_REQUEST_DELIVERY` on, the changed product goes back as one commit on the seed's base, pushed as `harness/<slug>-<id8>` with a pull request opened through the host's API (GitHub first, `server/repository_delivery.py`); without a delivery token, or when the push fails, the handover pack carries a git bundle and a patch. The per-project delivery token is sealed with the stored-credentials key, reaches git only through `GIT_ASKPASS`, and is deleted once the pull request is open.

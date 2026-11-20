@@ -16,6 +16,7 @@
  "src/app/analysis/syntax_balance.py": 1,
  "src/app/analysis/test_discovery.py": 3,
  "src/app/analysis/work_orders.py": 6,
+ "src/app/graph/contested_tests.py": 1,
  "src/app/graph/nodes/building.py": 1,
  "src/app/graph/workflow.py": 4,
  "src/app/models/capabilities.py": 1,

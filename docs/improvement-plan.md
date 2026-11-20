@@ -54,6 +54,7 @@ Source of truth: `src/app/switches.py` (defaults and `EXPERIMENTS_ON`) and `loop
 | DRAFTING_IN_WAVES | product files drafted in dependency order, later files shown earlier ones | fewer interface clashes (Rust, shared state) | on; never fired |
 | DIAGNOSE_A_RECURRING_CAUSE | one diagnosis call before a third fix of the same cause | fix rate at 3rd attempt up from 11% | on; never fired |
 | MUTATION_GAPS_BUNDLED | open mutation findings in one file go to one fixer; each closed only when the harness's check settles it (LF.1163) | calls and minutes on mutation defects fall, mutation score holds | OFF; needs 2 on / 2 off runs with mutation findings |
+| CONTESTED_TESTS_CONFIRMED | past the reclassification cap, a disputed locked test is reopened only after the harness confirms its quoted repair (LF.1168) | minutes stuck at N-1 of N criteria fall; no false acceptance | OFF; measure on tasks-api |
 | WEB_TOOLS_OFFERED | web search and the page reader offered to the stages that read docs, set by a run's "Always" lookups choice (LF.1166) | the tools are called and a stuck signature clears; hidden holds | OFF; on per run through "Always" |
 | WEB_LOOKUP_WHEN_STUCK | harness looks up a stuck fixer's error (WL.4 T1) | repeated-signature rounds or minutes to green fall, hidden holds | OFF in code; not in `GROUPS`, so not on the admin page or in `loop.sh measuring` (register it). Deploys at the next run boundary |
 
@@ -71,16 +72,14 @@ Size S under a day, M a few days, L a week or more. "Proof" is the measurement t
 ### 3.1 Internet lookups (Appendix 10, WL). WL.1, WL.2 and WL.4's trigger T1 are built.
 | Item | Value | Size | Needs | Proof | Verified |
 |---|---|---|---|---|---|
-| WL.4 T2-T4: T2 install error the registry note does not explain; T3 recurring compile error code; T4 version look-up from the registry before a manifest line is written | moves LF.1132's registry versions from failure time to write time; the Rust, Java and C# struggles | M | WL.2, WL.3 | repeated-signature rounds and minutes to green fall, hidden holds | only T1 built (`graph/stuck_lookup.py`) |
 | WL.5 T5: a fixer's 2nd failed attempt is offered `search_the_web` and `read_web_page`, that fixer only | tests whether a model uses the tools when it has failed twice | S | WL.4 | calls made, signature cleared after; own switch | not built |
 | WL.6 optional paid provider (Tavily or Brave) and Context7; page reader as the MCP fetch server does it (main text, paged, robots.txt, redirect hops checked, private addresses refused); one-page Playwright render only as fallback for 403 or a script-only shell | general web when S3/S4 return under 2 results | M | WL.3 (keys) | answers per lookup, no private address reached | not built |
 | WL.7 answer probe for every outside source in `loop.sh ready` (warning, not a block) and in the built-but-silent audit | the search died silently for a month | S | none | probe fails loudly on a blocked source | not built (nothing for searx or the new sources in scripts/loop) |
-WL.7 and WL.3 are built (LF.1161, LF.1166; the daily request cap and provider order fold into WL.6). Order: WL.4 T2-T4, WL.5, WL.6.
+WL.7, WL.3 and WL.4 T1-T4 are built (LF.1161, LF.1166, LF.1159, LF.1170; the daily request cap and provider order fold into WL.6). Order: WL.5, WL.6.
 
 ### 3.2 Watch, try and steer a run (Appendix 11, WS). Nothing below is built except the pieces named.
 | Item | Value | Size | Needs | Proof | Verified |
 |---|---|---|---|---|---|
-| Pack-contract check at the end of a build stage, not only at test rounds: a builder worked 30 minutes against a product whose held jar name was gone (Java container 4) | builders stop working blind | S | none | the defect is raised at the stage's end | open |
 | WS.3 remainder: a plan gate with a timeout that proceeds on its own; the review policy changed while a run is live; who a note is for (audience) in the UI | the rest of trustworthy steering | S | none | owner review | open (LF.1164 built the note states, edit/withdraw, three levels, notes to a paused run) |
 | WS.4 Try it: `POST /{id}/preview` starts the product (delivered start) in its own container behind a signed short-lived token on a separate origin; last-accepted-sprint or live; request console for services | the feature most asked for | L | WS.1 tab | start success vs the delivered-start check, time to first page, zero access without a token | not built (the only `preview` in `server/runs.py` is the brief preview) |
 | WS.7 existing projects: branch and PR delivery to the seeded repository, regression baseline on for seeded products, code map at intake, hide "Request a change" while its switch is off | brownfield | M | none | PR opens; baseline runs | not built |
@@ -92,10 +91,8 @@ UI-only steps keep the release-candidate count; WS.4 and WS.6 add a service and 
 | Item | Value | Size | Needs | Proof | Verified |
 |---|---|---|---|---|---|
 | Restart re-read pattern (M12): switch `ONE_POINTER_ENDS_READING` (group Efficiency, off): a stage visit's first pointer ends reading (`POINTERS_BEFORE_THE_ANSWER` 2 to 1) | redundant reads 24-36% in 4 runs; lead re-plan minutes | S | none | redundant_read_rate and lead-plan minutes fall, hidden holds; 2 on / 2 off per family | open (switch name absent from src) |
-| Version look-up before a manifest line (= WL.4 T4) | invented versions cost one Ruby run 267 min | M | WL.2 | install failures on invented versions 0 | open |
 | Browser-pack re-render through the filtered view: a DOM fix that a filter hides gave a false acceptance (web-todo, Haiku hybrid) | closes a false-acceptance class on page products | M | none | the page probe or the suite re-renders through each filter; no false acceptance in 3 web-todo runs | open (unverified how: no module found) |
 | Rust routing decision: local Rust 0/9 in four runs, Haiku-built 9/9 twice | decide: route Rust to a stronger model, mark it experimental in the supported matrix, or keep local only | S (decision) | hosted key (section 4) | Rust hidden score | open decision |
-| Contested tests past their repair cap: accept with the contested tests only after a mechanical confirmation of the dispute's claim (two locked tests sent the sign-in object as the bearer token; the dispute was right, both past the cap, 1 hour on 20 of 21) | stops hour-long grinding on tests that are wrong | M | none | tasks-api minutes; no false acceptance | open (dispute exists in `graph/product_at_fault.py`; the confirmation step absent) |
 | Stack-decision check: a database named as one engine "via" another's mode (SQLite via H2) goes back before the specification | a failed Java run (0/9) never started | S | none | no such decision survives design | open |
 | A fixer that hits its call limit hands its findings on, so the next fixer or the ceiling does not leave unseen the defect that carried the cause (LF.1147 handled the ceiling case only) | stops cause loss between attempts | S | none | a hit-the-limit fixer's findings appear in the next request | unverified: LF.1145-1147 partly cover it |
 | Candidate M8: a one-file rewrite is shown 60-70k characters of memory; try the failure's files and imports (~20k) | about 2 min prefill a run | S | none | rewrite fix rate holds | open |

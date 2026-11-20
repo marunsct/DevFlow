@@ -3,7 +3,7 @@
 The one place for decisions the owner has made that are still in force: what was decided, whether it is
 applied, and, for a deferred one, what starts it. Agents read this before acting on any of these subjects.
 Newest group first. When a deferred decision is applied, change its status here in the same commit.
-Older owner decisions are in `docs/HANDOVER.md`, `docs/improvement-plan.md` and the agents' memory notes.
+Older owner decisions are in the archive (`docs/ARCHIVE.md`) and the agents' memory notes.
 Anything still in force from them belongs here too.
 
 Status words:

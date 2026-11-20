@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Commit and push a change only when the full suite is clean: `loop.sh ship "<commit message>"`.
-# Clean means only the three S3 tests in tests/test_codebase_seeding_api.py fail (they need credentials this host lacks).
+# Clean means no test fails (the three seeding tests once excused here were a test bug, fixed 2026-11-10).
 # Why: twice in one day a change was committed with another test failing, because the commit ran after the suite
 # without reading its result. The suite runs here, the failures are read here, and nothing is committed otherwise.
 set -u
@@ -10,7 +10,7 @@ message="${1:?usage: loop.sh ship \"<commit message>\"}"
 cd "$ROOT" || exit 2
 "$HERE/loop.sh" suite >/dev/null 2>&1
 log="$ROOT/data/loop/suite.log"
-other=$(grep -E "^(FAILED|ERROR) " "$log" | grep -v "tests/test_codebase_seeding_api.py" || true)
+other=$(grep -E "^(FAILED|ERROR) " "$log" || true)
 summary=$(grep -E "passed|failed" "$log" | tail -1)
 if [ -n "$other" ] || ! grep -qE "passed" "$log"; then
   echo "NOT SHIPPED - the suite is not clean: $summary"

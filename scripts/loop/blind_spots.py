@@ -20,6 +20,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 BENCH = ROOT / "data" / "bench"
 PLAN = ROOT / "docs" / "improvement-plan.md"
+#: Where fix rows are: the archived plan (every fix to 2026-11-20) and the fix log appended since; the plan itself holds
+#: only open work. A row's commit is found in any of them, the old plan path included (its history stays there).
+FIX_ROWS = (ROOT / "docs" / "archive" / "plans" / "improvement-plan-until-2026-11-20.md",
+            ROOT / "docs" / "archive" / "plans" / "fix-log.md")
 _ROW = re.compile(r"^\| (LF\.\d+) \|")
 
 
@@ -52,11 +56,15 @@ def _words(name: str) -> str:
     return " ".join(words[1:] if words[:1] == ["test"] else words)
 
 
-def rows_naming(names: list[str], plan: Path = PLAN) -> dict[str, str]:
+def rows_naming(names: list[str], plan: Path | None = None) -> dict[str, str]:
     """The last plan row (its LF id) whose text holds each test's words."""
-    try:
-        lines = plan.read_text(encoding="utf-8").splitlines()
-    except OSError:
+    lines: list[str] = []
+    for source in ([plan] if plan is not None else [PLAN, *FIX_ROWS]):
+        try:
+            lines += source.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+    if not lines:
         return {}
     rows = [(m.group(1), _words(line)) for line in lines if (m := _ROW.match(line))]
     found = {}
@@ -80,7 +88,8 @@ def _the_commit_of(row: str) -> tuple[str, float] | None:
     """(hash, epoch seconds) of the commit that added the plan row; None when not found."""
     try:
         out = subprocess.run(
-            ["git", "-C", str(ROOT), "log", "--reverse", "--format=%H %ct", "-S", f"| {row} |", "--", str(PLAN.relative_to(ROOT))],
+            ["git", "-C", str(ROOT), "log", "--reverse", "--format=%H %ct", "-S", f"| {row} |", "--",
+             *(str(path.relative_to(ROOT)) for path in (PLAN, *FIX_ROWS))],
             capture_output=True, text=True, timeout=60,
         ).stdout.split()
         return (out[0], float(out[1])) if len(out) >= 2 else None

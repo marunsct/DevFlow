@@ -9,7 +9,7 @@ or `scripts/loop/loop.sh product [run-id]`.
 `audit_live.py` measures the run - failed calls, repeats, redundant reads. This
 looks at the thing the run produced, which is the half a transcript audit
 cannot see. It prints the evidence; the judgement stays with whoever reads it
-(see docs/monitoring-handover.md, "Audit the generated product"):
+(see docs/HANDOVER.md, "Watching and auditing a run"):
 
   1. the product files, skipping dependencies, caches and test output
   2. code lines per file (non-blank, non-comment - how the brief's line caps are

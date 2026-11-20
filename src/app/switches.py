@@ -186,6 +186,8 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "Drafting order": ("DRAFTING_IN_WAVES",),
     # How a cause the fixes keep missing is worked: one diagnosis call before its third fix (deep review 1.4).
     "Recurring causes": ("DIAGNOSE_A_RECURRING_CAUSE",),
+    # A stuck fixer is shown what others found for its error, looked up by the harness (plan WL.4): off until measured.
+    "Internet lookups": ("WEB_LOOKUP_WHEN_STUCK",),
 }
 #: Every grouped switch, in the admin page's order.
 EXPERIMENTS = tuple(name for members in GROUPS.values() for name in members)

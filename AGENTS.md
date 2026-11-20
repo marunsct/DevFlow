@@ -11,13 +11,15 @@ from a brief. It runs under a **standing, never-stopping improvement loop**:
 
 **Start at [docs/STATE.md](docs/STATE.md)** - the one mandatory read (plan MF.6):
 what is live, what is off, the last three runs and the next action, in at most
-150 lines. Rewrite it whenever any of those changes. Owner decisions still in force (applied,
-deferred with their trigger, or waiting on the owner) are in
-[docs/owner-decisions.md](docs/owner-decisions.md): read it before acting on any
-subject it lists. Read
-[docs/HANDOVER.md](docs/HANDOVER.md) (rules, accounts, commands) and
-[docs/monitoring-handover.md](docs/monitoring-handover.md) (mechanics, run log)
-only for what the next action needs.
+150 lines. Rewrite it whenever any of those changes. The document map is
+[docs/README.md](docs/README.md):
+
+- [docs/PRODUCT.md](docs/PRODUCT.md) - the whole product: vision, architecture, how it works and is built.
+- [docs/improvement-plan.md](docs/improvement-plan.md) - only what is being measured and what is to be built.
+- [docs/HANDOVER.md](docs/HANDOVER.md) - the rules, commands and pitfalls for running, testing and deploying.
+- [docs/owner-decisions.md](docs/owner-decisions.md) - owner decisions still in force (read before acting on any subject it lists).
+- [docs/ARCHIVE.md](docs/ARCHIVE.md) - where old information is; nothing in `docs/archive/` is needed to operate.
+- `reports/` - every report (audits, product reviews, research) as a dated Markdown file, never a cloud document.
 
 Rules that are never optional (details and reasons in the handover):
 
@@ -58,14 +60,21 @@ Rules that are never optional (details and reasons in the handover):
   - the sprint summary;
   - work orders, templates and the Sprint Record.
 - **Commit and push after every change:** `git push main harness-hardening-session`.
-  The remote is named `main`. Keep `docs/STATE.md` and both handovers current
-  in the same commit.
+  The remote is named `main`.
 - **`docs/logs.md` was removed by the owner on 2026-10-19.** Its review points are
-  covered in `docs/improvement-plan.md` Part 22.4. Do not recreate it in git.
+  in the archived plan (`docs/ARCHIVE.md`). Do not recreate it in git.
 - **Secrets:**
   - Never print `.env` values.
   - Never use the admin account; the loop uses the operator account in
-    `docs/HANDOVER.md` §3.
+    `docs/HANDOVER.md` (the "Operator login" section).
   - Never kill the owner's GPU or model processes.
+- **Keep the documents true, in the same commit as the change:**
+  - anything that changes what is live, running or next updates `docs/STATE.md`;
+  - anything that changes how the product works or is built updates `docs/PRODUCT.md`;
+  - a finished item leaves `docs/improvement-plan.md`.
+- **Reports go in `reports/`** as dated Markdown files (`reports/<kind>/<date>-<slug>.md`), committed with the work.
+  Never create a report in a cloud document.
+- **Leave nothing uncommitted** at the end of a piece of work: commit and push it (the only exception is a change
+  the owner has said not to commit).
 - **Report times to the owner in JST** (UTC+9). Containers and transcripts log
   UTC.

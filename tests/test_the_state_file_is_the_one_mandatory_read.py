@@ -29,7 +29,7 @@ def test_the_agent_instructions_send_a_session_there_first():
 
 
 def test_old_narratives_live_in_the_archive_not_the_handovers():
-    assert (ROOT / "docs" / "archive" / "handover-before-2026-10-14.md").is_file()
+    assert (ROOT / "docs" / "archive" / "operations" / "handover-before-2026-10-14.md").is_file()
     assert "### 2.1 What changed on 2026-10-12" not in (ROOT / "docs" / "HANDOVER.md").read_text(encoding="utf-8")
 
 

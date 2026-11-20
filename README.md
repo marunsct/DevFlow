@@ -85,6 +85,6 @@ page says what stopped it. A run that needs you waits; nothing is lost by leavin
 
 ## More
 
-- [docs/PRODUCT.md](docs/PRODUCT.md) - how it works: stages, agents, safety, verification, configuration.
+- [docs/README.md](docs/README.md) - the map of the documentation; [docs/PRODUCT.md](docs/PRODUCT.md) - how it works and is built, completely; [docs/STATE.md](docs/STATE.md) - where it stands now.
 - [.env.example](.env.example) - every setting, with what it does.
 - [docs/HANDOVER.md](docs/HANDOVER.md) - for the people operating and improving the harness.

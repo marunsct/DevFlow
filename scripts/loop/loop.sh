@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# One entry point for the harness improvement loop. See docs/monitoring-handover.md
-# section 0 for the loop itself; this script is only the mechanics.
+# One entry point for the harness improvement loop. See docs/HANDOVER.md for the loop
+# itself; this script is only the mechanics.
 #
 #   scripts/loop/loop.sh status [run]        state of the run (default: current) + anything else running
 #   scripts/loop/loop.sh start [brief]       create and start a run (default tests/brief_low.md)
@@ -68,7 +68,7 @@
 #
 # Credentials: `bench`, `start` and `cancel` log in with LOOP_USER / LOOP_PASSWORD from the
 # environment. The loop's operator account and its password are written in
-# docs/monitoring-handover.md section 0.3.1 (at the owner's request; it exists only in the
+# docs/HANDOVER.md, "Accounts, access and the operator login" (at the owner's request; it exists only in the
 # local database). A fresh database lacks it; create it with
 #   docker exec langchain-app-1 python -m app.server.manage create-user <name> --password <pw> --role operator
 # Do not use the admin account for the loop.
@@ -462,7 +462,7 @@ kpi)
 effects)
   if [ "${2:-}" = gate ]; then
     # Reads the ledger and the plan on the host; reports only, and never changes a switch.
-    "$PY" "$HERE/switch_gate.py" data/kpi/ledger.csv "${3:-3}" docs/improvement-plan.md
+    "$PY" "$HERE/switch_gate.py" data/kpi/ledger.csv "${3:-3}" docs/archive/plans/fix-log.md
   else
     in_worker effects.py "${2:-$(current)}"
   fi

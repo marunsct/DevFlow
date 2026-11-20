@@ -56,6 +56,7 @@ Source of truth: `src/app/switches.py` (defaults and `EXPERIMENTS_ON`) and `loop
 | MUTATION_GAPS_BUNDLED | open mutation findings in one file go to one fixer; each closed only when the harness's check settles it (LF.1163) | calls and minutes on mutation defects fall, mutation score holds | OFF; needs 2 on / 2 off runs with mutation findings |
 | CONTESTED_TESTS_CONFIRMED | past the reclassification cap, a disputed locked test is reopened only after the harness confirms its quoted repair (LF.1168) | minutes stuck at N-1 of N criteria fall; no false acceptance | OFF; measure on tasks-api |
 | PRODUCT_PREVIEW | WS.4 product preview (LF.1171); left out: websockets, product cookies, internet at start | start success against the delivered-start check, time to first page, zero access without a token | OFF; needs container mode; first a real-Docker trial |
+| WEB_TOOLS_AFTER_TWO_FAILED_FIXES | a fixer that failed twice gets web search and the page reader (LF.1172) | calls made; the defect's signature cleared after a call | OFF; measure with WEB_LOOKUP_WHEN_STUCK on C#, Java, Rust |
 | WEB_TOOLS_OFFERED | web search and the page reader offered to the stages that read docs, set by a run's "Always" lookups choice (LF.1166) | the tools are called and a stuck signature clears; hidden holds | OFF; on per run through "Always" |
 | WEB_LOOKUP_WHEN_STUCK | harness looks up a stuck fixer's error (WL.4 T1) | repeated-signature rounds or minutes to green fall, hidden holds | OFF in code; not in `GROUPS`, so not on the admin page or in `loop.sh measuring` (register it). Deploys at the next run boundary |
 
@@ -73,10 +74,8 @@ Size S under a day, M a few days, L a week or more. "Proof" is the measurement t
 ### 3.1 Internet lookups (Appendix 10, WL). WL.1, WL.2 and WL.4's trigger T1 are built.
 | Item | Value | Size | Needs | Proof | Verified |
 |---|---|---|---|---|---|
-| WL.5 T5: a fixer's 2nd failed attempt is offered `search_the_web` and `read_web_page`, that fixer only | tests whether a model uses the tools when it has failed twice | S | WL.4 | calls made, signature cleared after; own switch | not built |
-| WL.6 optional paid provider (Tavily or Brave) and Context7; page reader as the MCP fetch server does it (main text, paged, robots.txt, redirect hops checked, private addresses refused); one-page Playwright render only as fallback for 403 or a script-only shell | general web when S3/S4 return under 2 results | M | WL.3 (keys) | answers per lookup, no private address reached | not built |
 | WL.7 answer probe for every outside source in `loop.sh ready` (warning, not a block) and in the built-but-silent audit | the search died silently for a month | S | none | probe fails loudly on a blocked source | not built (nothing for searx or the new sources in scripts/loop) |
-WL.7, WL.3 and WL.4 T1-T4 are built (LF.1161, LF.1166, LF.1159, LF.1170; the daily request cap and provider order fold into WL.6). Order: WL.5, WL.6.
+WL.3-WL.7 are built (LF.1159, LF.1161, LF.1166, LF.1170, LF.1172, LF.1173). Next: one page reader for the agents' tool and the lookups, with the connection held to the checked address (building).
 
 ### 3.2 Watch, try and steer a run (Appendix 11, WS). Nothing below is built except the pieces named.
 | Item | Value | Size | Needs | Proof | Verified |

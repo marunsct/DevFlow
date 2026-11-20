@@ -16,8 +16,7 @@ import type { PreviewStatus } from '../types';
 import { pickedFrom, type PickedElement } from '../lib/pickedElement';
 import { PointAndSay } from './PointAndSay';
 
-/** The preview with its link for pointing at the page (plan WS.5), until the generated types carry it. */
-type Preview = PreviewStatus & { pick_url?: string | null };
+type Preview = PreviewStatus;
 
 /** How often a starting preview is looked at again. */
 export const POLL_MS = 2000;

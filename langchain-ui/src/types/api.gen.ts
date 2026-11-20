@@ -266,6 +266,37 @@ export interface PasswordChange {
   new_password: string;
 }
 
+/** Where the pointed-at element sat in the preview's frame, in pixels. */
+export interface PickedBox {
+  height: number;
+  width: number;
+  x: number;
+  y: number;
+}
+
+/** A change a person wrote beside a part of the preview's page (plan WS.5): a note for the run while it is going, or the brief of a change request for a finished product (behind PREMIUM_CHANGE_REQUESTS). */
+export interface PickedChange {
+  /** What should change, in the person's words. */
+  change: string;
+  element: PickedElement;
+  kind?: "note" | "change_request";
+  /** A note's reach: the rest of the run, or the stage working when it is first read. */
+  scope?: "run" | "next_stage";
+}
+
+/** A part of the preview's page a person pointed at (plan WS.5), as the page's picker sent it: untrusted. */
+export interface PickedElement {
+  box: PickedBox;
+  /** Its markup, cut short. */
+  html?: string;
+  /** A short CSS selector: id, test id, or path. */
+  selector: string;
+  /** The element's tag name. */
+  tag: string;
+  /** Its visible text, trimmed. */
+  text?: string;
+}
+
 /** The owner's appearance and run defaults. Every field is optional: a patch changes only what it names. */
 export interface Preferences {
   accent?: "blue" | "violet" | "teal" | "amber" | "rose" | "neutral" | null;
@@ -303,6 +334,8 @@ export interface PreviewStatus {
   idle_minutes: number;
   /** What is shown: `sprint <n>`, or `being built`. */
   label: string | null;
+  /** The same, signed for pointing at a part of the page (plan WS.5); its pages carry the picker. */
+  pick_url: string | null;
   /** Why it stopped or failed. */
   reason: string | null;
   separate_origin: boolean;

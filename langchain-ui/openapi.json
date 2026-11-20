@@ -1237,6 +1237,128 @@
     "title": "PasswordChange",
     "type": "object"
    },
+   "PickedBox": {
+    "additionalProperties": false,
+    "description": "Where the pointed-at element sat in the preview's frame, in pixels.",
+    "properties": {
+     "height": {
+      "maximum": 100000.0,
+      "minimum": 0.0,
+      "title": "Height",
+      "type": "integer"
+     },
+     "width": {
+      "maximum": 100000.0,
+      "minimum": 0.0,
+      "title": "Width",
+      "type": "integer"
+     },
+     "x": {
+      "maximum": 100000.0,
+      "minimum": -100000.0,
+      "title": "X",
+      "type": "integer"
+     },
+     "y": {
+      "maximum": 100000.0,
+      "minimum": -100000.0,
+      "title": "Y",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "x",
+     "y",
+     "width",
+     "height"
+    ],
+    "title": "PickedBox",
+    "type": "object"
+   },
+   "PickedChange": {
+    "additionalProperties": false,
+    "description": "A change a person wrote beside a part of the preview's page (plan WS.5): a note for the run while it is going,\nor the brief of a change request for a finished product (behind PREMIUM_CHANGE_REQUESTS).",
+    "properties": {
+     "change": {
+      "description": "What should change, in the person's words.",
+      "maxLength": 2000,
+      "minLength": 1,
+      "title": "Change",
+      "type": "string"
+     },
+     "element": {
+      "$ref": "#/components/schemas/PickedElement"
+     },
+     "kind": {
+      "default": "note",
+      "enum": [
+       "note",
+       "change_request"
+      ],
+      "title": "Kind",
+      "type": "string"
+     },
+     "scope": {
+      "default": "run",
+      "description": "A note's reach: the rest of the run, or the stage working when it is first read.",
+      "enum": [
+       "run",
+       "next_stage"
+      ],
+      "title": "Scope",
+      "type": "string"
+     }
+    },
+    "required": [
+     "change",
+     "element"
+    ],
+    "title": "PickedChange",
+    "type": "object"
+   },
+   "PickedElement": {
+    "additionalProperties": false,
+    "description": "A part of the preview's page a person pointed at (plan WS.5), as the page's picker sent it: untrusted.",
+    "properties": {
+     "box": {
+      "$ref": "#/components/schemas/PickedBox"
+     },
+     "html": {
+      "default": "",
+      "description": "Its markup, cut short.",
+      "maxLength": 1000,
+      "title": "Html",
+      "type": "string"
+     },
+     "selector": {
+      "description": "A short CSS selector: id, test id, or path.",
+      "maxLength": 300,
+      "minLength": 1,
+      "title": "Selector",
+      "type": "string"
+     },
+     "tag": {
+      "description": "The element's tag name.",
+      "pattern": "^[a-z][a-z0-9-]{0,40}$",
+      "title": "Tag",
+      "type": "string"
+     },
+     "text": {
+      "default": "",
+      "description": "Its visible text, trimmed.",
+      "maxLength": 200,
+      "title": "Text",
+      "type": "string"
+     }
+    },
+    "required": [
+     "selector",
+     "tag",
+     "box"
+    ],
+    "title": "PickedElement",
+    "type": "object"
+   },
    "Preferences": {
     "description": "The owner's appearance and run defaults. Every field is optional: a patch changes only what it names.",
     "properties": {
@@ -1415,6 +1537,18 @@
       ],
       "description": "What is shown: `sprint <n>`, or `being built`.",
       "title": "Label"
+     },
+     "pick_url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "The same, signed for pointing at a part of the page (plan WS.5); its pages carry the picker.",
+      "title": "Pick Url"
      },
      "reason": {
       "anyOf": [
@@ -7030,6 +7164,66 @@
      }
     ],
     "summary": "Start Preview",
+    "tags": [
+     "runs"
+    ]
+   }
+  },
+  "/api/runs/{run_id}/preview/pick": {
+   "post": {
+    "description": "Point and say (plan WS.5): a change written beside a part of the preview's page. A run that is going gets\na note carrying where it is and the files likely to hold it; a finished one, with change requests on, gets a\nchange request's brief to start from.",
+    "operationId": "say_at_a_picked_element_api_runs__run_id__preview_pick_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "title": "Run Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PickedChange"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Say At A Picked Element Api Runs  Run Id  Preview Pick Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Say At A Picked Element",
     "tags": [
      "runs"
     ]

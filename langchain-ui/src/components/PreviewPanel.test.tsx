@@ -16,7 +16,7 @@ vi.mock('../api', () => api);
 const LINK = '/api/runs/r/preview/app/1700000000.abc.sig/';
 const status = (over: Partial<PreviewStatus>): PreviewStatus => ({
   enabled: true, state: 'none', source: null, label: null, started_at: null, reason: null, error: null,
-  has_page: null, command: null, idle_minutes: 15, separate_origin: false, url: null, expires_at: null, ...over,
+  has_page: null, command: null, idle_minutes: 15, separate_origin: false, url: null, pick_url: null, expires_at: null, ...over,
 });
 const ready = (over: Partial<PreviewStatus> = {}) => status({
   state: 'ready', source: 'accepted', label: 'sprint 2', url: LINK, expires_at: Math.floor(Date.now() / 1000) + 1800,

@@ -606,6 +606,46 @@ def _the_sprint_s_slice(repo_root: str | Path, sprint_files: tuple[str, ...], fi
     return chosen | (memory_slices.imports_of(repo_root, chosen) & set(product))
 
 
+def render_for_a_replan(repo_root: str | Path, budget_characters: int, opening: str, sprint_files: tuple[str, ...],
+                        kept_out: tuple[str, ...] = ()) -> tuple[str, dict[str, str], str]:
+    """A re-plan's memory, the files it holds and the request it goes with (`LEAD_REPLAN_REQUEST_SMALLER`).
+
+    Never longer than the request it replaces: the memory, the request and the line naming the held files together
+    are held to the length they have without the switch, the request less its list of the sprint's files. Measured
+    on a small window: the budget the sliced files freed filled with the documents the whole memory had to leave out,
+    and the request grew. So the smaller memory gets no more budget than the whole one used, and where it is still
+    not shorter, the whole memory and the request without the list are sent, as with the switch off.
+    """
+    from app.agents import prompt_size
+
+    plain = opening.replace(prompt_size.sprint_files_section(list(sprint_files)), "", 1)
+    whole, whole_held = render(repo_root, budget_characters, plain, kept_out=kept_out)
+
+    def length(memory: str, held: dict[str, str], request: str) -> int:
+        return (len(memory) + 2 if memory else 0) + len(request) + len(files_held_line(list(held)))
+
+    smaller, smaller_held = render(repo_root, min(budget_characters, len(whole)), opening, kept_out=kept_out,
+                                   sprint_files=sprint_files)
+    if smaller and length(smaller, smaller_held, opening) < length(whole, whole_held, plain):
+        return smaller, smaller_held, opening
+    return whole, whole_held, plain
+
+
+def _without_the_list(messages: list[Any], opening: str, request: str) -> list[Any]:
+    """`messages` with the opening request as `request` (the re-plan's list of files taken out), or as they are."""
+    if request == opening:
+        return messages
+    from langchain_core.messages import HumanMessage
+
+    for index, message in enumerate(messages):
+        if getattr(message, "type", None) == "human" and getattr(message, "content", None) == opening:
+            return [*messages[:index], HumanMessage(content=request, additional_kwargs=dict(
+                getattr(message, "additional_kwargs", None) or {})), *messages[index + 1:]]
+        if isinstance(message, dict) and message.get("role") == "user" and message.get("content") == opening:
+            return [*messages[:index], {**message, "content": request}, *messages[index + 1:]]
+    return messages
+
+
 def _replan_said() -> str:
     from app.agents.prompt_size import REPLAN_SAID
 
@@ -860,13 +900,21 @@ def build_project_memory_middleware(repo_root: str) -> Any:
                     stage = str(_from_the_graph()[1] or "")
                     from app.agents import memory_slices
 
-                    visit["snapshot"], visit["held"] = render(repo_root, budget_for(getattr(request, "model", None)), opening,
-                                                              for_a_fixer=stage.startswith("defect_fix"),
-                                                              kept_out=_kept_out_for(stage, repo_root),
-                                                              sliced=memory_slices.enabled() and stage.startswith(
-                                                                  ("defect_fix", "specialist_")),
-                                                              sprint_files=_the_sprint_s_files(stage, opening))
+                    sprint_files = _the_sprint_s_files(stage, opening)
+                    if sprint_files:
+                        visit["snapshot"], visit["held"], visit["request"] = render_for_a_replan(
+                            repo_root, budget_for(getattr(request, "model", None)), opening, sprint_files,
+                            kept_out=_kept_out_for(stage, repo_root))
+                        visit["opening"] = opening
+                    else:
+                        visit["snapshot"], visit["held"] = render(repo_root, budget_for(getattr(request, "model", None)), opening,
+                                                                  for_a_fixer=stage.startswith("defect_fix"),
+                                                                  kept_out=_kept_out_for(stage, repo_root),
+                                                                  sliced=memory_slices.enabled() and stage.startswith(
+                                                                      ("defect_fix", "specialist_")))
                     visit["files"] = dict(current(repo_root))
+                if visit.get("request") is not None:
+                    messages = _without_the_list(messages, visit["opening"], visit["request"])
                 memory = visit["snapshot"]
                 held = visit.get("held") or {}
                 # Each file as this visit first held it, so a read of one that
@@ -881,6 +929,8 @@ def build_project_memory_middleware(repo_root: str) -> Any:
                     for held_path, held_content in held.items():
                         remember_if_unseen(held_path, held_content)
                 changed = _with_memory(messages, memory, list(held)) if memory else None
+                if changed is None and messages is not getattr(request, "messages", None):
+                    changed = messages  # a re-plan's request without its list, and no memory to put before it
                 if changed is not None:
                     note = changes_since(visit.get("files") or {}, current(repo_root))
                     if note:

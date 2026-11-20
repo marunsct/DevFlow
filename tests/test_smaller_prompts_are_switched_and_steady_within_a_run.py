@@ -322,3 +322,20 @@ def test_what_the_smaller_prompts_say_uses_no_product_word():
                                                  prompt_size.lead_replan_smaller_switch)])]
 
     assert [BANNED.findall(text) for text in said] == [[] for _ in said]
+
+
+@pytest.mark.parametrize("budget", [12_000, 240_000], ids=["small window", "large window"])
+def test_the_smaller_replan_request_is_never_larger_than_the_one_it_replaces(project, monkeypatch, budget):
+    """Measured on a small window: the budget the sliced files freed filled with documents the whole memory had left
+    out, and the "smaller" re-plan request grew."""
+    for n in range(6):
+        (project / f"ledger/src/part_{n}.js").write_text(
+            f"export function part{n}(value) {{\n" + f"  value = value + {n};\n" * 200 + "  return value;\n}\n")
+    (project / "docs/acceptance_criteria.md").write_text("# Criteria\n\n" + "- AC-1: entries are kept.\n" * 300)
+    monkeypatch.setattr("app.agents.project_memory.budget_for", lambda model: budget)
+    replaced = len(_what_the_lead_reads(project, _lead_request(project, ATTEMPT)))
+    monkeypatch.setenv("LEAD_REPLAN_REQUEST_SMALLER", "on")
+
+    smaller = len(_what_the_lead_reads(project, _lead_request(project, ATTEMPT)))
+
+    assert smaller <= replaced, (smaller, replaced)

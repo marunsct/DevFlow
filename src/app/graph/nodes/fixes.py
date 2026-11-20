@@ -90,11 +90,11 @@ def _the_fix_request(state: Any, config: RunnableConfig, cycle: Any, defect_inde
 
     request["messages"][-1]["content"] += cause_journal.tried_before(
         state["repository"].root_path, defect, shown=(defect.attempts if _ledger.enabled() else ()))
+    request["messages"][-1]["content"] += _what_others_found(state, defect, defect_index)  # WL.4, behind its switch
     request["messages"][-1]["content"] += _the_stub_still_served_section(state["repository"].root_path)
     request["messages"][-1]["content"] += _the_unserved_code_section(state["repository"].root_path)
     request["messages"][-1]["content"] += _the_database_section(state["repository"].root_path)
-    # The layout the judges read too (plan CM.1); the stub and the code the
-    # product does not run are the two sections above.
+    # The layout the judges read too (plan CM.1); the stub and the code the product does not run are above.
     request = with_the_facts(request, state["repository"].root_path, built=False)
     # Where the sprint stands (plan PH.1, off until measured).
     from app.agents import where_things_stand
@@ -121,6 +121,15 @@ def _the_fix_request(state: Any, config: RunnableConfig, cycle: Any, defect_inde
             round_=state.get("test_round", 0), index=defect_index, sprint=state.get("current_sprint_index", 0),
         )
     return request, co_defects
+
+
+def _what_others_found(state: Any, defect: Any, defect_index: int) -> str:
+    """What others found for the error of a defect an attempt has already failed (plan WL.4, behind its switch)."""
+    from app.graph import stuck_lookup
+
+    return stuck_lookup.section(
+        state["repository"].root_path, defect, getattr(state.get("stack_selection"), "technology_stack", None),
+        f"defect_fix_{state.get('test_round', 0)}_{defect_index}")
 
 
 def _diagnosed_if_it_keeps_failing(state: Any, defect: Any, ctx: GraphContext) -> None:

@@ -59,6 +59,7 @@ Written by `loop.sh measuring` from 449 scored runs in the ledger. On and off co
 | `REVIEWS_WITHOUT_REASONING` | Efficiency | on | 61 | no signal | 146 | measured: hidden 0.82 on / 0.98 off; minutes 101.83 / 87.95 |
 | `SPRINT_TIME_BUDGET` | Efficiency | on | 56 | 0 | 1 | not measured: needs 0 more on and 1 more off |
 | `STABLE_MEMORY_ORDER` | Efficiency | on | 56 | 54 | 1 | not measured: needs 0 more on and 1 more off |
+| `PULL_REQUEST_DELIVERY` | Existing projects | off | 0 | 0 | 0 | not measured: needs 2 more on and 2 more off |
 | `WEB_LOOKUP_WHEN_STUCK` | Internet lookups | off | 0 | no signal | 0 | not measured: needs 2 more on and 2 more off |
 | `WEB_TOOLS_AFTER_TWO_FAILED_FIXES` | Internet lookups | off | 0 | 0 | 0 | not measured: needs 2 more on and 2 more off |
 | `WEB_TOOLS_OFFERED` | Internet lookups | off | 0 | no signal | 0 | not measured: needs 2 more on and 2 more off |
@@ -74,7 +75,6 @@ Written by `loop.sh measuring` from 449 scored runs in the ledger. On and off co
 | `ASK_SPECIFICATION` | bundle PREMIUM_DEEP_VERIFICATION | on | 439 | no signal | 2 | measured: hidden 0.92 on / 0.70 off; minutes 89.97 / 206.75 |
 | `ASSUMPTIONS_GATE` | bundle PREMIUM_DEEP_VERIFICATION | on | 439 | 335 | 2 | measured: hidden 0.92 on / 0.70 off; minutes 89.97 / 206.75 |
 | `MUTATION_GUIDED_TESTS` | bundle PREMIUM_DEEP_VERIFICATION | on | 433 | no signal | 0 | not measured: needs 0 more on and 2 more off |
-| `REGRESSION_CONTRACT` | bundle PREMIUM_DEEP_VERIFICATION | on | 439 | no signal | 2 | measured: hidden 0.92 on / 0.70 off; minutes 89.97 / 206.75 |
 | `RELEASE_AUDITS` | bundle PREMIUM_DEEP_VERIFICATION | on | 439 | no signal | 2 | measured: hidden 0.92 on / 0.70 off; minutes 89.97 / 206.75 |
 | `RELEASE_DOCS_REQUIRED` | bundle PREMIUM_DEEP_VERIFICATION | on | 439 | no signal | 2 | measured: hidden 0.92 on / 0.70 off; minutes 89.97 / 206.75 |
 | `SCREENSHOT_RUBRIC` | bundle PREMIUM_DEEP_VERIFICATION | on | 439 | no signal | 2 | measured: hidden 0.92 on / 0.70 off; minutes 89.97 / 206.75 |

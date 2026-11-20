@@ -15,7 +15,7 @@ decisions in force are `docs/owner-decisions.md`; old information is found throu
 |---|---|
 | Phase | **Learning runs, fixes deployed at once** (deep-review plan, owner 11-18: implement all; frozen-version measuring for Measure batches). The release-candidate count starts only when a full audit cycle finds nothing to fix. |
 | Models | :8888 `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` (key); :1234 `qwen3.6-35b-a3b-mtp@iq4_nl` (no key). Both the owner's; both take runs; each run is pinned to its port. |
-| Harness | Deployed 11-20 12:36 JST: 1d546a32 (LF.1140-1171, WS.4 preview off). Deploying: LF.1172 WL.5 and LF.1173 WL.6. Merging next: WS.3 remainder (plan gate as a run review), WS.7 (pull-request delivery, off). Building: per-role audit fixes (suite checks, QA prompt and wording, command list and work orders), one page reader. |
+| Harness | Deployed 11-20 12:49 JST: c410286d (LF.1140-1173). Deploying after both suites: LF.1174 WS.3 remainder (plan gate as a run review, reviews changed mid-run, note audience), LF.1175 WS.7 (`PULL_REQUEST_DELIVERY` off, code map, baseline for seeded runs), LF.1176 command list and work orders. Next bundle (built, merging): suite-check repeats, suite-writer prompt and wording, one page reader. |
 | Switches | 53 fixes built in (always on). 29 optional switches (9 groups, `docs/measuring.md`); `WEB_LOOKUP_WHEN_STUCK` is off and set per run. Measure arms use `SWITCHES_OFF` per run. |
 | Operations | Nightly backups (`loop.sh backup --check`); finished runs older than 60 days cleared. Audit cron `01339d0d` every ~10 minutes (7-day expiry: recreate by 11-27). |
 | Suites | `loop.sh suite` and `loop.sh suite-production` both green at 18,701 passed. |
@@ -40,7 +40,7 @@ Earlier runs: `reports/status-board/`, git history of this file.
 2. Internet lookups: WL.3-WL.7 built (`WEB_LOOKUP_WHEN_STUCK`, `WEB_TOOLS_AFTER_TWO_FAILED_FIXES` off, measured per run)
    (`docs/improvement-plan.md` 3.1). Owner action: enter a free Stack Apps key and a no-scope GitHub token on /admin (Lookup keys); a paid key optional.
    Turn `WEB_LOOKUP_WHEN_STUCK` on for a measuring pair on C#, Java and Rust.
-3. Workspace view: WS.3, WS.1, WS.2, WS.4 built (LF.1164, LF.1165, LF.1167, LF.1171); WS.7 and the WS.3 remainder building; then WS.5, WS.6: `docs/improvement-plan.md` 3.2.
+3. Workspace view: WS.1-WS.4 and WS.7 built (LF.1164-1175); next WS.5 point and say, then WS.6 take over: `docs/improvement-plan.md` 3.2.
 4. Backlog (plan 3.3): stack-decision check
    for a database named as one engine "via" another; the restart re-read pattern; Rust routing (owner).
 5. Per-role audit done (`reports/audits/2026-11-20-per-role-audit.md`); its sure fixes are building; its doubtful ones (QA prompt trim,

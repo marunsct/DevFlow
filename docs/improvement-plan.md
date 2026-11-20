@@ -57,6 +57,7 @@ Source of truth: `src/app/switches.py` (defaults and `EXPERIMENTS_ON`) and `loop
 | CONTESTED_TESTS_CONFIRMED | past the reclassification cap, a disputed locked test is reopened only after the harness confirms its quoted repair (LF.1168) | minutes stuck at N-1 of N criteria fall; no false acceptance | OFF; measure on tasks-api |
 | PRODUCT_PREVIEW | WS.4 product preview (LF.1171); left out: websockets, product cookies, internet at start | start success against the delivered-start check, time to first page, zero access without a token | OFF; needs container mode; first a real-Docker trial |
 | WEB_TOOLS_AFTER_TWO_FAILED_FIXES | a fixer that failed twice gets web search and the page reader (LF.1172) | calls made; the defect's signature cleared after a call | OFF; measure with WEB_LOOKUP_WHEN_STUCK on C#, Java, Rust |
+| PULL_REQUEST_DELIVERY | a changed seeded product goes back as a pull request (LF.1175) | PR opens on a seeded run; no write outside its branch | OFF; first a trial against a scratch repository |
 | WEB_TOOLS_OFFERED | web search and the page reader offered to the stages that read docs, set by a run's "Always" lookups choice (LF.1166) | the tools are called and a stuck signature clears; hidden holds | OFF; on per run through "Always" |
 | WEB_LOOKUP_WHEN_STUCK | harness looks up a stuck fixer's error (WL.4 T1) | repeated-signature rounds or minutes to green fall, hidden holds | OFF in code; not in `GROUPS`, so not on the admin page or in `loop.sh measuring` (register it). Deploys at the next run boundary |
 
@@ -80,8 +81,6 @@ WL.3-WL.7 are built (LF.1159, LF.1161, LF.1166, LF.1170, LF.1172, LF.1173). Next
 ### 3.2 Watch, try and steer a run (Appendix 11, WS). Nothing below is built except the pieces named.
 | Item | Value | Size | Needs | Proof | Verified |
 |---|---|---|---|---|---|
-| WS.3 remainder: a plan gate with a timeout that proceeds on its own; the review policy changed while a run is live; who a note is for (audience) in the UI | the rest of trustworthy steering | S | none | owner review | open (LF.1164 built the note states, edit/withdraw, three levels, notes to a paused run) |
-| WS.7 existing projects: branch and PR delivery to the seeded repository, regression baseline on for seeded products, code map at intake, hide "Request a change" while its switch is off | brownfield | M | none | PR opens; baseline runs | not built |
 | WS.5 point and say (select an element in the preview, write the change; it becomes a note or change request with selector, crop, source file) | web products | M | WS.4 | note carries selector and file | not built |
 | WS.6 take over and hand back (token-protected code-server on a paused run; hand back commits the edit and tells the next stage the diff) | person edits safely | L | WS.4 | no edit conflicts; locked suites read-only | not built; last |
 UI-only steps keep the release-candidate count; WS.4 and WS.6 add a service and are measured.

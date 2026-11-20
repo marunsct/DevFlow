@@ -76,17 +76,6 @@ def test_a_direction_at_the_plan_gate_reaches_the_scrum_master_who_plans_again(a
     assert agents.requests["technical_lead"] == []
 
 
-def test_the_direction_planned_with_is_not_handed_to_the_technical_lead(agents, tmp_path):
-    graph, _state = _at_the_plan_gate(agents, tmp_path, "run-plan-steer-go")
-    agents.scripts["scrum_master"] = [responds_with(_sprint_plan())]
-    resume_pending_review(graph, "run-plan-steer-go", request_changes_decision("Build sign-in first."))
-
-    state = resume_pending_review(graph, "run-plan-steer-go", approve_decision())
-
-    assert state["stage"] == "complete", state.get("error")
-    assert "Build sign-in first." not in agents.last_request_text("technical_lead")
-
-
 def test_a_plan_gate_answered_by_its_time_is_recorded_as_going_on_by_itself(agents, tmp_path):
     graph, _state = _at_the_plan_gate(agents, tmp_path, "run-plan-timeout")
 

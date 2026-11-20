@@ -305,6 +305,16 @@ def _fernet():
     return Fernet(_encryption_key())
 
 
+def seal(text: str) -> str:
+    """`text` encrypted with the stored credentials' key, for a credential kept outside the settings table."""
+    return _fernet().encrypt(text.encode("utf-8")).decode("ascii")
+
+
+def unseal(ciphertext: str) -> str:
+    """What `seal` encrypted; raises `cryptography.fernet.InvalidToken` when the key has changed."""
+    return _fernet().decrypt(ciphertext.encode("ascii")).decode("utf-8")
+
+
 def _read_secrets_from_db() -> dict[str, str]:
     from cryptography.fernet import InvalidToken
 
@@ -740,5 +750,7 @@ __all__ = [
     "reset_cache",
     "save",
     "save_secrets",
+    "seal",
     "secrets",
+    "unseal",
 ]

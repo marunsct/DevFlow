@@ -166,6 +166,20 @@ export const getServerHealth = async (): Promise<ServerHealth> => {
   return response.data;
 };
 
+/**
+ * Whether a finished product may be changed by a new run (`PREMIUM_CHANGE_REQUESTS`), read from the switches every
+ * signed-in person may see. False when the list cannot be read: the server refuses such a run while it is off.
+ */
+export const changeRequestsOn = async (): Promise<boolean> => {
+  try {
+    const response = await api.get<Array<{ name: string; on: boolean }>>('/settings/switches');
+    return Array.isArray(response.data)
+      && response.data.some((entry) => entry.name === 'PREMIUM_CHANGE_REQUESTS' && entry.on === true);
+  } catch {
+    return false;
+  }
+};
+
 export const getRun = async (runId: string): Promise<RunStatusResponse> => {
   const response = await api.get<RunStatusResponse>(`/runs/${runId}`);
   return response.data;

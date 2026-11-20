@@ -31,7 +31,8 @@ import {
   startRun,
   type RewindPoint,
   getStreamTicket,
-  getWizard
+  getWizard,
+  changeRequestsOn
 } from '../api';
 import { LogViewer } from '../components/LogViewer';
 import { LatestChange } from '../components/LatestChange';
@@ -127,6 +128,13 @@ export const RunDashboard: React.FC = () => {
   // Whether the live stream is connected: it reconnects on its own, and said
   // nothing while it did - a stopped feed looked like a quiet run.
   const [streamDown, setStreamDown] = useState(false);
+  // "Request a change" only while its switch is on: the server refuses the run it starts otherwise.
+  const [changesAllowed, setChangesAllowed] = useState(false);
+  useEffect(() => {
+    let current = true;
+    void changeRequestsOn().then((on) => { if (current) setChangesAllowed(on === true); });
+    return () => { current = false; };
+  }, []);
   const live = !!run && !['completed', 'failed', 'cancelled'].includes(run.status);
   const now = useNow(live);
   const typical = useTypicalTime(run?.delivery_mode, run?.criteria_total);
@@ -771,7 +779,7 @@ export const RunDashboard: React.FC = () => {
             className={`${actionButton} text-text-secondary border-border hover:border-border-strong hover:bg-overlay`}>
             <Copy className="h-3.5 w-3.5" /> Clone
           </button>
-          {run.status === 'completed' && (
+          {run.status === 'completed' && changesAllowed && (
             <button onClick={() => navigate(`/?changeOf=${runId}`)} data-testid="request-a-change"
               title="Start a run from this product, with a brief that says what to change"
               className={`${actionButton} text-text-secondary border-border hover:border-border-strong hover:bg-overlay`}>

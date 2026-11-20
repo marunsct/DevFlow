@@ -2,7 +2,7 @@
 
 The CI baseline at the suite's lock was empty for every run, so a change that
 broke what a seeded product already did was caught by no regression check.
-Behind `REGRESSION_CONTRACT`, off until measured.
+On for every seeded run since plan WS.7; `REGRESSION_CONTRACT=off` on the host turns it off.
 """
 from __future__ import annotations
 
@@ -47,7 +47,7 @@ def test_on_the_baseline_holds_what_the_seeded_product_passes_and_a_later_failur
     assert ci.regressions(baseline, later) == ["unit: test_old_signin"]
 
 
-def test_off_the_baseline_is_empty_as_before(tmp_path, monkeypatch):
-    baseline = _locked(tmp_path, monkeypatch, "")
+def test_set_off_the_baseline_is_empty_as_before(tmp_path, monkeypatch):
+    baseline = _locked(tmp_path, monkeypatch, "off")
 
     assert baseline.passing() == set()

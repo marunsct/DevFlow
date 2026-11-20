@@ -133,6 +133,9 @@ BUILT_IN = frozenset({
     "SPEC_DRY_RUN",
     "ORDER_PROBE",
     "IDS_READ_WITHOUT_A_CREATE",
+    # A seeded product's own green tests held as the contract its change keeps (plan WS.7): changing an existing
+    # product with nothing holding what it already did is a quality gap, not an option, so no bundle turns it off.
+    "REGRESSION_CONTRACT",
 })
 
 #: The premium features, one switch a bundle over the base product (owner, 2026-10-29: a free base version, these
@@ -153,10 +156,10 @@ BUNDLES: dict[str, tuple[str, ...]] = {
         "PROJECT_GRAPH_BUILDERS", "CODE_GRAPH_TOOL", "BUILDER_FACTS", "LESSON_DISTILLER", "DECISION_LEDGER",
         "NAMING_STANDARD",
     ),
-    # Verification beyond the acceptance suite: mutation-guided tests, the regression contract, page scoring,
-    # release audits and documents, and the specification's assumptions asked before building.
+    # Verification beyond the acceptance suite: mutation-guided tests, page scoring, release audits and documents,
+    # and the specification's assumptions asked before building.
     "PREMIUM_DEEP_VERIFICATION": (
-        "MUTATION_GUIDED_TESTS", "REGRESSION_CONTRACT", "SCREENSHOT_RUBRIC", "RELEASE_AUDITS", "RELEASE_DOCS_REQUIRED",
+        "MUTATION_GUIDED_TESTS", "SCREENSHOT_RUBRIC", "RELEASE_AUDITS", "RELEASE_DOCS_REQUIRED",
         "ASSUMPTIONS_GATE", "ASK_SPECIFICATION",
     ),
     # Follow-up runs that change a finished product on request.
@@ -199,6 +202,9 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "Suite disputes": ("CONTESTED_TESTS_CONFIRMED",),
     # A person tries the product from the run page while it is built (plan WS.4): it adds a long-lived service.
     "Product preview": ("PRODUCT_PREVIEW",),
+    # Where a changed existing product goes at the end (plan WS.7): a pull request to the repository it was seeded
+    # from, else a bundle and a patch for download. Off until measured: it writes to the owner's repository.
+    "Existing projects": ("PULL_REQUEST_DELIVERY",),
 }
 #: Every grouped switch, in the admin page's order.
 EXPERIMENTS = tuple(name for members in GROUPS.values() for name in members)

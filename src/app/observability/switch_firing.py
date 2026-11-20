@@ -47,7 +47,11 @@ SIGNALS: dict[str, str] = {
     "TESTS_OF_ACTIONS_WITHIN_A_VIEW": "changes the state a current view depends on",
     "CONTESTED_TESTS_CONFIRMED": "The harness ran a copy of this test with",
     "WEB_TOOLS_AFTER_TWO_FAILED_FIXES": "Two fixes of this defect have failed, so `search_the_web` and `read_web_page`",
+    "PULL_REQUEST_DELIVERY": "Delivered to the seeded repository",
 }
+#: Transcript records the harness writes of what it did itself, with no model reading it: kind -> the field whose
+#: text a switch's signal is looked for in.
+HARNESS_RECORDS: dict[str, str] = {"repository_delivery": "message"}
 
 
 @dataclass(frozen=True)
@@ -84,6 +88,8 @@ def fired(records: Iterable[Any]) -> list[str]:
             text = _text(record.get("messages"))
         elif kind == "tool_result":
             text = _text(record.get("content") or record.get("result") or record.get("output"))
+        elif kind in HARNESS_RECORDS:
+            text = _text(record.get(HARNESS_RECORDS[kind]))
         else:
             continue
         seen.update(name for name, needle in SIGNALS.items() if name not in seen and needle in text)
@@ -120,4 +126,4 @@ def chance_lines(records: Iterable[Any], decisions: str) -> list[str]:
     return lines
 
 
-__all__ = ["CHANCES", "Chance", "SIGNALS", "chance_lines", "fired", "on_throughout", "silent"]
+__all__ = ["CHANCES", "Chance", "HARNESS_RECORDS", "SIGNALS", "chance_lines", "fired", "on_throughout", "silent"]

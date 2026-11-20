@@ -83,6 +83,15 @@ class WorkspaceSource(BaseModel):
             "the Celery broker."
         ),
     )
+    delivery_token: str | None = Field(
+        default=None, max_length=512, repr=False,
+        description=(
+            "Access token that may push a branch and open a pull request on the repository, for type=git "
+            "(behind PULL_REQUEST_DELIVERY). Kept sealed outside the workspace until the run delivers its change, "
+            "never written to the run record, the audit log or a log line; without it the change is delivered "
+            "as a git bundle and a patch for download."
+        ),
+    )
     depth: int = Field(
         default=1, ge=0, le=1000,
         description="Clone depth; 0 for full history. Shallow by default - the agents need the code, not the history.",

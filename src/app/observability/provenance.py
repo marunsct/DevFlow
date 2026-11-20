@@ -29,6 +29,7 @@ SWITCHES: dict[str, str] = {
     "RELEASE_AUDITS": "app.stacks.release_audits",
     "ASSUMPTIONS_GATE": "app.agents.assumptions",
     "CHANGE_REQUEST_RUNS": "app.server.change_request_runs",
+    "PULL_REQUEST_DELIVERY": "app.server.repository_delivery",
     "SCREENSHOT_RUBRIC": "app.acceptance.screenshot_rubric",
     "VERIFY_AFTER_WRITE": "app.graph.verify_after_write",
     "DEFECT_CALL_CAP": "app.graph.defect_budget",

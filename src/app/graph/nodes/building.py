@@ -110,6 +110,10 @@ def technical_lead_node(state: WorkflowGraphState, config: RunnableConfig, ctx: 
             lessons=state.get("lessons") or [],
             last_attempt=_the_last_failed_attempt_at_this_sprint(state),
         )
+        # A seeded codebase's map, as it stands, so the plan builds on what exists (plan WS.7).
+        from app.agents.code_map import with_the_map
+
+        request = with_the_map(request, state["repository"].root_path)
         if _the_last_failed_attempt_at_this_sprint(state) is not None:
             # What the fixers of the last attempts tried on each cause, and how it ended (deep review 1.4): the cycle
             # that held it was cleared for this plan.

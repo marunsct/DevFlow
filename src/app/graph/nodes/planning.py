@@ -36,6 +36,10 @@ def product_manager_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
     from app.agents import assumptions
 
     request = assumptions.with_the_rule(request)
+    # A seeded codebase's map, built from its files, so the intake knows what exists (plan WS.7).
+    from app.agents.code_map import with_the_map
+
+    request = with_the_map(request, state["repository"].root_path)
     update = _run_gated_agent(
         state,
         config,
@@ -218,6 +222,10 @@ def stack_selector_node(state: WorkflowGraphState, config: RunnableConfig, ctx: 
             }
         ]
     }
+    # The stack of a seeded codebase is the one its files are written in: the map says which (plan WS.7).
+    from app.agents.code_map import with_the_map
+
+    request = with_the_map(request, state["repository"].root_path)
     update = _run_gated_agent(
         state,
         config,

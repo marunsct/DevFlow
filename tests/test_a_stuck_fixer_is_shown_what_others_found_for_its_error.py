@@ -110,3 +110,17 @@ def test_a_stuck_defect_quoting_what_the_server_printed_is_looked_up_as_that_lin
     stuck_lookup.section(tmp_path / "workspace-notes", defect, STACK)
 
     assert [asked[0] for asked in _on] == [overflow]
+
+
+@pytest.mark.parametrize(("stated", "searched"), [
+    ("- [test round] The unit tests fail. It says: Distinct causes, most failing first: - 2 failing, e.g. `pytest > "
+     "x`: sqlite3.OperationalError: no such table: notes", "sqlite3.OperationalError: no such table: notes"),
+    ("cause: TypeError: Cannot set properties of null (setting 'textContent')",
+     "TypeError: Cannot set properties of null (setting 'textContent')"),
+])
+def test_a_stated_error_is_searched_from_its_error_name_never_with_the_harness_s_own_words(stated, searched):
+    """Measured on one run: a unit-test defect was searched with "The unit tests fail. It says: Distinct causes ..."
+    ahead of the `sqlite3.OperationalError` that others would have written about."""
+    defect = SimpleNamespace(actual_behavior="", description=stated)
+
+    assert stuck_lookup._the_error_line(defect).startswith(searched)

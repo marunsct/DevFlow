@@ -104,7 +104,20 @@ def _the_error_line(defect: Any) -> str:
     if printed := _what_the_server_printed(text):
         return printed
     stated = the_errors_stated(text)
-    return stated[-1] if stated else ""
+    return _from_the_error_on(stated[-1]) if stated else ""
+
+
+#: Where an error proper begins in a stated line: a dotted exception or error name and its colon
+#: (`sqlite3.OperationalError:`, `TypeError:`, `java.lang.IllegalStateException:`), or a compiler's error code.
+_THE_ERROR_BEGINS = re.compile(r"(?<![\w.])(?:[A-Za-z_][\w]*\.)*[A-Za-z_]\w*(?:Error|Exception|Fault)\b:|\berror[: ]+[A-Z]+\d+\b")
+
+
+def _from_the_error_on(line: str) -> str:
+    """The stated line from where its error begins: the harness's own words before it ("The unit tests fail. It says:
+    Distinct causes, ...") are not what anyone else wrote about. Measured on one run: a unit-test defect was searched
+    with that whole preamble ahead of `sqlite3.OperationalError: ...`. The line as it is when no error name is found."""
+    found = _THE_ERROR_BEGINS.search(line)
+    return line[found.start():] if found else line
 
 
 def _the_stack_s_words(stack: Any) -> str:

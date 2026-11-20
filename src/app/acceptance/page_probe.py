@@ -10,7 +10,10 @@ drives the page as a person adds an item, which the page check never does.
 When a test round finds the locked suite green, one Playwright spec is run through the suite's own configuration
 (its server, its address): each finding becomes one defect, worded with `PAGE_CHECK_FAILED`, and the probe settles
 it. Only page products whose suite runs on Playwright are probed. A form is filled and sent the way the page sends
-it: the form's submit control, else the Enter key in the field, else a control named for adding. A page with no
+it: the form's submit control, else the Enter key in the field, else a control named for adding. Only the fields of
+the form holding the first text field are filled, each with a value its meaning accepts (an address, an e-mail, a
+number, a date, a phone number, else the text), so a field that checks its value does not refuse the item and a field
+outside the form (a filter) does not hide it. A page with no
 text field is not probed. Off until measured: a page's own way of adding an item may be one the probe cannot drive.
 """
 from __future__ import annotations
@@ -69,26 +72,72 @@ const MARKUP = %(markup)s;
 const PERSISTS = %(persists)s;
 const SMALL_SCREENS = %(small_screens)s;
 const NOT_THE_PRODUCT = /favicon\\.ico/;
-const FIELDS = 'input:not([type]), input[type=text], input[type=search], textarea';
+const FIELDS = 'input:not([type]), input[type=text], input[type=search], input[type=url], input[type=email], ' +
+  'input[type=number], input[type=date], input[type=tel], textarea';
+// What a field takes, from its type first, then the words of its name, id, placeholder, autocomplete and labels.
+const TYPED = { url: 'url', email: 'email', number: 'number', date: 'date', tel: 'phone' };
+const MEANINGS = [
+  ['url', /\\b(?:url|uri|link|website|href|https?)\\b/],
+  ['email', /\\b(?:e ?mail)\\b/],
+  ['phone', /\\b(?:phone|tel|telephone|mobile)\\b/],
+  ['date', /\\bdate\\b/],
+  ['number', /\\b(?:number|count|quantity|qty|price|age|amount)\\b/],
+];
 
 function found(kind, details) {
   throw new Error(MARKER + ' ' + JSON.stringify({ kind, ...details }));
 }
 
-// Fill each visible text field and send the form the way the page sends it; false when the page has no text field.
+// 'url', 'email', 'phone', 'date', 'number', or 'text' for a field that takes any words.
+async function whatItTakes(field) {
+  const said = await field.evaluate((el) => ({
+    type: String(el.getAttribute('type') || '').toLowerCase(),
+    words: [el.name, el.id, el.placeholder, el.getAttribute('autocomplete'), el.getAttribute('aria-label'),
+      ...Array.from(el.labels || [], (label) => label.textContent)].filter(Boolean).join(' '),
+  })).catch(() => ({ type: '', words: '' }));
+  if (TYPED[said.type]) return TYPED[said.type];
+  const words = said.words.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+  const meaning = MEANINGS.find(([, pattern]) => pattern.test(words));
+  return meaning ? meaning[0] : 'text';
+}
+
+// A value a field of this kind accepts; a text field gets the text itself.
+function aValueFor(kind, text) {
+  if (kind === 'url') return 'https://example.com/' + (text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'probe');
+  if (kind === 'email') return `probe+${Date.now()}@example.com`;
+  if (kind === 'number') return '1';
+  if (kind === 'date') return new Date().toISOString().slice(0, 10);
+  if (kind === 'phone') return '+15550100';
+  return text;
+}
+
+// Fill the fields of the form that holds the first visible text field, each with a value it accepts, and send it the
+// way the page sends it. Returns the text to find the item by afterwards (what the first field taking any words got,
+// else the address written), or false when the page has no text field.
 async function addAnItem(page, text) {
-  const fields = page.locator(FIELDS).filter({ visible: true });
-  const count = await fields.count();
-  if (!count) return false;
-  for (let i = 0; i < count; i += 1) await fields.nth(i).fill(text).catch(() => {});
-  const first = fields.first();
+  const first = page.locator(FIELDS).filter({ visible: true }).first();
+  if (!(await first.count())) return false;
   const form = first.locator('xpath=ancestor::form[1]');
+  const inAForm = (await form.count()) > 0;
+  // A field outside the form (a filter, a search) is left alone: what it holds would narrow the list shown.
+  const fields = inAForm ? form.locator(FIELDS).filter({ visible: true }) : first;
+  const count = await fields.count();
+  let words = null;
+  let address = null;
+  for (let i = 0; i < count; i += 1) {
+    const field = fields.nth(i);
+    const kind = await whatItTakes(field);
+    const value = aValueFor(kind, text);
+    await field.fill(value).catch(() => {});
+    if (kind === 'text' && words === null) words = value;
+    if ((kind === 'url' || kind === 'email') && address === null) address = value;
+  }
   // A form is sent the way the browser sends it, through its own submit handlers; a field outside a form by Enter.
   // A page that adds only through a pointer on a control outside a form is not driven, and its checks are skipped.
-  if (await form.count()) await form.evaluate((f) => (f.requestSubmit ? f.requestSubmit() : f.submit())).catch(() => {});
+  if (inAForm) await form.evaluate((f) => (f.requestSubmit ? f.requestSubmit() : f.submit())).catch(() => {});
   else await first.press('Enter').catch(() => {});
   await page.waitForTimeout(600);
-  return true;
+  return words ?? address ?? text;
 }
 
 test('page check 1: markup typed into a text field is shown as text', async ({ page }) => {
@@ -135,8 +184,8 @@ test('page check 3: the page fits a %(width)spx-wide screen', async ({ page }) =
 test('page check 4: an item added is still shown after a reload', async ({ page }) => {
   test.skip(!PERSISTS, 'the brief does not say the data persists');
   await page.goto('/');
-  const text = `probe kept ${Date.now()}`;
-  test.skip(!(await addAnItem(page, text)), 'the page has no text field');
+  const text = await addAnItem(page, `probe kept ${Date.now()}`);
+  test.skip(!text, 'the page has no text field');
   const shown = page.getByText(text, { exact: false }).first();
   test.skip(!(await shown.isVisible().catch(() => false)), 'the item added is not shown, so nothing can be reloaded');
   await page.reload();

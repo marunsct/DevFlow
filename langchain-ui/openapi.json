@@ -1228,6 +1228,171 @@
     "title": "PreviewCriterion",
     "type": "object"
    },
+   "PreviewStartRequest": {
+    "description": "What a preview starts from (plan WS.4): the last accepted sprint, or the workspace as it is being built.",
+    "properties": {
+     "source": {
+      "default": "accepted",
+      "enum": [
+       "accepted",
+       "live"
+      ],
+      "title": "Source",
+      "type": "string"
+     }
+    },
+    "title": "PreviewStartRequest",
+    "type": "object"
+   },
+   "PreviewStatus": {
+    "description": "A run's product preview as the run page sees it (plan WS.4).",
+    "properties": {
+     "command": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "The start command the product was started with.",
+      "title": "Command"
+     },
+     "enabled": {
+      "description": "Whether previews are on for this deployment (switch PRODUCT_PREVIEW).",
+      "title": "Enabled",
+      "type": "boolean"
+     },
+     "error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "The product's own error lines and the end of its output.",
+      "title": "Error"
+     },
+     "expires_at": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "When the link stops working (seconds since the epoch).",
+      "title": "Expires At"
+     },
+     "has_page": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "False for a service: the request console is shown.",
+      "title": "Has Page"
+     },
+     "idle_minutes": {
+      "description": "Minutes without a request after which a preview is stopped.",
+      "title": "Idle Minutes",
+      "type": "integer"
+     },
+     "label": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "What is shown: `sprint <n>`, or `being built`.",
+      "title": "Label"
+     },
+     "reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "Why it stopped or failed.",
+      "title": "Reason"
+     },
+     "separate_origin": {
+      "default": false,
+      "title": "Separate Origin",
+      "type": "boolean"
+     },
+     "source": {
+      "anyOf": [
+       {
+        "enum": [
+         "accepted",
+         "live"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Source"
+     },
+     "started_at": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Started At"
+     },
+     "state": {
+      "enum": [
+       "off",
+       "none",
+       "starting",
+       "ready",
+       "failed",
+       "stopped"
+      ],
+      "title": "State",
+      "type": "string"
+     },
+     "url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "The signed link to the product, while it is ready.",
+      "title": "Url"
+     }
+    },
+    "required": [
+     "enabled",
+     "state",
+     "idle_minutes"
+    ],
+    "title": "PreviewStatus",
+    "type": "object"
+   },
    "RefreshRequest": {
     "properties": {
      "refresh_token": {
@@ -6577,6 +6742,163 @@
      }
     ],
     "summary": "Get Plan Now",
+    "tags": [
+     "runs"
+    ]
+   }
+  },
+  "/api/runs/{run_id}/preview": {
+   "delete": {
+    "description": "Stop the run's preview.",
+    "operationId": "stop_preview_api_runs__run_id__preview_delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "title": "Run Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PreviewStatus"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Stop Preview",
+    "tags": [
+     "runs"
+    ]
+   },
+   "get": {
+    "description": "The run's preview: starting, ready (with a short-lived signed link), failed with the product's own error\nlines, or stopped and why.",
+    "operationId": "get_preview_api_runs__run_id__preview_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "title": "Run Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PreviewStatus"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Get Preview",
+    "tags": [
+     "runs"
+    ]
+   },
+   "post": {
+    "description": "Start the product for a person to try: the last accepted sprint (default) or the workspace being built.",
+    "operationId": "start_preview_api_runs__run_id__preview_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "title": "Run Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "anyOf": [
+         {
+          "$ref": "#/components/schemas/PreviewStartRequest"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "title": "Request"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PreviewStatus"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Start Preview",
     "tags": [
      "runs"
     ]

@@ -196,6 +196,8 @@ GROUPS: dict[str, tuple[str, ...]] = {
     # Which locked tests a dispute may still send back past the reclassification cap: only those whose quoted repair
     # the harness confirmed by running it (`graph.contested_tests`). Off until measured: it relaxes the cap.
     "Suite disputes": ("CONTESTED_TESTS_CONFIRMED",),
+    # A person tries the product from the run page while it is built (plan WS.4): it adds a long-lived service.
+    "Product preview": ("PRODUCT_PREVIEW",),
 }
 #: Every grouped switch, in the admin page's order.
 EXPERIMENTS = tuple(name for members in GROUPS.values() for name in members)

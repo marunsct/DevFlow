@@ -218,6 +218,19 @@ def _lift_a_hold_a_previous_deploy_left(**_kwargs) -> None:
 
 
 @worker_ready.connect
+def _serve_product_previews(**_kwargs) -> None:
+    """Start and stop the product previews the app asks for, on a thread of the parent (plan WS.4): the pool may be
+    busy with runs for hours. Previews a previous worker left running and nobody holds any more are ended first."""
+    try:
+        from app.server import preview_worker
+
+        preview_worker.end_the_orphans()
+        preview_worker.serve_in_the_background()
+    except Exception:  # noqa: BLE001 - a worker without previews still takes runs
+        logger.warning("Could not start the product preview loop", exc_info=True)
+
+
+@worker_ready.connect
 def _record_whether_commands_can_run(**_kwargs) -> None:
     """Tell the API whether this worker can run commands. See `app.server.execution_readiness`."""
     try:

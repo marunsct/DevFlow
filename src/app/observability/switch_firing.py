@@ -46,6 +46,7 @@ SIGNALS: dict[str, str] = {
     "BRIEF_OVER_SPEC_ADDITIONS": "What the specification adds beyond the brief",
     "TESTS_OF_ACTIONS_WITHIN_A_VIEW": "changes the state a current view depends on",
     "CONTESTED_TESTS_CONFIRMED": "The harness ran a copy of this test with",
+    "WEB_TOOLS_AFTER_TWO_FAILED_FIXES": "Two fixes of this defect have failed, so `search_the_web` and `read_web_page`",
 }
 
 

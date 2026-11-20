@@ -197,8 +197,17 @@ def _get_following(url: str, params: dict[str, Any] | None = None) -> tuple[int,
                 "content-type", "")
 
 
-def build_web_tools() -> list[Any]:
+def build_web_tools(on_call: Callable[[str, str, dict[str, Any]], None] | None = None) -> list[Any]:
+    """The two tools; `on_call(tool, what it asked, its answer)` after each call, for a stage that records them."""
     from langchain_core.tools import tool
+
+    def answered(name: str, asked: str, answer: dict[str, Any]) -> dict[str, Any]:
+        if on_call is not None:
+            try:
+                on_call(name, asked, answer)
+            except Exception:  # noqa: BLE001 - a record must never fail the call
+                logger.debug("Could not record a web tool's call", exc_info=True)
+        return answer
 
     @tool
     def search_the_web(query: str) -> dict[str, Any]:
@@ -219,10 +228,10 @@ def build_web_tools() -> list[Any]:
 
         refusal = over_its_share("web")
         if refusal:
-            return {"error": refusal}
+            return answered("search_the_web", query, {"error": refusal})
         answer = search(query)
         found(f"search_the_web {query}", answer)
-        return answer
+        return answered("search_the_web", query, answer)
 
     @tool
     def read_web_page(url: str, topic: str = "") -> dict[str, Any]:
@@ -236,10 +245,10 @@ def build_web_tools() -> list[Any]:
 
         refusal = over_its_share("web")
         if refusal:
-            return {"error": refusal}
+            return answered("read_web_page", url, {"error": refusal})
         answer = read_page(url, topic, fetch=_get_following)
         found(f"read_web_page {url}", answer)
-        return answer
+        return answered("read_web_page", url, answer)
 
     return [search_the_web, read_web_page]
 
@@ -282,5 +291,5 @@ def web_tools() -> list[Any]:
     return build_web_tools() if enabled() and offered() else []
 
 
-__all__ = ["MOST_RESULTS", "WEB_TOOL_NAMES", "enabled", "offered", "read_page", "search", "web_tools",
+__all__ = ["MOST_RESULTS", "WEB_TOOL_NAMES", "build_web_tools", "enabled", "offered", "read_page", "search", "web_tools",
            "web_tools_offered_switch"]

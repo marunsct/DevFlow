@@ -82,6 +82,10 @@ def _the_fix_request(state: Any, config: RunnableConfig, cycle: Any, defect_inde
     request["messages"][-1]["content"] += cause_journal.tried_before(
         state["repository"].root_path, defect, shown=(defect.attempts if _ledger.enabled() else ()))
     request["messages"][-1]["content"] += _what_others_found(state, defect, defect_index, cycle)  # WL.4, its switch
+    # The web tools, for a fixer whose defect failed twice (plan WL.5, its switch): offered with the agent.
+    from app.graph import web_tools_after_two_failed_fixes
+
+    request["messages"][-1]["content"] += web_tools_after_two_failed_fixes.said(cycle, defect_index)
     request["messages"][-1]["content"] += _the_stub_still_served_section(state["repository"].root_path)
     request["messages"][-1]["content"] += _the_unserved_code_section(state["repository"].root_path)
     request["messages"][-1]["content"] += _the_database_section(state["repository"].root_path)
@@ -344,9 +348,13 @@ def _fix_one(state: Any, config: RunnableConfig, defect_index: int, ctx: GraphCo
         co_defects: list[tuple[int, Any]] = []
         fix_result: SpecialistOutput = rewritten
     else:
+        from app.graph import web_tools_after_two_failed_fixes
+
         agent = create_specialist_agent(
             defect.owner, model=fix_model,
             checkpointer=ctx.checkpointer, repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories,
+            web_tools_for_this_fix=web_tools_after_two_failed_fixes.tools_for(
+                cycle, defect_index, stage_name, resumed=bool(state.get("pending_inner_thread_id"))),
         )
         request, co_defects = _the_fix_request(state, config, cycle, defect_index)
         # Each write followed by the defect's own tests (plan AY step 3, off until measured).
@@ -629,12 +637,16 @@ def defect_fix_worker_node(state: dict, config: RunnableConfig, ctx: GraphContex
     cycle = state["remediation"]
     defect = cycle.defects[index]
     stage_name = f"defect_fix_{state.get('test_round', 0)}_{index}"
+    from app.graph import web_tools_after_two_failed_fixes
+
     agent = create_specialist_agent(
         defect.owner, model=ctx.the_build_model(
             state, stage_name, failed_fix_tries(cycle, index), reasons=True,
             after_a_revert=_a_revert_escalates_this_fix(cycle, index),
         ),
         checkpointer=ctx.checkpointer, repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories,
+        web_tools_for_this_fix=web_tools_after_two_failed_fixes.tools_for(
+            cycle, index, stage_name, resumed=bool((state.get("queued_decisions") or {}).get(stage_name))),
     )
     if not (state.get("queued_decisions") or {}).get(stage_name):
         _diagnosed_if_it_keeps_failing(state, defect, ctx)

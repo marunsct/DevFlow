@@ -56,11 +56,14 @@ SIGNALS: dict[str, str] = {
     "FIX_ORDER_CRITERIA_FIRST": "Failing criteria and release findings fixed ahead of the other defects",
     # Recorded by the harness once per run and stage whose rewrite the later trigger kept off (`app.agents.summarise_later`).
     "SUMMARISE_LATER_WITH_HEADROOM": "A conversation kept whole past the usual trigger, the window having room",
+    # Recorded by the harness once per run and stage (`app.agents.reply_room`).
+    "REPLY_ROOM_SIZED_PER_ROLE": "The room kept for the reply was sized to the role",
 }
 #: Transcript records the harness writes of what it did itself, with no model reading it: kind -> the field whose
 #: text a switch's signal is looked for in.
 HARNESS_RECORDS: dict[str, str] = {"repository_delivery": "message", "prompt_shaped": "message", "fix_order": "message",
-                                   "summarised_later": "message"}
+                                   "summarised_later": "message",
+                                   "reply_room": "message"}
 
 
 @dataclass(frozen=True)

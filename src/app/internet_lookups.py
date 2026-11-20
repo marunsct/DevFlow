@@ -31,6 +31,10 @@ _SWITCHES_OF: dict[str, dict[str, bool]] = {
 }
 
 
+#: The switches a choice is kept as.
+_CHOSEN: tuple[str, ...] = ("WEB_LOOKUP_WHEN_STUCK", "WEB_TOOLS_OFFERED")
+
+
 def switches_for(choice: str) -> dict[str, bool]:
     """The run's own switch settings `choice` stands for; ValueError for a value that is not one of `CHOICES`."""
     if choice not in _SWITCHES_OF:
@@ -40,12 +44,21 @@ def switches_for(choice: str) -> dict[str, bool]:
 
 def choice_of(overrides: Mapping[str, bool] | None) -> str | None:
     """The choice a run's own switch settings say it was started with, or None when they name none of them."""
-    found = {name: bool((overrides or {})[name]) for name in ("WEB_LOOKUP_WHEN_STUCK", "WEB_TOOLS_OFFERED")
-             if name in (overrides or {})}
+    found = {name: bool((overrides or {})[name]) for name in _CHOSEN if name in (overrides or {})}
     for choice, switches in _SWITCHES_OF.items():
         if found == switches:
             return choice
     return None
 
 
-__all__ = ["CHOICES", "DEFAULT", "Choice", "choice_of", "switches_for"]
+def chosen_for_the_run() -> str | None:
+    """The choice the current run was started with, from its own switch settings; None outside a run or with none.
+
+    A switch that offers a lookup of its own (`WEB_TOOLS_AFTER_TWO_FAILED_FIXES`) reads it, so "off" stays off."""
+    from app.switches import for_the_run
+
+    own = {name: value for name in _CHOSEN if (value := for_the_run(name)) is not None}
+    return choice_of(own) if own else None
+
+
+__all__ = ["CHOICES", "DEFAULT", "Choice", "choice_of", "chosen_for_the_run", "switches_for"]

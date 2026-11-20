@@ -1410,6 +1410,7 @@ def create_specialist_agent(
         allow_subdirectories: bool = True,
     writing_the_suite: bool = False,
     setting_up_the_stack: bool = False,
+    web_tools_for_this_fix: list[Any] | None = None,
 ) -> Any:
     """Create one specialist role worker.
 
@@ -1420,6 +1421,10 @@ def create_specialist_agent(
 
     `setting_up_the_stack`: the setup of a stack no pack covers, whose request
     asks for `use_runtime`; it keeps that tool when tool lists are lean.
+
+    `web_tools_for_this_fix`: the web search and page reader a fixer whose defect failed twice is offered
+    (`app.graph.web_tools_after_two_failed_fixes`); they take the place of the stage's own and are kept when tool lists
+    are lean.
     """
     resolved_repo_root = str(repo_root) if repo_root is not None else str(default_repo_root())
 
@@ -1442,7 +1447,7 @@ def create_specialist_agent(
         # newer than the model, and the MCP servers: see `app.tools.docs`,
         # `app.tools.web_search` and `app.tools.mcp_tools`.
         *docs_tools(),
-        *web_tools(),
+        *(web_tools_for_this_fix or web_tools()),
         *mcp_tools_for("specialist", resolved_repo_root),
         # A runtime version the image lacks, for this project only: see `app.tools.runtimes`.
         *runtime_tools(resolved_repo_root),
@@ -1473,7 +1478,8 @@ def create_specialist_agent(
         checkpointer=checkpointer,
         repo_root=repo_root, allow_subdirectories=allow_subdirectories,
         extra_tools=extra_tools,
-        kept_tools=("use_runtime",) if setting_up_the_stack else (),
+        kept_tools=(*(("use_runtime",) if setting_up_the_stack else ()),
+                    *(str(getattr(t, "name", "")) for t in web_tools_for_this_fix or ())),
     )
 
 

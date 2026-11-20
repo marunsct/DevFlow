@@ -15,6 +15,7 @@ Or programmatically:
 from __future__ import annotations
 
 import os
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncIterator
@@ -31,6 +32,20 @@ from app.server.models import ServerHealth
 from app.server.runs import create_runs_router
 from app.server.context import set_correlation_id
 from app.server.uploads import ensure_upload_dir
+
+#: A product preview's own paths (plan WS.4): its page has an opaque origin, so its requests are cross-origin and
+#: carry no credentials; the preview answers their CORS itself, and the app's origin list does not apply to them.
+_A_PREVIEW_PATH = re.compile(r"^/api/runs/[^/]+/preview/app/")
+
+
+class _CORSExceptPreviews(CORSMiddleware):
+    """The app's CORS rules for everything but a product preview's paths, which pass through untouched."""
+
+    async def __call__(self, scope, receive, send) -> None:  # type: ignore[override]
+        if scope.get("type") == "http" and _A_PREVIEW_PATH.match(str(scope.get("path") or "")):
+            await self.app(scope, receive, send)
+            return
+        await super().__call__(scope, receive, send)
 
 
 def create_app(
@@ -150,7 +165,7 @@ def create_app(
     allowed_origins_env = os.environ.get("ALLOWED_ORIGINS", "").strip()
     allowed_origins = [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
     application.add_middleware(
-        CORSMiddleware,
+        _CORSExceptPreviews,
         allow_origins=allowed_origins,
         allow_credentials=bool(allowed_origins),
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],

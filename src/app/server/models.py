@@ -506,6 +506,30 @@ class SteeringEdit(BaseModel):
     text: str = Field(..., min_length=1, max_length=2000)
 
 
+class PreviewStartRequest(BaseModel):
+    """What a preview starts from (plan WS.4): the last accepted sprint, or the workspace as it is being built."""
+
+    source: Literal["accepted", "live"] = "accepted"
+
+
+class PreviewStatus(BaseModel):
+    """A run's product preview as the run page sees it (plan WS.4)."""
+
+    enabled: bool = Field(description="Whether previews are on for this deployment (switch PRODUCT_PREVIEW).")
+    state: Literal["off", "none", "starting", "ready", "failed", "stopped"]
+    source: Literal["accepted", "live"] | None = None
+    label: str | None = Field(default=None, description="What is shown: `sprint <n>`, or `being built`.")
+    started_at: float | None = None
+    reason: str | None = Field(default=None, description="Why it stopped or failed.")
+    error: str | None = Field(default=None, description="The product's own error lines and the end of its output.")
+    has_page: bool | None = Field(default=None, description="False for a service: the request console is shown.")
+    command: str | None = Field(default=None, description="The start command the product was started with.")
+    idle_minutes: int = Field(description="Minutes without a request after which a preview is stopped.")
+    separate_origin: bool = False
+    url: str | None = Field(default=None, description="The signed link to the product, while it is ready.")
+    expires_at: int | None = Field(default=None, description="When the link stops working (seconds since the epoch).")
+
+
 class RunStatusResponse(BaseModel):
     """Comprehensive status of a run."""
     model_config = ConfigDict(extra="forbid")

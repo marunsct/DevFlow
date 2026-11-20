@@ -44,6 +44,7 @@ import { Timeline } from '../components/Timeline';
 import { Tabs } from '../ui';
 import { ChangesPanel } from '../components/ChangesPanel';
 import { WorkspacePanel } from '../components/WorkspacePanel';
+import { PreviewPanel } from '../components/PreviewPanel';
 import { PlanPanel } from '../components/PlanPanel';
 import { SteeringBox } from '../components/SteeringBox';
 import { ArtifactList } from '../components/ArtifactList';
@@ -160,9 +161,9 @@ export const RunDashboard: React.FC = () => {
   // Kept in the address, so a link or a reload opens the same view and change.
   const [searchParams, setSearchParams] = useSearchParams();
   const viewParam = searchParams.get('view');
-  type CentreTab = 'activity' | 'results' | 'log' | 'changes' | 'workspace' | 'audit' | 'doctor';
+  type CentreTab = 'activity' | 'results' | 'log' | 'changes' | 'workspace' | 'preview' | 'audit' | 'doctor';
   const centreTab: CentreTab =
-    viewParam === 'log' || viewParam === 'changes' || viewParam === 'workspace' || viewParam === 'results' || viewParam === 'audit' || viewParam === 'doctor' ? viewParam : 'activity';
+    viewParam === 'log' || viewParam === 'changes' || viewParam === 'workspace' || viewParam === 'preview' || viewParam === 'results' || viewParam === 'audit' || viewParam === 'doctor' ? viewParam : 'activity';
   const selectedChange = searchParams.get('change');
   const selectedFile = searchParams.get('file');
   const fileDiff = searchParams.get('diff') === '1';
@@ -1058,6 +1059,7 @@ export const RunDashboard: React.FC = () => {
                 label: 'Workspace',
                 content: <WorkspacePanel runId={runId!} refreshKey={stageKey} logs={logs} selected={selectedFile} onSelect={selectFile} diff={fileDiff} />,
               },
+              { id: 'preview', label: 'Preview', content: <PreviewPanel runId={runId!} /> },
               {
                 id: 'log',
                 label: <>Log <span className="text-xs tabular-nums text-text-muted">{logs.length}</span></>,

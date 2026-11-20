@@ -78,6 +78,10 @@ x-app-env: &app-env
   WEB_LOOKUP_WHEN_STUCK: ${WEB_LOOKUP_WHEN_STUCK:-off}
   MUTATION_GAPS_BUNDLED: ${MUTATION_GAPS_BUNDLED:-off}
   WEB_TOOLS_OFFERED: ${WEB_TOOLS_OFFERED:-off}
+  # Plan WS.4: a person starts the product from the run page; it runs on the preview network below.
+  PRODUCT_PREVIEW: ${PRODUCT_PREVIEW:-off}
+  PRODUCT_PREVIEW_NETWORK: ${PRODUCT_PREVIEW_NETWORK:-devflow-preview}
+  PRODUCT_PREVIEW_ORIGIN: ${PRODUCT_PREVIEW_ORIGIN:-}
   EQUIVALENT_MUTANTS_REMEMBERED: ${EQUIVALENT_MUTANTS_REMEMBERED:-on}
   MUTATION_GUIDED_TESTS_CHANGES: ${MUTATION_GUIDED_TESTS_CHANGES:-6}
   # Switches set on the admin page (/admin) beat the values above, in every process (`app.switches`).
@@ -266,6 +270,8 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - appdata:/app/data
+    # The app reaches a product preview (plan WS.4) on its own network; nothing else of the harness is on it.
+    networks: [default, preview]
     environment:
       <<: *app-env
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-4}
@@ -371,3 +377,10 @@ volumes:
   redisdata:
   appdata:
   # miniodata:
+
+networks:
+  # Product previews (plan WS.4, switch PRODUCT_PREVIEW): the worker starts each in a container on this network and
+  # the app proxies to it. Internal: a product reaches no address outside it, and none of db, redis or the worker.
+  preview:
+    name: ${PRODUCT_PREVIEW_NETWORK:-devflow-preview}
+    internal: true

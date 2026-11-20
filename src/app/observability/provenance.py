@@ -83,6 +83,7 @@ SWITCHES: dict[str, str] = {
     "DIAGNOSE_A_RECURRING_CAUSE": "app.graph.cause_journal:diagnosis_switch",
     "WEB_LOOKUP_WHEN_STUCK": "app.graph.stuck_lookup",
     "WEB_TOOLS_OFFERED": "app.tools.web_search:web_tools_offered_switch",
+    "PRODUCT_PREVIEW": "app.server.preview:preview_switch",
     "STABLE_MEMORY_ORDER": "app.agents.stable_memory_order",
     "NEAR_GREEN_REPAIR_TO_ROUND": "app.graph.near_green_repair",
     "FIX_STAGES_THAT_CLOSE_NOTHING": "app.graph.unchanged_fix_round",

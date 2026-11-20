@@ -190,6 +190,8 @@ GROUPS: dict[str, tuple[str, ...]] = {
     # The web tools offered to the stages that read documentation (plan WL.3). Each run's "Internet lookups" choice
     # sets both for that run (`app.internet_lookups`).
     "Internet lookups": ("WEB_LOOKUP_WHEN_STUCK", "WEB_TOOLS_OFFERED"),
+    # A person tries the product from the run page while it is built (plan WS.4): it adds a long-lived service.
+    "Product preview": ("PRODUCT_PREVIEW",),
 }
 #: Every grouped switch, in the admin page's order.
 EXPERIMENTS = tuple(name for members in GROUPS.values() for name in members)

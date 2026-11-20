@@ -6,6 +6,7 @@ import type {
   CreateRunResponse,
   EventResponse,
   ModelProfile,
+  PreviewStatus,
   RunListResponse,
   RunStatusResponse,
   RunUsage,
@@ -574,6 +575,42 @@ export interface DocumentDiff {
 export const getDocumentDiff = async (runId: string, path: string): Promise<DocumentDiff> => {
   const response = await api.get<DocumentDiff>(`/runs/${runId}/artifacts/diff`, { params: { path } });
   return response.data;
+};
+
+/** The run's product preview (plan WS.4): starting, ready with a signed link, failed with the product's words, stopped. */
+export const getPreview = async (runId: string): Promise<PreviewStatus> => {
+  const response = await api.get<PreviewStatus>(`/runs/${runId}/preview`);
+  return response.data;
+};
+
+export const startPreview = async (runId: string, source: 'accepted' | 'live'): Promise<PreviewStatus> => {
+  const response = await api.post<PreviewStatus>(`/runs/${runId}/preview`, { source });
+  return response.data;
+};
+
+export const stopPreview = async (runId: string): Promise<PreviewStatus> => {
+  const response = await api.delete<PreviewStatus>(`/runs/${runId}/preview`);
+  return response.data;
+};
+
+export interface PreviewAnswer { status: number; contentType: string; body: string }
+
+/**
+ * One request to the preview from its console, through the signed link. Plain `fetch`, not the API client: the
+ * product is never sent the person's sign-in.
+ */
+export const sendPreviewRequest = async (
+  link: string, method: string, path: string, body: string,
+): Promise<PreviewAnswer> => {
+  const target = link.replace(/\/$/, '') + '/' + path.replace(/^\//, '');
+  const withBody = body.trim() !== '' && method !== 'GET' && method !== 'HEAD';
+  const response = await fetch(target, {
+    method,
+    credentials: 'omit',
+    headers: withBody ? { 'Content-Type': 'application/json' } : undefined,
+    body: withBody ? body : undefined,
+  });
+  return { status: response.status, contentType: response.headers.get('content-type') ?? '', body: await response.text() };
 };
 
 /** The workspace's files as every stage's listing shows them (plan WS.1), and which changed since `since`. */

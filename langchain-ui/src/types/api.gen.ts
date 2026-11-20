@@ -270,6 +270,37 @@ export interface PreviewCriterion {
   text: string;
 }
 
+/** What a preview starts from (plan WS.4): the last accepted sprint, or the workspace as it is being built. */
+export interface PreviewStartRequest {
+  source?: "accepted" | "live";
+}
+
+/** A run's product preview as the run page sees it (plan WS.4). */
+export interface PreviewStatus {
+  /** The start command the product was started with. */
+  command: string | null;
+  /** Whether previews are on for this deployment (switch PRODUCT_PREVIEW). */
+  enabled: boolean;
+  /** The product's own error lines and the end of its output. */
+  error: string | null;
+  /** When the link stops working (seconds since the epoch). */
+  expires_at: number | null;
+  /** False for a service: the request console is shown. */
+  has_page: boolean | null;
+  /** Minutes without a request after which a preview is stopped. */
+  idle_minutes: number;
+  /** What is shown: `sprint <n>`, or `being built`. */
+  label: string | null;
+  /** Why it stopped or failed. */
+  reason: string | null;
+  separate_origin: boolean;
+  source: "accepted" | "live" | null;
+  started_at: number | null;
+  state: "off" | "none" | "starting" | "ready" | "failed" | "stopped";
+  /** The signed link to the product, while it is ready. */
+  url: string | null;
+}
+
 export interface RefreshRequest {
   refresh_token: string;
 }

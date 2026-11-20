@@ -497,6 +497,8 @@ A finding of the suite's dry run carries the cause when the runner's error is a 
 
 A defect holding a release probe's finding leads any merge with failing unit tests and never counts as a unit-test failure, so a green sprint does not settle while a probe still finds what would block release (LF.1186). A 5xx from the edge or server-error probe reaches its fixer with what the server printed for that request (LF.1185; an HTML error page is cut to its title).
 
+A repair of a locked suite keeps one record (`.harness/suite-repair.json`, `acceptance/suite_repair.py`): the tests sent, their code at the start, every measured version and the best. A review that measures the suite worse than the better of its state before the repair and the best version, or a repair that reaches its round limit, puts back the best version; the lock never takes a worse one (LF.1189-1190).
+
 ### 6.6 Brownfield: the regression contract
 
 For every seeded run the regression baseline is built in (`REGRESSION_CONTRACT` in `BUILT_IN`), and intake, stack selection, the architect and the lead read a code map of the seeded codebase (`agents/code_map.py`, no model call: every module with its public names up to 80 source files, by directory past that, at most 6,000 characters). With `PULL_REQUEST_DELIVERY` on, the changed product goes back as one commit on the seed's base, pushed as `harness/<slug>-<id8>` with a pull request opened through the host's API (GitHub first, `server/repository_delivery.py`); without a delivery token, or when the push fails, the handover pack carries a git bundle and a patch. The per-project delivery token is sealed with the stored-credentials key, reaches git only through `GIT_ASKPASS`, and is deleted once the pull request is open.

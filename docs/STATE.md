@@ -5,9 +5,9 @@ the block below is written by `loop.sh state`. The map of all documents is `docs
 `docs/improvement-plan.md`; how the product works is `docs/PRODUCT.md`; how to run and test it is `docs/HANDOVER.md`;
 decisions in force are `docs/owner-decisions.md`; old information is found through `docs/ARCHIVE.md`.
 <!-- state:generated -->
-**As of:** 11-20 14:35 JST (written by `loop.sh state`). Harness 0e7204c0 committed; 0e7204c0 deployed.
-**Live, and stopped in the last day:** run-5d08754b running at principal_architect; run-2df00e65 running at principal_architect; run-e382df47 failed at failed
-**Last scored:** run-50a7c5cc notes-api-csharp 9/9 (completed, handoff 1.0; scored 11-20 14:35 JST); run-0f60c7a7 tasks-api 10/10 (completed, mixed, 110 active min, handoff 1.0; scored 11-20 14:28 JST); run-b668a924 notes-api-java 9/9 (completed, mixed, 244 active min, handoff 1.0; scored 11-20 13:03 JST).
+**As of:** 11-20 17:04 JST (written by `loop.sh state`). Harness a08e679f committed; 71eba2c3 deployed (not the same).
+**Live, and stopped in the last day:** run-5d08754b running at defect_fix_2_2; run-e382df47 failed at failed
+**Last scored:** run-2df00e65 tasks-api 10/10 (completed, handoff 1.0; scored 11-20 17:04 JST); run-50a7c5cc notes-api-csharp 9/9 (completed, mixed, 73 active min, handoff 1.0; scored 11-20 14:35 JST); run-0f60c7a7 tasks-api 10/10 (completed, mixed, 110 active min, handoff 1.0; scored 11-20 14:28 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -15,7 +15,7 @@ decisions in force are `docs/owner-decisions.md`; old information is found throu
 |---|---|
 | Phase | **Learning runs, fixes deployed at once** (deep-review plan, owner 11-18: implement all; frozen-version measuring for Measure batches). The release-candidate count starts only when a full audit cycle finds nothing to fix. |
 | Models | :8888 `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` (key); :1234 `qwen3.6-35b-a3b-mtp@iq4_nl` (no key). Both the owner's; both take runs; each run is pinned to its port. |
-| Harness | Deployed 11-20 15:51 JST: ae4a6203 (LF.1140-1188). Deploying after both suites: LF.1189 a repair that makes the suite worse puts back its best measured version. Reviewing: the suite-repair flow as one design (three point fixes today). |
+| Harness | Deployed 11-20 16:34 JST: 55df0727 (LF.1140-1189). Deploying after both suites: LF.1190 the suite-repair flow redesigned (one repair record, best version at every exit). |
 | Switches | 53 fixes built in (always on). 29 optional switches (9 groups, `docs/measuring.md`); `WEB_LOOKUP_WHEN_STUCK` is off and set per run. Measure arms use `SWITCHES_OFF` per run. |
 | Operations | Nightly backups (`loop.sh backup --check`); finished runs older than 60 days cleared. Audit cron `01339d0d` every ~10 minutes (7-day expiry: recreate by 11-27). |
 | Suites | `loop.sh suite` and `loop.sh suite-production` both green at 18,701 passed. |

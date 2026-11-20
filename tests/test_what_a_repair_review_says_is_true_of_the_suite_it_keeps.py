@@ -17,8 +17,8 @@ from workflow_nodes import an_acceptance_review_measured
 
 HEAD = "const { test, expect } = require('@playwright/test');\n"
 A = "\ntest('[AC-1] a', async ({ request }) => {\n  expect(await request.get('/x')).toBe(2);\n});\n"
-B = "\ntest('[AC-2] b', async ({ request }) => {\n  expect((await request.get('/notes/1')).status()).toBe(200);\n});\n"
-C = "\ntest('[AC-3] c', async ({ request }) => {\n  expect((await request.delete('/notes/1')).status()).toBe(204);\n});\n"
+B = "\ntest('[AC-2] b', async ({ request }) => {\n  expect((await request.get('/notes')).status()).toBe(200);\n});\n"
+C = "\ntest('[AC-3] c', async ({ request }) => {\n  expect((await request.post('/notes', { data: { title: 't' } })).status()).toBe(201);\n});\n"
 LOCKED = HEAD + A + B + C
 #: The writers' version: the test under repair lost its criterion tag, and another test was dropped.
 UNTAGGED = HEAD + A.replace("[AC-1] a", "a") + B

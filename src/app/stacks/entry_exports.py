@@ -202,3 +202,45 @@ def still_raised(repo_root: str | Path, description: str) -> bool | None:
     current += [f"{path} declares `{name}(" for path, name, _ in what_the_start_file_cannot_call(repo_root)]
     return any(text.startswith(found) for found in current)
 
+
+def what_a_stage_broke(repo_root: str | Path, touched: object) -> list[str]:
+    """One line for each pack-contract check that fails in a file the stage changed, in the post-write findings' form.
+
+    The checks a test round raises as defects (`acceptance_nodes.pack_contract_defects`), run on the stage's own
+    writes as it ends, so the stage that dropped a declaration puts it back before it returns. Measured on one Java
+    run: a work order rewrote `pom.xml` without the jar name the pack's start file runs, and the next stage worked 30
+    minutes and 76 model calls on a product that could not start until a test round raised it. No model call; nothing
+    for a file the stage did not change; never raises.
+    """
+    try:
+        changed = {str(name).removeprefix("./") for name in (touched or ())}
+        if not changed:
+            return []
+        lines: list[str] = []
+        for path, written in what_the_entry_no_longer_declares(repo_root):
+            if path not in changed:
+                continue
+            callers = callers_passing_arguments(repo_root, path, written)
+            also = "".join(f" `{where}` calls `{line}`: change that call to match in the same edit." for where, line in callers)
+            lines.append(
+                f"- In `{path}`: {path}{NO_LONGER_DECLARES}{written}`, the declaration the scaffold's build, start file "
+                f"and tests rely on. Restore this exact line: `{written}`. Change what the file does, not this "
+                f"declaration.{also}"
+            )
+        for path, name, needed in what_the_start_file_cannot_call(repo_root):
+            if path in changed:
+                lines.append(
+                    f"- In `{path}`: `{name}` now requires `{needed}`, but the scaffold's start file and unit smoke "
+                    f"test call `{name}()` with no arguments. Make `{needed}` optional, with a default that makes what "
+                    "it needs itself."
+                )
+        for path, name in what_the_entry_no_longer_exports(repo_root):
+            if path in changed:
+                lines.append(
+                    f"- In `{path}`: {path} no longer exports `{name}`, which the scaffold's start file and unit smoke "
+                    f"test import. Export `{name}` again under that exact name."
+                )
+        return lines
+    except Exception:  # noqa: BLE001 - a check that cannot run finds nothing
+        return []
+

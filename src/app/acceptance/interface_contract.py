@@ -71,9 +71,6 @@ _COMMAND = re.compile(_CRITERION + r"\s+command\s+(.+?)\s*->\s*exit\s+(\d+)\s*$"
 _COMMAND_WITH_OUTPUT = re.compile(
     _CRITERION + r"\s+command\s+(.+?)\s*->\s*(?:stdout\s+(['\"])(.*?)\3|(\w[^'\"]*?))\s+(?:and\s+)?exits?\s+(\d+)\s*$")
 
-#: A control named by its element where the contract asks for its ARIA role.
-_ROLE_OF_THE_ELEMENT = {"textarea": "textbox", "select": "combobox"}
-
 #: A page line in none of the forms, read by its quoted name and the role word before it (`_lenient_page`).
 _A_PAGE_LINE = re.compile(_CRITERION + r"\s+page\s+(?:(/\S*)\s+)?(.*?)\"([^\"]+)\"(.*)$")
 #: An element named by its label: `page / input[aria-label="Title"] required`.
@@ -90,6 +87,25 @@ _ELEMENT_ROLES = {"input": "textbox", "textarea": "textbox", "select": "combobox
                   "ul": "list", "ol": "list", "li": "listitem", "nav": "navigation", "h1": "heading", "h2": "heading",
                   "h3": "heading", "h4": "heading", "h5": "heading", "h6": "heading", "tr": "row", "td": "cell",
                   "th": "columnheader", "dropdown": "combobox", "field": "textbox"}
+#: Roles of a message shown after an action (a save, a failed delete): a bare visit cannot provoke one.
+_ROLES_SHOWN_AFTER_AN_ACTION = frozenset({"alert", "status"})
+
+
+def why_a_bare_visit_cannot_check(check: "Check") -> str:
+    """Why a page line is never probed at a bare visit, or "" when it is.
+
+    Measured on a fullstack run that passed every hidden and quality test: `page / message "Failed to delete bookmark"`
+    was probed as a role named `message`, which no page has, and the release was "not deliverable" on it. A word that
+    is no ARIA role gives the probe nothing to find, and an alert or a status is shown only after an action.
+    """
+    if check.kind != "page":
+        return ""
+    role = _ELEMENT_ROLES.get(check.role, check.role)
+    if role not in _ARIA_ROLES:
+        return "names no role a probe can find"
+    if role in _ROLES_SHOWN_AFTER_AN_ACTION:
+        return "a message shown after an action; a bare visit cannot provoke it"
+    return ""
 
 
 def _lenient_page(line: str) -> Check | None:
@@ -206,8 +222,10 @@ def checkable(checks: list["Check"]) -> list["Check"]:
 
     kept: list[Check] = []
     for check in map(_a_literal_id_as_a_parameter, checks):
-        if check.kind not in ("http", "page"):
+        if check.kind not in ("http", "page") or why_a_bare_visit_cannot_check(check):
             continue
+        if check.kind == "page":
+            check = _with(check, role=_ELEMENT_ROLES.get(check.role, check.role))
         templated = bool(_A_TEMPLATE.search(check.path))
         if (templated or _a_write_that_needs_a_body(check)) and not (check.kind == "http" and _a_refusal_is_allowed(check)):
             continue
@@ -441,7 +459,9 @@ def parse(lines: list[str] | tuple[str, ...]) -> tuple[list[Check], list[str]]:
                 checks.append(Check(match[1], "http", line, method=method, path=match[3], status=statuses[0],
                                     statuses=statuses, note=match[4].strip()))
         elif match := _PAGE.match(line):
-            role = _ROLE_OF_THE_ELEMENT.get(match[3], match[3])
+            # The element for its role (`field`, `textarea`); a word that is no role is kept as written, and the
+            # release names the line unchecked (`why_a_bare_visit_cannot_check`).
+            role = _ELEMENT_ROLES.get(match[3], match[3])
             checks.append(Check(match[1], "page", line, path=match[2], role=role, name=match[4]))
         elif match := _COMMAND.match(line):
             checks.append(Check(match[1], "command", line, command=match[2], exit_code=int(match[3])))
@@ -1578,6 +1598,10 @@ def what_the_contract_checks_find(repo_root: str | Path, *, runner: Any = None) 
             state = suite._state(root)  # noqa: SLF001 - one state file for the suite and its contract
             web += with_a_record_made_first(locked, list(state.get("interface_contract_bodies") or []))
         settled = {c.line for c in web}
+        # A page line naming no role a probe can find, or a message shown only after an action: never failed at a
+        # bare visit, named unchecked with its reason.
+        unprobed = [(c, why) for c in locked if (why := why_a_bare_visit_cannot_check(c))]
+        settled |= {c.line for c, _ in unprobed}
         templated = [c for c in locked if c.kind in ("http", "page")
                      and _A_TEMPLATE.search(_a_literal_id_as_a_parameter(c).path) and c.line not in settled]
         writes = [c for c in locked if _a_write_that_needs_a_body(c) and c not in templated and c.line not in settled]
@@ -1585,6 +1609,7 @@ def what_the_contract_checks_find(repo_root: str | Path, *, runner: Any = None) 
             *unreadable,
             *(f"{c.line} (a route with a parameter in it)" for c in templated),
             *(f"{c.line} (a write that succeeds only with a body; the probe sends none)" for c in writes),
+            *(f"{c.line} ({why})" for c, why in unprobed),
         ]
         if probe is None:
             unchecked += [f"{c.line} (no runner on this stack probes a {c.kind} line)" for c in web]

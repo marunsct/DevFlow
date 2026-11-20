@@ -189,6 +189,9 @@ class StackPack:
     #: A suite file's text -> (line, locator, text) where a test finds something
     #: by a text and asserts that it does not show that text.
     contradicting_locators: Callable[[str], Sequence[tuple[int, str, str]]] | None = None
+    #: A suite file's text -> (line, text, longer text) where a test expects a locator found by a text that is not
+    #: matched exactly to be absent while it expects one found by a longer text holding it, in any case, present.
+    absences_a_longer_text_meets: Callable[[str], Sequence[tuple[int, str, str]]] | None = None
     #: A failed test's message -> (old text, new text) when it failed on a
     #: locator found by a text the page it failed on no longer shows.
     locator_left_behind: Callable[[str], tuple[str, str] | None] | None = None

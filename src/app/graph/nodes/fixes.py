@@ -87,7 +87,8 @@ def _the_fix_request(state: Any, config: RunnableConfig, cycle: Any, defect_inde
     # The web tools, for a fixer whose defect failed twice (plan WL.5, its switch): offered with the agent.
     from app.graph import web_tools_after_two_failed_fixes
 
-    request["messages"][-1]["content"] += web_tools_after_two_failed_fixes.said(cycle, defect_index)
+    request["messages"][-1]["content"] += web_tools_after_two_failed_fixes.said(
+        cycle, defect_index, state["repository"].root_path)
     request["messages"][-1]["content"] += _the_stub_still_served_section(state["repository"].root_path)
     request["messages"][-1]["content"] += _the_unserved_code_section(state["repository"].root_path)
     request["messages"][-1]["content"] += _the_database_section(state["repository"].root_path)
@@ -356,7 +357,8 @@ def _fix_one(state: Any, config: RunnableConfig, defect_index: int, ctx: GraphCo
             defect.owner, model=fix_model,
             checkpointer=ctx.checkpointer, repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories,
             web_tools_for_this_fix=web_tools_after_two_failed_fixes.tools_for(
-                cycle, defect_index, stage_name, resumed=bool(state.get("pending_inner_thread_id"))),
+                cycle, defect_index, stage_name, root=state["repository"].root_path,
+                resumed=bool(state.get("pending_inner_thread_id"))),
         )
         request, co_defects = _the_fix_request(state, config, cycle, defect_index)
         # Each write followed by the defect's own tests (plan AY step 3, off until measured).
@@ -648,7 +650,8 @@ def defect_fix_worker_node(state: dict, config: RunnableConfig, ctx: GraphContex
         ),
         checkpointer=ctx.checkpointer, repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories,
         web_tools_for_this_fix=web_tools_after_two_failed_fixes.tools_for(
-            cycle, index, stage_name, resumed=bool((state.get("queued_decisions") or {}).get(stage_name))),
+            cycle, index, stage_name, root=state["repository"].root_path,
+            resumed=bool((state.get("queued_decisions") or {}).get(stage_name))),
     )
     if not (state.get("queued_decisions") or {}).get(stage_name):
         _diagnosed_if_it_keeps_failing(state, defect, ctx)

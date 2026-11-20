@@ -127,6 +127,7 @@ def record(root: str | Path | None, defect: Any, attempt: dict[str, Any], *, spr
             "files": [str(f) for f in attempt.get("files") or []][:8],
             "did": _one_line(attempt.get("did")),
             "outcome": _one_line(attempt.get("outcome"), 300),
+            "problem": problem_of(defect),
         }, sprint)
     except Exception:  # noqa: BLE001 - a journal must never fail the fix it records
         logger.debug("Could not record the fix in the journal", exc_info=True)
@@ -154,6 +155,36 @@ def _failed(entry: dict[str, Any]) -> bool:
 def failures_on(root: str | Path | None, defect: Any) -> int:
     """How many recorded attempts at this defect's cause did not fix it."""
     return sum(1 for entry in _entries(root, defect) if _failed(entry))
+
+
+def problem_of(defect: Any) -> str:
+    """The key one problem keeps across the run (`cause.problem_key`), else the journal's own key; "" when neither."""
+    try:
+        from app.sprint.cause import problem_key
+
+        return problem_key(defect) or key_of(defect)
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def failed_fixes_in_the_run(root: str | Path | None, defect: Any) -> int:
+    """How many fixes of this defect's problem did not fix it, over the whole run: every attempt, every re-plan.
+
+    `sprint.failed_fix_tries` counts within one remediation cycle, and a sprint attempt allows about two fix rounds:
+    measured, a criterion left open once in a sprint's first attempt and twice in its second counted at most one
+    failed fix before each of its fixers, so nothing offered after two failed fixes was ever offered. The journal is
+    kept by cause, and the failing tests a cause key is made from change between attempts; the problem's key does not.
+    Never raises; 0 when unreadable.
+    """
+    try:
+        problem = problem_of(defect)
+        if not problem:
+            return 0
+        return sum(1 for cause in (_read(root).get("causes") or {}).values() if isinstance(cause, dict)
+                   for entry in cause.get("entries") or []
+                   if isinstance(entry, dict) and entry.get("problem") == problem and _failed(entry))
+    except Exception:  # noqa: BLE001
+        return 0
 
 
 def needs_a_diagnosis(root: str | Path | None, defect: Any) -> bool:
@@ -248,5 +279,6 @@ def diagnosed(root: str | Path | None, defect: Any, failure: str, model: Any, *,
 
 __all__ = [
     "DIAGNOSE_AFTER", "DIAGNOSIS", "FILE", "HEADING", "LEAD_HEADING", "ON_BY_DEFAULT", "add_hypothesis", "diagnosed",
-    "diagnosis_enabled", "failures_on", "for_a_replan", "key_of", "needs_a_diagnosis", "record", "tried_before",
+    "diagnosis_enabled", "failed_fixes_in_the_run", "failures_on", "for_a_replan", "key_of", "needs_a_diagnosis",
+    "problem_of", "record", "tried_before",
 ]

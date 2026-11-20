@@ -64,3 +64,30 @@ def test_a_first_attempt_or_prose_only_is_not_looked_up(tmp_path, _on):
 def test_off_it_does_nothing(tmp_path, _on, monkeypatch):
     monkeypatch.setenv("WEB_LOOKUP_WHEN_STUCK", "off")
     assert stuck_lookup.section(tmp_path, _defect(), STACK) == "" and not _on
+
+
+def _a_criterion(criterion: str, *failing: str):
+    """A criterion's defect whose text states a concrete error, with no attempt in its own cycle, its cause keyed by
+    the tests failing this time."""
+    return SimpleNamespace(
+        description=f"[{criterion}] Group the list - the acceptance suite says this does not work yet.",
+        actual_behavior="PHP Fatal error:  Uncaught TypeError: Argument #2 ($handler) must be of type callable",
+        source="acceptance suite", kind="failing_test", attempts=[],
+        evidence=[{"test": f"[{criterion.lower()}] {name}"} for name in failing],
+        cause_key="failing_test:" + "|".join(f"test:[{criterion.lower()}] {name}" for name in failing))
+
+
+@pytest.mark.parametrize(("earlier", "looked_up"), [("AC-4", 1), ("AC-3", 0)])
+def test_a_criterion_whose_fix_failed_in_an_earlier_sprint_attempt_is_stuck_at_its_first_fix_of_the_next(
+        tmp_path, _on, earlier, looked_up):
+    """Measured: a criterion left open in one sprint attempt came back in the next with no attempt of its own and other
+    failing tests, so its fixer there was not counted stuck; another criterion's failure does not make it so."""
+    from app.graph import cause_journal
+
+    cause_journal.record(tmp_path, _a_criterion(earlier, "groups", "keeps order"),
+                         {"stage": "defect_fix_2_8", "outcome": "left open: its tests still fail"}, sprint=0)
+
+    shown = stuck_lookup.section(tmp_path, _a_criterion("AC-4", "keeps order"), STACK)
+
+    assert len(_on) == looked_up
+    assert ("What others found for this error" in shown) == bool(looked_up)

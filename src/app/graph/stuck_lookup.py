@@ -5,7 +5,8 @@ user's control). Measured the night it was built: the local model, offered searc
 never called them, and every open-source harness researched leaves that decision to the model. So the harness decides,
 on three triggers:
 
-- T1: a defect shown to a fixer again after an attempt that did not close it, whose text states a concrete error;
+- T1: a defect shown to a fixer again after a fix of its problem did not close it - in this attempt or an earlier one
+  of the run - whose text states a concrete error;
 - T2: an install or a setup that failed with an error the registry note does not explain (a version or a feature that
   does not exist is answered from the registry instead, `contract._the_versions_that_exist`);
 - T3: a build or compile error the round before reported too (`build_errors_in`), looked up with the stack's
@@ -46,10 +47,19 @@ def enabled() -> bool:
     return is_on("WEB_LOOKUP_WHEN_STUCK", ON_BY_DEFAULT)
 
 
-def _stuck(defect: Any) -> bool:
-    """Whether an earlier attempt at this defect ended without closing it."""
-    return any(isinstance(a, dict) and str(a.get("outcome") or "") not in {"", "fixed"}
-               for a in getattr(defect, "attempts", None) or [])
+def _stuck(repo_root: str | Path, defect: Any) -> bool:
+    """Whether an earlier fix of this defect's problem ended without closing it: in this cycle, or anywhere in the run.
+
+    The defect's own attempts live on its remediation cycle, and a re-planned sprint starts a new one; measured, the
+    same criterion left open in one sprint attempt came back in the next with no attempt of its own, so its first
+    fixer there was not stuck. The fix journal counts the problem's failed fixes over the whole run.
+    """
+    if any(isinstance(a, dict) and str(a.get("outcome") or "") not in {"", "fixed"}
+           for a in getattr(defect, "attempts", None) or []):
+        return True
+    from app.graph import cause_journal
+
+    return cause_journal.failed_fixes_in_the_run(repo_root, defect) > 0
 
 
 def _the_error_line(defect: Any) -> str:
@@ -158,7 +168,7 @@ def section(repo_root: str | Path, defect: Any, stack: Any, stage_name: str = "d
     """T1: what others found for this stuck defect's error, as its fixer's request carries it; "" when off, not stuck,
     with no concrete error, or when nothing was found. Never raises."""
     try:
-        if not enabled() or not _stuck(defect):
+        if not enabled() or not _stuck(repo_root, defect):
             return ""
         from app.acceptance import mutation_guided
 

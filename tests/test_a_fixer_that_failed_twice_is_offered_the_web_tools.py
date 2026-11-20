@@ -63,13 +63,14 @@ def _defect(failed: int) -> Defect:
                   attempts=[{"stage": f"defect_fix_{n}_0", "outcome": "left open"} for n in range(failed)])
 
 
-def _the_fixer_is_run(tmp_path, failed: int) -> tuple[list[str], str]:
-    """(the tool names the fixer's model is offered, the request it is sent) for a defect with `failed` failed fixes."""
+def _the_fixer_is_run(tmp_path, failed: int = 0, defect: Defect | None = None) -> tuple[list[str], str]:
+    """(the tool names the fixer's model is offered, the request it is sent) for a defect with `failed` failed fixes
+    in its own cycle, or for `defect`."""
     from app.agents.specialists import create_specialist_agent
 
     model = Scripted(replies=[], requests=[], offered=[])
     state = {"repository": SimpleNamespace(root_path=str(tmp_path)), "defect_cursor": 0, "test_round": 3,
-             "remediation": RemediationCycle(sprint_goal="g", defects=[_defect(failed)]),
+             "remediation": RemediationCycle(sprint_goal="g", defects=[defect or _defect(failed)]),
              "current_sprint_index": 0, "specialist_outputs": {}}
 
     def on_the_scripted_model(owner, **kwargs):
@@ -113,6 +114,65 @@ def test_a_fixer_whose_defect_failed_twice_is_offered_the_web_tools_and_told_so(
     assert [r["detail"] for r in _ledger(tmp_path, "web tools offered")] == ["after 2 failed fixes"]
 
 
+def _a_criterion(criterion: str, *failing: str) -> Defect:
+    """An acceptance criterion's defect as a test round raises it: its cause keyed by the tests failing this time."""
+    return Defect(description=f"[{criterion}] Group the list - the acceptance suite says this does not work yet.",
+                  severity="major", reproduction_steps="r", expected_behavior="e", actual_behavior=ERROR,
+                  owner="backend", source="acceptance suite", kind="failing_test",
+                  evidence=[{"test": f"[{criterion.lower()}] {name}"} for name in failing],
+                  cause_key="failing_test:" + "|".join(f"test:[{criterion.lower()}] {name}" for name in failing))
+
+
+def _left_open_in_an_earlier_attempt(root, defect: Defect) -> None:
+    """One fix of `defect` measured and left open, as the fix stage keeps it in the run's fix journal."""
+    from app.graph import cause_journal
+
+    cause_journal.record(root, defect, {"stage": "defect_fix_1_0", "files": ["app/main.py"], "did": "d",
+                                        "outcome": "left open: its tests still fail"}, sprint=0)
+
+
+def test_a_criterion_left_open_once_in_each_of_two_sprint_attempts_is_offered_the_web_tools(deployed, tmp_path):
+    """Measured: one criterion left open in a sprint's first attempt and again in its second, its failing tests
+    different each time, counted at most one failed fix before each fixer; the tools were never offered."""
+    _left_open_in_an_earlier_attempt(tmp_path, _a_criterion("AC-4", "groups", "keeps order", "clears"))
+    _left_open_in_an_earlier_attempt(tmp_path, _a_criterion("AC-4", "keeps order"))
+
+    offered, request = _the_fixer_is_run(tmp_path, defect=_a_criterion("AC-4", "keeps order"))
+
+    assert WEB <= set(offered) and "`search_the_web` and `read_web_page`" in request
+    assert [r["detail"] for r in _ledger(tmp_path, "web tools offered")] == ["after 2 failed fixes"]
+
+
+def test_another_criterion_s_failed_fixes_do_not_count_toward_the_web_tools(deployed, tmp_path):
+    _left_open_in_an_earlier_attempt(tmp_path, _a_criterion("AC-3", "keeps order"))
+    _left_open_in_an_earlier_attempt(tmp_path, _a_criterion("AC-3", "keeps order"))
+
+    offered, request = _the_fixer_is_run(tmp_path, defect=_a_criterion("AC-4", "keeps order"))
+
+    assert not WEB & set(offered) and "search_the_web" not in request
+
+
+def _a_probe_finding(request: str, error: str) -> Defect:
+    return Defect(description=f"The probe's request failed: {error}", severity="major", reproduction_steps="r",
+                  expected_behavior="e", actual_behavior=error, owner="backend", source="api probe",
+                  kind="probe_finding", evidence=[{"probe": "routes", "request": request}, {"error": error}],
+                  cause_key=f"probe_finding:error:{error.lower()}|probe:routes:{request.lower()}")
+
+
+@pytest.mark.parametrize(("earlier", "counted"), [
+    ([("GET /items", "404 not found"), ("GET /items", "500 TypeError")], 2),
+    ([("POST /items", "500 KeyError")], 0),
+])
+def test_a_probe_finding_counts_the_failed_fixes_of_its_probe_and_request_whatever_its_error(tmp_path, earlier,
+                                                                                             counted):
+    from app.graph import cause_journal
+
+    for request, error in earlier:
+        _left_open_in_an_earlier_attempt(tmp_path, _a_probe_finding(request, error))
+
+    assert cause_journal.failed_fixes_in_the_run(tmp_path, _a_probe_finding("GET /items", "500 KeyError")) == counted
+
+
 @pytest.mark.parametrize("failed", [0, 1])
 def test_a_fixer_with_fewer_than_two_failed_fixes_is_not_offered_them(deployed, tmp_path, failed):
     offered, request = _the_fixer_is_run(tmp_path, failed=failed)
@@ -151,18 +211,18 @@ def test_another_stage_is_not_offered_them(deployed, tmp_path):
     assert not WEB & set(model.offered[0])
 
 
-def _the_fixer_s_tools(monkeypatch, found: dict) -> dict:
+def _the_fixer_s_tools(monkeypatch, tmp_path, found: dict) -> dict:
     from app.graph import web_tools_after_two_failed_fixes
     from app.tools import web_search
 
     monkeypatch.setattr(web_search, "_get", lambda url, params=None: (200, json.dumps(found), "application/json"))
     cycle = RemediationCycle(sprint_goal="g", defects=[_defect(2)])
-    return {t.name: t for t in web_tools_after_two_failed_fixes.tools_for(cycle, 0, "defect_fix_3_0")}
+    return {t.name: t for t in web_tools_after_two_failed_fixes.tools_for(cycle, 0, "defect_fix_3_0", root=tmp_path)}
 
 
 def test_each_call_of_a_fixer_s_web_tool_is_a_ledger_record_of_what_it_asked_and_found(deployed, tmp_path,
                                                                                        monkeypatch):
-    tools = _the_fixer_s_tools(monkeypatch, {"results": [
+    tools = _the_fixer_s_tools(monkeypatch, tmp_path, {"results": [
         {"url": f"https://stackoverflow.com/q/{n}", "title": "t", "content": "c"} for n in range(3)]})
 
     tools["search_the_web"].invoke({"query": ERROR})
@@ -175,7 +235,7 @@ def test_each_call_of_a_fixer_s_web_tool_is_a_ledger_record_of_what_it_asked_and
 
 
 def test_the_fixer_s_page_reader_refuses_a_private_address(deployed, tmp_path, monkeypatch):
-    tools = _the_fixer_s_tools(monkeypatch, {"results": []})
+    tools = _the_fixer_s_tools(monkeypatch, tmp_path, {"results": []})
     monkeypatch.setattr("app.tools.page_reader._fetch", lambda *a: pytest.fail("fetched a private address"))
 
     answer = tools["read_web_page"].invoke({"url": "http://169.254.169.254/latest/meta-data/"})

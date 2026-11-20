@@ -137,6 +137,32 @@ def key_of(defect: Any) -> str:
     return str(getattr(defect, "cause_key", "") or "") or cause_key(getattr(defect, "kind", ""), getattr(defect, "evidence", None))
 
 
+#: An acceptance criterion's id as a defect names it: `AC-4`, `CR-2`.
+_A_CRITERION = re.compile(r"\b(?:AC|CR)-\d+\b")
+
+
+def problem_key(defect: Any) -> str:
+    """One problem's key across the whole run, through re-plans: what is judged failing, not how it fails this time.
+
+    A cause key is made from the failing tests, and which of a criterion's tests fail changes from one attempt to the
+    next. Measured: one criterion left open three times over two attempts of one sprint carried a different cause key
+    in each, so a count of its failed fixes started again at nought and never reached two. So: the criteria a defect
+    names, with the check that raised it; else the probes that found it, with their requests; else its cause key;
+    "" when it has none of these.
+    """
+    source = " ".join(str(getattr(defect, "source", "") or "").split()).lower()
+    evidence = [record for record in getattr(defect, "evidence", None) or () if isinstance(record, dict)]
+    criteria = set(_A_CRITERION.findall(str(getattr(defect, "description", "") or "")))
+    criteria |= {said for said in (str(r.get("criterion") or "").strip().upper() for r in evidence)
+                 if _A_CRITERION.fullmatch(said)}
+    if criteria:
+        return f"criteria:{source}|" + ",".join(sorted(criteria))
+    probes = sorted({_the_id_of(r) for r in evidence if r.get("probe")} - {""})
+    if probes:
+        return f"probes:{source}|" + "|".join(probes)
+    return key_of(defect)
+
+
 def same_cause(one: Any, other: Any) -> bool | None:
     """Whether two defects are one problem by their keys; None when either has none, for the caller's own rule."""
     mine, theirs = key_of(one), key_of(other)
@@ -179,5 +205,5 @@ def as_merged(lead: Any, others: Sequence[Any]) -> dict[str, Any]:
 __all__ = [
     "COMPILE_ERROR", "FAILING_TEST", "KINDS", "MOST_EVIDENCE", "OTHER", "PROBE_FINDING", "REVIEW_FINDING",
     "START_FAILURE", "a_compiler_error", "a_failing_test", "a_probe_request", "an_error_line", "as_merged",
-    "cause_key", "key_of", "kind_by_source", "merged_evidence", "same_cause", "scrubbed",
+    "cause_key", "key_of", "kind_by_source", "merged_evidence", "problem_key", "same_cause", "scrubbed",
 ]

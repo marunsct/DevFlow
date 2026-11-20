@@ -168,18 +168,30 @@ export interface LocalModelSettingsPayload {
 
 /** Write-only, as the provider keys are: omitted or null leaves the stored key, "" deletes it, a value sets it. */
 export interface LookupKeysUpdate {
+  brave_api_key?: string | null;
+  context7_api_key?: string | null;
   github_token?: string | null;
   stackexchange_key?: string | null;
+  tavily_api_key?: string | null;
 }
 
 /** The internet lookup sources' keys as the admin page shows them: masked, never the value (plan WL.3). */
 export interface LookupKeysView {
+  brave_api_key_configured: boolean;
+  brave_api_key_from_environment: boolean;
+  brave_api_key_hint: string | null;
+  context7_api_key_configured: boolean;
+  context7_api_key_from_environment: boolean;
+  context7_api_key_hint: string | null;
   github_token_configured: boolean;
   github_token_from_environment: boolean;
   github_token_hint: string | null;
   stackexchange_key_configured: boolean;
   stackexchange_key_from_environment: boolean;
   stackexchange_key_hint: string | null;
+  tavily_api_key_configured: boolean;
+  tavily_api_key_from_environment: boolean;
+  tavily_api_key_hint: string | null;
 }
 
 /** Pin a run to the model it last ran on, or let it follow the current model settings again. With `base_url` and/or `model` (pinning only) the run is pinned to that endpoint and model instead, without touching the global settings. Neither carries a credential: the endpoint's key is resolved server-side, per endpoint. */

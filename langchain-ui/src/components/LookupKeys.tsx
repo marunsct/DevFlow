@@ -1,5 +1,6 @@
 /**
- * The internet lookup sources' keys (plan WL.3): a Stack Exchange key and a GitHub token, both optional.
+ * The internet lookup sources' keys (plan WL.3, WL.6): a Stack Exchange key, a GitHub token, the paid web searches
+ * (Brave, Tavily) and Context7, all optional.
  *
  * Write-only, as the provider keys on the Settings page are: the page shows a masked hint, a typed value replaces
  * the stored one, and "Remove" deletes it so the deployment's own variable applies again. A key set in the
@@ -17,23 +18,42 @@ export interface LookupKeysView {
   github_token_hint: string | null;
   github_token_configured: boolean;
   github_token_from_environment: boolean;
+  brave_api_key_hint?: string | null;
+  brave_api_key_configured?: boolean;
+  brave_api_key_from_environment?: boolean;
+  tavily_api_key_hint?: string | null;
+  tavily_api_key_configured?: boolean;
+  tavily_api_key_from_environment?: boolean;
+  context7_api_key_hint?: string | null;
+  context7_api_key_configured?: boolean;
+  context7_api_key_from_environment?: boolean;
 }
 
-type Key = 'stackexchange_key' | 'github_token';
+type Key = 'stackexchange_key' | 'github_token' | 'brave_api_key' | 'tavily_api_key' | 'context7_api_key';
 
 const KEYS: Array<[Key, string, string]> = [
   ['stackexchange_key', 'Stack Exchange key',
     'A free Stack Apps key raises Stack Exchange\'s limit from 300 lookups a day to 10,000.'],
   ['github_token', 'GitHub token',
     'A token with no scopes raises the GitHub issue search\'s limit. Never sent anywhere but GitHub.'],
+  ['brave_api_key', 'Brave Search key',
+    'Paid web search, asked only when the free sources found fewer than two answers, within a daily request cap.'],
+  ['tavily_api_key', 'Tavily key',
+    'Paid web search, asked after Brave on the same terms.'],
+  ['context7_api_key', 'Context7 key',
+    'Library documentation by version. Asked without a key at a lower limit; a key raises it.'],
 ];
+
+const EMPTY: Record<Key, string> = {
+  stackexchange_key: '', github_token: '', brave_api_key: '', tavily_api_key: '', context7_api_key: '',
+};
 
 const isView = (data: unknown): data is LookupKeysView =>
   !!data && typeof data === 'object' && !Array.isArray(data) && 'github_token_configured' in data;
 
 export const LookupKeys: React.FC<{ isAdmin: boolean }> = ({ isAdmin }) => {
   const [view, setView] = useState<LookupKeysView | null>(null);
-  const [typed, setTyped] = useState<Record<Key, string>>({ stackexchange_key: '', github_token: '' });
+  const [typed, setTyped] = useState<Record<Key, string>>(EMPTY);
   const [busy, setBusy] = useState(false);
   const { notify } = useFeedback();
 
@@ -46,7 +66,7 @@ export const LookupKeys: React.FC<{ isAdmin: boolean }> = ({ isAdmin }) => {
     try {
       const res = await api.put('/settings/lookup-keys', values);
       if (isView(res.data)) setView(res.data);
-      setTyped({ stackexchange_key: '', github_token: '' });
+      setTyped(EMPTY);
       notify('Saved.');
     } catch (err: any) {
       notify(err.response?.data?.detail ?? 'Only an administrator can change a key.');

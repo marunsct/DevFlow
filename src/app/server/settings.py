@@ -994,6 +994,15 @@ class LookupKeysView(BaseModel):
     github_token_hint: str | None = None
     github_token_configured: bool = False
     github_token_from_environment: bool = False
+    brave_api_key_hint: str | None = None
+    brave_api_key_configured: bool = False
+    brave_api_key_from_environment: bool = False
+    tavily_api_key_hint: str | None = None
+    tavily_api_key_configured: bool = False
+    tavily_api_key_from_environment: bool = False
+    context7_api_key_hint: str | None = None
+    context7_api_key_configured: bool = False
+    context7_api_key_from_environment: bool = False
 
 
 class LookupKeysUpdate(BaseModel):
@@ -1003,6 +1012,9 @@ class LookupKeysUpdate(BaseModel):
 
     stackexchange_key: str | None = Field(default=None, max_length=512, repr=False)
     github_token: str | None = Field(default=None, max_length=512, repr=False)
+    brave_api_key: str | None = Field(default=None, max_length=512, repr=False)
+    tavily_api_key: str | None = Field(default=None, max_length=512, repr=False)
+    context7_api_key: str | None = Field(default=None, max_length=512, repr=False)
 
 
 def _lookup_keys_view() -> LookupKeysView:

@@ -147,7 +147,8 @@ def _looked_up(repo_root: str | Path, error: str, stack_words: str, *, trigger: 
 
         defect_ledger.note(LOOKUP_EVENT, stage_name, defect=defect, detail=(
             f"{trigger}: searched {answer.get('query')!r}: {len(answer.get('found') or [])} found"
-            + (" (cached)" if answer.get("cached") else f" from {', '.join(answer.get('asked') or [])}")))
+            + (" (cached)" if answer.get("cached") else f" from {', '.join(answer.get('asked') or [])}")
+            + (f"; skipped {'; '.join(answer['skipped'])}" if answer.get("skipped") else "")))
     except Exception:  # noqa: BLE001 - a record must never fail the stage
         pass
     return shown

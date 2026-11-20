@@ -1,4 +1,5 @@
 import { endSession, refreshNow, scheduleRefresh } from '../lib/session';
+import type { PickedElement } from '../lib/pickedElement';
 import axios from 'axios';
 import type {
   ApprovalDecisionRequest,
@@ -613,6 +614,27 @@ export const startPreview = async (runId: string, source: 'accepted' | 'live'): 
 export const stopPreview = async (runId: string): Promise<PreviewStatus> => {
   const response = await api.delete<PreviewStatus>(`/runs/${runId}/preview`);
   return response.data;
+};
+
+/** A file of the product likely to hold a pointed-at element, found by the server (plan WS.5). */
+export interface PickedSource { path: string; line: number }
+
+export type PickedAnswer =
+  | { kind: 'note'; note: SteeringNote & { element?: { selector: string; files: PickedSource[] } } }
+  | { kind: 'change_request'; brief: string };
+
+/**
+ * Point and say (plan WS.5): a change written beside a part of the preview's page, as a note for a run that is
+ * going, or as the brief of a change request for a finished product.
+ */
+export const sayAtPickedElement = async (
+  runId: string,
+  body: { change: string; element: PickedElement; kind: 'note' | 'change_request'; scope: 'run' | 'next_stage' },
+): Promise<PickedAnswer> => {
+  const response = await api.post(`/runs/${runId}/preview/pick`, body);
+  return body.kind === 'note'
+    ? { kind: 'note', note: response.data.note }
+    : { kind: 'change_request', brief: response.data.brief };
 };
 
 export interface PreviewAnswer { status: number; contentType: string; body: string }

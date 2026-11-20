@@ -5,10 +5,19 @@
  * The frame is sandboxed without `allow-same-origin` when the preview is served from the app's own host, so the
  * product's script never runs with the app's origin, where the sign-in is kept; the server says the same in the
  * page's own Content-Security-Policy. A separate preview origin may keep its own storage.
+ *
+ * Point and say (plan WS.5): while a person points at the page, the frame opens the link signed for pointing, whose
+ * pages carry the server's picker; the element they choose arrives as a message, taken only from this frame's own
+ * window and only in its exact shape (`pickedFrom`), and fills the form beside the page.
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { getPreview, sendPreviewRequest, startPreview, stopPreview, type PreviewAnswer } from '../api';
 import type { PreviewStatus } from '../types';
+import { pickedFrom, type PickedElement } from '../lib/pickedElement';
+import { PointAndSay } from './PointAndSay';
+
+/** The preview with its link for pointing at the page (plan WS.5), until the generated types carry it. */
+type Preview = PreviewStatus & { pick_url?: string | null };
 
 /** How often a starting preview is looked at again. */
 export const POLL_MS = 2000;
@@ -77,11 +86,33 @@ const RequestConsole: React.FC<{ link: string }> = ({ link }) => {
   );
 };
 
-export const PreviewPanel: React.FC<{ runId: string }> = ({ runId }) => {
-  const [preview, setPreview] = useState<PreviewStatus | null>(null);
+export const PreviewPanel: React.FC<{
+  runId: string;
+  runStatus?: string;
+  /** Whether a finished product may be changed by a change request (`PREMIUM_CHANGE_REQUESTS`). */
+  changesAllowed?: boolean;
+  onChangeRequest?: (brief: string) => void;
+}> = ({ runId, runStatus, changesAllowed, onChangeRequest }) => {
+  const [preview, setPreview] = useState<Preview | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [view, setView] = useState<'page' | 'requests' | null>(null);
+  const [pointing, setPointing] = useState(false);
+  const [picked, setPicked] = useState<PickedElement | null>(null);
+  const frame = useRef<HTMLIFrameElement>(null);
+
+  // The picker's message is the product page's word: only this frame's own window is heard, only while pointing.
+  useEffect(() => {
+    if (!pointing) return undefined;
+    const heard = (event: MessageEvent) => {
+      const own = frame.current?.contentWindow;
+      if (!own || event.source !== own) return;
+      const element = pickedFrom(event.data);
+      if (element) setPicked(element);
+    };
+    window.addEventListener('message', heard);
+    return () => window.removeEventListener('message', heard);
+  }, [pointing]);
 
   const load = useCallback(async () => {
     try {
@@ -131,6 +162,8 @@ export const PreviewPanel: React.FC<{ runId: string }> = ({ runId }) => {
 
   const active = preview.state === 'starting' || preview.state === 'ready';
   const shown = view ?? (preview.has_page === false ? 'requests' : 'page');
+  const canPoint = shown === 'page' && !!preview.pick_url;
+  const framed = (pointing && preview.pick_url) || preview.url || undefined;
   return (
     <section aria-label="Preview" className="flex h-full min-h-0 flex-col gap-3 p-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -177,14 +210,30 @@ export const PreviewPanel: React.FC<{ runId: string }> = ({ runId }) => {
               ))}
             </div>
           )}
+          {canPoint && (
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <button type="button" aria-pressed={pointing} onClick={() => setPointing(!pointing)}
+                className={`px-3 py-1.5 rounded-lg border text-sm ${pointing ? 'border-accent bg-overlay-strong text-text-primary' : 'border-border/60 text-text-primary'}`}>
+                {pointing ? 'Stop pointing' : 'Point at a part of the page'}
+              </button>
+              {pointing && <span className="text-text-muted">Choose a part of the page, then say what should change there.</span>}
+            </div>
+          )}
           {shown === 'page' ? (
-            <iframe
-              title="The product"
-              src={preview.url}
-              sandbox={preview.separate_origin ? `${SANDBOX} allow-same-origin` : SANDBOX}
-              referrerPolicy="no-referrer"
-              className="min-h-112 w-full flex-1 rounded-lg border border-border/60 bg-surface"
-            />
+            <div className="flex min-h-0 flex-1 flex-col gap-3 lg:flex-row">
+              <iframe
+                ref={frame}
+                title="The product"
+                src={framed}
+                sandbox={preview.separate_origin ? `${SANDBOX} allow-same-origin` : SANDBOX}
+                referrerPolicy="no-referrer"
+                className="min-h-112 w-full flex-1 rounded-lg border border-border/60 bg-surface"
+              />
+              {picked && (
+                <PointAndSay runId={runId} element={picked} runStatus={runStatus} changesAllowed={changesAllowed}
+                  onChangeRequest={onChangeRequest} onDone={() => setPicked(null)} />
+              )}
+            </div>
           ) : (
             <RequestConsole link={preview.url} />
           )}

@@ -521,6 +521,43 @@ class PreviewStartRequest(BaseModel):
     source: Literal["accepted", "live"] = "accepted"
 
 
+class PickedBox(BaseModel):
+    """Where the pointed-at element sat in the preview's frame, in pixels."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    x: int = Field(ge=-100_000, le=100_000)
+    y: int = Field(ge=-100_000, le=100_000)
+    width: int = Field(ge=0, le=100_000)
+    height: int = Field(ge=0, le=100_000)
+
+
+class PickedElement(BaseModel):
+    """A part of the preview's page a person pointed at (plan WS.5), as the page's picker sent it: untrusted."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    selector: str = Field(min_length=1, max_length=300, description="A short CSS selector: id, test id, or path.")
+    tag: str = Field(pattern=r"^[a-z][a-z0-9-]{0,40}$", description="The element's tag name.")
+    text: str = Field(default="", max_length=200, description="Its visible text, trimmed.")
+    html: str = Field(default="", max_length=1000, description="Its markup, cut short.")
+    box: PickedBox
+
+
+class PickedChange(BaseModel):
+    """A change a person wrote beside a part of the preview's page (plan WS.5): a note for the run while it is going,
+    or the brief of a change request for a finished product (behind PREMIUM_CHANGE_REQUESTS)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    change: str = Field(..., min_length=1, max_length=2000, description="What should change, in the person's words.")
+    element: PickedElement
+    kind: Literal["note", "change_request"] = "note"
+    scope: Literal["run", "next_stage"] = Field(
+        default="run", description="A note's reach: the rest of the run, or the stage working when it is first read."
+    )
+
+
 class PreviewStatus(BaseModel):
     """A run's product preview as the run page sees it (plan WS.4)."""
 
@@ -536,6 +573,10 @@ class PreviewStatus(BaseModel):
     idle_minutes: int = Field(description="Minutes without a request after which a preview is stopped.")
     separate_origin: bool = False
     url: str | None = Field(default=None, description="The signed link to the product, while it is ready.")
+    pick_url: str | None = Field(
+        default=None, description="The same, signed for pointing at a part of the page (plan WS.5); its pages carry "
+                                  "the picker.",
+    )
     expires_at: int | None = Field(default=None, description="When the link stops working (seconds since the epoch).")
 
 

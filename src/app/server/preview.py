@@ -140,23 +140,38 @@ def _signing_key() -> bytes:
     return hmac.new(str(SECRET_KEY).encode(), b"product-preview-token", hashlib.sha256).digest()
 
 
-def _signature(run_id: str, instance: str, expires: int) -> str:
-    digest = hmac.new(_signing_key(), f"{run_id}\n{instance}\n{expires}".encode(), hashlib.sha256).digest()
+#: The last part of a link signed for pointing at the page (plan WS.5): its pages carry the picker script.
+POINTING = "pick"
+
+
+def _signature(run_id: str, instance: str, expires: int, mode: str = "") -> str:
+    signed = f"{run_id}\n{instance}\n{expires}" + (f"\n{mode}" if mode else "")
+    digest = hmac.new(_signing_key(), signed.encode(), hashlib.sha256).digest()
     return base64.urlsafe_b64encode(digest).decode().rstrip("=")
 
 
-def token_for(run_id: str, instance: str, expires: int) -> str:
-    """A token for one run's one preview until `expires` (seconds since the epoch): path-safe characters only."""
-    return f"{int(expires)}.{instance}.{_signature(run_id, instance, int(expires))}"
+def token_for(run_id: str, instance: str, expires: int, *, pointing: bool = False) -> str:
+    """A token for one run's one preview until `expires` (seconds since the epoch): path-safe characters only.
+    `pointing` signs it for pointing at the page: the mode is signed with the rest, so a page cannot add it."""
+    mode = POINTING if pointing else ""
+    token = f"{int(expires)}.{instance}.{_signature(run_id, instance, int(expires), mode)}"
+    return f"{token}.{mode}" if mode else token
+
+
+def is_for_pointing(token: str) -> bool:
+    """Whether a token (already checked by `token_problem`) was signed for pointing at the page."""
+    parts = str(token or "").split(".")
+    return len(parts) == 4 and parts[3] == POINTING
 
 
 def token_problem(token: str, run_id: str, instance: str, now: float | None = None) -> str:
     """Why `token` does not open this run's current preview, or "" when it does."""
     parts = str(token or "").split(".")
-    if len(parts) != 3 or not parts[0].isdigit():
+    if len(parts) not in (3, 4) or not parts[0].isdigit() or (len(parts) == 4 and parts[3] != POINTING):
         return "not a preview link"
     expires, made_for, signature = int(parts[0]), parts[1], parts[2]
-    if not hmac.compare_digest(signature, _signature(run_id, made_for, expires)):
+    mode = parts[3] if len(parts) == 4 else ""
+    if not hmac.compare_digest(signature, _signature(run_id, made_for, expires, mode)):
         return "not a preview link of this run"
     if not instance or not hmac.compare_digest(made_for, instance):
         return "a link to a preview that was stopped"
@@ -381,6 +396,9 @@ def public(state: dict[str, Any] | None, run_id: str, *, now: float | None = Non
     if state.get("state") == "ready":
         expires = int(now) + token_seconds()
         shown["url"] = f"{separate_origin()}{app_prefix(run_id, token_for(run_id, str(state['instance']), expires))}/"
+        if enabled:
+            pointing = token_for(run_id, str(state["instance"]), expires, pointing=True)
+            shown["pick_url"] = f"{separate_origin()}{app_prefix(run_id, pointing)}/"
         shown["expires_at"] = expires
     return shown
 
@@ -413,7 +431,9 @@ def upstream_url(host: str, port: int, path: str, query: str) -> Any:
     from urllib.parse import quote
 
     clean = "/" + quote(str(path or "").lstrip("/"), safe="/:@!$&'()*+,;=-._~%")
-    return httpx.URL(scheme="http", host=host, port=int(port), path=clean, query=query.encode() if query else b"")
+    # No query, no `?`: an empty one was sent as `/styles.css?`, which a product matching its paths exactly misses.
+    extra = {"query": query.encode()} if query else {}
+    return httpx.URL(scheme="http", host=host, port=int(port), path=clean, **extra)
 
 
 def forwarded_request_headers(headers: Any) -> dict[str, str]:
@@ -430,8 +450,14 @@ def _rooted_paths_script(prefix: str) -> str:
     )
 
 
-def rewritten(body: bytes, content_type: str, prefix: str) -> bytes:
-    """A page's and a stylesheet's paths from the root, pointed under the preview's prefix."""
+#: Added to a preview's pages only while a person points at the page (plan WS.5, a link signed for pointing): what
+#: it does and sends is said in the file it is shipped as.
+PICKER_SCRIPT = "<script>" + (Path(__file__).with_name("preview_picker.js")).read_text(encoding="utf-8") + "</script>"
+
+
+def rewritten(body: bytes, content_type: str, prefix: str, *, pointing: bool = False) -> bytes:
+    """A page's and a stylesheet's paths from the root, pointed under the preview's prefix; a page opened by a link
+    signed for pointing (and only a page) also carries `PICKER_SCRIPT`."""
     kind = content_type.split(";")[0].strip().lower()
     if kind not in ("text/html", "text/css"):
         return body
@@ -439,7 +465,7 @@ def rewritten(body: bytes, content_type: str, prefix: str) -> bytes:
     text = _ROOTED_CSS_URL.sub(lambda m: m.group(1) + prefix + "/", text)
     if kind == "text/html":
         text = _ROOTED_ATTRIBUTE.sub(lambda m: m.group(1) + prefix + "/", text)
-        script = _rooted_paths_script(prefix)
+        script = _rooted_paths_script(prefix) + (PICKER_SCRIPT if pointing and preview_switch.enabled() else "")
         head = _HEAD.search(text)
         text = text[:head.end()] + script + text[head.end():] if head else script + text
     return text.encode("utf-8")
@@ -482,7 +508,8 @@ def preflight_headers() -> dict[str, str]:
 
 
 __all__ = [
-    "ACTIVE", "PreviewRefused", "app_prefix", "container_name", "forwarded_request_headers", "observe",
+    "ACTIVE", "PICKER_SCRIPT", "PreviewRefused", "app_prefix", "container_name", "forwarded_request_headers",
+    "is_for_pointing", "observe",
     "preview_switch", "public", "read", "rewritten", "response_headers", "scratch_for", "start", "stop",
     "token_for", "token_problem", "touch", "upstream_url", "what_it_wrote",
 ]

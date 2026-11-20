@@ -157,8 +157,12 @@ def withdraw(repo_root: str | Path, note_id: str, by: str) -> dict[str, Any]:
         return {**note, "state": state_of(note)}
 
 
-def add(repo_root: str | Path, text: str, by: str, scope: str = "run", audience: Any = None) -> dict[str, Any]:
-    """Keep one note for the run's next model calls of its audience (`AUDIENCES`; everyone by default)."""
+def add(repo_root: str | Path, text: str, by: str, scope: str = "run", audience: Any = None,
+        element: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Keep one note for the run's next model calls of its audience (`AUDIENCES`; everyone by default).
+
+    `element` is a part of the product's page the person pointed at in the preview (plan WS.5,
+    `point_and_say.kept_element`): the calls that read the note read where it is and the files likely to hold it."""
     cleaned = str(text or "").strip()
     if not cleaned:
         raise ValueError("A note needs some text.")
@@ -169,10 +173,11 @@ def add(repo_root: str | Path, text: str, by: str, scope: str = "run", audience:
     if unknown:
         raise ValueError(f"A note's audience is one or more of {', '.join(AUDIENCES)}; not {', '.join(unknown)}.")
     with _locked(repo_root):
-        return _add_locked(repo_root, cleaned, by, scope, wanted)
+        return _add_locked(repo_root, cleaned, by, scope, wanted, element)
 
 
-def _add_locked(repo_root: str | Path, cleaned: str, by: str, scope: str, audience: list[str]) -> dict[str, Any]:
+def _add_locked(repo_root: str | Path, cleaned: str, by: str, scope: str, audience: list[str],
+                element: dict[str, Any] | None = None) -> dict[str, Any]:
     kept = _all(repo_root)
     note = {
         "id": f"N-{1 + max((int(str(n.get('id', 'N-0')).split('-')[-1]) for n in kept), default=0)}",
@@ -183,6 +188,8 @@ def _add_locked(repo_root: str | Path, cleaned: str, by: str, scope: str, audien
         "audience": audience,
         "state": "queued",
     }
+    if element:
+        note["element"] = element
     _save(repo_root, kept + [note])
     return note
 
@@ -261,8 +268,18 @@ def as_instructions(repo_root: str | Path, stage: str = "", run_id: str | None =
     return (
         f"\n\n{DIRECTION_HEADER}\n"
         "The owner sent these while the run was going; they come before any other preference:\n"
-        + "\n".join(f"- {note['text']}" for note in live)
+        + "\n".join(_as_a_line(note) for note in live)
     )
+
+
+def _as_a_line(note: dict[str, Any]) -> str:
+    """One note as a call reads it; a note about a part of the product's page says where it is (plan WS.5)."""
+    element = note.get("element")
+    if not isinstance(element, dict):
+        return f"- {note['text']}"
+    from app.server.point_and_say import described
+
+    return f"- {note['text']}\n" + "\n".join(f"  {line}" for line in described(element).splitlines())
 
 
 #: How the direction block begins, so a call that already carries it is not given it twice.

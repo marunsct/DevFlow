@@ -1,6 +1,6 @@
 import { browserCanNotify, wantNotifications } from '../lib/notify';
 import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { UploadCloud, FileText, PlayCircle, FolderOpen } from 'lucide-react';
 import { api, createRun, deleteRun, startRun, getFrontierStatus, getOperatorHealth, getOutcomes, pullRequestDeliveryOn, uploadCodebase, type FrontierStatus, type RunForecast, type WaitingRun } from '../api';
 import { Link } from 'react-router-dom';
@@ -157,7 +157,9 @@ export const Home: React.FC = () => {
   }, []);
   // The brief as text, beside or instead of its files (plan BG.10); kept as a
   // draft in this browser until a run starts from it.
-  const [briefText, setBriefText] = useState<string>(readDraft);
+  // A change request written beside a part of the preview's page (plan WS.5) arrives as the brief.
+  const pointedBrief = (useLocation().state as { brief?: unknown } | null)?.brief;
+  const [briefText, setBriefText] = useState<string>(() => (typeof pointedBrief === 'string' ? pointedBrief : readDraft()));
   // The text of the brief's text files, for the criteria preview.
   const [fileText, setFileText] = useState('');
   useEffect(() => {

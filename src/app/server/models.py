@@ -433,6 +433,30 @@ class SprintsResponse(BaseModel):
     sprints: list[SprintView] = Field(default_factory=list, description="The sprints attempted so far.")
 
 
+class WorkOrderNow(BaseModel):
+    """One work order of the current sprint, as the plan panel shows it (plan WS.2)."""
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(description="What the work order asks for.")
+    role: str = Field(description="The specialist it is given to.")
+    state: Literal["done", "working", "open"] = Field(
+        description="done: its specialist returned; working: its stage has started; open: not started.")
+    files: list[str] = Field(default_factory=list, description="The files it plans to write.")
+
+
+class SprintPlanNow(BaseModel):
+    """Where the current sprint stands: its work orders, attempt, test round and open defects (plan WS.2)."""
+    model_config = ConfigDict(extra="forbid")
+
+    sprint: int | None = Field(default=None, description="The current sprint's place in the plan, from 1; null before sprints are planned.")
+    planned_total: int = Field(default=0, description="How many sprints the plan has.")
+    goal: str = Field(default="", description="The sprint plan's goal for this sprint.")
+    attempt: int = Field(default=0, description="Which attempt at this sprint, from 1; 0 before it starts.")
+    round: int = Field(default=0, description="Test rounds this attempt has run.")
+    open_defects: int = Field(default=0, description="Defects of this attempt not yet fixed.")
+    work_orders: list[WorkOrderNow] = Field(default_factory=list, description="The current sprint's work orders, in plan order.")
+
+
 class RunCostSummary(BaseModel):
     """What a run has spent on model calls, and how much of it was priced.
 

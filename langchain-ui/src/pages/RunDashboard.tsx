@@ -44,6 +44,7 @@ import { Timeline } from '../components/Timeline';
 import { Tabs } from '../ui';
 import { ChangesPanel } from '../components/ChangesPanel';
 import { WorkspacePanel } from '../components/WorkspacePanel';
+import { PlanPanel } from '../components/PlanPanel';
 import { SteeringBox } from '../components/SteeringBox';
 import { ArtifactList } from '../components/ArtifactList';
 import { ExecutionFlow } from '../components/ExecutionFlow';
@@ -164,18 +165,29 @@ export const RunDashboard: React.FC = () => {
     viewParam === 'log' || viewParam === 'changes' || viewParam === 'workspace' || viewParam === 'results' || viewParam === 'audit' || viewParam === 'doctor' ? viewParam : 'activity';
   const selectedChange = searchParams.get('change');
   const selectedFile = searchParams.get('file');
+  const fileDiff = searchParams.get('diff') === '1';
   const setCentreTab = (tab: CentreTab) => {
     const next = new URLSearchParams(searchParams);
     if (tab === 'activity') next.delete('view'); else next.set('view', tab);
     if (tab !== 'changes') next.delete('change');
-    if (tab !== 'workspace') next.delete('file');
+    if (tab !== 'workspace') { next.delete('file'); next.delete('diff'); }
     setSearchParams(next, { replace: true });
   };
   const selectFile = (path: string | null) => {
     const next = new URLSearchParams(searchParams);
     next.set('view', 'workspace');
+    next.delete('diff');
     if (path) next.set('file', path); else next.delete('file');
     setSearchParams(next, { replace: true });
+  };
+  // A write in the feed opens its file with its change (plan WS.2). Pushed, not
+  // replaced, so Back returns to the feed.
+  const openFileWithItsChange = (path: string) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('view', 'workspace');
+    next.set('file', path);
+    next.set('diff', '1');
+    setSearchParams(next);
   };
   const selectChange = (sha: string | null) => {
     const next = new URLSearchParams(searchParams);
@@ -627,6 +639,10 @@ export const RunDashboard: React.FC = () => {
   const stageCopy = describeStage(run.current_stage);
   // Panels that read the run's state again when it moves to another stage or status.
   const stageKey = `${run.current_stage ?? ''}:${run.status}`;
+  // The newest stage start or outcome: side-by-side workers start and finish stages the run's own stage does not
+  // name, and the plan panel reads the work orders again at each (plan WS.2).
+  let lastStageStart = 0;
+  for (const entry of logs) if (entry.event_type === 'stage_change' || entry.event_type === 'log') lastStageStart = Math.max(lastStageStart, entry.sequence ?? 0);
   const statusCopy = describeStatus(run.status);
 
   const actionButton =
@@ -1017,8 +1033,17 @@ export const RunDashboard: React.FC = () => {
                       logs={logs}
                       onPick={setFocusAt}
                     />
-                    <div className="flex-1 min-h-0">
-                      <AgentActivity logs={logs} isRunning={!isTerminal} bare focusAt={focusAt} />
+                    {/* The sprint's plan beside the feed when the tab is wide
+                        enough, above it when it is not (plan WS.2). */}
+                    <div className="@container flex-1 min-h-0">
+                      <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] @3xl:grid-rows-1 @3xl:grid-cols-[minmax(0,1fr)_15rem]">
+                        <div className="max-h-40 overflow-y-auto border-b border-border/40 @3xl:order-2 @3xl:max-h-none @3xl:border-b-0 @3xl:border-l">
+                          <PlanPanel runId={runId!} refreshKey={`${stageKey}:${lastStageStart}`} />
+                        </div>
+                        <div className="min-h-0 @3xl:order-1">
+                          <AgentActivity logs={logs} isRunning={!isTerminal} bare focusAt={focusAt} onOpenFile={openFileWithItsChange} />
+                        </div>
+                      </div>
                     </div>
                   </div>
                 ),
@@ -1031,7 +1056,7 @@ export const RunDashboard: React.FC = () => {
               {
                 id: 'workspace',
                 label: 'Workspace',
-                content: <WorkspacePanel runId={runId!} refreshKey={stageKey} logs={logs} selected={selectedFile} onSelect={selectFile} />,
+                content: <WorkspacePanel runId={runId!} refreshKey={stageKey} logs={logs} selected={selectedFile} onSelect={selectFile} diff={fileDiff} />,
               },
               {
                 id: 'log',

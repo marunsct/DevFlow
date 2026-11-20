@@ -12,6 +12,7 @@ import type {
   ServerHealth,
   SettingsView,
   SprintsResponse,
+  SprintPlanNow,
   StartRunRequest,
   WizardModel,
 } from '../types';
@@ -149,6 +150,12 @@ export const getOutcomes = async (): Promise<{ runs: RunOutcome[]; forecast: Rec
 /** The run's sprints, from the attempts the engine renders each sprint summary from (plan BG.6). */
 export const getSprints = async (runId: string): Promise<SprintsResponse> => {
   const response = await api.get<SprintsResponse>(`/runs/${runId}/sprints`);
+  return response.data;
+};
+
+/** The current sprint's work orders (done, working, open), attempt, test round and open defects (plan WS.2). */
+export const getPlanNow = async (runId: string): Promise<SprintPlanNow> => {
+  const response = await api.get<SprintPlanNow>(`/runs/${runId}/plan`);
   return response.data;
 };
 

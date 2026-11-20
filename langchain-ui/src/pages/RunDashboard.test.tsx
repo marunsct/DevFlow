@@ -241,6 +241,23 @@ describe('the workspace tab', () => {
     expect((await screen.findByLabelText('The text of src/app.py')).textContent).toContain('print("hi")');
     expect(known.getWorkspaceFile).toHaveBeenCalledWith('run-1', 'src/app.py');
   });
+
+  // Plan WS.2: a write in the feed opens its file there, on its change since the last accepted sprint.
+  it('opens a file written in the feed on its change', async () => {
+    const at = (n: number) => ({ run_id: 'run-1', event_id: `w${n}`, sequence: n, timestamp: `2026-10-19T00:10:0${n}Z`, stage: 'specialist_backend_0' });
+    known.getLogs.mockResolvedValueOnce({ total: 2, logs: [
+      { ...at(1), event_type: 'tool_call', message: 'write_artifact: {"relative_path": "src/app.py"}', metadata: { tool: 'write_artifact' } },
+      { ...at(2), event_type: 'tool_result', message: '{"path": "src/app.py"}', metadata: {} },
+    ] });
+    known.getWorkspaceFileDiff = vi.fn(async () => ({ path: 'src/app.py', diff: '--- a/src/app.py\n+++ b/src/app.py\n@@ -1 +1 @@\n-a\n+print("hi")\n', truncated: false, since: 'the scaffold' }));
+    renderPage();
+
+    await userEvent.click(await screen.findByRole('link', { name: 'src/app.py' }));
+
+    expect((await screen.findByRole('tab', { name: 'Workspace' })).getAttribute('aria-selected')).toBe('true');
+    await waitFor(() => expect(known.getWorkspaceFileDiff).toHaveBeenCalledWith('run-1', 'src/app.py'));
+    expect((await screen.findByRole('switch', { name: /Changed since the scaffold/ }) as HTMLInputElement).checked).toBe(true);
+  });
 });
 
 function renderPage() {

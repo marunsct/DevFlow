@@ -63,6 +63,7 @@ from app.server.models import (
     OwnerRatingRequest,
     PreviewCriterion,
     SprintsResponse,
+    SprintPlanNow,
     SpinnerResponse,
     StartRunRequest,
     SprintRevision,
@@ -855,6 +856,48 @@ def create_runs_router(
                 state.get("sprint_attempts") or [],
                 the_attempt_in_progress(state) if live else None,
             )
+        )
+
+    @runs.get("/{run_id}/plan", response_model=SprintPlanNow)
+    async def get_plan_now(
+        run_id: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> SprintPlanNow:
+        """The current sprint's work orders (done, working, open), its attempt, test round and open defects (plan WS.2).
+
+        Read-only, from the graph state the sprints route reads and the run's stage starts; nothing is computed
+        that `/sprints` does not already say, except which work order is being worked on."""
+        from app.agents.sprint_summary import sprint_views
+        from app.graph.workflow import the_attempt_in_progress
+        from app.sprint.record import work_orders_now
+
+        record = _require_run(runner, run_id, user)
+        state = record.graph_state(runner.checkpointer)
+        plan = state.get("sprint_plan")
+        if not plan:
+            return SprintPlanNow()
+        live = record.status not in ("completed", "failed", "cancelled")
+        views = sprint_views(plan, state.get("sprint_attempts") or [], the_attempt_in_progress(state) if live else None)
+        index = int(state.get("current_sprint_index", 0) or 0)
+        view = next((v for v in views if v["number"] == index + 1), None)
+        if view is None and not live and views:
+            view = views[-1]  # a finished run: past the plan's end, its last sprint is the one it ended on
+        try:
+            history = await event_bus.get_history(run_id)
+        except Exception:  # noqa: BLE001 - without the starts, nothing is shown as being worked on
+            history = []
+        starts = [event.stage for event in history if event.event_type == "stage_change" and event.stage]
+        planned_at = max((at for at, stage in enumerate(starts) if stage == "technical_lead"), default=-1)
+        started = set(starts[planned_at + 1:]) | {str(record.current_stage or "")}
+        total = len(list(getattr(plan, "sprints", None) or []))
+        return SprintPlanNow(
+            sprint=view["number"] if view else (index + 1 if index < total else None),
+            planned_total=total,
+            goal=view["goal"] if view else "",
+            attempt=view["attempts"] if view else 0,
+            round=view["test_rounds"] if view else 0,
+            open_defects=view["open_bugs"] if view else 0,
+            work_orders=work_orders_now(
+                state.get("milestone_plan"), state.get("specialist_outputs") or {}, started, live),
         )
 
     @runs.get("/{run_id}/usage", response_model=RunUsage)

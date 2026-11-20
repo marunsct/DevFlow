@@ -62,6 +62,7 @@ from app.server.models import (
     OwnerRating,
     OwnerRatingRequest,
     PreviewCriterion,
+    PickedChange,
     PreviewStartRequest,
     PreviewStatus,
     SprintsResponse,
@@ -1203,6 +1204,43 @@ def create_runs_router(
         record_audit(actor=user.username, tenant_id=user.tenant_id, action="run.preview.stop", subject=run_id)
         return PreviewStatus(**preview.public(state, run_id))
 
+    @runs.post("/{run_id}/preview/pick", status_code=201)
+    async def say_at_a_picked_element(
+        run_id: str, body: PickedChange, user: UserInDB = Depends(require_operator)
+    ) -> dict[str, Any]:
+        """Point and say (plan WS.5): a change written beside a part of the preview's page. A run that is going gets
+        a note carrying where it is and the files likely to hold it; a finished one, with change requests on, gets a
+        change request's brief to start from."""
+        from app.server import change_request_runs, point_and_say, preview
+        from app.server.steering import add
+
+        if not preview.preview_switch.enabled():
+            raise HTTPException(status_code=403, detail="Previews are off on this deployment (switch PRODUCT_PREVIEW).")
+        record = _require_run(runner, run_id, user)
+        if not record.repo_root or not Path(record.repo_root).is_dir():
+            raise HTTPException(status_code=404, detail="This run has no workspace yet.")
+        picked = body.element.model_dump()
+        files = await asyncio.to_thread(point_and_say.source_files, record.repo_root, picked)
+        element = point_and_say.kept_element(picked, files)
+        detail = {"kind": body.kind, "selector": element["selector"][:120], "files": [f["path"] for f in files]}
+        if body.kind == "change_request":
+            if record.status != "completed":
+                raise HTTPException(status_code=409, detail="A change request starts from a finished run's product.")
+            if not change_request_runs.enabled():
+                raise HTTPException(status_code=403, detail="Change requests are off (switch PREMIUM_CHANGE_REQUESTS).")
+            record_audit(actor=user.username, tenant_id=user.tenant_id, action="run.preview.pick", subject=run_id,
+                         detail=detail)
+            return {"run_id": run_id, "element": element, "brief": point_and_say.change_brief(body.change, element)}
+        if record.status in ("completed", "failed", "cancelled"):
+            raise HTTPException(status_code=409, detail="Only a run that is still going can be steered.")
+        try:
+            note = add(record.repo_root, body.change, user.username, body.scope, ["all"], element=element)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        record_audit(actor=user.username, tenant_id=user.tenant_id, action="run.preview.pick", subject=run_id,
+                     detail={**detail, "note": note["id"]})
+        return {"run_id": run_id, "note": note}
+
     @runs.api_route(
         "/{run_id}/preview/app/{token}/{path:path}",
         methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -1252,7 +1290,8 @@ def create_runs_router(
                             media_type="text/plain")
         await asyncio.to_thread(preview.touch, state)
         headers = preview.response_headers(upstream, prefix)
-        content = preview.rewritten(content, headers.get("content-type", ""), prefix)
+        content = preview.rewritten(content, headers.get("content-type", ""), prefix,
+                                    pointing=preview.is_for_pointing(token))
         return Response(content=content, status_code=upstream.status_code, headers=headers)
 
     @runs.get("/{run_id}/handover")

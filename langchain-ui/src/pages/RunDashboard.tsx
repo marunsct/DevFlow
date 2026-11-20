@@ -1070,7 +1070,14 @@ export const RunDashboard: React.FC = () => {
                 label: 'Workspace',
                 content: <WorkspacePanel runId={runId!} refreshKey={stageKey} logs={logs} selected={selectedFile} onSelect={selectFile} diff={fileDiff} />,
               },
-              { id: 'preview', label: 'Preview', content: <PreviewPanel runId={runId!} /> },
+              {
+                id: 'preview',
+                label: 'Preview',
+                content: (
+                  <PreviewPanel runId={runId!} runStatus={run.status} changesAllowed={changesAllowed}
+                    onChangeRequest={(brief) => navigate(`/?changeOf=${runId}`, { state: { brief } })} />
+                ),
+              },
               {
                 id: 'log',
                 label: <>Log <span className="text-xs tabular-nums text-text-muted">{logs.length}</span></>,

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PreviewPanel } from './PreviewPanel';
 import type { PreviewStatus } from '../types';
@@ -9,6 +9,7 @@ const api = vi.hoisted(() => ({
   startPreview: vi.fn(),
   stopPreview: vi.fn(),
   sendPreviewRequest: vi.fn(),
+  sayAtPickedElement: vi.fn(),
 }));
 vi.mock('../api', () => api);
 
@@ -103,5 +104,95 @@ describe('the preview tab', () => {
 
     expect((await screen.findByText(/Previews are off/)).textContent).toContain('PRODUCT_PREVIEW');
     expect(screen.queryByRole('button')).toBeNull();
+  });
+});
+
+describe('pointing at a part of the page (plan WS.5)', () => {
+  const PICK_LINK = '/api/runs/r/preview/app/1700000000.abc.sig.pick/';
+  const element = {
+    selector: '#entry-total', tag: 'span', text: 'Total: 0',
+    html: '<span id="entry-total">Total: 0</span>', box: { x: 1, y: 2, width: 30, height: 10 },
+  };
+  const pick = (over: Record<string, unknown> = {}) => ({ source: 'devflow-preview-pick', version: 1, element, ...over });
+
+  const pointing = async (props: Record<string, unknown> = {}) => {
+    api.getPreview.mockResolvedValue(ready({ pick_url: PICK_LINK } as Partial<PreviewStatus>));
+    render(<PreviewPanel runId="r" runStatus="running" {...props} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Point at a part of the page' }));
+    const frame = screen.getByTitle('The product') as HTMLIFrameElement;
+    expect(frame.getAttribute('src')).toBe(PICK_LINK);
+    return frame;
+  };
+  const say = (data: unknown, source: MessageEventSource | null) =>
+    act(() => { window.dispatchEvent(new MessageEvent('message', { data, source })); });
+
+  it('fills the form beside the page from a pick sent by its own frame', async () => {
+    const frame = await pointing();
+
+    say(pick(), frame.contentWindow);
+
+    expect((await screen.findByTestId('picked-selector')).textContent).toBe('#entry-total');
+    expect(screen.getByTestId('picked-text').textContent).toContain('Total: 0');
+    expect(screen.getByLabelText('What should change here')).toBeTruthy();
+  });
+
+  it('ignores a pick sent by any other window', async () => {
+    await pointing();
+
+    say(pick(), window);
+
+    expect(screen.queryByTestId('picked-selector')).toBeNull();
+  });
+
+  it.each([
+    ['another source', pick({ source: 'something-else' })],
+    ['a tag that is not one', pick({ element: { ...element, tag: 'span onload=x' } })],
+    ['markup over its cap', pick({ element: { ...element, html: 'x'.repeat(1001) } })],
+    ['no box', pick({ element: { ...element, box: undefined } })],
+    ['a string', JSON.stringify(pick())],
+  ])('ignores a malformed pick: %s', async (_, data) => {
+    const frame = await pointing();
+
+    say(data, frame.contentWindow);
+
+    expect(screen.queryByTestId('picked-selector')).toBeNull();
+  });
+
+  it('sends the change as a note for the stage working now and says which file it names', async () => {
+    api.sayAtPickedElement.mockResolvedValue({
+      kind: 'note',
+      note: { id: 'N-4', text: 'Two decimals.', by: 'o', at: '', element: { selector: '#entry-total', files: [{ path: 'public/index.html', line: 7 }] } },
+    });
+    const frame = await pointing();
+    say(pick(), frame.contentWindow);
+
+    await userEvent.type(await screen.findByLabelText('What should change here'), 'Two decimals.');
+    await userEvent.click(screen.getByLabelText('For the stage working now'));
+    await userEvent.click(screen.getByRole('button', { name: 'Send the note' }));
+
+    expect(api.sayAtPickedElement).toHaveBeenCalledWith('r', { change: 'Two decimals.', element, kind: 'note', scope: 'next_stage' });
+    expect((await screen.findByText(/Kept as note N-4/)).textContent).toContain('public/index.html:7');
+  });
+
+  it("makes a finished run's change a change request when change requests are on", async () => {
+    api.sayAtPickedElement.mockResolvedValue({ kind: 'change_request', brief: 'Two decimals.\n\n...' });
+    const asked = vi.fn();
+    const frame = await pointing({ runStatus: 'completed', changesAllowed: true, onChangeRequest: asked });
+    say(pick(), frame.contentWindow);
+
+    await userEvent.type(await screen.findByLabelText('What should change here'), 'Two decimals.');
+    await userEvent.click(screen.getByRole('button', { name: 'Write a change request' }));
+
+    expect(api.sayAtPickedElement).toHaveBeenCalledWith('r', expect.objectContaining({ kind: 'change_request' }));
+    expect(asked).toHaveBeenCalledWith('Two decimals.\n\n...');
+  });
+
+  it('offers no pointing without a link signed for it', async () => {
+    api.getPreview.mockResolvedValue(ready());
+    render(<PreviewPanel runId="r" />);
+
+    await screen.findByTitle('The product');
+
+    expect(screen.queryByRole('button', { name: 'Point at a part of the page' })).toBeNull();
   });
 });

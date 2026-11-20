@@ -30,6 +30,7 @@ CHECKS = (
     "tests_that_expect_what_they_never_gave", "tests_that_never_open_the_page", "locators_that_do_not_exist",
     "tests_that_sign_in_as_nobody", "tests_that_assert_a_kept_file_s_text",
     "tests_that_count_a_list_other_tests_write_to", "absences_a_longer_text_also_meets",
+    "items_found_again_after_an_action",
 )
 
 

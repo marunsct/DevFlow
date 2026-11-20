@@ -903,6 +903,11 @@ def _write_the_suite_s_files(files: dict[Path, str]) -> None:
 
 
 #: The suite as it ran before an at-the-limit send-back, and the once-per-lock send-backs: both cleared by every lock.
+#: Before the advice the harness read in the suite's code, as the QA lead reads it.
+ADVICE_HEADING = (
+    "--- Review points the harness read in the tests' code (advice: a product may still pass them; send a test back "
+    "for one only when you judge it right) ---"
+)
 BEFORE_THE_SEND_BACK = suite.BEFORE_THE_SEND_BACK
 ONCE_AT_THE_LIMIT = suite.ONCE_AT_THE_LIMIT
 
@@ -1207,6 +1212,10 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
             state.get("technical_specification"), getattr(state.get("document"), "text", "") or "")
         if suspected:
             request["messages"][-1]["content"] += "\n" + check_findings.for_the_qa_lead(suspected)
+        # What the harness read in the tests' code that a product may still pass: the QA lead's to weigh, never a
+        # send-back by itself.
+        if advice := suite.advice_about_the_suite(root):
+            request["messages"][-1]["content"] += "\n" + ADVICE_HEADING + "\n" + "\n".join(f"- {item}" for item in advice) + "\n"
         update = _run_gated_agent(
             state, config,
             stage_name=f"acceptance_review_{rounds}",
@@ -2143,10 +2152,18 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
             if said_of_it not in actual and ids & set(tags_in(str(getattr(item, "description", "") or ""))):
                 item.actual_behavior = f"{actual}\n{said_of_it}".strip()
     for entry in failing:
-        if entry.get("id") in mentioned:
-            continue
         tests = entry.get("tests") or []
         failed = [t for t in tests if t.get("outcome") == "failed"] or tests
+        # A locked test that matched nothing through an item found by a text it may have lost to its own action: said
+        # once, on the defect the round wrote itself for this criterion or on the one raised below.
+        hint = suite.what_a_text_lost_to_an_action_tells_the_fixer(
+            _root(state), [(str(t.get("name") or ""), str(t.get("message") or "")) for t in failed])
+        if entry.get("id") in mentioned:
+            for item in reported if hint else ():
+                actual = str(getattr(item, "actual_behavior", "") or "")
+                if hint not in actual and entry.get("id") in tags_in(str(getattr(item, "description", "") or "")):
+                    item.actual_behavior = f"{actual}\n{hint}".strip()
+            continue
         detail = "; ".join(
             f"{t.get('name')}: " + (((t.get("message") or "").strip().splitlines() or ["failed"])[0][:300])
             for t in failed[:3]
@@ -2156,6 +2173,8 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
         met = next((suite.page_it_failed_on(t.get("message", "")) for t in failed if suite.page_it_failed_on(t.get("message", ""))), "")
         if met:
             detail += f"{THE_PAGE_WHEN_IT_FAILED}{met}"
+        if hint:
+            detail += f"\n{hint}"
         if logged:
             detail += f"\nWhat the product's server logged while the suite ran:\n{logged}"
             hidden = what_the_logged_frames_hide(_root(state), logged)

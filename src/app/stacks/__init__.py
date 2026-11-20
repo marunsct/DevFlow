@@ -192,6 +192,9 @@ class StackPack:
     #: A suite file's text -> (line, text, longer text) where a test expects a locator found by a text that is not
     #: matched exactly to be absent while it expects one found by a longer text holding it, in any case, present.
     absences_a_longer_text_meets: Callable[[str], Sequence[tuple[int, str, str]]] | None = None
+    #: A suite file's text -> (line, text) where a test acts inside an item it found by a text, then looks inside that
+    #: item again by the same text, which the action may have taken off it. Advice, never a reason to reopen.
+    found_again_after_an_action: Callable[[str], Sequence[tuple[int, str]]] | None = None
     #: A failed test's message -> (old text, new text) when it failed on a
     #: locator found by a text the page it failed on no longer shows.
     locator_left_behind: Callable[[str], tuple[str, str] | None] | None = None

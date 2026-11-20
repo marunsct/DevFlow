@@ -156,3 +156,12 @@ PYTHON_KNOWN_ERRORS["context manager protocol"] = (
     "`contextlib.contextmanager` inside the test module - in every test of the file in one rewrite. Changing the "
     "product's function to suit some tests breaks its other callers."
 )
+#: Measured on one run: `DELETE /items/99999999999999999999` answered 500 on a Flask service on SQLite - its `<int:...>`
+#: path converter takes an integer of any size, and sqlite3 refused it before the query ran; five fixes in a row did not
+#: find it.
+PYTHON_KNOWN_ERRORS["python int too large to convert to sqlite integer"] = (
+    "an id or number from the request is larger than SQLite's 64-bit INTEGER, and sqlite3 refuses it before the query "
+    "runs: check that a number taken from the path or the body fits between -9223372036854775808 and "
+    "9223372036854775807 before it reaches the database, and answer the status the specification gives for a record "
+    "that does not exist (usually 404) or for an invalid value."
+)

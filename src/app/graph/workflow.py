@@ -3358,6 +3358,16 @@ def _with_the_lock_s_server_errors(state: Any, test_result: Any, milestone: Any)
         return test_result
 
 
+def _one_of_them_said(root: str, errors: list[Any]) -> str:
+    """`. One such request, sent again by the harness: ...` - what the server-error probe heard from one of `errors`
+    and what the server printed for it; "" when it heard from none of them."""
+    from app.acceptance import interface_contract
+
+    said = interface_contract.what_a_server_error_said(root)
+    calls = {f"`{check.method} {check.path}`" for check, _ in errors}
+    return f". One such request, sent again by the harness: {said[:900]}" if said and said.split(" answered", 1)[0] in calls else ""
+
+
 def _with_a_server_error_defect(state: Any, test_result: Any, milestone: Any, errors: list[Any],
                                 bad_body: list[Any] | None = None, wrong_shape: list[Any] | None = None) -> Any:
     """`test_result` with one defect for `errors`, each a contract check and the 5xx it got; for `bad_body`, the same for
@@ -3389,7 +3399,7 @@ def _with_a_server_error_defect(state: Any, test_result: Any, milestone: Any, er
         actual_behavior="; ".join([
             *(f"`{check.method} {check.path}` answered {status}" for check, status in [*errors[:6], *unparsable[:6]]),
             *(f"`{check.method} {check.path}` answered {status} to `{body}`" for check, status, body in shaped[:6]),
-        ]),
+        ]) + _one_of_them_said(root, errors),
         affected_files=sorted({f for f, _ in acceptance_nodes.where_errors_become_5xx(root)}),
         owner=_the_unit_tests_fail(milestone, "").owner,
         kind=cause.PROBE_FINDING,

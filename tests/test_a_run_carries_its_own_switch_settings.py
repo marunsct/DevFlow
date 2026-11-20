@@ -6,7 +6,6 @@ the live run mixed, so no switch could be judged.
 from __future__ import annotations
 
 import importlib.util
-import inspect
 from pathlib import Path
 
 import pytest
@@ -77,15 +76,25 @@ def test_two_runs_on_one_commit_one_with_the_switch_off_fall_into_different_arms
     assert len(ledger.the_arm(rows, "abc", "web-todo")) == 2
 
 
-def test_a_run_is_started_with_its_switches_and_an_unknown_name_is_refused_first() -> None:
-    from app.server import models, runs as run_api
+def _new_run(client, tmp_path: Path) -> str:
+    brief = tmp_path / "brief.md"
+    brief.write_text("A product")
+    with open(brief, "rb") as handle:
+        return client.post("/api/runs", files=[("files", ("brief.md", handle, "text/plain"))]).json()["run_id"]
 
-    assert "switches" in models.StartRunRequest.model_fields
-    source = inspect.getsource(run_api)
-    refused = source.index("Unknown switch(es)")
-    stored = source.index("set_switch_overrides(run_id, dict(body.switches))")
-    started = source.index("pin_model=body.pin_model,")
-    assert refused < started < stored
+
+def test_a_run_is_started_with_its_switches_and_an_unknown_name_is_refused_first(client, tmp_path) -> None:
+    from app.server.run_store import RunStore
+
+    refused, started = _new_run(client, tmp_path), _new_run(client, tmp_path)
+
+    assert client.post(f"/api/runs/{refused}/start", json={"switches": {"NO_SUCH_SWITCH": False}}).status_code == 422
+    assert client.post(f"/api/runs/{started}/start", json={
+        "switches": {"MILESTONE_EVIDENCE_GATE": False}, "workspace_label": "own-switches"}).status_code == 202
+
+    assert client.get(f"/api/runs/{refused}").json()["status"] == "created"
+    assert RunStore.shared().switch_overrides(refused) == {}
+    assert RunStore.shared().switch_overrides(started) == {"MILESTONE_EVIDENCE_GATE": False}
 
 
 def test_the_provenance_reads_the_switches_as_the_run_sees_them(tmp_path, monkeypatch) -> None:

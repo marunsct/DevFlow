@@ -56,6 +56,7 @@ import { DeliveryPanel } from '../components/DeliveryPanel';
 import { OwnerRating } from '../components/OwnerRating';
 import { RunFigures } from '../components/RunFigures';
 import { fixLoop, useTypicalTime } from '../lib/runSummary';
+import { INTERNET_LOOKUPS } from '../lib/runDefaults';
 import { holdingTheModel, useServerHealth } from '../lib/serverHealth';
 import { Activity, CheckCircle2, Clock, XCircle, AlertCircle, ArrowLeft, Ban, Play, Pause, Copy, ListChecks, LayoutGrid, RotateCcw, Download } from 'lucide-react';
 import { describeStage, describeStatus, RESUMABLE } from '../lib/activity';
@@ -879,6 +880,15 @@ export const RunDashboard: React.FC = () => {
                 {run.artifacts?.length ?? 0} produced
               </dd>
             </div>
+            {/* Plan WL.3: what the agents may look up on the internet, as the run was started. */}
+            {run.internet_lookups && (
+              <div data-testid="internet-lookups">
+                <dt className="text-xs text-text-muted uppercase tracking-wider">Internet lookups</dt>
+                <dd className="mt-1 text-[13px] text-text-primary">
+                  {INTERNET_LOOKUPS.find(([id]) => id === run.internet_lookups)?.[1] ?? run.internet_lookups}
+                </dd>
+              </div>
+            )}
             <RunFigures run={run} />
           </dl>
         </div>

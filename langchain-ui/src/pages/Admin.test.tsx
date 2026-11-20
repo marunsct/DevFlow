@@ -31,6 +31,29 @@ afterEach(() => {
   put.mockReset();
 });
 
+describe('the internet lookup keys on the admin page', () => {
+  // Plan WL.3: the lookup sources' keys are set here, write-only, as the provider keys are.
+  const keys = { stackexchange_key_hint: '****1234', stackexchange_key_configured: true, stackexchange_key_from_environment: false,
+    github_token_hint: null, github_token_configured: false, github_token_from_environment: false };
+
+  it('shows a saved key only masked, and saves only the key typed', async () => {
+    get.mockImplementation((url: string) => Promise.resolve({ data:
+      url === '/auth/me' ? { username: 'a', role: 'admin' } : url === '/settings/lookup-keys' ? keys : [] }));
+    put.mockResolvedValueOnce({ data: { ...keys, github_token_hint: '****9876', github_token_configured: true } });
+    renderPage();
+
+    const stack = (await screen.findByLabelText('Stack Exchange key')) as HTMLInputElement;
+    await vi.waitFor(() => expect(stack.placeholder).toBe('****1234'));
+    expect(stack.value).toBe('');
+    await vi.waitFor(() => expect((screen.getByLabelText('GitHub token') as HTMLInputElement).disabled).toBe(false));
+    await userEvent.type(screen.getByLabelText('GitHub token'), 'ghp_typed_9876');
+    await userEvent.click(screen.getByText('Save keys'));
+
+    expect(put).toHaveBeenCalledWith('/settings/lookup-keys', { github_token: 'ghp_typed_9876' });
+    await vi.waitFor(() => expect((screen.getByLabelText('GitHub token') as HTMLInputElement).placeholder).toBe('****9876'));
+  });
+});
+
 describe('the admin page', () => {
   it('lists every switch with what it does, its value and where the value comes from', async () => {
     serve([entry(), entry({ name: 'MEASURE_ONCE', summary: 'A product measured by the suite is not measured again until it changes.', docker: null, on: false, source: 'default', details: '' })]);

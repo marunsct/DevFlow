@@ -82,6 +82,24 @@ def cleaned(error_line: str, private_words: list[str] | tuple[str, ...] = ()) ->
 
 # --- the sources ----------------------------------------------------------------------------------------------------
 
+def credential(variable: str) -> str:
+    """A source's key: its environment variable, else the one an administrator saved on the admin page (plan WL.3);
+    "" for none. The saved ones are read only where stored settings are (`SWITCH_OVERRIDES_FROM_SETTINGS`, on in
+    the services), so a test or a script outside them never queries a database for a key."""
+    value = os.environ.get(variable, "").strip()
+    if value:
+        return value
+    if str(os.environ.get("SWITCH_OVERRIDES_FROM_SETTINGS") or "").strip().lower() not in {"1", "on", "true", "yes"}:
+        return ""
+    try:
+        from app.server import runtime_settings
+
+        name = {secret_variable: key for key, secret_variable in runtime_settings.LOOKUP_SECRETS.items()}.get(variable)
+        return str(runtime_settings.secrets().get(name, "") if name else "").strip()
+    except Exception:  # noqa: BLE001 - keyless, at the sources' lower limits
+        return ""
+
+
 def _plain(body_html: str) -> str:
     text = re.sub(r"(?is)<(script|style)\b.*?</\1>", " ", str(body_html or ""))
     text = re.sub(r"(?i)<(br|/p|/li|/pre|/h\d)[^>]*>", "\n", text)
@@ -92,7 +110,7 @@ def stack_exchange(query: str, fetch: Fetch) -> list[dict[str, str]]:
     """Questions with an accepted answer for `query`, each with that answer's opening."""
     from urllib.parse import urlencode
 
-    key = os.environ.get("STACKEXCHANGE_KEY", "").strip()
+    key = credential("STACKEXCHANGE_KEY")
     params = {"order": "desc", "sort": "relevance", "q": query, "accepted": "True", "site": "stackoverflow",
               "pagesize": str(MOST_SOURCES), **({"key": key} if key else {})}
     status, body = fetch("https://api.stackexchange.com/2.3/search/advanced?" + urlencode(params), {})
@@ -122,7 +140,7 @@ def github_issues(query: str, fetch: Fetch) -> list[dict[str, str]]:
     """Issues reporting `query`, most discussed first."""
     from urllib.parse import urlencode
 
-    token = os.environ.get("GITHUB_TOKEN", "").strip()
+    token = credential("GITHUB_TOKEN")
     headers = {"Accept": "application/vnd.github+json", **({"Authorization": f"Bearer {token}"} if token else {})}
     status, body = fetch("https://api.github.com/search/issues?"
                          + urlencode({"q": f"{query} is:issue", "sort": "comments", "per_page": str(MOST_SOURCES)}),
@@ -229,5 +247,5 @@ def as_a_section(answer: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
-__all__ = ["KEPT_DAYS", "NOTE", "SOURCES", "as_a_section", "cleaned", "github_issues", "look_up", "private_search",
+__all__ = ["KEPT_DAYS", "NOTE", "SOURCES", "as_a_section", "cleaned", "credential", "github_issues", "look_up", "private_search",
            "stack_exchange"]

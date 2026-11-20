@@ -432,6 +432,14 @@ def create_runs_router(
         # A run pinned to an endpoint of its own is refused before anything is prepared if that is not an address
         # or a model name worth pinning to.
         pin_base_url, pin_model_name = _the_pin_target(body.pin_model, body.pin_base_url, body.pin_model_name, user)
+        # The user's Internet lookups choice is the run's own settings of the switches it stands for; a switch the
+        # request names itself (a measurement's arm) beats it (plan WL.3).
+        run_switches: dict[str, bool] = {}
+        if body.internet_lookups:
+            from app.internet_lookups import switches_for
+
+            run_switches.update(switches_for(body.internet_lookups))
+        run_switches.update(body.switches or {})
         if body.switches:
             # Only switches the harness has, refused before the run starts: an unknown name is no arm.
             from app.observability.provenance import SWITCHES as _KNOWN
@@ -531,8 +539,8 @@ def create_runs_router(
 
         if body.name and " ".join(body.name.split()):
             await asyncio.to_thread(lambda: runner.run_store.set_run_name(run_id, " ".join(body.name.split())[:80]))
-        if body.switches:
-            await asyncio.to_thread(lambda: runner.run_store.set_switch_overrides(run_id, dict(body.switches)))
+        if run_switches:
+            await asyncio.to_thread(lambda: runner.run_store.set_switch_overrides(run_id, run_switches))
 
         record_audit(
             actor=user.username, tenant_id=user.tenant_id, action="run.start", subject=run_id,
@@ -2430,6 +2438,7 @@ async def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> R
         delivery_mode=str(getattr(record, "delivery_mode", "") or ""),
         use_frontier_model=not bool(getattr(record, "local_only", False)),
         **_the_model_pin(record.run_id, runner),
+        **_the_internet_lookups(record.run_id, runner),
         **_the_run_name(record.run_id, runner),
         **_the_time_paused(record.run_id, runner),
         cost=_cost_summary(record.run_id),
@@ -2439,6 +2448,17 @@ async def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> R
         # Its size, so the page can say what a run of this size takes here.
         **_how_many_criteria_hold(record),
     )
+
+
+def _the_internet_lookups(run_id: str, runner: Any) -> dict[str, Any]:
+    """`internet_lookups` for a status response: the choice the run was started with, or nothing (plan WL.3)."""
+    try:
+        from app.internet_lookups import choice_of
+
+        choice = choice_of(runner.run_store.switch_overrides(run_id))
+        return {"internet_lookups": choice} if choice else {}
+    except Exception:  # noqa: BLE001 - a status response is never failed by the choice
+        return {}
 
 
 def _the_time_paused(run_id: str, runner: Any) -> dict[str, Any]:

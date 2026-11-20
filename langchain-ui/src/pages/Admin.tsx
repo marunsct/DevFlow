@@ -11,6 +11,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ToggleRight } from 'lucide-react';
 import { api } from '../api';
 import { Badge, useFeedback } from '../ui';
+import { LookupKeys } from '../components/LookupKeys';
 
 export interface SwitchEntry {
   name: string;
@@ -202,6 +203,8 @@ export const Admin: React.FC = () => {
           ))}
         </div>
       </section>
+
+      <LookupKeys isAdmin={isAdmin} />
     </div>
   );
 };

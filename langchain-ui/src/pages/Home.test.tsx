@@ -51,6 +51,19 @@ describe('starting a build', () => {
     expect(JSON.stringify(mocks.startRun.mock.calls.at(-1))).toContain('"name":"second try"');
   });
 
+  // Plan WL.3: the user decides per run what the agents may look up on the internet; "when stuck" unless changed.
+  it('starts the run with the internet lookups chosen for it, when stuck unless changed', async () => {
+    show();
+    await userEvent.type(screen.getByLabelText(/Write the brief/), '## Features\n- Add a note');
+    expect((screen.getByLabelText(/Internet lookups/) as HTMLSelectElement).value).toBe('when_stuck');
+    await userEvent.selectOptions(screen.getByLabelText(/Internet lookups/), 'off');
+    expect(screen.getByTestId('internet-lookups-help').textContent).toMatch(/registries and official\s+documentation/);
+    await userEvent.click(screen.getByRole('button', { name: /Start Workflow Run/ }));
+    await waitFor(() => expect(mocks.startRun).toHaveBeenCalled());
+    const payload = (mocks.startRun.mock.calls.at(-1) as unknown as [string, Record<string, any>])[1];
+    expect(payload.internet_lookups).toBe('off');
+  });
+
   it('starts a run from an uploaded codebase with that upload named as its source', async () => {
     mocks.uploadCodebase.mockResolvedValueOnce({ upload_id: 'app_1a2b3c4d.zip' } as any);
     const { container } = show();

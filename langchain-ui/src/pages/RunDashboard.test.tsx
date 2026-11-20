@@ -11,7 +11,7 @@ const { run } = vi.hoisted(() => ({ run: {
   remediation: null, error: null, auto_approve: false, completion_gaps: [], blocking_gaps: [], gate_deadline: null,
   approval_timeout_minutes: null, non_deliverable: '', delivery_mode: 'fast', use_frontier_model: false,
   max_run_tokens: null, max_run_cost_usd: null, cost: null,
-  run_name: null, model_pinned: false, model_last: { model: 'model-a', endpoint: '127.0.0.1:8888' },
+  run_name: null, internet_lookups: null, model_pinned: false, model_last: { model: 'model-a', endpoint: '127.0.0.1:8888' },
 } }));
 
 const { known } = vi.hoisted(() => ({ known: {} as Record<string, ReturnType<typeof vi.fn>> }));
@@ -126,6 +126,13 @@ describe('the run page', () => {
     Object.assign(run, { status: 'paused', current_stage: 'defect_fix_2_3' });
     renderPage();
     expect(await screen.findByText('Steer this run…')).toBeTruthy();
+  });
+
+  // Plan WL.3: the run record shows what the agents could look up on the internet, as the run was started.
+  it('shows the internet lookups the run was started with', async () => {
+    Object.assign(run, { internet_lookups: 'off' });
+    renderPage();
+    expect((await screen.findByTestId('internet-lookups')).textContent).toBe('Internet lookupsOff');
   });
 
   it('says delivered for a completed run with no cut and nothing blocking', async () => {

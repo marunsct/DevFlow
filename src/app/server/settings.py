@@ -984,6 +984,56 @@ async def set_switch(name: str, payload: SwitchSetting, user: UserInDB = Depends
     return [SwitchEntry(**entry) for entry in switch_catalogue.entries()]
 
 
+class LookupKeysView(BaseModel):
+    """The internet lookup sources' keys as the admin page shows them: masked, never the value (plan WL.3)."""
+
+    stackexchange_key_hint: str | None = None
+    stackexchange_key_configured: bool = False
+    #: Set in the deployed environment, which beats a key saved here.
+    stackexchange_key_from_environment: bool = False
+    github_token_hint: str | None = None
+    github_token_configured: bool = False
+    github_token_from_environment: bool = False
+
+
+class LookupKeysUpdate(BaseModel):
+    """Write-only, as the provider keys are: omitted or null leaves the stored key, "" deletes it, a value sets it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    stackexchange_key: str | None = Field(default=None, max_length=512, repr=False)
+    github_token: str | None = Field(default=None, max_length=512, repr=False)
+
+
+def _lookup_keys_view() -> LookupKeysView:
+    stored = runtime_settings.secrets()
+    fields: dict[str, Any] = {}
+    for key, variable in runtime_settings.LOOKUP_SECRETS.items():
+        from_environment = bool(os.environ.get(variable, "").strip())
+        value = os.environ.get(variable, "").strip() or stored.get(key, "")
+        fields.update({f"{key}_hint": _mask(value), f"{key}_configured": bool(value),
+                       f"{key}_from_environment": from_environment})
+    return LookupKeysView(**fields)
+
+
+@settings_router.get("/lookup-keys", response_model=LookupKeysView)
+async def get_lookup_keys(user: UserInDB = Depends(get_current_active_user)) -> LookupKeysView:
+    """Whether each internet lookup source has a key, masked."""
+    return _lookup_keys_view()
+
+
+@settings_router.put("/lookup-keys", response_model=LookupKeysView)
+async def set_lookup_keys(payload: LookupKeysUpdate, user: UserInDB = Depends(require_admin)) -> LookupKeysView:
+    """Save or delete the internet lookup sources' keys, encrypted with the other credentials."""
+    _check_read_only()
+    changed = runtime_settings.save_secrets(
+        {key: value.strip() for key, value in payload.model_dump().items() if value is not None}, actor=user.username)
+    # Which keys changed, never their values.
+    record_audit(actor=user.username, tenant_id=user.tenant_id, action="settings.lookup_keys",
+                 subject="lookup_keys", detail={"changed": changed})
+    return _lookup_keys_view()
+
+
 @settings_router.get("/models", response_model=list[ModelProfile])
 async def list_model_profiles(
     target: str | None = None,

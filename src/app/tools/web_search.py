@@ -244,8 +244,43 @@ def build_web_tools() -> list[Any]:
     return [search_the_web, read_web_page]
 
 
+#: The web tools' names, as a stage's tool list holds them.
+WEB_TOOL_NAMES: frozenset[str] = frozenset({"search_the_web", "read_web_page"})
+
+
+class _WebToolsOffered:
+    """`WEB_TOOLS_OFFERED` as the switch registry reads one (plan WL.3): off in code like every switch.
+
+    The user's "Internet lookups" choice for a run sets it: on for "always", off for "off" and "when stuck". Measured
+    over 30 runs, the local model was offered these two tools about 3,500 times and called them almost never, so they
+    are offered only when the user chose it.
+    """
+
+    ON_BY_DEFAULT = False
+    #: What the admin page says this switch does.
+    explanation = ("The web search and the page reader are offered to every stage that reads documentation, even "
+                   "when tool lists are lean; off, they are never offered. A run's own Internet lookups choice sets "
+                   "it: on for Always, off for Off and When stuck.")
+
+    @staticmethod
+    def enabled() -> bool:
+        from app.switches import is_on
+
+        return is_on("WEB_TOOLS_OFFERED", _WebToolsOffered.ON_BY_DEFAULT)
+
+
+web_tools_offered_switch = _WebToolsOffered()
+
+
+def offered() -> bool:
+    """Whether the web tools are offered to the stages that read documentation (`WEB_TOOLS_OFFERED`)."""
+    return web_tools_offered_switch.enabled()
+
+
 def web_tools() -> list[Any]:
-    return build_web_tools() if enabled() else []
+    """The web search and page reader for a stage: only with a search service and only when they are offered."""
+    return build_web_tools() if enabled() and offered() else []
 
 
-__all__ = ["MOST_RESULTS", "enabled", "read_page", "search", "web_tools"]
+__all__ = ["MOST_RESULTS", "WEB_TOOL_NAMES", "enabled", "offered", "read_page", "search", "web_tools",
+           "web_tools_offered_switch"]

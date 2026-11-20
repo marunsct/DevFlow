@@ -7,6 +7,7 @@ end of its output were stack frames and "... 44 common frames omitted" - the exc
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 
 #: One frame of a stack trace, in the shapes the common runtimes print; never the line stating the error.
 _A_FRAME = re.compile(
@@ -56,8 +57,10 @@ _A_REQUEST = re.compile(r"\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(/\S*)|\b
 _NOT_THE_PRODUCT_S = re.compile(r"site-packages|dist-packages|/lib/python\d|<frozen|node_modules|node:internal")
 #: A frame, in the shapes a Python or a JavaScript runtime prints.
 _A_PLACE = re.compile(r"^\s*(?:File\s+\"[^\"]+\",\s+line\s+\d+.*|at\s+\S.*)$")
-#: Lines around a line naming the request that may hold its error.
+#: Lines around a line naming the request that may hold its error; the lines of a stack trace are not counted.
 _NEAR = 60
+#: Lines after a line naming the request read at most, its stack traces' lines included.
+_MOST_READ = 2_000
 #: An HTML page, where a JSON answer or plain text was expected.
 _MARKUP = re.compile(r"<\s*(?:!doctype|html|head|body|title|h1)\b", re.I)
 
@@ -74,13 +77,78 @@ def the_page_in_words(said: str) -> str:
     return f'an HTML page, "{words[:120]}"' if words else "an HTML page"
 
 
+@dataclass(frozen=True)
+class _TraceShape:
+    """How one family of runtimes prints an exception with its stack trace."""
+
+    #: A line its frames start at.
+    opens: re.Pattern[str]
+    #: Where the exception's own line stands: "after" its frames (it ends the trace) or "before" them (just above).
+    stated: str
+    #: A line naming an exception's cause, printed just above that cause's own frames.
+    cause: re.Pattern[str] | None = None
+
+
+#: The stack traces of the runtimes the harness recognises. The line naming what failed is the exception's own, and a
+#: cause's where the trace names one; a framework's header line above a trace ("Exception in ASGI application") says
+#: only that something failed. Measured on one run: a 500 at a huge id was shown as uvicorn's header alone, the
+#: traceback's last line - `OverflowError: Python int too large to convert to SQLite INTEGER` - left out.
+_TRACE_SHAPES = (
+    # Python: "Traceback (most recent call last):", indented frames, then the unindented "SomeError: message"; in a
+    # chain each exception ends its own traceback, the first printed the earliest.
+    _TraceShape(re.compile(r"^Traceback \(most recent call last\):"), "after"),
+    # JavaScript runtimes, the JVM and .NET: "TypeError: message", 'Exception in thread "main" java.lang.X: message' or
+    # "Unhandled exception. System.X: message" just above "    at ..." frames; a cause as "[cause]: Error: ...",
+    # "Caused by: ..." (the last the root) or an inner exception's " ---> System.Y: ...".
+    _TraceShape(re.compile(r"^\s+at\s+\S"), "before", re.compile(r"^\s*(?:Caused by:|-+>|\[cause\]:)\s*\S")),
+    # Go: "panic: message", then "goroutine 1 [running]:" and its frames.
+    _TraceShape(re.compile(r"^goroutine\s+\d+\s+\["), "before"),
+)
+#: A line naming an exception: `Name: message` (dotted, or a runtime's prefix before it) or a bare `NameError`.
+_NAMES_AN_EXCEPTION = re.compile(r"^\s*\S[^:]{0,200}:\s*\S|^\s*[\w.$]+(?:Error|Exception)\s*$")
+#: A line of a stack trace other than the exception's own: blank, indented, a frame, a chain's marker.
+_IN_A_TRACE = re.compile(r"^\s*$|^\s|^Traceback \(most recent call last\):|^During handling of the above exception"
+                         r"|^The above exception was the direct cause")
+
+
+def _the_lines_traced(lines: list[str]) -> list[str]:
+    """The exceptions `lines` print with a stack trace - each one's own line and its causes' - in the order printed,
+    each once; [] when they hold no trace."""
+    found: dict[int, str] = {}
+    for shape in _TRACE_SHAPES:
+        for at, line in enumerate(lines):
+            if not shape.opens.search(line):
+                continue
+            if shape.stated == "after":
+                end = at + 1
+                while end < len(lines) and _IN_A_TRACE.search(lines[end]):
+                    end += 1
+                if end < len(lines) and not _A_REQUEST.search(lines[end]):
+                    found[end] = lines[end]
+                continue
+            if at and shape.opens.search(lines[at - 1]):
+                continue
+            above = at - 1
+            while above >= 0 and not lines[above].strip():
+                above -= 1
+            while above >= 0 and shape.cause is not None and shape.cause.search(lines[above]):
+                found[above] = lines[above]
+                above -= 1
+            if above >= 0 and not shape.opens.search(lines[above]) and (
+                    _AN_ERROR.search(lines[above]) or _NAMES_AN_EXCEPTION.search(lines[above])):
+                found[above] = lines[above]
+    said = [" ".join(found[at].split())[:300] for at in sorted(found)]
+    return list(reversed(list(dict.fromkeys(reversed(said)))))
+
+
 def _the_lines(output: str) -> list[str]:
     return [_STAMPS.sub("", _A_RUNNER_PREFIX.sub("", line.rstrip())) for line in str(output or "").splitlines()]
 
 
 def _in_words(lines: list[str]) -> str:
-    """The errors `lines` state and the last place in the product's own files, within `MOST_PRINTED`; "" for none."""
-    stated = the_errors_stated("\n".join(lines))
+    """The errors `lines` state - the exceptions of their stack traces where they hold one - and the last place in the
+    product's own files, within `MOST_PRINTED`; "" for none."""
+    stated = _the_lines_traced(lines) or the_errors_stated("\n".join(lines))
     if not stated:
         return ""
     places = [" ".join(line.split()) for line in lines if _A_PLACE.match(line) and not _NOT_THE_PRODUCT_S.search(line)]
@@ -121,11 +189,14 @@ def what_the_server_printed_for(output: str, path: str, method: str = "") -> str
         return request is not None and request[1] == path and (not method or request[0] == method)
 
     for at in reversed([i for i, line in enumerate(lines) if ours(names(line))]):
-        after, before = [], []
-        for line in lines[at:at + _NEAR]:
+        after, before, counted = [], [], 0
+        for line in lines[at:at + _MOST_READ]:
             if (named := names(line)) is not None and not ours(named):
                 break
             after.append(line)
+            counted += not _IN_A_TRACE.search(line)
+            if counted >= _NEAR:
+                break
         for line in reversed(lines[max(at - _NEAR, 0):at]):
             if (named := names(line)) is not None and not ours(named):
                 break

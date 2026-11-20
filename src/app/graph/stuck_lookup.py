@@ -62,11 +62,48 @@ def _stuck(repo_root: str | Path, defect: Any) -> bool:
     return cause_journal.failed_fixes_in_the_run(repo_root, defect) > 0
 
 
+#: The place a defect gives after what the server printed: `(File "...", line 12, in f)` or `(at f (/app/x.js:3:5))`.
+_A_PLACE_GIVEN = re.compile(r"\s*\((?:File\s|at\s)[^()]*(?:\([^()]*\)[^()]*)*\)\s*$")
+
+
+def _what_the_server_printed(text: str) -> str:
+    """The server's own error line a defect quotes after "the server printed:" - the last it gives for the first
+    request, its place left out - or "" when it quotes none."""
+    from app.acceptance.what_went_wrong import THE_SERVER_PRINTED
+
+    _, marked, after = str(text or "").partition(THE_SERVER_PRINTED)
+    if not marked:
+        return ""
+    depth, end = 0, len(after)
+    for at, char in enumerate(after):
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            if depth == 0:
+                end = at
+                break
+            depth -= 1
+        elif char == "\n" or (depth == 0 and after.startswith("; `", at)):
+            end = at
+            break
+    said = [part.strip() for part in after[:end].split(" / ") if part.strip()]
+    return " ".join(_A_PLACE_GIVEN.sub("", said[-1]).split()) if said else ""
+
+
 def _the_error_line(defect: Any) -> str:
-    """The last error the defect's text states, or "" - a criterion's prose ("does not work yet") is not searchable."""
+    """The error to look up for the defect, or "": the server's own error line where the defect quotes what the server
+    printed, else the last error its text states - a criterion's prose ("does not work yet") is not searchable.
+
+    Measured on one run: an edge probe's defect was searched as its whole first sentence - the harness's own wording
+    and the product's route ("Requests at the edges of the interface contract are not handled: `GET /notes/{id}` ...")
+    - where the server had printed the error others would have written about.
+    """
     from app.acceptance.what_went_wrong import the_errors_stated
 
-    stated = the_errors_stated(f"{getattr(defect, 'actual_behavior', '') or ''}\n{getattr(defect, 'description', '')}")
+    text = f"{getattr(defect, 'actual_behavior', '') or ''}\n{getattr(defect, 'description', '')}"
+    if printed := _what_the_server_printed(text):
+        return printed
+    stated = the_errors_stated(text)
     return stated[-1] if stated else ""
 
 

@@ -91,3 +91,22 @@ def test_a_criterion_whose_fix_failed_in_an_earlier_sprint_attempt_is_stuck_at_i
 
     assert len(_on) == looked_up
     assert ("What others found for this error" in shown) == bool(looked_up)
+
+
+def test_a_stuck_defect_quoting_what_the_server_printed_is_looked_up_as_that_line(tmp_path, _on):
+    """Measured: an edge probe's defect was searched as its whole first sentence - the harness's own wording and the
+    product's route - where the server had printed the error others would have written about."""
+    overflow = "OverflowError: Python int too large to convert to SQLite INTEGER"
+    printed = (f"answered 500 (it said: Internal Server Error) (the server printed: {overflow} "
+               "(File \"/workspace/notes-api/notes_api/main.py\", line 140, in get_note))")
+    defect = SimpleNamespace(
+        description=("Requests at the edges of the interface contract are not handled: `GET /notes/{id}` at id "
+                     f"`99999999999999999999` {printed}; `DELETE /notes/{{id}}` at id `99999999999999999999` "
+                     "answered 500."),
+        actual_behavior=(f"`GET /notes/{{id}}` at id `99999999999999999999` {printed}; `DELETE /notes/{{id}}` at id "
+                         "`99999999999999999999` answered 500"),
+        attempts=[{"stage": "defect_fix_1_0", "outcome": "left open"}])
+
+    stuck_lookup.section(tmp_path / "workspace-notes", defect, STACK)
+
+    assert [asked[0] for asked in _on] == [overflow]

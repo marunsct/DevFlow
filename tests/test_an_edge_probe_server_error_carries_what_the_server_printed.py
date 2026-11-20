@@ -112,7 +112,7 @@ def test_an_edge_probe_500_on_a_huge_id_names_the_error_the_server_printed_and_i
     each = {part.split(" answered")[0]: part for part in defect.actual_behavior.split("; ")}
     huge = each["`DELETE /items/{id}` at id `99999999999999999999`"]
     assert "answered 500" in huge and "the server printed:" in huge and OVERFLOW in huge and "product.py" in huge
-    assert "[DELETE]" in huge and "[GET]" not in huge
+    assert "Exception on" not in huge and "ValueError" not in huge, "the traceback's exception, not the header line"
     assert "<!doctype" not in defect.description.lower() and "500 Internal Server Error" in huge
     not_a_number = each["`GET /items/{id}` at id `not-a-number`"]
     assert "ValueError: invalid literal for int()" in not_a_number and OVERFLOW not in not_a_number

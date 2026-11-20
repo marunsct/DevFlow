@@ -42,4 +42,21 @@ describe('a review', () => {
     await userEvent.click(changes);
     expect(onSubmit).toHaveBeenCalledWith('changes', 'Say how a session ends.', undefined);
   });
+
+  it('at the plan gate asks for a go, and says when the run goes on by itself', async () => {
+    const onSubmit = vi.fn();
+    const at = '2026-11-20T12:15:00+00:00';
+    render(<ReviewPanel runId="run-1" onSubmit={onSubmit}
+      review={review({ point: 'sprint_plan', artifact_id: 'sprint-plan', document: null, revision: 1, proceeds_at: at })} />);
+
+    expect(screen.getByTestId('proceeds-at').textContent).toContain(new Date(at).toLocaleTimeString());
+    await userEvent.click(screen.getByRole('button', { name: 'Go' }));
+    expect(onSubmit).toHaveBeenCalledWith('approve', '', undefined);
+  });
+
+  it('says nothing of going on by itself when the review waits for a person', () => {
+    render(<ReviewPanel runId="run-1" review={review({ document: null })} onSubmit={() => undefined} />);
+
+    expect(screen.queryByTestId('proceeds-at')).toBeNull();
+  });
 });

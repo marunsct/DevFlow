@@ -7,7 +7,9 @@
  * model call), the whole run (every later stage), and stop and redirect (pause
  * when the working stage ends, then resume with the direction). A note waits,
  * greyed, until a model call reads it; until then it can be edited or
- * withdrawn.
+ * withdrawn. A note for the whole run can be for everyone or for one group of
+ * stages or one builder (its audience), and each note in the list says who it
+ * is for and who read it.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -17,6 +19,7 @@ import {
   resumeWithDirection,
   sendSteering,
   withdrawSteering,
+  type SteeringAudience,
   type SteeringNote,
 } from '../api';
 import { useFeedback } from './Feedback';
@@ -29,6 +32,30 @@ const LEVELS: { value: Level; label: string }[] = [
   { value: 'run', label: 'The whole run' },
   { value: 'redirect', label: 'Stop and redirect' },
 ];
+
+/** Who a note can be for, in the words the page uses (`app.server.steering.AUDIENCES`). */
+export const AUDIENCES: { value: SteeringAudience; label: string }[] = [
+  { value: 'all', label: 'Everyone' },
+  { value: 'design', label: 'The design stages' },
+  { value: 'planning', label: 'The planners' },
+  { value: 'build', label: 'The builders' },
+  { value: 'tests', label: 'The test writers' },
+  { value: 'review', label: 'The reviewers' },
+  { value: 'ui_ux', label: 'The interface builder' },
+  { value: 'backend', label: 'The back-end builder' },
+  { value: 'database', label: 'The database builder' },
+  { value: 'security_reliability', label: 'The security builder' },
+  { value: 'testing', label: 'The testing builder' },
+  { value: 'documentation', label: 'The documentation writer' },
+  { value: 'devops', label: 'The deployment builder' },
+];
+
+/** Who a note is for, in words: "everyone" when it names no one. */
+export const audienceOf = (note: SteeringNote): string => {
+  const named = (note.audience ?? []).filter((who) => who !== 'all');
+  if (named.length === 0) return 'everyone';
+  return named.map((who) => (AUDIENCES.find((a) => a.value === who)?.label ?? who).toLowerCase()).join(', ');
+};
 
 const stateOf = (note: SteeringNote): 'queued' | 'read' | 'withdrawn' =>
   note.state ?? (note.applied_stage ? 'read' : 'queued');
@@ -51,6 +78,7 @@ export const SteeringBox: React.FC<{
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [level, setLevel] = useState<Level>('run');
+  const [audience, setAudience] = useState<SteeringAudience>('all');
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
   // A stop-and-redirect asked for while the run was running: sent as the run's direction once it has stopped.
   const [redirect, setRedirect] = useState<string | null>(null);
@@ -94,7 +122,8 @@ export const SteeringBox: React.FC<{
           notify('The run stops when this stage ends, then resumes with your direction.', 'info');
         }
       } else {
-        const note = await sendSteering(runId, words, level);
+        // "This agent" is the stage working now, whoever it is; an audience narrows a note for the whole run.
+        const note = await sendSteering(runId, words, level, [level === 'run' ? audience : 'all']);
         setNotes((kept) => [...kept, note]);
         notify(
           status === 'paused' || status === 'waiting_for_budget'
@@ -155,7 +184,9 @@ export const SteeringBox: React.FC<{
     level === 'next_stage'
       ? `Only ${working} reads it, at its next model call.`
       : level === 'run'
-        ? 'Every later stage reads it, from the next model call on.'
+        ? audience === 'all'
+          ? 'Every later stage reads it, from the next model call on.'
+          : `Only ${AUDIENCES.find((who) => who.value === audience)?.label.toLowerCase()} read it, from their next model call on.`
         : stopped
           ? 'The run resumes now with this direction.'
           : 'The run stops when this stage ends, then resumes with this direction.';
@@ -214,6 +245,7 @@ export const SteeringBox: React.FC<{
                       ? 'Withdrawn - no model call reads it'
                       : 'Waiting - read at the next model call'}
                   {n.scope === 'next_stage' ? ' · this agent only' : ' · the whole run'}
+                  {` · for ${audienceOf(n)}`}
                   {n.edited_at && state !== 'withdrawn' ? ' · edited' : ''}
                   {state === 'queued' && n.id && !isEditing && (
                     <>
@@ -249,6 +281,20 @@ export const SteeringBox: React.FC<{
             </label>
           ))}
         </fieldset>
+        {level === 'run' && (
+          <label className="flex flex-wrap items-center gap-2 text-sm text-text-secondary">
+            Who it is for
+            <select
+              value={audience}
+              onChange={(e) => setAudience(e.target.value as SteeringAudience)}
+              className="rounded-lg bg-overlay border border-border/60 px-2 py-1 text-sm text-text-primary"
+            >
+              {AUDIENCES.map((who) => (
+                <option key={who.value} value={who.value}>{who.label}</option>
+              ))}
+            </select>
+          </label>
+        )}
         <p className="text-xs text-text-muted">{hint}</p>
         <div className="flex flex-col sm:flex-row gap-2">
           <label htmlFor="steering-text" className="sr-only">Direction for this run</label>

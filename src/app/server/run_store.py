@@ -103,6 +103,9 @@ _MIGRATIONS = (
     # only (harness review HR2.E.1: both arms of a measurement on one harness version). Owned by
     # `set_switch_overrides` / `switch_overrides`, not by `save`.
     "ALTER TABLE runs ADD COLUMN IF NOT EXISTS switch_overrides TEXT NOT NULL DEFAULT '{}'",
+    # Whether the run's review policy was changed while it ran (plan WS.3, `set_review_policy`): then the row's
+    # policy is the owner's, and a worker saving the record it loaded before the change does not undo it.
+    "ALTER TABLE runs ADD COLUMN IF NOT EXISTS review_policy_live BOOLEAN NOT NULL DEFAULT FALSE",
     # How long the run has been paused in all, and since when it is paused now: kept by the database itself, so every
     # way a run is paused (the page, the loop, a worker at a stage boundary) is counted and no process can forget it.
     # A run's time on the page is its time less these (owner, 2026-11-03: pause time is not the run's time).
@@ -152,7 +155,7 @@ _INSERT_SQL = """
         stage_meaning    = EXCLUDED.stage_meaning,
         updated_at       = EXCLUDED.updated_at,
         error            = EXCLUDED.error,
-        review_policy    = EXCLUDED.review_policy,
+        review_policy    = CASE WHEN runs.review_policy_live THEN runs.review_policy ELSE EXCLUDED.review_policy END,
         reviewer         = EXCLUDED.reviewer,
         auto_approve     = EXCLUDED.auto_approve,
         document_names   = EXCLUDED.document_names,
@@ -518,6 +521,20 @@ class RunStore:
             with conn.cursor() as cur:
                 cur.execute("UPDATE runs SET switch_overrides = %s WHERE run_id = %s",
                             (json.dumps({str(k): bool(v) for k, v in overrides.items()}), run_id))
+                changed = cur.rowcount
+            conn.commit()
+        return changed == 1
+
+    def set_review_policy(self, run_id: str, policy: dict[str, bool]) -> bool:
+        """Set the run's review policy while it runs (replacing it); True when the run exists.
+
+        Kept by the row from then on: `save` no longer writes the column for this run, so a worker persisting the
+        record it loaded before the change cannot undo it, and the graph reads it at its next gate.
+        """
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE runs SET review_policy = %s, review_policy_live = TRUE WHERE run_id = %s",
+                            (json.dumps({str(k): bool(v) for k, v in policy.items()}), run_id))
                 changed = cur.rowcount
             conn.commit()
         return changed == 1

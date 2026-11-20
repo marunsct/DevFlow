@@ -114,6 +114,7 @@ _STAGE_MEANINGS: dict[str, str] = {
     "architecture_review": "The architecture reviewer is checking security and feasibility.",
     "user_review_specification": "Waiting for your review of the technical specification.",
     "scrum_master": "Breaking approved architecture into independent vertical sprints.",
+    "user_review_sprint_plan": "Waiting for your go on the sprint plan; it goes on by itself when its time runs out.",
     "technical_lead": "Selecting one sprint and planning a small milestone.",
     "specialist_dispatch": "Specialists are implementing and testing the milestone.",
     "test_and_triage": "Running tests and triaging any failures into tracked defects.",

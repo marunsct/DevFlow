@@ -32,6 +32,7 @@ export const REVIEW_POINTS: [string, string][] = [
   ['product_intake', 'Product intake'],
   ['technical_specification', 'Technical specification'],
   ['acceptance_tests', 'Acceptance tests'],
+  ['sprint_plan', 'The sprint plan'],
   ['sprint', 'Each sprint'],
   ['release', 'Release'],
   ['escalation', 'Escalation'],

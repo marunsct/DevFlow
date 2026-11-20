@@ -94,7 +94,7 @@ describe('the steering box', () => {
     await userEvent.type(screen.getByLabelText('Direction for this run'), 'name the table notes');
     await userEvent.click(screen.getByText('Send'));
 
-    await waitFor(() => expect(known.sendSteering).toHaveBeenCalledWith('run-1', 'name the table notes', 'next_stage'));
+    await waitFor(() => expect(known.sendSteering).toHaveBeenCalledWith('run-1', 'name the table notes', 'next_stage', ['all']));
   });
 
   it('stops at the end of the stage, then resumes with the direction once the run has paused', async () => {
@@ -127,7 +127,34 @@ describe('the steering box', () => {
     await userEvent.type(screen.getByLabelText('Direction for this run'), 'keep the store in one file');
     await userEvent.click(screen.getByText('Send'));
 
-    await waitFor(() => expect(known.sendSteering).toHaveBeenCalledWith('run-1', 'keep the store in one file', 'run'));
+    await waitFor(() => expect(known.sendSteering).toHaveBeenCalledWith('run-1', 'keep the store in one file', 'run', ['all']));
+  });
+
+  it('says on each note who it is for and who read it', async () => {
+    known.getSteering.mockResolvedValue([{ ...queued, audience: ['build'] }, { ...read, audience: ['all'] }, withdrawn]);
+    show();
+    await openIt();
+    await screen.findByText('keep the store in one file');
+
+    expect(within(itemOf('keep the store in one file')).getByText(/for the builders/)).toBeTruthy();
+    const readNote = within(itemOf('use the existing sign-in page'));
+    expect(readNote.getByText(/^Read by /)).toBeTruthy();
+    expect(readNote.getByText(/for everyone/)).toBeTruthy();
+    // A note kept before audiences existed is for everyone.
+    expect(within(itemOf('drop the export')).getByText(/for everyone/)).toBeTruthy();
+  });
+
+  it('sends a note for the whole run to the audience chosen', async () => {
+    known.sendSteering.mockResolvedValue({ ...queued, id: 'N-4', text: 'keep the tables small', audience: ['database'] });
+    show();
+    await openIt();
+
+    await userEvent.selectOptions(screen.getByLabelText('Who it is for'), 'database');
+    await userEvent.type(screen.getByLabelText('Direction for this run'), 'keep the tables small');
+    await userEvent.click(screen.getByText('Send'));
+
+    await waitFor(() => expect(known.sendSteering).toHaveBeenCalledWith('run-1', 'keep the tables small', 'run', ['database']));
+    expect(within(await waitFor(() => itemOf('keep the tables small'))).getByText(/for the database builder/)).toBeTruthy();
   });
 
   it('reads the notes again when the run says one was read', async () => {

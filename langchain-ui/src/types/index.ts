@@ -60,6 +60,8 @@ export interface ReviewPayload {
   available_actions: string[];
   /** The workspace path of the document the review is about, when it has one. */
   document?: string | null;
+  /** When the run goes on by itself if nobody answers (ISO 8601); absent when it waits for a person. */
+  proceeds_at?: string | null;
 }
 
 export interface ReviewDecisionRequest {

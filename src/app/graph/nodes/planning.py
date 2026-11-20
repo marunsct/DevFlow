@@ -364,6 +364,14 @@ def scrum_master_node(state: WorkflowGraphState, config: RunnableConfig, ctx: Gr
     from app.agents.specification_rulings import with_the_rulings
 
     request = with_the_rulings(request, root_path)
+    # Sent back at the plan gate: the owner's words, with the plan they read, in this request (plan WS.3).
+    from app.graph import plan_gate
+
+    owners_changes = plan_gate.owners_changes_to_the_plan(state)
+    if owners_changes:
+        request["messages"][-1]["content"] += plan_gate.the_owners_direction(
+            owners_changes, _as_text(state.get("sprint_plan"))
+        )
     try:
         update = _run_gated_agent(
             state,
@@ -533,4 +541,7 @@ def scrum_master_node(state: WorkflowGraphState, config: RunnableConfig, ctx: Gr
             "docs/sprint_plan.md",
             render_document("sprint_plan", o=update["sprint_plan"]),
         )
+        from app.graph.workflow import SPRINT_PLAN_REVIEW, _review_enabled
+
+        update = plan_gate.after_the_plan(update, _review_enabled(state, SPRINT_PLAN_REVIEW), bool(owners_changes))
     return update

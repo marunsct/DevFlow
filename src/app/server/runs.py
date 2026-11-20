@@ -69,6 +69,7 @@ from app.server.models import (
     SpinnerResponse,
     StartRunRequest,
     SprintRevision,
+    ReviewPolicyChange,
     SteeringEdit,
     SteeringNote,
     WizardModel,
@@ -1628,6 +1629,61 @@ def create_runs_router(
                      detail={"note": note_id})
         return {"run_id": run_id, "note": note}
 
+    @runs.get("/{run_id}/review-policy")
+    async def get_review_policy(run_id: str, user: UserInDB = Depends(get_current_active_user)) -> dict[str, Any]:
+        """The reviews this run stops at now, as its next gate reads them."""
+        record = _require_run(runner, run_id, user)
+        return {"run_id": run_id, "review_policy": dict(record.review_policy or {})}
+
+    @runs.put("/{run_id}/review-policy")
+    async def change_review_policy(
+        run_id: str, body: ReviewPolicyChange, user: UserInDB = Depends(require_operator)
+    ) -> dict[str, Any]:
+        """Switch reviews on or off while the run is live (plan WS.3); the next gate the run reaches follows it.
+
+        Before, a run's reviews were fixed when it started: an owner who wanted to see the plan, or who no longer
+        wanted to stop at each sprint, had to cancel the run and start another.
+        """
+        from app.graph.workflow import _REVIEW_NODES
+
+        record = _require_run(runner, run_id, user)
+        if record.status in ("created", "completed", "cancelled"):
+            raise HTTPException(
+                status_code=409,
+                detail=f"Run {run_id} is {record.status}; the reviews of a run that is not live are chosen when it starts.",
+            )
+        unknown = sorted(point for point in body.review_policy if point not in _REVIEW_NODES)
+        if unknown:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Unknown review point(s): {', '.join(unknown)}. Known: {', '.join(sorted(_REVIEW_NODES))}.",
+            )
+        changed = {str(point): bool(on) for point, on in body.review_policy.items()}
+        policy = {**(record.review_policy or {}), **changed}
+        await asyncio.to_thread(runner.run_store.set_review_policy, run_id, policy)
+        record_audit(actor=user.username, tenant_id=user.tenant_id, action="run.review_policy", subject=run_id,
+                     detail={"changed": changed})
+        try:
+            from app.observability.transcript import record as transcript_record
+
+            transcript_record(run_id, record.current_stage or "", "review_policy_changed",
+                              changed=changed, policy=policy, by=user.username)
+        except Exception:  # noqa: BLE001 - a record must never cost the change
+            logger.debug("Could not record the review policy change", exc_info=True)
+        said = ", ".join(f"{point.replace('_', ' ')} {'on' if on else 'off'}" for point, on in changed.items())
+        await event_bus.publish(
+            run_id,
+            RunEvent(
+                run_id=run_id,
+                sequence=await event_bus.next_sequence(run_id),
+                stage=record.current_stage or "",
+                event_type="log",
+                message=f"Reviews changed by {user.username}: {said or 'nothing'}. The next gate the run reaches follows it.",
+                metadata={"kind": "review_policy_changed", "changed": changed},
+            ),
+        )
+        return {"run_id": run_id, "review_policy": policy}
+
     @runs.get("/{run_id}/review")
     async def get_pending_review(
         run_id: str, user: UserInDB = Depends(get_current_active_user)
@@ -1646,6 +1702,7 @@ def create_runs_router(
             comments="\n".join(review.comments) if review and review.comments else None,
             available_actions=["approve", "changes", "skip"],
             document=_the_review_document(record.repo_root, review.artifact_id if review else ""),
+            proceeds_at=_when_it_goes_on_by_itself(record),
         )
         return {"pending": True, "run_id": run_id, "review": payload.model_dump()}
 
@@ -1946,6 +2003,7 @@ _WIZARD_STAGE_COPY: dict[str, tuple[str, str]] = {
     "architecture_review": ("Checking the design", "A second opinion on the plan, looking for security holes and things that will not work."),
     "user_review_specification": ("Your review", "Paused for you to read the technical plan and say whether to continue."),
     "scrum_master": ("Planning the work", "Splitting the design into sprints small enough to build one at a time."),
+    "user_review_sprint_plan": ("Your go", "The sprint plan waits for your go or your direction; with no answer it goes on by itself."),
     "technical_lead": ("Setting up the next chunk", "Picking what to build first and breaking it into individual tasks."),
     "specialist_dispatch": ("Building it", "Writing the actual code and tests for this piece of the product."),
     "test_and_triage": ("Testing", "Running the tests and writing down anything that failed."),
@@ -1977,7 +2035,7 @@ _WIZARD_SPECIALIST_COPY: dict[str, tuple[str, str]] = {
 #: event carries the same point in its metadata - so a review is recognised by
 #: its point, not by the node name. An approval pause is not a review - it is
 #: the stage working - so it does not count.
-_REVIEW_POINTS = frozenset({"sprint", "technical_specification", "product_intake"})
+_REVIEW_POINTS = frozenset({"sprint", "technical_specification", "product_intake", "sprint_plan"})
 
 
 def _wizard_base_stage(raw: str) -> str:
@@ -2492,6 +2550,17 @@ _REVIEW_DOCUMENTS = {
     "release": "docs/reviews/release-evidence.md",
     "escalation": "docs/reviews/escalation.md",
 }
+
+
+def _when_it_goes_on_by_itself(record: RunRecord) -> str | None:
+    """When a waiting review approves itself if nobody answers (`app.server.approval_timeouts`); None for never."""
+    from datetime import timedelta
+
+    from app.server.approval_timeouts import minutes_for, waiting_since
+
+    minutes = minutes_for(record, "review")
+    since = waiting_since(record)
+    return (since + timedelta(minutes=minutes)).isoformat(timespec="seconds") if minutes and since else None
 
 
 def _the_review_document(repo_root: str | None, artifact_id: str) -> str | None:

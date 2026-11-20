@@ -35,6 +35,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from app.acceptance import what_went_wrong
+
 logger = logging.getLogger(__name__)
 
 #: The criterion a line serves; a line naming several serves the first. One
@@ -1095,6 +1097,31 @@ def _run_each_command(checks: list[Check], project: str, runner: Any, failed: li
                 failed.append(f"[{check.criterion}] {check.line} - it printed {printed[:120]!r}")
 
 
+#: What the product printed while the last probe ran in each project folder, read by `what_the_server_printed`.
+_PRINTED: dict[str, str] = {}
+
+
+def _what_the_product_printed(project: Path, outcome: Any) -> str:
+    """What the product's server printed while a probe ran: the service log a pack's acceptance setup keeps (started
+    afresh by each session), and the lines the runner marks as the server's in its own output. Never raises."""
+    from app.acceptance import suite
+
+    parts: list[str] = []
+    try:
+        parts.append((project / suite.SERVICE_LOG).read_text(encoding="utf-8", errors="replace")[-50_000:])
+    except OSError:
+        pass
+    if isinstance(outcome, dict):
+        said = "\n".join(str(outcome.get(k) or "") for k in ("error", "stdout", "stderr") if outcome.get(k))
+        parts.append("\n".join(line for line in said.splitlines()[-2_000:] if line.lstrip().startswith("[WebServer]")))
+    return "\n".join(part for part in parts if part.strip())
+
+
+def what_the_server_printed(project: str | Path) -> str:
+    """What the product printed while the last probe ran in `project` (the product's folder); "" when it is unknown."""
+    return _PRINTED.get(str(Path(project)), "")
+
+
 def _the_probe_s_report(project: Path, project_name: str, probe: dict[str, Any], web: list[Check], run: Any,
                         compiled_by: str = "checks", bodies: list[Any] | None = None) -> Any:
     """The runner's report of `web` checked against the product, the probe's own files removed after."""
@@ -1112,8 +1139,10 @@ def _the_probe_s_report(project: Path, project_name: str, probe: dict[str, Any],
         (project / CONFIG_FILE).write_text(probe["config"](probe["base_config"]), encoding="utf-8")
     report_file = project / REPORT_FILE
     junit.clear(report_file)
+    _PRINTED.pop(str(project), None)
     try:
-        run(list(probe["command"]), "test", project_name)
+        outcome = run(list(probe["command"]), "test", project_name)
+        _PRINTED[str(project)] = _what_the_product_printed(project, outcome)
         return junit.read(report_file)
     finally:
         if target is not None:
@@ -1140,6 +1169,19 @@ _SAID: dict[str, str] = {}
 def what_a_server_error_said(repo_root: str | Path) -> str:
     """The route and the start of the body of one 5xx the last server-error probe of this workspace got; "" for none."""
     return _SAID.get(str(Path(repo_root)), "")
+
+
+def _what_it_printed(project: Path, method: str, path: str) -> str:
+    """` - the server printed: ...` for a request to `path` the last probe in `project` made fail; "" when unknown."""
+    from app.tools.untrusted_text import defanged
+
+    printed = what_the_server_printed(project)
+    found = "" if _A_TEMPLATE.search(path) else what_went_wrong.what_the_server_printed_for(printed, path, method)
+    if found:
+        return f" - {what_went_wrong.THE_SERVER_PRINTED} {defanged(found, what_went_wrong.MOST_PRINTED)}"
+    found = what_went_wrong.what_the_server_printed(printed)
+    return (f" - while the probe ran, {what_went_wrong.THE_SERVER_PRINTED} "
+            f"{defanged(found, what_went_wrong.MOST_PRINTED)}") if found else ""
 
 
 def server_errors(repo_root: str | Path, *, runner: Any = None) -> list[tuple[Check, int]] | None:
@@ -1195,7 +1237,9 @@ def server_errors(repo_root: str | Path, *, runner: Any = None) -> list[tuple[Ch
                 errors.append((check, status))
                 said = _IT_SAID.search(str(getattr(test, "message", "") or ""))
                 if said and str(root) not in _SAID:
-                    _SAID[str(root)] = f"`{_the_call(check)}` answered {status}: {said.group(1).strip()}"
+                    _SAID[str(root)] = (f"`{_the_call(check)}` answered {status}: "
+                                        f"{what_went_wrong.the_page_in_words(said.group(1).strip())}"
+                                        + _what_it_printed(root / project_name, check.method, check.path))
         return errors
     except Exception:  # noqa: BLE001 - a check that cannot run says nothing
         logger.debug("Could not probe the interface contract for server errors", exc_info=True)

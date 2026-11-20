@@ -415,10 +415,31 @@ def edge_errors(repo_root: str | Path, *, runner: Any = None) -> list[tuple[dict
             if case is not None and getattr(test, "outcome", "") == "failed" \
                     and (finding := what_the_test_found(test)) is not None:
                 errors.append((case, finding))
-        return errors
+        return with_what_the_server_printed(errors, ic.what_the_server_printed(root / project_name))
     except Exception:  # noqa: BLE001 - a check that cannot run says nothing
         logger.debug("Could not probe the contract at its edges", exc_info=True)
         return None
+
+
+def with_what_the_server_printed(errors: list[tuple[dict[str, Any], dict[str, Any]]],
+                                 printed: str) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    """`errors`, each server error given the error the server printed for its request (`printed`, its output while
+    the probe ran); when none can be tied to its request, the first is given the last errors it printed at all."""
+    from app.acceptance import what_went_wrong
+    from app.tools.untrusted_text import defanged
+
+    failed = [found for _, found in errors if found.get("kind") == "server_error"]
+    if not printed or not failed:
+        return errors
+    for case, found in errors:
+        if found.get("kind") == "server_error" and not case.get("made_through"):
+            if said := what_went_wrong.what_the_server_printed_for(printed, case.get("path") or "",
+                                                                  case.get("method") or ""):
+                found["printed"] = defanged(said, what_went_wrong.MOST_PRINTED)
+    if not any(found.get("printed") for found in failed):
+        if said := what_went_wrong.what_the_server_printed(printed):
+            failed[0]["printed_while"] = defanged(said, what_went_wrong.MOST_PRINTED)
+    return errors
 
 
 def _the_request(case: dict[str, Any]) -> str:
@@ -428,9 +449,15 @@ def _the_request(case: dict[str, Any]) -> str:
 
 def what_came_back(case: dict[str, Any], found: dict[str, Any]) -> str:
     """What the product did with one edge request, in words."""
+    from app.acceptance import what_went_wrong
+
     status = int(found.get("status") or 0)
     answered = "got no answer" if status == 0 else f"answered {status}"
-    said = f" (it said: {found['said']})" if found.get("said") else ""
+    said = f" (it said: {what_went_wrong.the_page_in_words(found['said'])})" if found.get("said") else ""
+    if found.get("printed"):
+        said += f" ({what_went_wrong.THE_SERVER_PRINTED} {found['printed']})"
+    elif found.get("printed_while"):
+        said += f" (while the probe ran, {what_went_wrong.THE_SERVER_PRINTED} {found['printed_while']})"
     kind = found.get("kind")
     if kind == "stored_on_refusal":
         return (f"was refused with {status}, yet `GET {case['list']}` then listed {found.get('after')} records where it "
@@ -474,5 +501,5 @@ def still_raised(repo_root: str | Path, description: str, *, runner: Any = None)
 __all__ = [
     "EDGE_CASES_FAILED", "MARKER", "MOST_CASES", "ON_BY_DEFAULT", "RUNNERS", "edge_cases", "edge_description",
     "edge_errors", "enabled", "playwright_edge_checks", "pytest_edge_checks", "still_raised", "what_came_back",
-    "what_the_test_found",
+    "what_the_test_found", "with_what_the_server_printed",
 ]

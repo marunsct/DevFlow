@@ -2356,7 +2356,7 @@ def _what_one_of_them_said(state: Any, code: str) -> str:
         root = _root(state)
         interface_contract.server_errors(root)
         said = interface_contract.what_a_server_error_said(root)
-        return f" One such request, sent again by the harness: {said[:400]}" if said else ""
+        return f" One such request, sent again by the harness: {said[:900]}" if said else ""
     except Exception:  # noqa: BLE001 - the defect as it was
         return ""
 

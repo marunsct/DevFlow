@@ -34,6 +34,7 @@ def _the_fix_request(state: Any, config: RunnableConfig, cycle: Any, defect_inde
     )
 
     defect = cycle.defects[defect_index]
+    from app.acceptance import probes_at_release
     from app.acceptance.junit import tags_in
 
     co_defects = _bundle_co_defects(cycle, defect_index)
@@ -54,11 +55,12 @@ def _the_fix_request(state: Any, config: RunnableConfig, cycle: Any, defect_inde
         or _what_the_last_failure_printed(config["configurable"].get(APP_RUN_ID_KEY), defect),
         caught_by=getattr(defect, "caught_by", ""),
         # Only for a defect that is not itself a failing criterion - nor a
-        # mutation finding, whose product is not wrong (plan QM.2).
+        # mutation finding, whose product is not wrong (plan QM.2) - nor a harness probe's finding, whose product is.
         done_already=(
             []
             if [t for t in tags_in(str(defect.description or "")) if t.startswith(("AC-", "CR-"))]
             or mutation_guided.is_a_finding(defect)
+            or probes_at_release.carries_a_finding(defect)
             else acceptance_nodes.done_by_the_definition(state)
         ),
         what_settles_it=mutation_guided.what_settles_it(defect, mutation_gaps_bundled.not_bundled(cycle.defects, co_defects)),

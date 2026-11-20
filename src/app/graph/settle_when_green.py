@@ -48,7 +48,14 @@ def _a_unit_test_failure(defect: Any, acceptance_command: str) -> bool:
     none"), so the opening words alone missed it: measured on a small-model run, 18 of 18 criteria passed for three
     rounds and the sprint was planned again twice for two such defects. Such a defect carries the test command the
     round left failing (`caught_by`); beside a green suite that is not the suite, and it names no criterion.
+
+    Never one that carries a harness probe's finding, even merged under failing unit tests: what a probe finds blocks
+    the release (`probes_at_release.carries_a_finding`).
     """
+    from app.acceptance import probes_at_release
+
+    if probes_at_release.carries_a_finding(defect):
+        return False
     if str(getattr(defect, "description", "") or "").startswith(UNIT_TESTS_FAIL):
         return True
     caught_by = str(getattr(defect, "caught_by", "") or "").strip()

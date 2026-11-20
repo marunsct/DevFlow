@@ -6636,7 +6636,13 @@ def _one_defect_per_cause(reported: list[Any]) -> list[Any]:
         # files are where the change is. Measured on one gate run: packages no
         # manifest declared were merged under "the suite fails ... importlib",
         # and the fix rewrote the code that imports them.
-        group = sorted(group, key=lambda i: not _names_a_cause(reported[i]))
+        # Next, a harness probe's finding leads a failing unit test it is merged with: the probe found the product
+        # wrong at its interface, and its finding blocks the release. Measured on one run: led by "the unit tests
+        # fail", the fixer was told the product was right and wrote tests only, and the release was not deliverable.
+        from app.acceptance import probes_at_release
+
+        group = sorted(group, key=lambda i: (not _names_a_cause(reported[i]),
+                                             not probes_at_release.carries_a_finding(reported[i])))
         item = reported[group[0]]
         others = [reported[i] for i in group[1:]]
         files = list(dict.fromkeys(

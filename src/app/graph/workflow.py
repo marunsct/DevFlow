@@ -3841,20 +3841,31 @@ def _a_mutation_finding_settled(state: Any, cycle: Any, defect_index: int, stage
     root = state["repository"].root_path
     # Tests that fail on the product as it is, or notice nothing, are put back first (`MUTATION_TEST_RETENTION`).
     from app.acceptance import mutation_equivalents, mutation_retention
+    from app.graph import mutation_gaps_bundled
     from app.observability.transcript import _run_id_from_config
 
+    # The findings in its file its fixer was handed too (`MUTATION_GAPS_BUNDLED`): a test that notices one of their
+    # changes is kept, and each is checked here - closed if settled, else left for its own fixer.
+    bundled = mutation_gaps_bundled.Bundled(
+        root, _bundle_co_defects(cycle, defect_index) if fix_result.changed_files else [])
     checked, put_back = mutation_retention.judged(
-        root, _run_id_from_config(), stage_name, lambda: mutation_guided.settled(root, defect))
+        root, _run_id_from_config(), stage_name, lambda: mutation_guided.settled(root, defect),
+        keeps=bundled.any_settled if bundled.open else None)
     if put_back:
         defect_ledger.note("retention", stage_name, defect=defect, detail=put_back, **where)
+
+    def with_the_bundled(after: Any) -> Any:
+        return bundled.closed(after, stage_name=stage_name, round_=where["round_"], sprint=where["sprint"],
+                              put_back=put_back)
+
     if checked is True:
         detail = "the unit tests fail with the change and pass without it, measured by the harness"
         defect_ledger.note("fixed", stage_name, defect=defect, detail=detail, **where)
-        return mark_defect_fixed(
+        return with_the_bundled(mark_defect_fixed(
             cycle, defect_index,
             regression_test="the unit tests, which fail with the change and pass without it",
             verified_by="the harness's mutation check", resolution=detail[0].upper() + detail[1:] + ".",
-        )
+        ))
     why = mutation_guided.equivalent_because(fix_result)
     if why and not fix_result.changed_files:
         defect_ledger.note("closed", stage_name, defect=defect, detail="judged equivalent: " + why, **where)
@@ -3867,9 +3878,10 @@ def _a_mutation_finding_settled(state: Any, cycle: Any, defect_index: int, stage
     tries = failed_fix_tries(cycle, defect_index) + 1
     if tries >= mutation_guided.MOST_TRIES:
         defect_ledger.note("closed", stage_name, defect=defect, detail=f"a completion gap after {tries} tries: {measured}", **where)
-        return accept_risk(cycle, defect_index, reason=f"{mutation_guided.A_GAP}{measured} after {tries} fix stage(s).")
+        return with_the_bundled(
+            accept_risk(cycle, defect_index, reason=f"{mutation_guided.A_GAP}{measured} after {tries} fix stage(s)."))
     defect_ledger.note("left open", stage_name, defect=defect, detail=measured + ", asked again after the fix", **where)
-    return cycle
+    return with_the_bundled(cycle)
 
 
 def _put_back_a_deliberate_change(state: Any) -> None:
@@ -7789,6 +7801,13 @@ def _bundle_co_defects(cycle: RemediationCycle, defect_index: int) -> list[tuple
     after a batch had fixed it would find nothing to change and leave it open.
     """
     defect = cycle.defects[defect_index]
+    # A mutation finding names no file: the open ones in its file, with `MUTATION_GAPS_BUNDLED` on, each settled by the
+    # harness's own check after the fix (`_a_mutation_finding_settled`).
+    from app.graph import mutation_gaps_bundled
+
+    gaps = mutation_gaps_bundled.bundled_with(cycle, defect_index, MOST_BUNDLED_DEFECTS)
+    if gaps:
+        return gaps
     # Only defects that share a file with this one, and at most
     # `MOST_BUNDLED_DEFECTS` of them, most files in common first. Every open
     # defect of the same owner was bundled, and over every recorded run a fixer

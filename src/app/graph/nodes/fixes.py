@@ -15,7 +15,7 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 
 from app.observability.degraded import degraded
-from app.graph import acceptance_nodes
+from app.graph import acceptance_nodes, mutation_gaps_bundled
 from app.graph.context import GraphContext
 from app.graph.workflow import WorkflowGraphState
 
@@ -36,6 +36,7 @@ def _the_fix_request(state: Any, config: RunnableConfig, cycle: Any, defect_inde
     defect = cycle.defects[defect_index]
     from app.acceptance.junit import tags_in
 
+    co_defects = _bundle_co_defects(cycle, defect_index)
     request = build_defect_fix_request(
         defect.description,
         defect.reproduction_steps,
@@ -60,23 +61,13 @@ def _the_fix_request(state: Any, config: RunnableConfig, cycle: Any, defect_inde
             or mutation_guided.is_a_finding(defect)
             else acceptance_nodes.done_by_the_definition(state)
         ),
-        what_settles_it=mutation_guided.what_settles_it(defect, cycle.defects),
+        what_settles_it=mutation_guided.what_settles_it(defect, mutation_gaps_bundled.not_bundled(cycle.defects, co_defects)),
     )
     request["messages"][-1]["content"] += _what_a_fix_stage_must_leave_alone(state, defect)
     # What this attempt may write: test files only, for a first fix of a failing unit test beside a green suite.
     request["messages"][-1]["content"] += defect_fix_modes.briefing(state, config, defect_index)
-    co_defects = _bundle_co_defects(cycle, defect_index)
     request["messages"][-1]["content"] += _the_specification_for_the_fix(state, defect, co_defects)
-    if co_defects:
-        batch_lines = [
-            "\n--- Related failures owned by your role to resolve in this same fix ---",
-            "The harness measures each one after your fix; one still failing goes to its own fix.",
-        ]
-        for pos, co_d in co_defects:
-            batch_lines.append(f"- Failure {pos + 1}: {co_d.description}")
-            batch_lines.append(f"  Expected: {co_d.expected_behavior}")
-            batch_lines.append(f"  Actual: {co_d.actual_behavior}")
-        request["messages"][-1]["content"] += "\n".join(batch_lines) + "\n"
+    request["messages"][-1]["content"] += _the_bundled_section(co_defects)
     # A defect on its last permitted attempt gets a different shape of
     # work, not a third variation of the instruction that failed twice.
     # See `_the_last_attempt_section`.
@@ -121,6 +112,28 @@ def _the_fix_request(state: Any, config: RunnableConfig, cycle: Any, defect_inde
             round_=state.get("test_round", 0), index=defect_index, sprint=state.get("current_sprint_index", 0),
         )
     return request, co_defects
+
+
+def _the_bundled_section(co_defects: list[tuple[int, Any]]) -> str:
+    """The related failures bundled with a fix, as its fixer is shown them; "" when none.
+
+    Mutation findings in the same file are listed with their line, change and what settles each
+    (`MUTATION_GAPS_BUNDLED`); any other related failure with what it expected and what happened.
+    """
+    from app.acceptance import mutation_guided
+
+    others = [(pos, d) for pos, d in co_defects if not mutation_guided.is_a_finding(d)]
+    lines = []
+    if others:
+        lines = [
+            "\n--- Related failures owned by your role to resolve in this same fix ---",
+            "The harness measures each one after your fix; one still failing goes to its own fix.",
+        ]
+        for pos, co_d in others:
+            lines.append(f"- Failure {pos + 1}: {co_d.description}")
+            lines.append(f"  Expected: {co_d.expected_behavior}")
+            lines.append(f"  Actual: {co_d.actual_behavior}")
+    return ("\n".join(lines) + "\n" if lines else "") + mutation_gaps_bundled.section(co_defects)
 
 
 def _what_others_found(state: Any, defect: Any, defect_index: int) -> str:

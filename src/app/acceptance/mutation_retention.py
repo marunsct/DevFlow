@@ -85,12 +85,15 @@ def _created_by_the_fix(root: str | Path, base: str, relative: str) -> bool:
 
 def judged(
     root: str | Path, run_id: str | None, stage: str, settle: Callable[[], bool | None],
+    *, keeps: Callable[[], bool] | None = None,
 ) -> tuple[bool | None, str]:
     """`(settled, note)` for a finding's fix: `settle()`'s answer, after the retention rule has put back what it must.
 
     `settle` is `mutation_guided.settled` for the finding. `note` is "" when nothing was put back or the switch is
     off, else what was and why. A fix whose tests fail on the unchanged product is not settled whatever `settle`
-    would say: the change is not measured, the tests are gone.
+    would say: the change is not measured, the tests are gone. `keeps`, for a fix handed other findings in the same
+    file too (`MUTATION_GAPS_BUNDLED`), says whether its tests notice one of their changes: tests that do are not
+    tests that notice nothing, and stay.
     """
     if not enabled():
         return settle(), ""
@@ -122,7 +125,7 @@ def judged(
                         f"were put back: {', '.join(gone[:4])}"
                     )
         answer = settle_once()
-        if answer is False:
+        if answer is False and not (keeps is not None and keeps()):
             created = [path for path in tests if _created_by_the_fix(root, base, path)]
             gone = _put_back(root, base, created, "its tests notice nothing", stage)
             if gone:

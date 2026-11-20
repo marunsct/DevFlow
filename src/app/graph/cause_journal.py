@@ -180,11 +180,22 @@ def failed_fixes_in_the_run(root: str | Path | None, defect: Any) -> int:
         problem = problem_of(defect)
         if not problem:
             return 0
+        named = _criteria_named(str(getattr(defect, "description", "") or "")) if problem.startswith("criteria:") else set()
         return sum(1 for cause in (_read(root).get("causes") or {}).values() if isinstance(cause, dict)
                    for entry in cause.get("entries") or []
-                   if isinstance(entry, dict) and entry.get("problem") == problem and _failed(entry))
+                   if isinstance(entry, dict) and _failed(entry)
+                   and (entry.get("problem") == problem
+                        # An entry written before problem keys were kept: the criteria its cause's text names.
+                        or (not entry.get("problem") and named
+                            and _criteria_named(str(cause.get("defect") or "")) == named)))
     except Exception:  # noqa: BLE001
         return 0
+
+
+def _criteria_named(text: str) -> set[str]:
+    from app.sprint.cause import _A_CRITERION
+
+    return set(_A_CRITERION.findall(text))
 
 
 def needs_a_diagnosis(root: str | Path | None, defect: Any) -> bool:

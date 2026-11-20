@@ -247,3 +247,21 @@ def test_what_the_fixer_is_told_names_none_of_the_banned_words():
     from app.graph.web_tools_after_two_failed_fixes import SAID
 
     assert "search_the_web" in SAID and not BANNED.search(SAID)
+
+
+def test_failed_fixes_recorded_before_problems_were_keyed_count_by_the_criteria_their_text_names(tmp_path):
+    """Measured on the deploy that added problem keys: a live run's earlier failed fixes of [AC-4] carried none, so
+    the count started again at nought for the next fixer of the very same criterion."""
+    from app.graph import cause_journal
+
+    for failing in (("groups",), ("keeps order",)):
+        _left_open_in_an_earlier_attempt(tmp_path, _a_criterion("AC-4", *failing))
+        _left_open_in_an_earlier_attempt(tmp_path, _a_criterion("AC-3", *failing))
+    journal = tmp_path / ".harness" / "fix-journal.json"
+    kept = json.loads(journal.read_text())
+    for cause in kept["causes"].values():
+        for entry in cause["entries"]:
+            entry.pop("problem", None)
+    journal.write_text(json.dumps(kept))
+
+    assert cause_journal.failed_fixes_in_the_run(tmp_path, _a_criterion("AC-4", "clears")) == 2

@@ -123,9 +123,22 @@ SUSPECTED_SAID = (
 RAN_THE_CODE = frozenset({"spec_dry_run"})
 
 
-def _key(check: str, text: str) -> str:
-    """One finding across rounds: its check, its wording without the values that vary, and the tests it names."""
-    return "|".join((check, _fingerprint(text), ",".join(sorted(set(_A_TEST_NAME.findall(str(text)))))))
+def _key(root: str | Path, check: str, text: str) -> str:
+    """One finding across rounds: its check, its wording without the values that vary, and the tests it names - with
+    the tests at the lines it points to, by their titles.
+
+    Measured on one run: every "signs in as a user no test signs up" finding in one Python file named only the file,
+    whose stem is a test-like name, so a new finding about another test in that file was held back as a repeat of the
+    first, from the round it was raised to the lock.
+    """
+    named = set(_A_TEST_NAME.findall(str(text)))
+    try:
+        from app.acceptance.suite import _the_tests_at
+
+        named |= {f"@{title}" for title in _the_tests_at(root, str(text))}
+    except Exception:  # noqa: BLE001 - a finding whose lines cannot be read is known by what it names
+        logger.debug("Could not read the tests a finding points at", exc_info=True)
+    return "|".join((check, _fingerprint(text), ",".join(sorted(named))))
 
 
 def _the_suite_s_digest(root: str | Path) -> str:
@@ -162,7 +175,7 @@ def withheld(root: str | Path, review_round: int, raised: Sequence[tuple[str, An
         digest = _the_suite_s_digest(root)
         repaired = bool(last) and (not digest or last.get("suite") != digest)
         before = set(last.get("raised") or []) if repaired else set(last.get("withheld") or [])
-        keys = [(check, str(text), _key(check, str(text))) for check, text in raised]
+        keys = [(check, str(text), _key(root, check, str(text))) for check, text in raised]
         held = [(check, text, key) for check, text, key in keys if key in before and check not in RAN_THE_CODE]
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({"suite": digest, "raised": sorted({key for _, _, key in keys}),

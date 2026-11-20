@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-20 08:43 JST (written by `loop.sh state`). Harness ddef93f0 committed; b6560213 deployed (not the same).
-**Live, and stopped in the last day:** run-aa3693b6 running at technical_lead; run-e382df47 failed at failed; run-eaed36e7 failed at failed; run-e68d3ce9 failed at failed
-**Last scored:** run-09fc4306 web-todo 10/10 (completed, handoff 1.0; scored 11-20 08:43 JST); run-62a7d976 notes-api-ruby 9/9 (completed, mixed, 56 active min, handoff 1.0; scored 11-20 08:03 JST); run-ea01f85c tasks-api 10/10 (completed, mixed, 175 active min, handoff 1.0; scored 11-20 06:53 JST).
+**As of:** 11-20 09:33 JST (written by `loop.sh state`). Harness 3a8f48ea committed; b6560213 deployed (not the same).
+**Live, and stopped in the last day:** run-b668a924 running at acceptance_author_0; run-e382df47 failed at failed; run-eaed36e7 failed at failed; run-e68d3ce9 failed at failed
+**Last scored:** run-aa3693b6 notes-api-php 9/9 (completed, handoff 1.0; scored 11-20 09:33 JST); run-09fc4306 web-todo 10/10 (completed, mixed, 124 active min, handoff 1.0; scored 11-20 08:43 JST); run-62a7d976 notes-api-ruby 9/9 (completed, mixed, 56 active min, handoff 1.0; scored 11-20 08:03 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -26,7 +26,11 @@ The 10 optional switches above. Hosted-model runs (LR.44) only when the owner st
 ## The last three runs
 Generated above. Today (hidden, quality, verdict):
 Earlier runs: git history of this file and the status board.
-- Live: M notes-api-php container 7 run-aa3693b6-2c3f-48fa-ad21-0872881abb8c (:8888, 08:05, on b656021).
+- Live: M notes-api-csharp container 8 run-d2d6fd42-550f-41ed-b38d-698d2ae706d2 (:8888, 09:35, on b656021).
+- M notes-api-php container 7 run-aa3693b6-2c3f-48fa-ad21-0872881abb8c (:8888, 08:05-09:24): **9/9, 8/8, delivered**, handoff
+  1.0, 77.6 active min. Attempt 1 lost to one shared 500 on every route; attempt 2 18/18 from its first round.
+  Filed (low, behind a switch): mutation gaps in one file to one fixer - 3 fixers, 38 calls, 15 min here; 4 of 11
+  runs tonight fixed gaps, most under 2 min.
 - M notes-api-ruby container 3 run-62a7d976-29ee-4ee8-a61b-f89d38e45552 (:8888, 07:01-08:01, mixed): **9/9, 8/8, delivered**,
   handoff 1.0, mutation 1.0, 56 active min, 0 left open - Ruby 2 of 2 tonight full in about an hour. Its acceptance
   author spent 12 minutes grepping installed Playwright source for a raw-body send (LF.1156).

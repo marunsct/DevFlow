@@ -2729,7 +2729,7 @@ def _ask_about_high_confidence_diagnostics(
     """Ask the conversation once to fix high-confidence errors in modified files before exiting."""
     bullet_points = "\n".join(diagnostics[:4])
     text = (
-        "The language service detected errors in the files modified in this stage:\n"
+        "The checks run on the files modified in this stage found errors:\n"
         f"{bullet_points}\n"
         "Fix these errors now before completing your work."
     )
@@ -2828,6 +2828,8 @@ def _diagnostics_in_files_touched(
     files touched by this stage. Only certain errors (ReferenceError, missing exports,
     undeclared names) are reported, bounded to `most` items - and not an
     import of a file another work order owns (`_another_work_order_writes_it`).
+    A declaration or export the pack's scaffold relies on that a touched file
+    dropped comes first (`entry_exports.what_a_stage_broke`).
     """
     from app.analysis.file_kinds import is_scratch
     from app.analysis.language_service import ALL_SUFFIXES, underlined_any
@@ -2865,7 +2867,13 @@ def _diagnostics_in_files_touched(
                     if args.get(key):
                         files_to_check.add(_without_a_leading_dot_slash(str(args[key])))
 
-    diagnostics: list[str] = []
+    # What the pack's scaffold relies on and this stage's writes dropped, first: the same checks a test round raises
+    # as defects, told to the stage that broke them (`entry_exports.what_a_stage_broke`; no model call).
+    from app.stacks.entry_exports import what_a_stage_broke
+
+    diagnostics: list[str] = what_a_stage_broke(root, files_to_check)[:most]
+    if len(diagnostics) >= most:
+        return _with_known_causes(root, diagnostics)
     for relative in sorted(files_to_check):
         if not relative.lower().endswith(ALL_SUFFIXES) or is_scratch(Path(relative).name):
             continue

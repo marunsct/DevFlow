@@ -104,14 +104,14 @@ def _serve(html: str):
     return server
 
 
-def _checked(tmp_path: Path, html: str, persists: bool, small_screens: bool = True) -> list[SimpleNamespace]:
+def _checked(tmp_path: Path, html: str, persists: bool, small_screens: bool = True, serve=_serve) -> list[SimpleNamespace]:
     (tmp_path / "node_modules" / "@playwright" / "test").mkdir(parents=True)
     (tmp_path / "node_modules" / "@playwright" / "test" / "package.json").write_text(
         json.dumps({"name": "@playwright/test", "type": "module", "main": "index.mjs"}))
     (tmp_path / "node_modules" / "@playwright" / "test" / "index.mjs").write_text(SHIM)
     (tmp_path / "spec.mjs").write_text(page_probe.playwright_page_checks([None], persists=persists, small_screens=small_screens))
     (tmp_path / "run.mjs").write_text(RUN)
-    server = _serve(html)
+    server = serve(html)
     try:
         done = subprocess.run(["node", "run.mjs", CORE.as_uri(), f"http://127.0.0.1:{server.server_port}"],
                               cwd=tmp_path, capture_output=True, text=True, timeout=180)
@@ -144,6 +144,104 @@ def test_a_brief_that_never_asks_for_a_phone_is_not_held_to_its_width(tmp_path):
 
     kinds = {f["kind"] for t in found if (f := page_probe.what_the_test_found(t)) is not None}
     assert "overflow" not in kinds and "markup_ran" in kinds, found
+
+
+#: A form whose second field takes a web address and whose third an e-mail address (each told only by its name or
+#: its label, typed as plain text), and a field outside the form that narrows the list to an exact tag.
+A_FORM_WITH_AN_ADDRESS = """<!doctype html><html><head><meta name="viewport" content="width=device-width"></head><body>
+<form id="f">
+  <label for="t">Title</label><input id="t" type="text" name="title" required>
+  <label for="u">URL</label><input id="u" type="text" name="url" required>
+  <label for="c">Contact e-mail</label><input id="c" type="text">
+  <label for="g">Tag</label><input id="g" type="text" name="tag">
+  <button type="submit">Save</button>
+</form>
+<label for="narrow">Show only the tag</label><input id="narrow" type="text">
+<p id="none"></p><ul id="l"></ul>
+<script>
+let items = [];
+const shown = () => {
+  const narrow = document.getElementById('narrow').value;
+  const l = document.getElementById('l'); l.textContent = '';
+  const kept = items.filter((item) => !narrow || item.tag === narrow);
+  document.getElementById('none').textContent = kept.length ? '' : (narrow ? `nothing tagged "${narrow}"` : 'nothing yet');
+  for (const item of kept) { const li = document.createElement('li'); li.textContent = item.title; l.appendChild(li); }
+};
+const load = async () => { items = await (await fetch('/api/items')).json(); shown(); };
+document.getElementById('narrow').addEventListener('input', shown);
+document.getElementById('f').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const body = { title: document.getElementById('t').value, url: document.getElementById('u').value,
+                 contact: document.getElementById('c').value, tag: document.getElementById('g').value };
+  const answer = await fetch('/api/items', { method: 'POST', body: JSON.stringify(body) });
+  if (answer.status !== 201) return;
+  items.unshift(await answer.json());
+  shown();
+});
+load();
+</script></body></html>"""
+
+
+def _serve_with_a_store(keeps: bool):
+    """The page and its service: an item is refused (422) unless its address and e-mail look like ones; `keeps` False
+    answers 201 but stores nothing, so the item is gone after a reload."""
+    items: list[dict] = []
+
+    def serve(html: str):
+        class Service(BaseHTTPRequestHandler):
+            def log_message(self, *args):  # noqa: D401 - quiet
+                pass
+
+            def _answer(self, status: int, raw: bytes, kind: str = "application/json"):
+                self.send_response(status)
+                self.send_header("content-type", kind)
+                self.send_header("content-length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+
+            def do_GET(self):  # noqa: N802
+                if self.path in ("/", "/index.html"):
+                    self._answer(200, html.encode(), "text/html")
+                elif self.path == "/api/items":
+                    self._answer(200, json.dumps(items).encode())
+                else:
+                    self._answer(404, b"{}")
+
+            def do_POST(self):  # noqa: N802
+                item = json.loads(self.rfile.read(int(self.headers.get("content-length") or 0)) or b"{}")
+                if not item.get("title") or not re.match(r"https?://", item.get("url", "")) or (
+                        item.get("contact") and "@" not in item["contact"]):
+                    self._answer(422, b'{"error": "invalid"}')
+                    return
+                if keeps:
+                    items.insert(0, item)
+                self._answer(201, json.dumps(item).encode())
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Service)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        return server
+
+    return serve
+
+
+def _the_reload_check(found: list[SimpleNamespace]) -> SimpleNamespace:
+    return next(t for t in found if t.name.startswith("page check 4"))
+
+
+@pytest.mark.skipif(shutil.which("node") is None or not CORE.is_file(), reason="no browser driver here")
+def test_an_item_added_through_a_form_with_an_address_field_and_kept_passes_the_reload_check(tmp_path):
+    """A kept item was reported lost: every text field on the page got the same words, so the address field held no
+    address (the service refused the item) and a field outside the form narrowed the list."""
+    found = _checked(tmp_path, A_FORM_WITH_AN_ADDRESS, persists=True, serve=_serve_with_a_store(keeps=True))
+
+    assert _the_reload_check(found).outcome == "passed", found
+
+
+@pytest.mark.skipif(shutil.which("node") is None or not CORE.is_file(), reason="no browser driver here")
+def test_an_item_added_through_a_form_with_an_address_field_and_dropped_is_found_not_kept(tmp_path):
+    found = _checked(tmp_path, A_FORM_WITH_AN_ADDRESS, persists=True, serve=_serve_with_a_store(keeps=False))
+
+    assert (page_probe.what_the_test_found(_the_reload_check(found)) or {}).get("kind") == "not_kept", found
 
 
 def test_the_phone_width_is_asked_only_when_the_brief_asks_for_small_screens(tmp_path, monkeypatch):

@@ -21,6 +21,33 @@ logger = logging.getLogger(__name__)
 STILL_FINDS = "At release a harness probe still finds: "
 
 
+def _the_openings() -> tuple[str, ...]:
+    """How the defect of each probe asked here opens, as the round raises it."""
+    from app.acceptance import concurrent_write_probe, edge_probe, interface_contract, page_probe
+
+    return (interface_contract.SERVER_FAILED, interface_contract.EMPTIED_FIELD_ACCEPTED,
+            concurrent_write_probe.CONCURRENT_WRITES_LOST, edge_probe.EDGE_CASES_FAILED, page_probe.PAGE_CHECK_FAILED)
+
+
+def carries_a_finding(defect: Any) -> bool:
+    """Whether `defect` carries what one of these probes found - as its own finding, or merged into another. Never raises.
+
+    What a probe finds still at release blocks it, so such a defect is the product's to fix: never a failing unit test
+    alone, whose first fix may write tests only and which a green sprint settles with. Measured on one run: the
+    server-error and edge probes' findings at a green round were merged under "the unit tests fail" (one cause: a store
+    read before any write answered 500); the fixer was told the product was right and allowed to write tests only, the
+    sprint settled as "only the unit tests fail", and the release was not deliverable on those very findings.
+    """
+    try:
+        description = str(getattr(defect, "description", "") or "")
+        if any(opening in description for opening in _the_openings()):
+            return True
+        return any(isinstance(record, dict) and record.get("probe") for record in getattr(defect, "evidence", None) or ())
+    except Exception:  # noqa: BLE001 - a defect that cannot be read is taken as it was
+        logger.debug("Could not read whether a defect carries a probe's finding", exc_info=True)
+        return False
+
+
 def what_the_probes_still_find(repo_root: str | Path, *, runner: Any = None) -> list[str]:
     """A blocking completion gap for each probe that still finds a defect in the product; [] when none. Never raises."""
     from app.acceptance import concurrent_write_probe, interface_contract, wrong_shape_body_probe
@@ -68,4 +95,4 @@ def what_the_probes_still_find(repo_root: str | Path, *, runner: Any = None) -> 
     return gaps
 
 
-__all__ = ["STILL_FINDS", "what_the_probes_still_find"]
+__all__ = ["STILL_FINDS", "carries_a_finding", "what_the_probes_still_find"]

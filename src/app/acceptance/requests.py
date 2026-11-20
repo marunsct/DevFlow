@@ -380,7 +380,7 @@ def build_author_request(
         "empty entry point, a manifest - and the builders write the product after this suite "
         "is locked. Finishing it is not yours, not even to see one test pass; "
         "failing because a control, endpoint, command or function does not exist yet is "
-        "right.A syntax error, an import that does not resolve, \"no tests found\", or an "
+        "right. A syntax error, an import that does not resolve, \"no tests found\", or an "
         "error the test's own code throws - a helper called with the wrong arguments, a name "
         "the test never defined - is yours to fix before you finish: read why each test "
         "failed, not only that it did.\n"

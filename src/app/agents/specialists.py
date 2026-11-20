@@ -132,7 +132,7 @@ _ROLE_DESCRIPTIONS: dict[SpecialistRole, str] = {
     "testing": (
         "You are the Testing and Quality Engineering specialist. You define and "
         "run unit, integration, contract, end-to-end, accessibility, and "
-        "security regression tests for the delegated task. Use the testing "
+        "security regression tests for the delegated work. Use the testing "
         "approach this run's stack chose, and the validation tool to actually "
         "run the tests rather than only describing them. Do NOT introduce a "
         "different test runner: one the stack did not choose fails on its own "
@@ -150,12 +150,12 @@ _ROLE_DESCRIPTIONS: dict[SpecialistRole, str] = {
     "documentation": (
         "You are the Documentation specialist. You write beginner-readable "
         "explanations, ADR usage docs, and operational runbooks for the "
-        "delegated task. Use `run_terminal_command` to verify markdown formatting or generate site documentation if applicable."
+        "delegated work. Use `run_terminal_command` to verify markdown formatting or generate site documentation if applicable."
     ),
     "security_reliability": (
         "You are the Security and Reliability specialist. You review and implement "
         "authorization, data isolation, secrets handling, retries, and "
-        "observability for the delegated task. Use `run_terminal_command` to run static analysis tools or security linters."
+        "observability for the delegated work. Use `run_terminal_command` to run static analysis tools or security linters."
     ),
 }
 
@@ -1329,6 +1329,17 @@ _VALIDATION_NOTE = (
 #: anything is built, and that is right.
 _REPORT_EVERY_FAILURE = ("Report every failure as a structured defect in the `defects` field, naming the specialist role "
                          "that must fix it, so the workflow can track and route it.")
+#: The testing role's account of its job and of what its commands are for, and the suite writer's in their place. The
+#: suite writer was told it defines and runs unit tests and builds code, beside a request that says only the acceptance
+#: folder is its own (per-role audit 2026-11-20): it tried unit-test and product files, and was refused each time.
+_DEFINES_EVERY_KIND_OF_TEST = ("You define and run unit, integration, contract, end-to-end, accessibility, and security "
+                               "regression tests for the delegated work.")
+_WRITES_THE_SUITE = ("You write the product's acceptance suite - the tests that decide whether the product is done - "
+                     "and run it.")
+_RUNS_PROGRAMS_TO_BUILD = ("- You may use the `run_terminal_command` tool to run programs: build code, install "
+                           "dependencies, and perform end-to-end development.")
+_RUNS_PROGRAMS_FOR_THE_SUITE = ("- You may use the `run_terminal_command` tool to run programs: run the suite, and "
+                                "install what the suite itself needs.")
 #: What a suite writer proves, in place of building, starting or testing its own work.
 _PROVE_THE_SUITE = (
     "- Prove the suite by running it with its own command, and record that command in\n"
@@ -1339,8 +1350,8 @@ _PROVE_THE_WORK = (
     "- Prove your work by running it. Write the code, then use `run_terminal_command`\n"
     "  to build it, test it, or run a program that exits by itself (a service is\n"
     "  proven by its tests: the tool refuses a command that keeps running), and\n"
-    "  record every command you ran in `verification` with its exit code. A task\n"
-    "  reported complete with an empty `verification` list is a task nobody checked.\n"
+    "  record every command you ran in `verification` with its exit code. Work\n"
+    "  reported complete with an empty `verification` list is work nobody checked.\n"
 )
 
 
@@ -1349,18 +1360,21 @@ def _system_prompt(role: SpecialistRole, writing_the_suite: bool = False) -> str
 
     `writing_the_suite`: the testing role writing the acceptance suite. Its request says never start the product, that
     every test fails now and that product code is not its own; the role's system prompt said to start the product,
-    report every failure as a defect and change the function, not the test. Those three are left out for it.
+    report every failure as a defect and change the function, not the test. Those three are left out for it, and its
+    job and its commands are said as the suite's, not as every kind of test's and the build's.
     """
     role_description = _ROLE_DESCRIPTIONS[role]
     if writing_the_suite:
         role_description = " ".join(role_description.split()).replace(_REPORT_EVERY_FAILURE, "").rstrip()
+        role_description = role_description.replace(_DEFINES_EVERY_KIND_OF_TEST, _WRITES_THE_SUITE)
+    runs_programs = _RUNS_PROGRAMS_FOR_THE_SUITE if writing_the_suite else _RUNS_PROGRAMS_TO_BUILD
     validation = _VALIDATION_NOTE if role == "testing" else ""
     prove = _PROVE_THE_SUITE if writing_the_suite else _PROVE_THE_WORK
     testability = "" if writing_the_suite else TESTABILITY_RULE
     return f"""{role_description}
 
 Responsibilities:
-- Complete only the delegated task and its stated acceptance criteria; do not
+- Complete only the delegated work and its stated acceptance criteria; do not
   expand scope on your own initiative.
 - Report every changed file, notable decision, added or updated test, added or
   updated documentation, risk, and blocker.
@@ -1379,7 +1393,7 @@ Beginner documentation requirement:
   comments in the code you write or in your `documentation` field.
 
 Constraints:
-- You may use the `run_terminal_command` tool to run programs: build code, install dependencies, and perform end-to-end development.
+{runs_programs}
 - `run_terminal_command` runs one program with its arguments, with no shell
   between them: `&&`, `|`, `;` and `$(...)` reach the program as plain words,
   and `cd` is not a program. To act on a subdirectory, pass `working_directory` -
@@ -1480,7 +1494,18 @@ def create_specialist_agent(
         extra_tools=extra_tools,
         kept_tools=(*(("use_runtime",) if setting_up_the_stack else ()),
                     *(str(getattr(t, "name", "")) for t in web_tools_for_this_fix or ())),
+        suite_folder=_the_suite_s_folder(resolved_repo_root) if writing_the_suite else None,
     )
+
+
+def _the_suite_s_folder(repo_root: str) -> str:
+    """The acceptance folder the suite's writer writes in, workspace-relative; "" when none is known yet."""
+    try:
+        from app.acceptance import suite
+
+        return suite.relative_directory(repo_root)
+    except Exception:  # noqa: BLE001 - the prompt says it in words
+        return ""
 
 
 __all__ = [

@@ -82,6 +82,28 @@ def scaffolded_layout(project: str, served: list[str]) -> str:
     )
 
 
+#: The general layout's line on where tests go. Right for a builder, whose unit tests sit beside its code; wrong for the
+#: acceptance suite's writer, whose tests live in the one folder it may write in (per-role audit 2026-11-20: the suite
+#: writer was told this beside a request that says only the acceptance folder is its own, and tried product files).
+TESTS_BESIDE_THE_CODE = (
+    "- Tests live beside the code they test, inside the project. A suite at the\n"
+    "  workspace root is one the project's runner never collects."
+)
+
+
+def for_the_suite_writer(text: str, folder: str) -> str:
+    """`text` with the layout's line on where tests go replaced by the one folder the suite's writer writes in.
+
+    `folder` is workspace-relative; "" when it is not known yet, and the request names it.
+    """
+    where = f"`{folder}/`, the acceptance folder" if folder else "the acceptance folder your request names"
+    return text.replace(
+        TESTS_BESIDE_THE_CODE,
+        f"- Your tests live in {where}. It is the one folder you write\n"
+        "  in: the product's code and its unit tests belong to the stages that build it.",
+    )
+
+
 def for_this_workspace(text: str, repo_root: object) -> str:
     """`text` with the general layout section replaced by the scaffold's, when a pack scaffolded `repo_root`."""
     if PROJECT_LAYOUT not in text or not repo_root:

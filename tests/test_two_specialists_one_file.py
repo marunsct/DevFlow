@@ -192,7 +192,7 @@ class TestTheLeadIsAskedToPreventIt:
 
         flat = re.sub(r"\s+", " ", _SYSTEM_PROMPT)
 
-        assert "which part of it that task owns" in flat
+        assert "which part of it that work order owns" in flat
 
     def test_the_workflow_passes_the_siblings(self, tmp_path, monkeypatch):
         from workflow_node_stubs import run_a_builder, two_work_orders

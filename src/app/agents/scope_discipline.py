@@ -32,7 +32,7 @@ Scope discipline - the brief is the boundary:
   does not ask for is not a requirement, however standard the practice is.
 - You may recommend work beyond it. Record that as a suggestion, or as
   future work in the specification - never as a blocking or major finding, and
-  never as a delegated task. A stage cannot be held up for omitting something
+  never as delegated work. A stage cannot be held up for omitting something
   nobody asked for.
 - Judge what is here against what was asked for. "This is missing" is only a
   defect when the intake asked for it; otherwise it is an idea, and ideas do
@@ -41,7 +41,7 @@ Scope discipline - the brief is the boundary:
   migrations and containers produced three blocking findings demanding cluster
   deployment charts, a metrics endpoint and encryption at rest. The brief
   mentions none of those words. Each step that got there was reasonable given the step before
-  it, and the result was a task dashboard that could not proceed without
+  it, and the result was a one-page dashboard that could not proceed without
   Kubernetes deployment artefacts.
 
 - Evidence that cannot exist here is not a missing deliverable. There is no

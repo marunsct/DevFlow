@@ -89,9 +89,72 @@ def _save(repo_root: str | Path, kept: list[dict[str, Any]]) -> None:
     temporary.replace(path)
 
 
+#: Where a note is (plan WS.3): waiting for a model call, read by one (`applied_stage`, `applied_at`), or withdrawn
+#: before any call read it. Only a queued note is edited or withdrawn: a model that read a note cannot unread it.
+STATES = ("queued", "read", "withdrawn")
+
+
+class NoteNotFound(LookupError):
+    """No note of the run has that id."""
+
+
+class NoteSettled(ValueError):
+    """The note was read or withdrawn, so it is no longer changed."""
+
+
+def state_of(note: dict[str, Any]) -> str:
+    """The note's state; a note kept before states existed is read once a call carried it."""
+    kept = note.get("state")
+    if kept in STATES:
+        return str(kept)
+    return "read" if note.get("applied_stage") else "queued"
+
+
 def notes(repo_root: str | Path) -> list[dict[str, Any]]:
-    """The run's notes, oldest first, with when each reached a call; [] when there are none."""
-    return _all(repo_root)
+    """The run's notes, oldest first, each with its state and when it reached a call; [] when there are none."""
+    return [{**note, "state": state_of(note)} for note in _all(repo_root)]
+
+
+def _queued(kept: list[dict[str, Any]], note_id: str) -> dict[str, Any]:
+    note = next((n for n in kept if str(n.get("id")) == str(note_id)), None)
+    if note is None:
+        raise NoteNotFound(f"This run has no note {note_id}.")
+    state = state_of(note)
+    if state == "read":
+        raise NoteSettled(
+            f"Note {note_id} was already read by {note.get('applied_stage')}, so it cannot be changed; "
+            "send a new note to change the direction."
+        )
+    if state == "withdrawn":
+        raise NoteSettled(f"Note {note_id} was withdrawn; send a new note instead.")
+    return note
+
+
+def edit(repo_root: str | Path, note_id: str, text: str, by: str) -> dict[str, Any]:
+    """Change a queued note's words; the next model call that reads it reads them. Raises `NoteSettled` once read."""
+    cleaned = str(text or "").strip()
+    if not cleaned:
+        raise ValueError("A note needs some text.")
+    with _locked(repo_root):
+        kept = _all(repo_root)
+        note = _queued(kept, note_id)
+        note["text"] = cleaned[:MOST_NOTE_CHARS]
+        note["edited_by"] = str(by or "owner")
+        note["edited_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        _save(repo_root, kept)
+        return {**note, "state": state_of(note)}
+
+
+def withdraw(repo_root: str | Path, note_id: str, by: str) -> dict[str, Any]:
+    """Withdraw a queued note: no later model call carries it. Raises `NoteSettled` once read."""
+    with _locked(repo_root):
+        kept = _all(repo_root)
+        note = _queued(kept, note_id)
+        note["state"] = "withdrawn"
+        note["withdrawn_by"] = str(by or "owner")
+        note["withdrawn_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        _save(repo_root, kept)
+        return {**note, "state": state_of(note)}
 
 
 def add(repo_root: str | Path, text: str, by: str, scope: str = "run", audience: Any = None) -> dict[str, Any]:
@@ -118,6 +181,7 @@ def _add_locked(repo_root: str | Path, cleaned: str, by: str, scope: str, audien
         "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "scope": scope,
         "audience": audience,
+        "state": "queued",
     }
     _save(repo_root, kept + [note])
     return note
@@ -128,20 +192,46 @@ def _applied(repo_root: str | Path, stage: str, run_id: str | None) -> list[dict
 
     A `next_stage` note applies to the stage it first reached and to no other.
     The first time a note reaches a call, a `steering_applied` record goes in
-    the run's transcript - the owner's proof it was read (Initiative AS).
+    the run's transcript - the owner's proof it was read (Initiative AS) - and
+    the run's stream says which stage read it (plan WS.3). A withdrawn note
+    reaches no call.
     """
     if not _all(repo_root):
         return []
     with _locked(repo_root):
-        return _applied_locked(repo_root, stage, run_id)
+        live, first_read = _applied_locked(repo_root, stage, run_id)
+    for note in first_read:
+        _say_it_was_read(run_id, stage, note)
+    return live
 
 
-def _applied_locked(repo_root: str | Path, stage: str, run_id: str | None) -> list[dict[str, Any]]:
+def _say_it_was_read(run_id: str | None, stage: str, note: dict[str, Any]) -> None:
+    """One event on the run's stream: the note was read, by this stage. Never raises."""
+    if not run_id:
+        return
+    try:
+        from app.server.agent_stream import publish_one
+
+        text = str(note.get("text") or "")
+        publish_one(
+            str(run_id), stage or "", "log",
+            f"Note {note.get('id')} read by {stage or 'the run'}: {text[:120]}{'...' if len(text) > 120 else ''}",
+            {"kind": "steering_read", "note_id": note.get("id"), "scope": note.get("scope")},
+        )
+    except Exception:  # noqa: BLE001 - an event that cannot be sent never stops a call
+        pass
+
+
+def _applied_locked(
+    repo_root: str | Path, stage: str, run_id: str | None
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     kept = _all(repo_root)
     live: list[dict[str, Any]] = []
-    changed = False
+    first_read: list[dict[str, Any]] = []
     mine = audience_of(stage)
     for note in kept:
+        if state_of(note) == "withdrawn":
+            continue
         if not mine & set(note.get("audience") or ["all"]):
             continue
         first = note.get("applied_stage")
@@ -149,7 +239,8 @@ def _applied_locked(repo_root: str | Path, stage: str, run_id: str | None) -> li
             continue
         if not first:
             note["applied_stage"], note["applied_at"] = stage, datetime.now(timezone.utc).isoformat(timespec="seconds")
-            changed = True
+            note["state"] = "read"
+            first_read.append(note)
             try:
                 from app.observability.transcript import record
 
@@ -157,9 +248,9 @@ def _applied_locked(repo_root: str | Path, stage: str, run_id: str | None) -> li
             except Exception:  # noqa: BLE001 - a record that cannot be kept never stops a call
                 pass
         live.append(note)
-    if changed:
+    if first_read:
         _save(repo_root, kept)
-    return live
+    return live, first_read
 
 
 def as_instructions(repo_root: str | Path, stage: str = "", run_id: str | None = None) -> str:

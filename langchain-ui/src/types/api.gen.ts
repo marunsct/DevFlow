@@ -731,6 +731,11 @@ export interface StartRunRequest {
   workspace_label?: string | null;
 }
 
+/** New words for a note no model call has read yet (plan WS.3). */
+export interface SteeringEdit {
+  text: string;
+}
+
 /** The owner's direction to a running run, carried by its next model calls. */
 export interface SteeringNote {
   /** Who the note is for: everyone, a group of stages (design, planning, build, tests, review) or one role. */

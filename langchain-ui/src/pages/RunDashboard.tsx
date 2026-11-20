@@ -934,9 +934,14 @@ export const RunDashboard: React.FC = () => {
       )}
 
       {/* The owner's direction to a run that is still going. */}
-      {!isTerminal && run.status !== 'paused' && run.status !== 'waiting_for_budget' && <SteeringBox runId={runId!} stage={run.current_stage} />}
-      {run.status === 'paused' && (
-        <p role="status" className="text-sm text-text-muted">Resume the run to send it a direction.</p>
+      {/* A paused run keeps a note for when it resumes (plan WS.3); the stream's "read by" events refresh the list. */}
+      {!isTerminal && (
+        <SteeringBox
+          runId={runId!}
+          stage={run.current_stage}
+          status={run.status}
+          heard={logs.filter((entry) => entry.metadata?.kind === 'steering_read').length}
+        />
       )}
 
       {/* Workspace: the guided wizard or the classic dashboard. The wizard

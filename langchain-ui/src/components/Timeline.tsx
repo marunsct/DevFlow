@@ -25,7 +25,8 @@ export const Timeline: React.FC<{
   const [steering, setSteering] = useState<{ at: string; text: string }[]>([]);
   useEffect(() => {
     let live = true;
-    getSteering(runId).then((notes) => live && setSteering(notes)).catch(() => undefined);
+    // A withdrawn note was never a direction any stage read (plan WS.3).
+    getSteering(runId).then((notes) => live && setSteering(notes.filter((n) => n.state !== 'withdrawn'))).catch(() => undefined);
     return () => {
       live = false;
     };

@@ -119,6 +119,13 @@ describe('the run page', () => {
     await waitFor(() => expect(known.resumeWithDirection).toHaveBeenCalledWith('run-1', 'keep the store in one file'));
   });
 
+  // Plan WS.3: a paused run keeps a note for when it resumes; the box used to be hidden while paused.
+  it('offers steering on a paused run', async () => {
+    Object.assign(run, { status: 'paused', current_stage: 'defect_fix_2_3' });
+    renderPage();
+    expect(await screen.findByText('Steer this run…')).toBeTruthy();
+  });
+
   it('says delivered for a completed run with no cut and nothing blocking', async () => {
     Object.assign(run, { status: 'completed', current_stage: 'complete', verdict: 'delivered', scope_cuts: [] });
     renderPage();

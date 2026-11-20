@@ -465,6 +465,12 @@ class SteeringNote(BaseModel):
     )
 
 
+class SteeringEdit(BaseModel):
+    """New words for a note no model call has read yet (plan WS.3)."""
+
+    text: str = Field(..., min_length=1, max_length=2000)
+
+
 class RunStatusResponse(BaseModel):
     """Comprehensive status of a run."""
     model_config = ConfigDict(extra="forbid")

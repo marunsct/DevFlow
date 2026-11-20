@@ -49,6 +49,44 @@ def _clip(text: str) -> str:
     return text[:MAX_TEXT] + f"\n\n[+{len(text) - MAX_TEXT:,} more characters]"
 
 
+def publish_one(run_id: str, stage: str, event_type: str, message: str, metadata: dict[str, Any] | None = None) -> bool:
+    """Put one event on a run's stream from worker code (no event loop); False when it could not. Never raises."""
+    try:
+        from app.server.events import EventBus, redact_metadata
+        from app.server.redis_client import get_redis_client
+
+        client = get_redis_client()
+        key = f"run:{run_id}:history"
+        sequence = client.incr(f"run:{run_id}:seq")
+        body = json.dumps(
+            {
+                "run_id": run_id,
+                "event_id": str(uuid.uuid4()),
+                "sequence": sequence,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "stage": stage,
+                "event_type": event_type,
+                "message": message,
+                "metadata": redact_metadata(metadata or {}),
+            }
+        )
+        # The same pipeline `EventBus.publish` uses, for the same reason: a
+        # bare rpush would bypass the history cap, and agent activity is by
+        # far the highest-volume event type there is - exactly what the cap
+        # exists to bound.
+        pipe = client.pipeline()
+        pipe.rpush(key, body)
+        pipe.ltrim(key, -EventBus.MAX_HISTORY, -1)
+        pipe.expire(key, EventBus.HISTORY_TTL_SECONDS)
+        pipe.expire(f"run:{run_id}:seq", EventBus.HISTORY_TTL_SECONDS)
+        pipe.publish(f"run:{run_id}:events", body)
+        pipe.execute()
+        return True
+    except Exception:  # noqa: BLE001 - narration is never load-bearing
+        logger.debug("Could not publish to the stream of %s", run_id, exc_info=True)
+        return False
+
+
 class AgentActivityStream(BaseCallbackHandler):
     """Publish an agent's messages and tool calls to a run's event stream."""
 
@@ -65,41 +103,8 @@ class AgentActivityStream(BaseCallbackHandler):
     ) -> None:
         if self._published >= MAX_EVENTS_PER_RUN:
             return
-        try:
-            from app.server.events import EventBus, redact_metadata
-            from app.server.redis_client import get_redis_client
-
-            client = get_redis_client()
-            key = f"run:{self.run_id}:history"
-            sequence = client.incr(f"run:{self.run_id}:seq")
-            body = json.dumps(
-                {
-                    "run_id": self.run_id,
-                    "event_id": str(uuid.uuid4()),
-                    "sequence": sequence,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "stage": self.stage,
-                    "event_type": event_type,
-                    "message": message,
-                    "metadata": redact_metadata(metadata or {}),
-                }
-            )
-            # The same pipeline `EventBus.publish` uses, for the same reason: a
-            # bare rpush would bypass the history cap, and agent activity is by
-            # far the highest-volume event type there is - exactly what the cap
-            # exists to bound.
-            pipe = client.pipeline()
-            pipe.rpush(key, body)
-            pipe.ltrim(key, -EventBus.MAX_HISTORY, -1)
-            pipe.expire(key, EventBus.HISTORY_TTL_SECONDS)
-            pipe.expire(f"run:{self.run_id}:seq", EventBus.HISTORY_TTL_SECONDS)
-            pipe.publish(f"run:{self.run_id}:events", body)
-            pipe.execute()
+        if publish_one(self.run_id, self.stage, event_type, message, metadata):
             self._published += 1
-        except Exception:  # noqa: BLE001 - narration is never load-bearing
-            logger.debug(
-                "Could not publish agent activity for %s", self.run_id, exc_info=True
-            )
 
     def publish_outcome(self, summary: str) -> None:
         """Record what this stage decided. See `publish_stage_outcome`."""

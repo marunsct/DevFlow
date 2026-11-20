@@ -1197,6 +1197,7 @@ def suite_locked(root: str) -> None:
             logger.info("Regression contract: %d test(s) of the seeded product pass and are held",
                         len(measured.passing()))
             ci.save(root, measured, accepted=True)
+            regression_contract.record_the_baseline(measured)
             return
         ci.save(root, ci.Snapshot(label="suite locked", commit=commit_id), accepted=True)
     except Exception as error:  # noqa: BLE001

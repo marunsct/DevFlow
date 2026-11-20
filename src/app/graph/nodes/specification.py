@@ -60,6 +60,10 @@ def principal_architect_node(state: WorkflowGraphState, config: RunnableConfig, 
             state["document"],
             advice=state.get("specialist_advice"),
         )
+        # A seeded codebase's map: the specification extends what exists (plan WS.7).
+        from app.agents.code_map import with_the_map
+
+        request = with_the_map(request, state["repository"].root_path)
 
     # The open questions' assumed answers, recorded at intake (plan IN.1).
     from app.agents import assumptions

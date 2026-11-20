@@ -121,6 +121,22 @@ describe('the run page', () => {
     await waitFor(() => expect(known.resumeWithDirection).toHaveBeenCalledWith('run-1', 'keep the store in one file'));
   });
 
+  // Plan WS.7: "Request a change" was offered while its switch was off, and the run it started was refused.
+  it('does not offer a change to a finished product while change requests are switched off', async () => {
+    Object.assign(run, { status: 'completed', current_stage: 'complete', verdict: 'delivered', scope_cuts: [] });
+    known.changeRequestsOn = vi.fn(async () => false) as never;
+    renderPage();
+    expect(await screen.findByTestId('download-product')).toBeTruthy();
+    expect(screen.queryByTestId('request-a-change')).toBeNull();
+  });
+
+  it('offers a change to a finished product while change requests are switched on', async () => {
+    Object.assign(run, { status: 'completed', current_stage: 'complete', verdict: 'delivered', scope_cuts: [] });
+    known.changeRequestsOn = vi.fn(async () => true) as never;
+    renderPage();
+    expect(await screen.findByTestId('request-a-change')).toBeTruthy();
+  });
+
   // Plan WS.3: a paused run keeps a note for when it resumes; the box used to be hidden while paused.
   it('offers steering on a paused run', async () => {
     Object.assign(run, { status: 'paused', current_stage: 'defect_fix_2_3' });

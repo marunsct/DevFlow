@@ -13,7 +13,7 @@ import io
 import zipfile
 from pathlib import Path
 
-#: What goes in besides `docs/`: the decision record and the locked suite.
+#: What goes in besides `docs/`: the decision record and the locked suite (and a seeded run's undelivered change).
 _RECORDS = (".harness/decisions.json",)
 #: The most one pack may hold, uncompressed.
 MOST_BYTES = 50 * 1024 * 1024
@@ -46,6 +46,11 @@ def files_of(repo_root: str | Path) -> list[str]:
             if "node_modules" not in path.parts
         )
     found += [name for name in _RECORDS if (root / name).is_file()]
+    # A seeded run's change as a git bundle and a patch, when it could not be a pull request (plan WS.7).
+    from app.server.repository_delivery import DOWNLOADS
+
+    if (root / DOWNLOADS).is_dir():
+        found += sorted(path.relative_to(root).as_posix() for path in (root / DOWNLOADS).iterdir() if path.is_file())
     return found
 
 

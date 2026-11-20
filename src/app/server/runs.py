@@ -503,6 +503,10 @@ def create_runs_router(
         from app.tools.version_control import initialise_repository
 
         await run_in_threadpool(initialise_repository, workspace)
+        # What a seeded run's change is delivered against, and the owner's delivery token sealed apart (plan WS.7).
+        from app.server import repository_delivery
+
+        await run_in_threadpool(repository_delivery.remember, run_id, workspace, body.source)
 
         try:
             repository = build_repository_context(

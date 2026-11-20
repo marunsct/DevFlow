@@ -48,7 +48,7 @@ BUNDLE_SUMMARIES = {
     "PREMIUM_MODEL_TUNING": "Adaptive model tuning: the model's reasoning and replies tuned to the model serving the run.",
     "PREMIUM_PROJECT_INTELLIGENCE": "Project intelligence: shared facts, project memory, the code graph and lessons from "
                                     "earlier runs, for every stage.",
-    "PREMIUM_DEEP_VERIFICATION": "Deep verification: mutation-guided tests, the regression contract, page scoring, "
+    "PREMIUM_DEEP_VERIFICATION": "Deep verification: mutation-guided tests, page scoring, "
                                  "release audits and documents, and the specification's assumptions asked first.",
     "PREMIUM_CHANGE_REQUESTS": "Change requests: follow-up runs that change a finished product on request.",
 }

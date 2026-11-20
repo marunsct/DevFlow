@@ -904,6 +904,32 @@ class WorkflowRunner:
         for thread_id in [*state.get("inner_thread_ids", []), record.thread_id]:
             discard_thread(thread_id, checkpointer=self.checkpointer)
 
+    async def _deliver_to_the_seeded_repository(self, record: RunRecord) -> None:
+        """A completed seeded run's change, delivered where the product lives (plan WS.7); said in the run's history."""
+        if not record.repo_root:
+            return
+        try:
+            from app.server import repository_delivery
+
+            names = await asyncio.to_thread(self.run_store.run_names, [record.run_id])
+            outcome = await asyncio.to_thread(
+                repository_delivery.deliver, record.run_id, record.repo_root, name=names.get(record.run_id, ""))
+            if outcome is None:
+                return
+            await self.event_bus.publish(
+                record.run_id,
+                RunEvent(
+                    run_id=record.run_id,
+                    sequence=await self.event_bus.next_sequence(record.run_id),
+                    stage="complete",
+                    event_type="log",
+                    message=outcome.message,
+                    metadata={"kind": "repository_delivery", "delivered_as": outcome.kind, "url": outcome.url},
+                ),
+            )
+        except Exception:  # noqa: BLE001 - the run is complete whatever its delivery does
+            logger.warning("Could not deliver the change of run %s", record.run_id, exc_info=True)
+
     async def _say_if_the_judgement_model_was_replaced(self, record: RunRecord) -> None:
         """Put a configured judgement model that could not be built into the run's history."""
         from app.models.roles import judgement_downgrade, remember_the_downgrade
@@ -1688,6 +1714,8 @@ class WorkflowRunner:
                             notes=notes,
                         )
                 self._persist(record)
+                if stage == "complete":
+                    await self._deliver_to_the_seeded_repository(record)
                 await asyncio.to_thread(self._archive_artifacts, record)
                 await asyncio.to_thread(self._prune_scratch)
                 await self.event_bus.publish(

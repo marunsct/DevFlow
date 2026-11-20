@@ -645,6 +645,8 @@ Policy: an efficiency change is kept only with measured no loss; "being measured
 
 Other measurement tools: `scripts/loop/effects.py` (did each fix or switch fire and help), `check_precision.py` (precision of each suite check), `gap_precision.py`, `kpi_ledger.py`, `impact.py`, `disputes.py`, `redundant_reads.py`, `run_timing.py`. The loop procedure and quality gates around them are Part 2.
 
+Prompt size switches (LF.1182, `agents/prompt_size.py`, all off until measured): `QA_PROMPT_TRIMMED` keeps only the stack guidance about tests and the role's own lessons for the suite writer and QA lead; `REVIEWER_SHAPED_PLUGIN_CONTENT` keeps only the review lines for review roles; `LEAD_REPLAN_REQUEST_SMALLER` holds whole only the files the last attempt planned and changed on a re-plan, and is never longer than the request it replaces. Each choice is made once per run so the prompt bytes stay stable.
+
 ## 10. System architecture and deployment
 
 ### 10.1 Services at a glance

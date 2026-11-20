@@ -15,7 +15,7 @@ decisions in force are `docs/owner-decisions.md`; old information is found throu
 |---|---|
 | Phase | **Learning runs, fixes deployed at once** (deep-review plan, owner 11-18: implement all; frozen-version measuring for Measure batches). The release-candidate count starts only when a full audit cycle finds nothing to fix. |
 | Models | :8888 `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` (key); :1234 `qwen3.6-35b-a3b-mtp@iq4_nl` (no key). Both the owner's; both take runs; each run is pinned to its port. |
-| Harness | Deployed 11-20 13:19 JST: f89fd67c (LF.1140-1179). Deploying after both suites: LF.1180 delivery-token field (and a token leak to the browser console fixed), LF.1181 WS.5 point and say (under `PRODUCT_PREVIEW`). Building: three prompt-size switches from the per-role audit. |
+| Harness | Deployed 11-20 13:38 JST: 868e87ac (LF.1140-1181). Deploying after both suites: LF.1182 three prompt-size switches (off). Next: a real-Docker trial of the preview, then WS.6. |
 | Switches | 53 fixes built in (always on). 29 optional switches (9 groups, `docs/measuring.md`); `WEB_LOOKUP_WHEN_STUCK` is off and set per run. Measure arms use `SWITCHES_OFF` per run. |
 | Operations | Nightly backups (`loop.sh backup --check`); finished runs older than 60 days cleared. Audit cron `01339d0d` every ~10 minutes (7-day expiry: recreate by 11-27). |
 | Suites | `loop.sh suite` and `loop.sh suite-production` both green at 18,701 passed. |
@@ -44,8 +44,8 @@ Earlier runs: `reports/status-board/`, git history of this file.
    First a real-Docker trial of the preview (container mode) before any of it is switched on.
 4. Backlog (plan 3.3): stack-decision check
    for a database named as one engine "via" another; the restart re-read pattern; Rust routing (owner).
-5. Per-role audit done (`reports/audits/2026-11-20-per-role-audit.md`); its sure fixes are building; its doubtful ones (QA prompt trim,
-   reviewer-shaped plugin content, a smaller lead re-plan request) follow behind switches.
+5. Per-role audit done (`reports/audits/2026-11-20-per-role-audit.md`); sure fixes deployed (LF.1176-1179), doubtful ones built behind
+   switches (LF.1182) for a measuring pair. Open: the read guard returned an unchanged file in full after a notice (Java 4; check against history trimming).
 
 ## Rules that are never optional
 `AGENTS.md`. In short: the model is the owner's (`loop.sh ready` must say ALL READY); fixes are stack-agnostic

@@ -418,14 +418,26 @@ def _compaction_middleware(agent_name: str, model: Any = None) -> list:
 
         from app.agents import summarise_later
 
-        trigger = summarise_later.trigger_tokens(policy.trigger_tokens, min(policy.max_context_tokens,
-                                                                            budget.input_ceiling_tokens))
+        from app.agents import reply_room
+
+        ceiling = min(policy.max_context_tokens, budget.input_ceiling_tokens)
+        reserved = budget.max_output_tokens
+        from app.agents.context_budget import _read_int, _the_deployment_s
+
+        if _read_int(dict(own) if own is not None else _the_deployment_s(), "CTX_MAX_TOKENS") is None:
+            # Only a ceiling derived from the window moves with the reply's room; a set one stays as set.
+            reserved = reply_room.reservation(agent_name, budget.max_output_tokens)
+            ceiling += budget.max_output_tokens - reserved
+        usual = int(ceiling * policy.soft_trigger_ratio)
+        trigger = summarise_later.trigger_tokens(usual, ceiling)
         return [
             RequestKeepingSummarization(
                 summariser,
                 backend=build_context_backend(agent_name),
                 trigger=("tokens", trigger),
-                usual_trigger_tokens=policy.trigger_tokens,
+                usual_trigger_tokens=usual,
+                reply_room=((agent_name, reserved, budget.max_output_tokens)
+                            if reserved != budget.max_output_tokens else None),
                 keep=("messages", policy.keep_recent_messages),
                 most_kept_tokens=int(trigger * KEPT_TAIL_SHARE),
                 trim_tokens_to_summarize=policy.trim_tokens_to_summarize,

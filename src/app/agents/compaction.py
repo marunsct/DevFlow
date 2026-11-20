@@ -120,10 +120,12 @@ class RequestKeepingSummarization(SummarizationMiddleware):
         return "SummarizationMiddleware"
 
     def __init__(self, *args: Any, most_kept_tokens: int | None = None, usual_trigger_tokens: int | None = None,
-                 **kwargs: Any) -> None:
+                 reply_room: tuple[str, int, int] | None = None, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         # The trigger without `SUMMARISE_LATER_WITH_HEADROOM`; a request past it and short of the real one is noted.
         self._usual_trigger = usual_trigger_tokens
+        # (role, tokens held back for a reply, what they were) when `REPLY_ROOM_SIZED_PER_ROLE` resized them.
+        self._reply_room = reply_room
         # The most of the conversation a compaction leaves whole (see
         # `_determine_cutoff_index`); None keeps the message count alone.
         self._most_kept_tokens = most_kept_tokens
@@ -244,6 +246,11 @@ class RequestKeepingSummarization(SummarizationMiddleware):
         return (shortened, True) if modified else (messages, False)
 
     def _should_summarize(self, messages: list[AnyMessage], total_tokens: int) -> bool:
+        if self._reply_room:
+            from app.agents import reply_room
+            from app.observability.transcript import _stage_from_config
+
+            reply_room.note(_stage_from_config(""), *self._reply_room)
         if not super()._should_summarize(messages, total_tokens):
             usual = self._usual_trigger
             trigger = getattr(self._lc_helper, "trigger", None)

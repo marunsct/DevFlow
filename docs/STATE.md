@@ -15,7 +15,7 @@ decisions in force are `docs/owner-decisions.md`; old information is found throu
 |---|---|
 | Phase | **Learning runs, fixes deployed at once** (deep-review plan, owner 11-18: implement all; frozen-version measuring for Measure batches). The release-candidate count starts only when a full audit cycle finds nothing to fix. |
 | Models | :8888 `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` (key); :1234 `qwen3.6-35b-a3b-mtp@iq4_nl` (no key). Both the owner's; both take runs; each run is pinned to its port. |
-| Harness | Deployed 11-20 14:05 JST: 5431331b (LF.1140-1184). Deploying after both suites: LF.1185 edge-probe 500s carry what the server printed; the Python cause for an id too large for SQLite. |
+| Harness | Deployed 11-20 14:28 JST: 0e7204c0 (LF.1140-1185). Deploying after both suites: LF.1186 a probe finding is never taken for a failing unit test (the C# 9 quality loss). |
 | Switches | 53 fixes built in (always on). 29 optional switches (9 groups, `docs/measuring.md`); `WEB_LOOKUP_WHEN_STUCK` is off and set per run. Measure arms use `SWITCHES_OFF` per run. |
 | Operations | Nightly backups (`loop.sh backup --check`); finished runs older than 60 days cleared. Audit cron `01339d0d` every ~10 minutes (7-day expiry: recreate by 11-27). |
 | Suites | `loop.sh suite` and `loop.sh suite-production` both green at 18,701 passed. |
@@ -30,7 +30,7 @@ Earlier runs: `reports/status-board/`, git history of this file.
   container 1 (:1234, from 14:29, both lookup switches on).
 - Scored today: web-todo 3 and 4 (10/10, 6/6), Ruby 2 and 3 (9/9, 8/8; 64 and 56 min against 267 before), Java 3 (9/9, 8/8),
   PHP 6 and 7 (9/9, 8/8; 42 and 78 min), C# 7 and 8 (9/9, 8/8), Java 4 (9/9, 8/8; 244 min, a start defect for three rounds), tasks-api 6 (10/10, 7/7; 110 min;
-  not deliverable: one edge-probe 500 left), **C# 9 (9/9, quality 6/8; not deliverable: probe-found 500s never raised in a round - investigating)**, Go 3 (9/9, 8/8), tasks-api 5 (10/10, 7/7; 175 min).
+  not deliverable: one edge-probe 500 left), **C# 9 (9/9, quality 6/8; not deliverable: probe-found 500s merged under a unit-test defect; fixed in LF.1186)**, Go 3 (9/9, 8/8), tasks-api 5 (10/10, 7/7; 175 min).
   **Java 2 failed 0/9** (never started: an invented "SQLite via H2" mode; LF.1145-1147 fixed the evidence and the ceiling).
 - Every local family scored full hidden marks today except Rust (0/9 in four local runs; Haiku-built 9/9 twice).
 - Each run's product review: `reports/product-reviews/`.

@@ -495,7 +495,7 @@ With `CONTESTED_TESTS_CONFIRMED` (off until measured), rulings that quote identi
 
 A finding of the suite's dry run carries the cause when the runner's error is a known one (`spec_dry_run.SUITE_KNOWN_ERRORS`), and is never held back, since it is what running the test's own code did (LF.1183). Any other suite-check finding that comes back with the same check, wording and tests after a repair changed the suite is not sent to the authors again: it goes to the QA lead as a suspected false finding and is recorded (`suspected false finding`, a `withheld` row in `check-findings.jsonl`; LF.1177). The suite writer's system prompt names only its acceptance folder (LF.1178).
 
-A 5xx from the edge or server-error probe reaches its fixer with what the server printed for that request (LF.1185; an HTML error page is cut to its title).
+A defect holding a release probe's finding leads any merge with failing unit tests and never counts as a unit-test failure, so a green sprint does not settle while a probe still finds what would block release (LF.1186). A 5xx from the edge or server-error probe reaches its fixer with what the server printed for that request (LF.1185; an HTML error page is cut to its title).
 
 ### 6.6 Brownfield: the regression contract
 

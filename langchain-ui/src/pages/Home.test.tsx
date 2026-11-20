@@ -10,6 +10,7 @@ const { mocks } = vi.hoisted(() => ({
     startRun: vi.fn(async () => ({})),
     deleteRun: vi.fn(async () => ({})),
     uploadCodebase: vi.fn(async () => ({})),
+    pullRequestDeliveryOn: vi.fn(async () => false),
     getOperatorHealth: vi.fn(async () => ({ runs: { waiting: [] as unknown[] } })),
     getOutcomes: vi.fn(async () => ({ runs: [], forecast: {} })),
     getFrontierStatus: vi.fn(async () => ({ configured: true, active: true, model: 'claude-x', provider: 'anthropic', problem: null as string | null })),
@@ -88,6 +89,49 @@ describe('starting a build', () => {
     const payload = (mocks.startRun.mock.calls.at(-1) as unknown as [string, Record<string, any>])[1];
     expect(payload.source).toEqual({ type: 'git', url: 'https://example.com/team/app.git', ref: 'release', token: 'secret-123' });
     expect(mocks.uploadCodebase).not.toHaveBeenCalled();
+  });
+
+  // Plan WS.7: a run seeded from a repository delivers its change as a pull request with a token the owner gives.
+  it('offers no pull-request token while pull-request delivery is off', async () => {
+    show();
+    await userEvent.type(screen.getByLabelText(/Or clone a Git repository/), 'https://example.com/team/app.git');
+    await waitFor(() => expect(mocks.pullRequestDeliveryOn).toHaveBeenCalled());
+    expect(screen.queryByLabelText(/Token to open a pull request/)).toBeNull();
+  });
+
+  it('sends the pull-request token with the Git source and keeps it nowhere after the start', async () => {
+    mocks.pullRequestDeliveryOn.mockResolvedValueOnce(true);
+    show();
+    await userEvent.type(screen.getByLabelText(/Write the brief/), '## Features\n- Add a note');
+    await userEvent.type(screen.getByLabelText(/Or clone a Git repository/), 'https://example.com/team/app.git');
+    const field = (await screen.findByLabelText(/Token to open a pull request/)) as HTMLInputElement;
+    expect(field.type).toBe('password');
+    await userEvent.type(field, 'pr-secret-456');
+    await userEvent.click(screen.getByRole('button', { name: /Start Workflow Run/ }));
+    await waitFor(() => expect(mocks.startRun).toHaveBeenCalled());
+    const payload = (mocks.startRun.mock.calls.at(-1) as unknown as [string, Record<string, any>])[1];
+    expect(payload.source).toEqual({ type: 'git', url: 'https://example.com/team/app.git', delivery_token: 'pr-secret-456' });
+    expect((screen.getByLabelText(/Token to open a pull request/) as HTMLInputElement).value).toBe('');
+    const stored = [localStorage, sessionStorage].flatMap((store) => Object.keys(store).map((key) => store.getItem(key)));
+    expect(stored.filter((value) => value?.includes('pr-secret-456'))).toEqual([]);
+  });
+
+  it('logs no token when the run cannot start', async () => {
+    mocks.pullRequestDeliveryOn.mockResolvedValueOnce(true);
+    (mocks.startRun as any).mockImplementationOnce(async (_id: string, body: unknown) => {
+      throw Object.assign(new Error('the worker is down'), { config: { data: JSON.stringify(body) } });
+    });
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    show();
+    await userEvent.type(screen.getByLabelText(/Write the brief/), '## Features\n- Add a note');
+    await userEvent.type(screen.getByLabelText(/Or clone a Git repository/), 'https://example.com/team/app.git');
+    await userEvent.type(await screen.findByLabelText(/Token to open a pull request/), 'pr-secret-456');
+    await userEvent.click(screen.getByRole('button', { name: /Start Workflow Run/ }));
+    expect(await screen.findByText('the worker is down')).toBeTruthy();
+    expect(JSON.stringify(logged.mock.calls, (_key, value) => (value instanceof Error ? { ...value, message: value.message } : value)))
+      .not.toContain('pr-secret-456');
+    expect((screen.getByLabelText(/Token to open a pull request/) as HTMLInputElement).value).toBe('');
+    logged.mockRestore();
   });
 
   it('refuses to start from both an archive and a Git repository', async () => {

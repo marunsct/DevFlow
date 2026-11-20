@@ -2,7 +2,7 @@ import { browserCanNotify, wantNotifications } from '../lib/notify';
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { UploadCloud, FileText, PlayCircle, FolderOpen } from 'lucide-react';
-import { api, createRun, deleteRun, startRun, getFrontierStatus, getOperatorHealth, getOutcomes, uploadCodebase, type FrontierStatus, type RunForecast, type WaitingRun } from '../api';
+import { api, createRun, deleteRun, startRun, getFrontierStatus, getOperatorHealth, getOutcomes, pullRequestDeliveryOn, uploadCodebase, type FrontierStatus, type RunForecast, type WaitingRun } from '../api';
 import { Link } from 'react-router-dom';
 import { typicalTime } from '../lib/runSummary';
 import { describeServer, holdingTheModel, useServerHealth } from '../lib/serverHealth';
@@ -214,6 +214,17 @@ export const Home: React.FC = () => {
   const [gitUrl, setGitUrl] = useState('');
   const [gitRef, setGitRef] = useState('');
   const [gitToken, setGitToken] = useState('');
+  // WS.7: a token that may open a pull request on that repository, offered only while PULL_REQUEST_DELIVERY is on.
+  // Sent with the start only and cleared once sent; never kept in the browser or shown again.
+  const [deliveryToken, setDeliveryToken] = useState('');
+  const [pullRequestsOn, setPullRequestsOn] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void pullRequestDeliveryOn().then((on) => { if (live) setPullRequestsOn(on === true); }).catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
   // A change to a finished run's product (LR.35): the new run starts from that product, with this brief as the change.
   const [searchParams] = useSearchParams();
   const changeOf = searchParams.get('changeOf');
@@ -283,7 +294,10 @@ export const Home: React.FC = () => {
 
       const payload: any = {
         source: uploaded?.upload_id ? { type: 'archive', upload_id: uploaded.upload_id }
-          : gitUrl.trim() ? { type: 'git', url: gitUrl.trim(), ref: gitRef.trim() || undefined, token: gitToken || undefined }
+          : gitUrl.trim() ? {
+              type: 'git', url: gitUrl.trim(), ref: gitRef.trim() || undefined, token: gitToken || undefined,
+              delivery_token: (pullRequestsOn && deliveryToken.trim()) || undefined,
+            }
           : changeOf ? { type: 'run', run_id: changeOf } : undefined,
         // The person starting the run reviews it.
         reviewer: reviewer || undefined,
@@ -322,6 +336,7 @@ export const Home: React.FC = () => {
       // Per-run overrides still exist for API callers who genuinely want one;
       // this form just isn't one of them.
 
+      setDeliveryToken('');
       await startRun(runData.run_id, payload);
       await saveRunDefaults({
         delivery_mode: deliveryMode,
@@ -344,7 +359,8 @@ export const Home: React.FC = () => {
       keepDraft('');
       navigate(`/runs/${runData.run_id}`);
     } catch (err: any) {
-      console.error(err);
+      // The message only: a request error carries the request it failed on, tokens included.
+      console.error(err?.message ?? 'The run could not start.');
       if (created) await deleteRun(created).catch(() => undefined);
       setError(err.response?.data?.detail || err.message || "An error occurred during upload.");
       setIsUploading(false);
@@ -621,6 +637,18 @@ export const Home: React.FC = () => {
                     value={gitToken}
                     onChange={(e) => setGitToken(e.target.value)}
                   />
+                  {pullRequestsOn && (
+                    <Input
+                      label="Token to open a pull request"
+                      aside={<span className="text-xs text-text-muted">optional</span>}
+                      hint="Needs to push a branch and open pull requests on this one repository. Used once to deliver the change, then deleted."
+                      type="password"
+                      autoComplete="off"
+                      maxLength={512}
+                      value={deliveryToken}
+                      onChange={(e) => setDeliveryToken(e.target.value)}
+                    />
+                  )}
                 </>
               )}
             </div>

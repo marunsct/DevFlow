@@ -915,6 +915,229 @@ def absences_a_longer_text_also_meets(text: str) -> list[tuple[int, str, str]]:
     return list(dict.fromkeys(found))
 
 
+#: An action on the page through a locator, after which what an item shows may change (`clic[k]`: the method's name
+#: kept out of the source's product words).
+_AN_ACTION = re.compile(
+    r"""\.\s*(?:(?:dbl)?clic[k]|tap|press|pressSequentially|type|fill|clear|check|uncheck|setChecked|selectOption)\s*\("""
+)
+#: A string given as the text a locator filters by: `hasText: 'x'`, `hasText: name`.
+_FILTERED_BY = re.compile(r"""\bhasText\s*:\s*(?P<text>""" + _A_PLAIN_STRING + r"""|[A-Za-z_$][\w$]*)""")
+#: What may follow the call that filters, the result still the item found: `.first()`, `.nth(0)`.
+_STILL_THE_ITEM = re.compile(r"""(?:\s*\.\s*(?:first|last)\s*\(\s*\)|\s*\.\s*nth\s*\(\s*-?\d+\s*\))*\s*""")
+#: A look inside what was found: `.getByLabel(`, `.locator(`.
+_A_LOOK_INSIDE = re.compile(r"""\s*\.\s*(?:getBy\w+|locator)\s*\(""")
+_A_FUNCTION = re.compile(r"""\bfunction\s+([A-Za-z_$][\w$]*)\s*\(([^()]*)\)\s*\{""")
+_AN_ARROW = re.compile(r"""\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\(([^()]*)\)\s*=>\s*""")
+_A_STATEMENT_BINDING = re.compile(r"""\s*(?:(?:const|let|var)\s+)?([A-Za-z_$][\w$]*)\s*=(?![=>])\s*""")
+_A_HEAD = re.compile(r"""\s*(?:await\s+)?([A-Za-z_$][\w$]*)\s*(?=[.(])""")
+
+
+def _statements(code: str) -> list[tuple[int, str]]:
+    """(offset, text) of each statement of `code`: ended by `;`, a brace, or a line end not continued by `.`, outside
+    brackets and quotes."""
+    found: list[tuple[int, str]] = []
+    start, depth, quote, at = 0, 0, "", 0
+    while at < len(code):
+        char = code[at]
+        if quote:
+            if char == "\\":
+                at += 2
+                continue
+            if char == quote:
+                quote = ""
+        elif char in "'\"`":
+            quote = char
+        elif char in "([":
+            depth += 1
+        elif char in ")]":
+            depth -= 1
+        elif depth <= 0 and (char in ";{}" or (char == "\n" and not code[at + 1:].lstrip().startswith("."))):
+            if code[start:at].strip():
+                found.append((start, code[start:at]))
+            start = at + 1
+        at += 1
+    if code[start:].strip():
+        found.append((start, code[start:]))
+    return found
+
+
+def _the_arguments(text: str) -> list[str]:
+    """`text`, the inside of a call's parentheses, split into its arguments."""
+    parts, start, depth, quote = [], 0, 0, ""
+    for at, char in enumerate(text):
+        if quote:
+            if char == quote and text[at - 1] != "\\":
+                quote = ""
+        elif char in "'\"`":
+            quote = char
+        elif char in "([{":
+            depth += 1
+        elif char in ")]}":
+            depth -= 1
+        elif char == "," and not depth:
+            parts.append(text[start:at].strip())
+            start = at + 1
+    if text[start:].strip():
+        parts.append(text[start:].strip())
+    return parts
+
+
+def _a_string_of(given: str, strings: dict[str, str]) -> str:
+    """The string `given` - a plain string literal, or a name bound to one - stands for; "" for anything else."""
+    given = given.strip()
+    if given[:1] in ("'", '"', "`") and re.fullmatch(_A_PLAIN_STRING, given):
+        return _the_string(given)
+    return strings.get(given, "")
+
+
+def _the_filter_ending(expression: str) -> re.Match[str] | None:
+    """The `hasText` the whole of `expression` is filtered by last - nothing but `.first()` or `.nth(n)` after its call."""
+    for match in _FILTERED_BY.finditer(expression):
+        depth, at = 0, match.start()
+        while at > 0:
+            at -= 1
+            depth += {")": 1, "(": -1}.get(expression[at], 0)
+            if depth < 0:
+                break
+        closes = _the_closing_paren(expression, at + 1) if depth < 0 else -1
+        if closes > 0 and _STILL_THE_ITEM.fullmatch(expression, closes + 1):
+            return match
+    return None
+
+
+def _the_block(text: str) -> str:
+    """`text`, which starts just inside a `{`, up to the `}` that closes it, past quoted text."""
+    depth, quote = 1, ""
+    for at, char in enumerate(text):
+        if quote:
+            if char == quote and text[at - 1] != "\\":
+                quote = ""
+        elif char in "'\"`":
+            quote = char
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if not depth:
+                return text[:at]
+    return text
+
+
+def _helpers_that_find_by_text(code: str) -> dict[str, tuple[list[str], str]]:
+    """Each function of the file that returns a locator filtered by a text: name -> (its parameters, what it filters by)."""
+    found: dict[str, tuple[list[str], str]] = {}
+    for pattern in (_A_FUNCTION, _AN_ARROW):
+        for match in pattern.finditer(code):
+            params = [re.split(r"\s*=", p, maxsplit=1)[0].strip() for p in _the_arguments(match.group(2))]
+            rest = code[match.end():]
+            if pattern is _A_FUNCTION or rest.startswith("{"):
+                rest = _the_block(rest[1:] if rest.startswith("{") else rest)
+                returned = re.search(r"\breturn\s+", rest)
+                if not returned:
+                    continue
+                rest = rest[returned.end():]
+            statement = _statements(rest[:1500])
+            if not statement:
+                continue
+            ending = _the_filter_ending(statement[0][1].strip())
+            if ending:
+                found[match.group(1)] = (params, ending.group("text"))
+    return found
+
+
+def _the_item_at(expression: str, strings: dict[str, str], helpers: dict[str, tuple[list[str], str]]) -> tuple[str, int]:
+    """(the text, where its expression ends) when `expression` starts with an item found by a string text: a locator
+    filtered by it, or a call of a helper of the file that returns one; ("", 0) otherwise."""
+    head = _A_HEAD.match(expression)
+    if head and head.group(1) in helpers and expression[head.end():head.end() + 1] == "(":
+        closes = _the_closing_paren(expression, head.end() + 1)
+        if closes < 0:
+            return "", 0
+        params, given = helpers[head.group(1)]
+        arguments = _the_arguments(expression[head.end() + 1:closes])
+        text = _a_string_of(given, {})
+        if not text and given in params and params.index(given) < len(arguments):
+            text = _a_string_of(arguments[params.index(given)], strings)
+        return text, closes + 1
+    # A locator written out: the text it is filtered by last, before any look inside it.
+    looks = [m.start() for m in _A_LOOK_INSIDE.finditer(expression)]
+    for end in [*looks, len(expression)]:
+        ending = _the_filter_ending(expression[:end])
+        if ending and (text := _a_string_of(ending.group("text"), strings)):
+            return text, end
+    return "", 0
+
+
+def items_found_again_by_a_text_after_an_action(text: str) -> list[tuple[int, str]]:
+    """(line, text) where a test acts inside an item it found by `text` (a string `hasText`, written out or through a
+    helper of the file), then looks inside that item again by the same text.
+
+    The action may change what the item shows: a field holding `text` as its value is not its text. Measured on one
+    run: a locked test pressed "Edit" inside the item filtered by its title, then looked inside it for the "Edit title"
+    field; the product, as specified, swapped the title for that field, the locator matched nothing, and fixers spent
+    about forty minutes on the product. Advice, not proof: a product that keeps the text shown passes.
+    A look inside for that same text (the test expects it kept) is not one.
+    """
+    code = code_only(text)
+    in_the_file = {m.group(1): _the_string(m.group(2)) for m in _A_BOUND_STRING.finditer(code)}
+    helpers = _helpers_that_find_by_text(code)
+    # Where an item written out in place may start: the page, or a call of one of those helpers.
+    heads = r"(?<![\w$.])(?:" + "|".join(re.escape(name) for name in ["page", *helpers]) + r")\b"
+    found: list[tuple[int, str]] = []
+    starts = [m.start() for m in _A_TEST.finditer(code)] + [len(code)]
+    for begin, end in zip(starts, starts[1:]):
+        body = code[begin:end]
+        opened = re.search(r"=>\s*\{|\)\s*\{", body)
+        if not opened:
+            continue
+        strings = {**in_the_file, **{m.group(1): _the_string(m.group(2)) for m in _A_BOUND_STRING.finditer(body)}}
+        items: dict[str, str] = {}
+        inside: dict[str, str] = {}
+        acted: set[str] = set()
+        hit: tuple[int, str] | None = None
+        for offset, statement in _statements(body[opened.end():]):
+            at = begin + opened.end() + offset
+            # A look inside an item already acted in, by the text it was found by.
+            for name, said in items.items():
+                if said not in acted:
+                    continue
+                for look in re.finditer(rf"(?<![\w$.]){re.escape(name)}(?={_A_LOOK_INSIDE.pattern})", statement):
+                    call = statement[look.end():]
+                    opens = call.index("(") + 1
+                    if said not in call[:max(_the_closing_paren(call, opens), opens)]:
+                        hit = hit or (code.count("\n", 0, at + look.start()) + 1, said)
+            for place in (re.finditer(heads, statement) if acted else ()):
+                said, ends = _the_item_at(statement[place.start():], strings, helpers)
+                if said and said in acted and _A_LOOK_INSIDE.match(statement, place.start() + ends):
+                    call = statement[place.start() + ends:]
+                    opens = call.index("(") + 1
+                    if said not in call[:max(_the_closing_paren(call, opens), opens)]:
+                        hit = hit or (code.count("\n", 0, at + place.start()) + 1, said)
+                        break
+            if hit:
+                break
+            # An action through the item, or through a locator bound inside it.
+            if _AN_ACTION.search(statement) and (head := _A_HEAD.match(statement)):
+                owner = inside.get(head.group(1), head.group(1))
+                said = items.get(owner) or _the_item_at(statement[len(re.match(r"\s*(?:await\s+)?", statement).group(0)):],
+                                                        strings, helpers)[0]
+                if said:
+                    acted.add(said)
+            bound = _A_STATEMENT_BINDING.match(statement)
+            if bound:
+                name, expression = bound.group(1), statement[bound.end():]
+                items.pop(name, None)
+                inside.pop(name, None)
+                said, ends = _the_item_at(expression, strings, helpers)
+                if said and _STILL_THE_ITEM.fullmatch(expression, ends):
+                    items[name] = said
+                elif (owner := _A_HEAD.match(expression)) and owner.group(1) in items:
+                    inside[name] = owner.group(1)
+        if hit:
+            found.append(hit)
+    return found
+
+
 _FAILED_LOCATOR_TEXT =re.compile(r"""Locator:[^\n]*\.filter\(\{\s*hasText:\s*(?:'([^'\n]+)'|"([^"\n]+)"|/([^/\n]+)/\w*)""")
 _EXPECTED_TEXT = re.compile(r'Expected (?:substring|string): "([^"\n]+)"')
 

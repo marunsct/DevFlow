@@ -304,6 +304,8 @@ def acceptance_dispute_node(state: WorkflowGraphState, config: RunnableConfig, c
     )[:16000]
     # What the runner's own matching rules out in a failing test's code: told to the judge, and never kept as sound.
     shown_by_the_code = acceptance_suite.what_the_code_shows_of(root, [name for name, _, _ in failing])
+    # What may explain a failing test's failure without ruling the test out: weighed by the judge, never reopened alone.
+    suggested_by_the_code = acceptance_suite.what_the_code_suggests_of(root, [name for name, _, _ in failing])
     agent = create_suite_dispute_agent(
         model=ctx.judgement_model, checkpointer=ctx.checkpointer,
         repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories,
@@ -318,7 +320,8 @@ def acceptance_dispute_node(state: WorkflowGraphState, config: RunnableConfig, c
             build_dispute_request(failing, code, getattr(state.get("document"), "text", "") or "",
                                   measured=acceptance_suite.the_suite_s_own_words_when_last_measured(root),
                                   shared_service=shares_one_service(root),
-                                  found_in_the_code=list(dict.fromkeys(finding for _, finding in shown_by_the_code))),
+                                  found_in_the_code=list(dict.fromkeys(finding for _, finding in shown_by_the_code)),
+                                  suggested_by_the_code=list(dict.fromkeys(item for _, item in suggested_by_the_code))),
             str(state.get("dispute_reason") or ""),
         ), state), state["repository"].root_path),
         output_key="__suite_dispute__",

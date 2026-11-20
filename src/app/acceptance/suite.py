@@ -3272,6 +3272,34 @@ def absences_a_longer_text_also_meets(repo_root: str | Path) -> list[str]:
     return problems[:6]
 
 
+#: How a finding of `items_found_again_after_an_action` ends: what it is, and what it is not.
+ADVICE_ONLY = "This is advice about the test: it does not show that the test cannot pass."
+
+
+def items_found_again_after_an_action(repo_root: str | Path) -> list[str]:
+    """Where a test looks inside an item again by the text it found it by, after an action inside it. See the pack's
+    `found_again_after_an_action`. Advice for the QA lead and a dispute; never one of `tests_that_cannot_pass`."""
+    found = contract.the_pack(repo_root)
+    if found is None or found[0].found_again_after_an_action is None:
+        return []
+    root = Path(repo_root)
+    advice = []
+    for path in suite_files(repo_root):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for line, said in list(found[0].found_again_after_an_action(text))[:3]:
+            advice.append(
+                f"`{path.relative_to(root).as_posix()}` line {line} looks inside the item it found by the text "
+                f"\"{said}\" after an action inside that item. After the action the item may no longer show \"{said}\" - "
+                "for example when it swaps that text for a field whose value holds it, and a field's value is not "
+                "text - and the locator then matches nothing. Find the item again by a stable role and name, by a "
+                f"test id or by its position, or hold it by something the action leaves in place. {ADVICE_ONLY}"
+            )
+    return advice[:6]
+
+
 def locators_by_a_name_the_role_never_has(repo_root: str | Path) -> list[str]:
     """Where the suite finds something by a name its role never takes from what it shows.
 
@@ -6198,6 +6226,66 @@ def what_the_code_shows_of(repo_root: str | Path, names: Sequence[str]) -> list[
     except Exception:  # noqa: BLE001 - nothing read, nothing said
         logger.debug("Could not read the suite's code for the dispute", exc_info=True)
         return []
+
+
+#: The checks whose finding is advice: what each reads in a test may explain its failure, and a product can still pass
+#: it. The QA lead and a dispute are told it; nothing is reopened for it alone.
+_ADVICE = (items_found_again_after_an_action,)
+
+
+def advice_about_the_suite(repo_root: str | Path) -> list[str]:
+    """Every finding of the checks in `_ADVICE`; never raises."""
+    try:
+        return [finding for check in _ADVICE for finding in check(repo_root)]
+    except Exception:  # noqa: BLE001 - advice that cannot be read is not given
+        logger.debug("Could not read the suite's code for advice", exc_info=True)
+        return []
+
+
+def what_the_code_suggests_of(repo_root: str | Path, names: Sequence[str]) -> list[tuple[str, str]]:
+    """(test name, advice) for each of `names` a check in `_ADVICE` names. Never raises."""
+    try:
+        found = advice_about_the_suite(repo_root)
+        return [(name, finding) for finding in found for name in names
+                if any(_fails(title, [name]) for title in _the_tests_at(repo_root, finding))]
+    except Exception:  # noqa: BLE001 - nothing read, nothing said
+        logger.debug("Could not read the suite's code for the dispute", exc_info=True)
+        return []
+
+
+#: A locked test's failure on a locator that matched nothing.
+_MATCHED_NOTHING = re.compile(r"element\(s\) not found|Timeout \d+\s*ms exceeded|waiting for (?:locator|get)", re.I)
+#: The text a failed locator was filtered by, as the runner prints it.
+_FILTERED_IN_THE_FAILURE = re.compile(r"""hasText:\s*(?:'((?:\\.|[^'\\\n])+)'|"((?:\\.|[^"\\\n])+)")""")
+
+
+def what_a_text_lost_to_an_action_tells_the_fixer(repo_root: str | Path, failed: Sequence[tuple[str, str]]) -> str:
+    """One line for the product's fixer when a failed test, (name, message), matched nothing through a locator filtered
+    by a text the test found its item by before acting inside it (see `items_found_again_after_an_action`); "" else.
+
+    Measured on one run: fixers spent about forty minutes on a product whose edit mode swapped the title for a field,
+    as its specification said, while the locked test looked for the field inside the item found by that title.
+    """
+    try:
+        found = contract.the_pack(repo_root)
+        if found is None or found[0].found_again_after_an_action is None:
+            return ""
+        advice = items_found_again_after_an_action(repo_root)
+        for name, message in failed:
+            if not _MATCHED_NOTHING.search(message or ""):
+                continue
+            filtered = {(m.group(1) or m.group(2)) for m in _FILTERED_IN_THE_FAILURE.finditer(message or "")}
+            for finding in advice:
+                said = re.search(r'it found by the text "(.*?)" after an action', finding)
+                if (said and said.group(1) in filtered
+                        and any(_fails(title, [name]) for title in _the_tests_at(repo_root, finding))):
+                    return (f"`{name}` finds the item by its text \"{said.group(1)}\" after acting inside it. A product "
+                            f"that keeps \"{said.group(1)}\" shown in that item while it is edited (as the field's "
+                            "label text, or beside the field) lets the test find it.")
+        return ""
+    except Exception:  # noqa: BLE001 - a hint that cannot be read is not given
+        logger.debug("Could not read the suite's code for the fixer", exc_info=True)
+        return ""
 
 
 def _keep_notes(repo_root: str | Path, notes: Sequence[str]) -> None:

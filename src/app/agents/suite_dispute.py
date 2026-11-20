@@ -186,14 +186,16 @@ ONE_SHARED_SERVICE = (
 
 def build_dispute_request(
     failing: Sequence[tuple[str, str, str]], test_code: str, brief: str, measured: Sequence[str] = (),
-    *, shared_service: bool = False, found_in_the_code: Sequence[str] = (),
+    *, shared_service: bool = False, found_in_the_code: Sequence[str] = (), suggested_by_the_code: Sequence[str] = (),
 ) -> dict[str, list[dict[str, str]]]:
     """The QA lead's input: (test name, criterion, failure) for each, the suite's code, the brief, and what was measured.
 
     `measured`: `suite.the_suite_failed_in_its_own_words`. Measured on one run: a dispute ruled on what 46 tests assert,
     found each fair, and none of them had ever reached the product. `found_in_the_code`: `suite.what_the_code_shows_of`,
     what the test runner's own matching rules out. Measured on one run: a dispute called a test sound whose expected
-    absence its own locator could never give.
+    absence its own locator could never give. `suggested_by_the_code`: `suite.what_the_code_suggests_of`, what may
+    explain a failure and is weighed, never taken as proof. Measured on one run: fixers worked forty minutes on a product
+    while the test looked inside an item by a text its own action had taken off it.
     """
     shown = "\n\n".join(
         f"### {name}\nCriterion: {criterion}\nHow it failed:\n{message[:FAILURE_CHARS]}"
@@ -213,6 +215,12 @@ def build_dispute_request(
             "Each of these follows from how the test runner matches what a test looks for, not from the product: a "
             "test named here cannot pass as it is written. Name it.\n\n"
             if found_in_the_code else ""
+        )
+        + (
+            "--- What the harness read in these tests' own code that may explain a failure ---\n"
+            + "\n".join(suggested_by_the_code) + "\n"
+            "Each is evidence, not proof: weigh it with how the test failed and with what its criterion asks.\n\n"
+            if suggested_by_the_code else ""
         )
         + (ONE_SHARED_SERVICE if shared_service else "")
         + f"--- The suite's code ---\n{test_code}\n\n"

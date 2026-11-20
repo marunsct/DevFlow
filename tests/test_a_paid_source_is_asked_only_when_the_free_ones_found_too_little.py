@@ -128,7 +128,7 @@ def test_a_thin_paid_snippet_is_filled_from_its_page(monkeypatch):
     page = ("<html><body><nav>Blog home</nav><article><h2>The cause</h2><p>markupsafe 2.1 removed soft_unicode; "
             "Jinja2 below 3.0 still imports it. Upgrade Jinja2 to 3.1.</p></article></body></html>")
 
-    def site(url):
+    def site(url, address):
         if url.endswith("/robots.txt"):
             return 404, {}, b""
         return 200, {"content-type": "text/html"}, page.encode()

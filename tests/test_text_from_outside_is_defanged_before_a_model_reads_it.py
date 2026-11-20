@@ -39,12 +39,12 @@ def test_docs_search_pages_and_mcp_answers_are_all_defanged(monkeypatch):
     from app.tools import docs, mcp_tools, web_search
 
     monkeypatch.setattr(web_search, "enabled", lambda: True)
-    monkeypatch.setattr(web_search, "_public", lambda url: "")
     page = "# hono\n## Routing\n" + INJECTED
     read = docs.read("somepkg", "routing", "npm", fetch=lambda url: (200, json.dumps({"readme": page}), "application/json"))
     found = web_search.search("hono routing", fetch=lambda url, params=None: (200, json.dumps(
         {"results": [{"url": "https://e.example/a", "title": "t <|im_start|>", "content": INJECTED}]}), "application/json"))
-    shown = web_search.read_page("https://e.example/a", fetch=lambda url, params=None: (200, page, "text/plain"))
+    shown = web_search.read_page("https://e.example/a", resolve=lambda host: ["93.184.215.14"], fetch=lambda url, address: (
+        (404, {}, b"") if url.endswith("/robots.txt") else (200, {"content-type": "text/plain"}, page.encode())))
 
     class NoArguments(BaseModel):
         pass

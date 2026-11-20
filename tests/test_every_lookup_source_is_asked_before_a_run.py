@@ -51,7 +51,7 @@ def test_an_optional_source_with_no_key_or_at_its_cap_says_so_instead_of_being_a
         monkeypatch.delenv(variable, raising=False)
     monkeypatch.setattr(lookups, "_get", lambda url, headers, body=None: sent.append(url) or (200, '{"items": []}'))
     monkeypatch.setattr(package_registry, "look_up", lambda ecosystem, name: {"version": "5.0.0"})
-    monkeypatch.setattr(page_reader, "_fetch", lambda url: (404, {}, b"") if url.endswith("robots.txt") else (
+    monkeypatch.setattr(page_reader, "_fetch", lambda url, address: (404, {}, b"") if url.endswith("robots.txt") else (
         200, {"content-type": "text/plain"}, b"Example Domain"))
     monkeypatch.setattr(page_reader, "_resolve", lambda host: ["93.184.215.14"])
 

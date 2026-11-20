@@ -19,7 +19,7 @@ def _resolve(host):
 
 def _site(pages, sent):
     """A web of `pages` (url -> response); robots.txt is absent everywhere."""
-    def fetch(url):
+    def fetch(url, address):
         sent.append(url)
         if url.endswith("/robots.txt"):
             return 404, {}, b""

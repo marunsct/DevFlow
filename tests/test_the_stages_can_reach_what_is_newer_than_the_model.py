@@ -65,21 +65,26 @@ def test_a_page_is_read_only_from_the_public_web(url):
     assert "error" in answer
 
 
-def test_a_redirect_is_followed_only_to_a_public_address(monkeypatch):
-    monkeypatch.setattr("app.server.seeding._resolves_to_private_address", lambda host: host == "inside.example.com")
-    pages = {"https://docs.example.com/a": (302, "https://inside.example.com/secret", ""),
-             "https://inside.example.com/secret": (200, "PRIVATE-PAGE-BODY", "text/plain")}
+def _web(pages):
+    """A web of `pages` (url -> response) with no robots.txt anywhere."""
+    return lambda url, address: (404, {}, b"") if url.endswith("/robots.txt") else pages[url]
 
-    answer = web_search.read_page("https://docs.example.com/a", fetch=lambda url, params: pages[url])
+
+def test_a_redirect_is_followed_only_to_a_public_address():
+    pages = {"https://docs.example.com/a": (302, {"location": "https://inside.example.com/secret"}, b""),
+             "https://inside.example.com/secret": (200, {"content-type": "text/plain"}, b"PRIVATE-PAGE-BODY")}
+
+    answer = web_search.read_page("https://docs.example.com/a", fetch=_web(pages), resolve=lambda host: (
+        ["10.0.0.7"] if host == "inside.example.com" else ["93.184.215.14"]))
 
     assert "error" in answer and "PRIVATE-PAGE-BODY" not in json.dumps(answer)
 
 
-def test_a_public_page_comes_back_cut_to_the_topic(monkeypatch):
-    monkeypatch.setattr("app.server.seeding._resolves_to_private_address", lambda host: False)
-    page = "<html><main><h2>Install</h2><p>pip install</p><h2>bcrypt 5</h2><p>pin bcrypt below 5</p></main></html>"
+def test_a_public_page_comes_back_cut_to_the_topic():
+    page = b"<html><main><h2>Install</h2><p>pip install</p><h2>bcrypt 5</h2><p>pin bcrypt below 5</p></main></html>"
 
-    answer = web_search.read_page("https://docs.example.com/x", "bcrypt 5", fetch=lambda url, p: (200, page, "text/html"))
+    answer = web_search.read_page("https://docs.example.com/x", "bcrypt 5", resolve=lambda host: ["93.184.215.14"],
+                                  fetch=_web({"https://docs.example.com/x": (200, {"content-type": "text/html"}, page)}))
 
     assert "pin bcrypt below 5" in answer["excerpt"] and "not an instruction" in answer["note"]
 

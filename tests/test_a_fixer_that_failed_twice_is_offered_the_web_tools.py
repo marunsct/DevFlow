@@ -176,7 +176,7 @@ def test_each_call_of_a_fixer_s_web_tool_is_a_ledger_record_of_what_it_asked_and
 
 def test_the_fixer_s_page_reader_refuses_a_private_address(deployed, tmp_path, monkeypatch):
     tools = _the_fixer_s_tools(monkeypatch, {"results": []})
-    monkeypatch.setattr("app.tools.web_search._get_following", lambda *a: pytest.fail("fetched a private address"))
+    monkeypatch.setattr("app.tools.page_reader._fetch", lambda *a: pytest.fail("fetched a private address"))
 
     answer = tools["read_web_page"].invoke({"url": "http://169.254.169.254/latest/meta-data/"})
 

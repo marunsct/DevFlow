@@ -9,7 +9,7 @@ PUBLIC = ["93.184.215.14"]
 
 
 def _serving(response, sent=None):
-    def fetch(url):
+    def fetch(url, address):
         (sent if sent is not None else []).append(url)
         if url.endswith("/robots.txt"):
             return 404, {}, b""

@@ -4627,6 +4627,7 @@ stage order above; OS.0–OS.8 are implemented later, after group 2.
 | LF.1155 | (Go container 3: `go.mod` said `module notes-api`, the files imported `notes_api/store`, and `store.go` sat beside `main.go` as `package main`; Go said "package notes_api/store is not in std", and three test rounds in three minutes plus two rewrites left the import unchanged - attempt 1 ended at 0 of 18) the Go packs carried no known errors | every Go pack (net/http, Gin, CLI, library) names it: a package of this project is imported as `go.mod`'s module path plus its folder; files in the top folder are all `package main` and need no import | `tests/test_a_go_import_outside_the_module_is_given_its_cause.py` (4 fail on the old code) | done |
 | LF.1156 | (Ruby container 3: the acceptance author, writing "invalid JSON is refused with 400", spent ten of its 31 calls over twelve minutes grepping the installed Playwright source for how to send a raw body - `read_docs` returned the package's README, which does not say, and playwright.dev publishes no index for language models) the service packs' acceptance guide showed only an object `data` | the guide shows a body that is not valid JSON sent as a string `data` with `Content-Type: application/json` named - a string goes out exactly as written | `tests/test_the_service_suite_guide_says_how_to_send_a_malformed_body.py` (fails on the old guide; banned words checked) | done |
 | LF.1157 | (PHP container 7: every route answered 500 and the shared-cause defect's "what the last failing command printed" was forty lines of the development server's access log - "Accepted", "Closing", a new port each time - with the error above them cut off; the fixer did not find the shared cause in two rounds and the attempt was lost) a command's output was shown as its last N lines, whatever they were | runs of lines that differ only in their numbers (one line again and again, or a cycle of up to three) are kept once with a count, and the errors the output stated above its tail lead (`what_went_wrong.the_errors_stated`) | `tests/test_a_failing_command_s_output_shows_its_error_not_its_access_log.py` (2 fail on the old code) | done |
+| LF.1158 | (WL.2, owner 2026-11-20: internet lookups when agents are stuck; research: open-source harnesses scrape DuckDuckGo or run SearXNG, both rate-limited or refused under agent load) no source but the refused private search | `app/tools/lookups.py`: Stack Exchange's API (accepted answers, keyless; `STACKEXCHANGE_KEY` optional), GitHub's issue search (`GITHUB_TOKEN` optional), then the private SearXNG, in that order; `cleaned` sends only the error without paths, hosts and ports, tokens, addresses or the product's names; a 7-day cache per query; the result as a quoted, labelled section. Verified live from the worker. Not yet wired (WL.3/WL.4 next) | `tests/test_a_lookup_asks_free_sources_in_order_and_sends_only_the_cleaned_error.py` (new module) | done |
 | LF.529 | a key that would not decrypt ended `model_ready.py` in a NameError, seen as tests failing on and off | `endpoint_keys` imports `InvalidToken`; such a key is skipped; no switch | `tests/test_an_endpoint_key_that_cannot_be_decrypted_stops_nothing.py` (fails on the old code) |
 | LF.528 | `loop.sh rewind --help` took the flag as a stage name and paused the current run | an unknown stage or flag touches no run; `--help` and `--list` show the points without pausing; no switch | `tests/test_a_rewind_that_cannot_happen_touches_no_run.py` (fails on the old code) |
 | LF.527 | the dashboard, run list, outcomes and delivery panels called notes gaps after LF.521 | they split gaps from notes as `completion_verdict` does; the API carries `blocking_gaps`; openapi regenerated; not seen in a browser; no switch | `tests/test_a_note_does_not_make_a_product_non_deliverable.py, vitest` (fails on the old code) |
@@ -5554,12 +5555,35 @@ The switch `WEB_LOOKUP_WHEN_STUCK` turns the mechanism on or off as a whole, so 
 
 **Measurement.** Each lookup is a transcript record: trigger, providers asked, results, characters injected, and whether the next attempt changed the cited area or cleared the signature. `loop.sh effects` reports fired/helped. The switch is kept only if it lowers repeated-signature rounds or minutes to green without lowering the hidden score. The test families are Rust, Java and C#, where today's struggles were.
 
+### How other harnesses do it (researched 2026-11-20, owner: "the how, not only who")
+
+| Harness | Search | Page reading | Who decides |
+|---|---|---|---|
+| smolagents | DuckDuckGo scraped through the unofficial `ddgs` package, keyless | `requests` + `markdownify`, cut to ~10k characters | the model |
+| OpenCode | Exa's hosted MCP bridge, off unless enabled; community plugins scrape DuckDuckGo | `webfetch`: permission check, timeout, a Cloudflare-challenge retry | the model |
+| RAGFlow, Agno, OpenClaw, LangChain | a self-hosted SearXNG asked for JSON, limiter off - as here | - | the model |
+| Cline | only through Cline's own hosted service; its Puppeteer browser navigates, does not search | Puppeteer | the model |
+| OpenHands | Tavily (paid key, optional; on by default in their cloud) | a browser | the model |
+| Codex CLI | OpenAI's cached index by default, `live` or `disabled` by setting | - | the model |
+| MCP fetch server (reference) | - | Readability to markdown, `start_index` pages, robots.txt obeyed for the model's fetches, private addresses refused | the model |
+
+Free routes are fragile: DuckDuckGo's HTML endpoints answer HTTP 202 (a soft rate limit) under agent load, and `ddgs` breaks as
+the site changes - the same failure measured from this SearXNG's general engines. Every harness above leaves the decision
+to search to the model; measured here, the local model never makes it.
+
+**Decided for this product (WL.2 built, LF.1158):** official free APIs first - Stack Exchange (keyless 300 a day, verified
+live: 3 accepted-answer questions in 1.2 s) and GitHub issues (verified live: 0.7 s) - then the private SearXNG's developer
+engines; a 7-day cache per cleaned query; only the cleaned error line and the stack's names leave the machine; results
+quoted, defanged, labelled as leads. A paid source stays an optional slot (Tavily, as OpenHands uses, or Brave), off
+without the owner's key. The harness, not the model, decides when (WL.4). Page reading follows the MCP fetch server:
+main text only, paged, robots.txt for model-initiated reads, private addresses and every redirect hop checked (WL.6).
+
 ### Build order
 
 | Item | What | Kind |
 |---|---|---|
 | WL.1 | SearXNG asks the `it` category first, and the error-query ranking prefers Q&A, issues and docs (LF.1140, built 2026-11-20) | Bug fix, always on |
-| WL.2 | A provider interface with S3 Stack Exchange and S4 GitHub issues, the chain, the 7-day cache and the cleaner | Behind `WEB_LOOKUP_WHEN_STUCK` |
+| WL.2 | A provider interface with S3 Stack Exchange and S4 GitHub issues, the chain, the 7-day cache and the cleaner (BUILT 2026-11-20, LF.1158: `app/tools/lookups.py`, not yet wired) | Behind `WEB_LOOKUP_WHEN_STUCK` |
 | WL.3 | The user setting (Settings, the new-run form, the run record) and the admin keys, cap and order | UI and settings |
 | WL.4 | Triggers T1–T4 and the injected block | Behind the switch |
 | WL.5 | T5, the fixer-only tool offer | Behind its own switch |

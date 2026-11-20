@@ -70,6 +70,7 @@ def started(tmp_path, monkeypatch):
     monkeypatch.setenv("JWT_SECRET_KEY_FOR_THIS_TEST", "worker-secret-value")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-worker-secret")
     monkeypatch.setattr(sandbox, "_docker_binary", lambda: "docker")
+    preview_worker.say_it_serves()
     root = _workspace(tmp_path / "workspaces" / "t" / "run")
 
     def start(source="accepted", docker=None):
@@ -191,3 +192,177 @@ def test_a_restarted_worker_ends_the_preview_containers_nobody_holds(started):
 
     assert ended == ["devflow-preview-0123456789ab-deadbeef"]
     assert ["docker", "kill", held["host"]] not in docker.calls
+
+
+# --- the port forwarder: a product that listens on the loopback only is still reached --------------------------------
+#
+# The container's command is run here for real: its environment from the --env flags, the workspace where the
+# container mounts it, the image's PATH. A real container keeps the product's 127.0.0.1 to itself; here 127.0.0.2
+# stands in for the app on another host: a socket bound to 127.0.0.1 does not answer it, one bound to 0.0.0.0 does.
+
+_ELSEWHERE = "127.0.0.2"
+
+
+def _a_free_port_pair():
+    """A port, and the one 1000 above it, both free here."""
+    import socket
+
+    for _ in range(100):
+        with socket.socket() as probe:
+            probe.bind(("", 0))
+            port = probe.getsockname()[1]
+        if port + 1000 > 65535:
+            continue
+        try:
+            with socket.socket() as above:
+                above.bind(("", port + 1000))
+        except OSError:
+            continue
+        return port
+    pytest.skip("no free pair of ports on this machine")
+
+
+def _the_product(scratch: Path, host: str, wait: float = 0.0) -> None:
+    """The product the preview starts (`sh start.sh`): a plain HTTP server on the address it chose, whatever HOST says."""
+    (scratch / "product.py").write_text(
+        "import http.server, os, socket, time\n"
+        f"time.sleep({wait})\n"
+        "class Server(http.server.ThreadingHTTPServer):\n"
+        f"    address_family = socket.AF_INET6 if ':' in {host!r} else socket.AF_INET\n"
+        f"Server(({host!r}, int(os.environ['PORT'])), http.server.SimpleHTTPRequestHandler).serve_forever()\n"
+    )
+    (scratch / "start.sh").write_text("exec python3 product.py\n")
+
+
+def _run_the_container_s_command(argv: list[str], scratch: Path, path: str):
+    import re
+
+    def here(value: str) -> str:
+        return re.sub(r"/workspace(?![\w.-])", str(scratch), value)
+
+    environment = dict(here(argv[i + 1]).split("=", 1) for i, part in enumerate(argv) if part == "--env")
+    environment["PATH"] = path
+    return subprocess.Popen([here(part) for part in argv[argv.index("/bin/sh"):]], cwd=here(argv[argv.index("-w") + 1]),
+                            env=environment, start_new_session=True, stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL)
+
+
+def _the_page(port: int, seconds: float) -> int | None:
+    import urllib.request
+
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(f"http://{_ELSEWHERE}:{port}/start.sh", timeout=1) as answered:
+                return answered.status
+        except OSError:
+            time.sleep(0.1)
+    return None
+
+
+def _ended(process) -> None:
+    import os
+    import signal
+
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    process.wait(timeout=10)
+
+
+def _a_path_without_node(tmp_path: Path) -> str:
+    import shutil
+    import sys
+
+    folder = tmp_path / "image-bin"
+    folder.mkdir()
+    (folder / "python3").symlink_to(sys.executable)
+    (folder / "sh").symlink_to(shutil.which("sh"))
+    return str(folder)
+
+
+@pytest.fixture
+def forwarded(started, monkeypatch):
+    port = _a_free_port_pair()
+    monkeypatch.setenv("PRODUCT_PREVIEW_PORTS", f"{port}-{port}")
+    state, docker = started("accepted")
+    return state, docker.calls[0], Path(state["scratch"])
+
+
+@pytest.mark.skipif(not __import__("shutil").which("node"), reason="Node is not installed on this machine")
+@pytest.mark.parametrize("binds", ["127.0.0.1", "0.0.0.0", "::1"])
+def test_a_product_listening_on_the_loopback_only_is_reached_through_the_forwarder(forwarded, binds):
+    """A real deployment: a product that listened on 127.0.0.1 only could not be reached from the app's container.
+    It gets an inner port; the forwarder answers on the preview's port on every address. A product that binds every
+    address itself, or the IPv6 loopback, is reached the same way."""
+    import os
+
+    state, argv, scratch = forwarded
+    _the_product(scratch, binds)
+
+    process = _run_the_container_s_command(argv, scratch, os.environ["PATH"])
+    try:
+        status = _the_page(state["port"], 20)
+    finally:
+        _ended(process)
+
+    assert status == 200
+
+
+@pytest.mark.skipif(not __import__("shutil").which("node"), reason="Node is not installed on this machine")
+def test_the_preview_s_port_opens_only_once_the_product_answers(forwarded):
+    """The app judges a start by the preview's port answering: a forwarder that answered at once would call a product
+    ready that has not started."""
+    import os
+
+    state, argv, scratch = forwarded
+    _the_product(scratch, "127.0.0.1", wait=3)
+
+    process = _run_the_container_s_command(argv, scratch, os.environ["PATH"])
+    try:
+        early = _the_page(state["port"], 1)
+        later = _the_page(state["port"], 20)
+    finally:
+        _ended(process)
+
+    assert early is None and later == 200
+
+
+def test_an_image_without_node_starts_the_product_on_the_preview_s_own_port(forwarded, tmp_path):
+    state, argv, scratch = forwarded
+    _the_product(scratch, "0.0.0.0")
+
+    process = _run_the_container_s_command(argv, scratch, _a_path_without_node(tmp_path))
+    try:
+        status = _the_page(state["port"], 20)
+    finally:
+        _ended(process)
+
+    assert status == 200
+    assert "no Node" in (scratch / ".preview" / "output.log").read_text()
+
+
+def test_a_product_that_never_answers_without_a_forwarder_is_told_to_listen_on_host(forwarded, tmp_path,
+                                                                                      monkeypatch):
+    monkeypatch.setenv("PRODUCT_PREVIEW_IDLE_MINUTES", "100000")
+    state, argv, scratch = forwarded
+    (scratch / "start.sh").write_text("exec python3 -c 'import time; time.sleep(60)'\n")
+    process = _run_the_container_s_command(argv, scratch, _a_path_without_node(tmp_path))
+    try:
+        deadline = time.monotonic() + 10
+        while "no Node" not in _read(scratch / ".preview" / "output.log") and time.monotonic() < deadline:
+            time.sleep(0.1)
+
+        failed = preview.observe(state["run_id"], now=time.time() + 3600, answers=lambda host, port: False)
+    finally:
+        _ended(process)
+
+    assert failed["state"] == "failed" and "HOST" in failed["reason"] and "Node" in failed["reason"]
+
+
+def _read(path: Path) -> str:
+    try:
+        return path.read_text()
+    except OSError:
+        return ""

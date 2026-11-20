@@ -78,6 +78,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const port = Number(process.argv[2] || process.env.PORT || 4173);
+const host = process.env.HOST || '127.0.0.1';
 const types = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -113,8 +114,8 @@ createServer(async (request, response) => {
   } catch {
     response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Not found');
   }
-}).listen(port, '127.0.0.1', () => {
-  console.log(`Serving ${root} at http://127.0.0.1:${port}/`);
+}).listen(port, host, () => {
+  console.log(`Serving ${root} at http://${host}:${port}/`);
 });
 """
 

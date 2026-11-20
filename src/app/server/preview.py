@@ -41,12 +41,20 @@ ACTIVE = frozenset({"starting", "ready"})
 STATE_KEY = "devflow:preview:run:{run_id}"
 REQUESTS_KEY = "devflow:preview:requests"
 LOCK_KEY = "devflow:preview:lock:{run_id}"
+#: Where the worker's preview loop says, on every pass, that it serves previews and how it runs commands: only the
+#: worker carries `SANDBOX_EXECUTION_MODE`, so the app reads it here, never from its own environment.
+WORKER_KEY = "devflow:preview:worker"
+#: How long one such word lasts: a few of the loop's passes, so a stopped worker is seen within seconds.
+WORKER_SECONDS = 20
 #: How long a preview's record outlives its last change: a stopped one says why for a day.
 STATE_TTL_SECONDS = 24 * 3600
 #: Where the product's output and its exit code land, inside the scratch copy (written by the container's wrapper).
 OUTPUT_DIR = ".preview"
 OUTPUT_FILE = "output.log"
 EXIT_FILE = "exit-code"
+#: Left there when the product's image has no Node to run the port forwarder (`preview_worker.docker_command`): the
+#: product is then reached on its own port only, as it binds it.
+UNFORWARDED_FILE = "not-forwarded"
 #: Characters of the product's output shown when it fails.
 MOST_OUTPUT = 2_000
 #: The path the proxy serves a preview at, below the app's `/api/runs/{id}`.
@@ -226,6 +234,23 @@ def all_states(client: Any = None) -> list[dict[str, Any]]:
     return found
 
 
+def say_the_worker_serves(contained: bool, client: Any = None) -> None:
+    """The worker's word that its preview loop is alive, and whether product commands run in a container of their own
+    there; it lapses after `WORKER_SECONDS` unless said again."""
+    (client or _redis()).set(WORKER_KEY, json.dumps({"contained": bool(contained), "at": time.time()}),
+                             ex=WORKER_SECONDS)
+
+
+def the_worker_serving(client: Any = None) -> dict[str, Any] | None:
+    """What the worker's preview loop last said, while it lasts; None when no worker is serving previews."""
+    raw = (client or _redis()).get(WORKER_KEY)
+    try:
+        found = json.loads(raw) if raw else None
+    except ValueError:
+        return None
+    return found if isinstance(found, dict) else None
+
+
 def _a_free_port(client: Any) -> int | None:
     taken = {int(s.get("port") or 0) for s in all_states(client) if s.get("state") in ACTIVE}
     return next((port for port in ports() if port not in taken), None)
@@ -262,15 +287,18 @@ def start(run_id: str, repo_root: str, source: str, *, client: Any = None, now: 
     """Record a starting preview and ask the worker for it; `PreviewRefused` when it cannot be had."""
     if not preview_switch.enabled():
         raise PreviewRefused(403, "Previews are off on this deployment (switch PRODUCT_PREVIEW).")
-    from app.tools.sandbox import product_code_runs_in_its_own_container
-
-    if not product_code_runs_in_its_own_container():
-        raise PreviewRefused(409, "A preview runs the product in a container of its own, and this deployment runs "
-                                  "commands in the worker (SANDBOX_EXECUTION_MODE is not container).")
     if not network():
         raise PreviewRefused(409, "No preview network is configured (PRODUCT_PREVIEW_NETWORK).")
     if source not in ("accepted", "live"):
         raise PreviewRefused(422, "The source is `accepted` or `live`.")
+    client = client or _redis()
+    # The worker's word, not this process's environment: the worker alone runs commands and carries their setting.
+    worker = the_worker_serving(client)
+    if worker is None:
+        raise PreviewRefused(503, "No worker is serving previews right now; try again once the worker is running.")
+    if not worker.get("contained"):
+        raise PreviewRefused(409, "A preview runs the product in a container of its own, and this deployment's worker "
+                                  "runs commands in itself (SANDBOX_EXECUTION_MODE is not container).")
     label = "being built"
     if source == "accepted":
         from app.tools.version_control import accepted_sprints
@@ -279,7 +307,6 @@ def start(run_id: str, repo_root: str, source: str, *, client: Any = None, now: 
         if not sprints:
             raise PreviewRefused(409, "No sprint has been accepted yet; preview the workspace as it is being built.")
         label = f"sprint {sprints[-1]}"
-    client = client or _redis()
     now = time.time() if now is None else now
     lock = LOCK_KEY.format(run_id=run_id)
     if not client.set(lock, "1", nx=True, ex=10):
@@ -375,8 +402,11 @@ def observe(run_id: str, *, client: Any = None, now: float | None = None,
             state = {**state, "state": "ready", "ready_at": now}
             write(state, client)
         elif now - float(state.get("started_at") or now) > start_seconds():
+            unforwarded = (Path(str(state.get("scratch") or "")) / OUTPUT_DIR / UNFORWARDED_FILE).exists()
             return stop(run_id, f"it did not answer on port {state.get('port')} within {start_seconds()} seconds; a "
-                                "preview's product listens on the HOST and PORT it is given",
+                                "preview's product listens on the HOST and PORT it is given"
+                                + ("; its image has no Node to forward the port, so it must listen on HOST itself"
+                                   if unforwarded else ""),
                         client=client, state=state, as_state="failed", error=wrote)
     return state
 
@@ -510,6 +540,6 @@ def preflight_headers() -> dict[str, str]:
 __all__ = [
     "ACTIVE", "PICKER_SCRIPT", "PreviewRefused", "app_prefix", "container_name", "forwarded_request_headers",
     "is_for_pointing", "observe",
-    "preview_switch", "public", "read", "rewritten", "response_headers", "scratch_for", "start", "stop",
-    "token_for", "token_problem", "touch", "upstream_url", "what_it_wrote",
+    "preview_switch", "public", "read", "rewritten", "response_headers", "say_the_worker_serves", "scratch_for",
+    "start", "stop", "the_worker_serving", "token_for", "token_problem", "touch", "upstream_url", "what_it_wrote",
 ]

@@ -2,7 +2,9 @@
 
 Only the worker reaches Docker, and its pool may be busy with runs for hours, so previews are not Celery tasks: a
 daemon thread on the Celery parent takes the app's requests from a Redis list (`preview.REQUESTS_KEY`) and ends
-previews nobody has used for a while.
+previews nobody has used for a while. On every pass it says in Redis (`preview.WORKER_KEY`, lapsing in seconds) that
+it serves previews and whether its commands run in containers of their own: the app refuses a start on that word,
+since only the worker carries `SANDBOX_EXECUTION_MODE`.
 
 The product is started as the delivered start starts it (`acceptance.start_output`): its own start command
 (`command_for`), a fresh home, the plain PATH, a data directory of its own, the restored package cache where its
@@ -10,7 +12,9 @@ language keeps one, the sandbox's container flags (no capabilities, read-only ro
 the worker's unprivileged user) and the sandbox's environment for a command's container, which holds none of the
 worker's secrets (`sandbox._container_environment`). It differs from the start probe in two ways only: it is not
 ended by a time limit, and its network is the preview network, which the app is on and which has no way out
-(compose `internal: true`): a product that fetches packages when it starts fails there and says so.
+(compose `internal: true`): a product that fetches packages when it starts fails there and says so. The product is
+given an inner port (`inner_port`, the public one + 1000) and a small Node forwarder (`preview_forwarder.js`) takes
+the public port on every address, so a product that listens on 127.0.0.1 only is still reached from the app.
 
 The container sees only a scratch copy, never the run's workspace: `accepted` is the last accepted sprint's commit,
 `live` the workspace's files now; both get the installed folders (git-ignored, such as `node_modules` or `.venv`)
@@ -43,6 +47,9 @@ _RECORDS_KEPT = (".harness/stack-pack.json", ".harness/runtimes.json")
 _WAIT_SECONDS = 5
 #: Seconds one docker command may take.
 _DOCKER_SECONDS = 60
+#: The port forwarder the preview's container runs beside the product (`docker_command`), and its name in the copy.
+_FORWARDER = Path(__file__).with_name("preview_forwarder.js")
+_FORWARDER_NAME = "forward.js"
 
 
 class CannotStart(Exception):
@@ -184,11 +191,28 @@ def docker_command(state: dict[str, Any], argv: list[str], project: str, repo_ro
     for key, value in environment.items():
         command += ["--env", f"{key}={value}"]
     command.append(sandbox._image_for(os.path.basename(argv[0]), str(scratch)))
-    # What the product writes and how it ended land in the copy, where the app reads them: the container is removed
-    # when it exits.
-    command += ["/bin/sh", "-c", f'"$@" >>{logs}/{preview.OUTPUT_FILE} 2>&1; echo $? >{logs}/{preview.EXIT_FILE}',
-                "sh", *sandbox._with_the_path_in_front(argv, in_front)]
+    # A product that listens on 127.0.0.1 only is reached through the forwarder: it gets the inner port, and the
+    # forwarder takes the public one on every address. Both are children of the one shell, so they end with the
+    # container. An image without Node starts the product on the public port itself, and says so.
+    shutil.copyfile(_FORWARDER, output / _FORWARDER_NAME)
+    port, inner, log = int(state["port"]), inner_port(int(state["port"])), f"{logs}/{preview.OUTPUT_FILE}"
+    script = (
+        "if command -v node >/dev/null 2>&1; then "
+        f"node {logs}/{_FORWARDER_NAME} {port} {inner} >>{log} 2>&1 & PORT={inner}; export PORT; "
+        f"else echo 'preview: this image has no Node to forward port {port}; the product must listen on HOST "
+        f"itself' >>{log}; : >{logs}/{preview.UNFORWARDED_FILE}; fi; "
+        # What the product writes and how it ended land in the copy, where the app reads them: the container is
+        # removed when it exits.
+        f'"$@" >>{log} 2>&1; echo $? >{logs}/{preview.EXIT_FILE}'
+    )
+    command += ["/bin/sh", "-c", script, "sh", *sandbox._with_the_path_in_front(argv, in_front)]
     return command
+
+
+def inner_port(port: int) -> int:
+    """The port the product itself is given inside its container: the public port + 1000 (below it near the top of
+    the range). The container has its own network, so it never meets another preview's."""
+    return port + 1000 if port + 1000 <= 65535 else port - 1000
 
 
 def _docker(*args: str) -> subprocess.CompletedProcess:
@@ -296,15 +320,25 @@ def handle(raw: str, client: Any = None) -> None:
         stop(request, client)
 
 
+def say_it_serves(client: Any = None) -> None:
+    """Tell the app this worker serves previews and whether its commands run in containers of their own: the app
+    cannot know, since only the worker carries `SANDBOX_EXECUTION_MODE`."""
+    from app.tools.sandbox import product_code_runs_in_its_own_container
+
+    preview.say_the_worker_serves(product_code_runs_in_its_own_container(), client)
+
+
 def serve_for_ever(stop_when: Callable[[], bool] = lambda: False) -> None:
     """Take the app's preview requests and end idle previews, for the worker's life. Never raises."""
     last_sweep = 0.0
     while not stop_when():
         try:
             client = preview._redis()
+            say_it_serves(client)
             found = client.brpop(preview.REQUESTS_KEY, timeout=_WAIT_SECONDS)
             if found:
                 handle(found[1], client)
+                say_it_serves(client)
             if time.monotonic() - last_sweep >= 30:
                 last_sweep = time.monotonic()
                 end_the_idle(client)
@@ -319,5 +353,5 @@ def serve_in_the_background() -> threading.Thread:
     return thread
 
 
-__all__ = ["CannotStart", "copy_the_product", "docker_command", "end_the_idle", "handle", "serve_for_ever",
-           "serve_in_the_background", "start", "stop"]
+__all__ = ["CannotStart", "copy_the_product", "docker_command", "end_the_idle", "handle", "inner_port",
+           "say_it_serves", "serve_for_ever", "serve_in_the_background", "start", "stop"]

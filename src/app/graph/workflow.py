@@ -337,6 +337,10 @@ SPRINT_REVIEW = "sprint"
 PRODUCT_INTAKE_REVIEW = "product_intake"
 """Review point: the refined product intake document."""
 
+SPRINT_PLAN_REVIEW = "sprint_plan"
+"""Review point, the plan gate (plan WS.3): the sprint plan, before any sprint is built. It waits for a go or a
+direction, and goes on by itself after its timeout (`app.server.approval_timeouts.plan_gate_minutes`)."""
+
 from app.agents import interface_clashes  # noqa: E402 - beside its siblings
 from app.acceptance import mutation_guided  # noqa: E402 - beside its siblings
 from app.graph import defect_fix_modes  # noqa: E402 - beside its siblings
@@ -349,6 +353,7 @@ _REVIEW_NODES = {
     SPRINT_REVIEW: "user_review_sprint",
     PRODUCT_INTAKE_REVIEW: "user_review_product_intake",
     ACCEPTANCE_REVIEW: "user_review_acceptance",
+    SPRINT_PLAN_REVIEW: "user_review_sprint_plan",
     RELEASE_REVIEW: "user_review_release",
     ESCALATION_REVIEW: "user_review_escalation",
 }
@@ -360,6 +365,7 @@ _REVIEW_STAGES = {
     SPRINT_REVIEW: WorkflowStage.IMPLEMENTATION,
     PRODUCT_INTAKE_REVIEW: WorkflowStage.INTAKE,
     ACCEPTANCE_REVIEW: WorkflowStage.VALIDATION,
+    SPRINT_PLAN_REVIEW: WorkflowStage.SPRINT_PLANNING,
     RELEASE_REVIEW: WorkflowStage.COMPLETE,
     ESCALATION_REVIEW: WorkflowStage.IMPLEMENTATION,
 }
@@ -381,6 +387,7 @@ _NODE_NAMES = frozenset(
         "acceptance_review",
         "user_review_acceptance",
         "scrum_master",
+        "user_review_sprint_plan",
         "technical_lead",
         "specialist_dispatch",
         # Parallel mode's fan-out target. `graph.add_node` registers it and
@@ -7341,8 +7348,35 @@ def _review_enabled(state: WorkflowGraphState, review_point: str) -> bool:
     Reviews are opt-in. A run that never sets `review_policy` skips both gates
     entirely, which keeps the mandatory approval and architecture gates as the
     only things that can stop a default run.
+
+    Read from the run's record at each decision, not only from the policy the run
+    started with (plan WS.3): the owner can switch a review on or off while the run
+    is live (`PUT /runs/{id}/review-policy`), and the next gate the run reaches
+    follows the change. Outside a recorded run, the state's policy decides.
     """
-    return bool(state.get("review_policy", {}).get(review_point, False))
+    live = _the_live_review_policy()
+    if live is not None:
+        return bool(live.get(review_point, False))
+    return bool((state.get("review_policy") or {}).get(review_point, False))
+
+
+def _the_live_review_policy() -> dict[str, bool] | None:
+    """The review policy on this call's run record now; None when the call has no recorded run. Never raises."""
+    from app.observability.log_context import current_run
+
+    run_id, _stage = current_run()
+    if not run_id:
+        return None
+    try:
+        from app.server.run_store import RunStore
+
+        record = RunStore.shared().load(str(run_id))
+    except Exception:  # noqa: BLE001 - no store reachable: the policy the run started with decides
+        return None
+    if record is None:
+        return None
+    policy = getattr(record, "review_policy", None)
+    return dict(policy) if isinstance(policy, dict) else None
 
 
 def _a_round_that_found_a_product_defect(defects: list[Any]) -> bool:
@@ -9636,8 +9670,11 @@ def _run_review_gate(
         decision={"approve": "approve", "skip": "skip", "request_changes": "request changes"}.get(
             decision_type, str(decision_type)
         ),
-        rationale="Decided by the reviewer at the review gate.",
-        decided_by="user",
+        rationale=(
+            "Nobody answered within the gate's time, so the run went on by itself."
+            if decision.get("decided_by") == "timeout" else "Decided by the reviewer at the review gate."
+        ),
+        decided_by="timeout" if decision.get("decided_by") == "timeout" else "user",
         comment=str(comment or ""),
     )
     if decision_type == "request_changes":
@@ -9891,6 +9928,7 @@ def build_workflow_graph(
     graph.add_node("acceptance_review", _a_stage(acceptance_nodes, "acceptance_review", ctx), retry_policy=agent_retry_policy)
     graph.add_node("user_review_acceptance", gates.user_review_acceptance_node)
     graph.add_node("scrum_master", _a_node(planning.scrum_master_node, ctx), retry_policy=agent_retry_policy)
+    graph.add_node("user_review_sprint_plan", gates.user_review_sprint_plan_node)
     graph.add_node("technical_lead", _a_node(building.technical_lead_node, ctx), retry_policy=agent_retry_policy)
     graph.add_node("specialist_dispatch", _a_node(building.specialist_dispatch_node, ctx), retry_policy=agent_retry_policy)
     graph.add_node("specialist_worker", _a_node(building.specialist_worker_node, ctx), retry_policy=agent_retry_policy)
@@ -9944,6 +9982,7 @@ def build_workflow_graph(
         "acceptance_review",
         "user_review_acceptance",
         "scrum_master",
+        "user_review_sprint_plan",
         "technical_lead",
         "specialist_dispatch",
         "specialist_gather",
@@ -10501,9 +10540,18 @@ def resume_pending_review(
     return graph.invoke({"pending_review_decision": decision}, config=_run_config(thread_id, recursion_limit, metadata=metadata, run_id=run_id))
 
 
-def approve_decision(comment: str | None = None, edited_content: str | None = None) -> dict[str, Any]:
-    """Build a review decision that accepts the current artifact revision."""
-    return {"type": "approve", "comment": comment, "edited_content": edited_content}
+def approve_decision(
+    comment: str | None = None, edited_content: str | None = None, *, by_timeout: bool = False
+) -> dict[str, Any]:
+    """Build a review decision that accepts the current artifact revision.
+
+    `by_timeout`: nobody answered and the gate's time ran out, so the run goes on by itself; its decision record says
+    so rather than naming a reviewer who never looked.
+    """
+    decision: dict[str, Any] = {"type": "approve", "comment": comment, "edited_content": edited_content}
+    if by_timeout:
+        decision["decided_by"] = "timeout"
+    return decision
 
 
 def skip_decision() -> dict[str, Any]:
@@ -10535,6 +10583,7 @@ __all__ = [
     "MAX_REMEDIATION_ATTEMPTS",
     "REVIEW_PAUSE_PREFIX",
     "SPECIFICATION_REVIEW",
+    "SPRINT_PLAN_REVIEW",
     "SPRINT_REVIEW",
     "WorkflowGraphState",
     "approve_decision",

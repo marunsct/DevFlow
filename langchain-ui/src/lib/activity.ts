@@ -55,6 +55,15 @@ const STAGE_COPY: Record<string, StageCopy> = {
     title: 'Planning the work',
     blurb: 'Splitting the design into sprints small enough to build one at a time.',
   },
+  // The plan gate (plan WS.3): its node, and the review point its pause is named after.
+  user_review_sprint_plan: {
+    title: 'Your go on the plan',
+    blurb: 'The sprint plan waits for your go or your direction; with no answer it goes on by itself.',
+  },
+  sprint_plan: {
+    title: 'The sprint plan',
+    blurb: 'The sprint plan waits for your go or your direction; with no answer it goes on by itself.',
+  },
   technical_lead: {
     title: 'Setting up the next chunk',
     blurb: 'Picking what to build first and breaking it into individual tasks.',

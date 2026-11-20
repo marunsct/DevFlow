@@ -40,6 +40,7 @@ const GATES = [
   ['reviewIntake', 'Product intake', 'What the brief asks for, read back before anything is designed.'],
   ['reviewTechSpec', 'Technical specification', 'The design the build follows.'],
   ['reviewAcceptance', 'Acceptance tests', 'The tests that decide when the product is done, before they are locked.'],
+  ['reviewPlan', 'The sprint plan', 'How the work is split into sprints, before any is built. It waits for your go or your direction; with no answer it goes on by itself after 15 minutes.'],
   ['reviewSprint', 'End of each sprint', 'With the criteria that pass, screenshots and decisions. A requested change becomes a tracked change request.'],
   ['reviewRelease', 'Release', 'The finished product, once every acceptance criterion passes.'],
   ['reviewEscalation', 'When work is stuck', 'You decide to go on or try again with your guidance. Off, the run decides and records why.'],
@@ -109,6 +110,8 @@ export const Home: React.FC = () => {
   const [reviewIntake, setReviewIntake] = useState<boolean>(true);
   const [reviewTechSpec, setReviewTechSpec] = useState<boolean>(true);
   const [reviewAcceptance, setReviewAcceptance] = useState<boolean>(true);
+  // The plan gate (plan WS.3): off unless chosen, as it is a go asked for before the build.
+  const [reviewPlan, setReviewPlan] = useState<boolean>(false);
   const [reviewSprint, setReviewSprint] = useState<boolean>(true);
   const [reviewRelease, setReviewRelease] = useState<boolean>(true);
   const [reviewEscalation, setReviewEscalation] = useState<boolean>(true);
@@ -130,6 +133,7 @@ export const Home: React.FC = () => {
       take('product_intake', setReviewIntake);
       take('technical_specification', setReviewTechSpec);
       take('acceptance_tests', setReviewAcceptance);
+      take('sprint_plan', setReviewPlan);
       take('sprint', setReviewSprint);
       take('release', setReviewRelease);
       take('escalation', setReviewEscalation);
@@ -293,11 +297,12 @@ export const Home: React.FC = () => {
         approval_timeout_minutes:
           !unattended && parseInt(approvalTimeout, 10) > 0 ? parseInt(approvalTimeout, 10) : undefined,
         review_policy: unattended
-          ? { product_intake: false, technical_specification: false, acceptance_tests: false, sprint: false, release: false, escalation: false }
+          ? { product_intake: false, technical_specification: false, acceptance_tests: false, sprint_plan: false, sprint: false, release: false, escalation: false }
           : {
               product_intake: reviewIntake,
               technical_specification: reviewTechSpec,
               acceptance_tests: reviewAcceptance,
+              sprint_plan: reviewPlan,
               sprint: reviewSprint,
               release: reviewRelease,
               escalation: reviewEscalation
@@ -330,6 +335,7 @@ export const Home: React.FC = () => {
           product_intake: reviewIntake,
           technical_specification: reviewTechSpec,
           acceptance_tests: reviewAcceptance,
+          sprint_plan: reviewPlan,
           sprint: reviewSprint,
           release: reviewRelease,
           escalation: reviewEscalation,
@@ -354,6 +360,7 @@ export const Home: React.FC = () => {
     reviewIntake: [reviewIntake, setReviewIntake],
     reviewTechSpec: [reviewTechSpec, setReviewTechSpec],
     reviewAcceptance: [reviewAcceptance, setReviewAcceptance],
+    reviewPlan: [reviewPlan, setReviewPlan],
     reviewSprint: [reviewSprint, setReviewSprint],
     reviewRelease: [reviewRelease, setReviewRelease],
     reviewEscalation: [reviewEscalation, setReviewEscalation],
@@ -514,7 +521,7 @@ export const Home: React.FC = () => {
                     className="mx-2 w-20 rounded-md border border-border bg-surface px-2 py-1 text-sm"
                   />
                   minutes
-                  <span className="block text-xs text-text-muted mt-1">Blank waits for you however long it takes.</span>
+                  <span className="block text-xs text-text-muted mt-1">Blank waits for you however long it takes; the sprint plan goes on after 15 minutes.</span>
                 </label>
               </div>
             </details>

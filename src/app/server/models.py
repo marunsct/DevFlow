@@ -506,6 +506,16 @@ class SteeringEdit(BaseModel):
     text: str = Field(..., min_length=1, max_length=2000)
 
 
+class ReviewPolicyChange(BaseModel):
+    """Reviews to switch on or off while the run is live (plan WS.3); points left out keep their setting."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    review_policy: dict[str, bool] = Field(
+        ..., description="Review point -> whether the run stops there for a person, from the next gate it reaches."
+    )
+
+
 class RunStatusResponse(BaseModel):
     """Comprehensive status of a run."""
     model_config = ConfigDict(extra="forbid")
@@ -916,6 +926,10 @@ class ReviewPayload(BaseModel):
     available_actions: list[str] = Field(description="List of actions the reviewer can take.")
     document: str | None = Field(
         default=None, description="The workspace path of the document the review is about, when the workflow wrote one."
+    )
+    proceeds_at: str | None = Field(
+        default=None,
+        description="When the run goes on by itself if nobody answers (ISO 8601); None when it waits for a person.",
     )
 
 

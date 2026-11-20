@@ -46,6 +46,7 @@ import { ChangesPanel } from '../components/ChangesPanel';
 import { WorkspacePanel } from '../components/WorkspacePanel';
 import { PlanPanel } from '../components/PlanPanel';
 import { SteeringBox } from '../components/SteeringBox';
+import { RunReviewsControl } from '../components/RunReviewsControl';
 import { ArtifactList } from '../components/ArtifactList';
 import { ExecutionFlow } from '../components/ExecutionFlow';
 import { AgentActivity } from '../components/AgentActivity';
@@ -978,6 +979,8 @@ export const RunDashboard: React.FC = () => {
           heard={logs.filter((entry) => entry.metadata?.kind === 'steering_read').length}
         />
       )}
+      {/* The reviews it stops at, changed while it runs (plan WS.3). */}
+      {!isTerminal && <RunReviewsControl runId={runId!} />}
 
       {/* Workspace: the guided wizard or the classic dashboard. The wizard
           presents the run as phases (intake, design, sprints, summary) with a

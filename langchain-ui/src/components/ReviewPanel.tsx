@@ -26,6 +26,8 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ runId, review, onSubmi
 
   const canSkip = review.available_actions.includes('skip');
   const title = describeStage(review.point).title;
+  // The plan gate (plan WS.3) asks for a go, or a direction the plan is made again with.
+  const isPlanGate = review.point === 'sprint_plan';
 
   return (
     <section aria-labelledby={`${fileId}-title`} className="rounded-2xl overflow-hidden border border-primary/40 bg-primary/5">
@@ -85,9 +87,15 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ runId, review, onSubmi
           </div>
         </details>
 
+        {review.proceeds_at && (
+          <p role="status" data-testid="proceeds-at" className="text-xs text-text-muted">
+            With no answer, the run goes on by itself at {new Date(review.proceeds_at).toLocaleTimeString()}.
+          </p>
+        )}
+
         <div className="flex flex-wrap gap-3">
           <Button variant="primary" icon={<CheckCircle className="h-4 w-4" />} loading={isLoading} onClick={() => onSubmit('approve', comment, file || undefined)}>
-            Approve
+            {isPlanGate ? 'Go' : 'Approve'}
           </Button>
           <Button
             icon={<XCircle className="h-4 w-4" />}
@@ -95,7 +103,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ runId, review, onSubmi
             title={!comment.trim() && !file ? 'Say what to change, or give an edited copy' : undefined}
             onClick={() => onSubmit('changes', comment, file || undefined)}
           >
-            Request changes
+            {isPlanGate ? 'Plan again with my comment' : 'Request changes'}
           </Button>
           {canSkip && (
             <Button variant="quiet" icon={<SkipForward className="h-4 w-4" />} disabled={isLoading} onClick={() => onSubmit('skip', comment)}>

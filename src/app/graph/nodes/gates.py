@@ -54,6 +54,24 @@ def user_review_acceptance_node(state: WorkflowGraphState, config: RunnableConfi
     )
 
 
+def user_review_sprint_plan_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+    """The plan gate (plan WS.3): the sprint plan waits for a go, or a direction the scrum master plans again with.
+
+    Nothing holds a worker while it waits: the run pauses like every review, and the API's sweep answers it once its
+    time has passed (`app.server.approval_timeouts`).
+    """
+    from app.graph.workflow import SPRINT_PLAN_REVIEW, _run_review_gate
+
+    return _run_review_gate(
+        state,
+        config,
+        review_point=SPRINT_PLAN_REVIEW,
+        artifact_id="sprint-plan",
+        approved_next="technical_lead",
+        changes_next="scrum_master",
+    )
+
+
 def user_review_sprint_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
     from app.graph.workflow import SPRINT_REVIEW, _run_review_gate
 

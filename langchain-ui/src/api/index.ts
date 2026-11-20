@@ -685,6 +685,8 @@ export interface SteeringNote {
   by: string;
   at: string;
   scope?: 'run' | 'next_stage';
+  /** Who the note is for; everyone when absent. */
+  audience?: SteeringAudience[];
   /** Waiting for a model call, read by one, or withdrawn before any read it (plan WS.3). */
   state?: 'queued' | 'read' | 'withdrawn';
   /** Set when the first model call carried the note: the stage it was read in. */
@@ -699,13 +701,31 @@ export const getSteering = async (runId: string): Promise<SteeringNote[]> => {
   return response.data.notes ?? [];
 };
 
+/** Who a note is for: everyone, a group of stages, or one builder role (`app.server.steering.AUDIENCES`). */
+export type SteeringAudience =
+  | 'all' | 'design' | 'planning' | 'build' | 'tests' | 'review'
+  | 'ui_ux' | 'backend' | 'database' | 'security_reliability' | 'testing' | 'documentation' | 'devops';
+
 export const sendSteering = async (
   runId: string,
   text: string,
   scope: 'run' | 'next_stage' = 'run',
+  audience: SteeringAudience[] = ['all'],
 ): Promise<SteeringNote> => {
-  const response = await api.post(`/runs/${runId}/steering`, { text, scope });
+  const response = await api.post(`/runs/${runId}/steering`, { text, scope, audience });
   return response.data.note;
+};
+
+/** The reviews a run stops at now (review point -> on), as its next gate reads them. */
+export const getReviewPolicy = async (runId: string): Promise<Record<string, boolean>> => {
+  const response = await api.get(`/runs/${runId}/review-policy`);
+  return response.data.review_policy ?? {};
+};
+
+/** Switch reviews on or off while the run is live; the next gate it reaches follows the change (plan WS.3). */
+export const changeReviewPolicy = async (runId: string, changes: Record<string, boolean>): Promise<Record<string, boolean>> => {
+  const response = await api.put(`/runs/${runId}/review-policy`, { review_policy: changes });
+  return response.data.review_policy ?? {};
 };
 
 /** New words for a note no model call has read yet; refused (409) once one has. */

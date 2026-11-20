@@ -353,31 +353,59 @@ def _iter_repo_files(repo_root: Path, allow_subdirectories: bool = True) -> list
 
     for dirpath, dirnames, filenames in os.walk(repo_root):
         # Pruning in place is what stops os.walk descending further.
-        # A test runner's own output goes with the dependency directories:
-        # `test-results/.last-run.json` and `playwright-report/index.html`
-        # are not the product, and on one run the first appeared in the
-        # digest every stage reads. `_RUNNER_OUTPUT_DIRECTORIES` is the same
-        # set `sandbox._written_since` already excludes.
-        from app.tools.sandbox import _RUNNER_OUTPUT_DIRECTORIES
-
         current = Path(dirpath)
-        dirnames[:] = sorted(
-            d for d in dirnames
-            if d not in IGNORED_DIRECTORIES
-            and d not in _RUNNER_OUTPUT_DIRECTORIES
-            and not d.startswith(".cache")
-            and not _is_harness_directory(repo_root, current / d)
-            # A folder a tool fills, known by the manifest beside it: Bundler's and Composer's `vendor/`. Measured on
-            # one Ruby run: every stage's listing named the gems under `vendor/bundle` - "... and 780 more".
-            and not _languages.is_generated(d, filenames)
-        )
+        dirnames[:] = sorted(d for d in dirnames if _descends_into(repo_root, current, d, filenames))
         for filename in sorted(filenames):
             candidate = current / filename
-            if is_secret_path(candidate) or is_harness_bookkeeping(candidate):
-                continue
-            if candidate.is_file():
+            if _is_listed_file(candidate):
                 files.append(candidate)
     return files
+
+
+def _descends_into(repo_root: Path, parent: Path, name: str, siblings: list[str]) -> bool:
+    """Whether the listing goes into the folder `name` under `parent`, beside the files `siblings`."""
+    # A test runner's own output goes with the dependency directories:
+    # `test-results/.last-run.json` and `playwright-report/index.html`
+    # are not the product, and on one run the first appeared in the
+    # digest every stage reads. `_RUNNER_OUTPUT_DIRECTORIES` is the same
+    # set `sandbox._written_since` already excludes.
+    from app.tools.sandbox import _RUNNER_OUTPUT_DIRECTORIES
+
+    return (
+        name not in IGNORED_DIRECTORIES
+        and name not in _RUNNER_OUTPUT_DIRECTORIES
+        and not name.startswith(".cache")
+        and not _is_harness_directory(repo_root, parent / name)
+        # A folder a tool fills, known by the manifest beside it: Bundler's and Composer's `vendor/`. Measured on
+        # one Ruby run: every stage's listing named the gems under `vendor/bundle` - "... and 780 more".
+        and not _languages.is_generated(name, siblings)
+    )
+
+
+def _is_listed_file(candidate: Path) -> bool:
+    return not is_secret_path(candidate) and not is_harness_bookkeeping(candidate) and candidate.is_file()
+
+
+def is_listed(repo_root: str | Path, relative_path: str) -> bool:
+    """Whether `list_repository_files` lists this path: its rules, checked along the one path instead of a walk.
+
+    For a reader of one file (the run page's workspace view, plan WS.1): a path the listing hides - `.git`, the
+    harness's own records, installed and build folders, credential files - is not shown by name either.
+    """
+    root = Path(repo_root).expanduser().resolve()
+    parts = PurePosixPath(str(relative_path or "")).parts
+    if not parts or any(part in {"/", ".", ".."} for part in parts):
+        return False
+    parent = root
+    for name in parts[:-1]:
+        try:
+            siblings = [entry.name for entry in os.scandir(parent) if entry.is_file()]
+        except OSError:
+            return False
+        if not _descends_into(root, parent, name, siblings):
+            return False
+        parent = parent / name
+    return _is_listed_file(parent / parts[-1])
 
 
 def list_repository_files(repo_root: str | Path, allow_subdirectories: bool = True) -> list[str]:
@@ -8164,6 +8192,7 @@ def build_repository_context(repo_root: str | Path, allow_subdirectories: bool =
 __all__ = [
     "RepositoryToolError",
     "build_repository_context",
+    "is_listed",
     "list_repository_files",
     "read_text_file",
     "read_text_lines",

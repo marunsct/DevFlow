@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from app.tools.version_control import git_safely  # noqa: E402
 
+import difflib
 import re
 import subprocess
 from pathlib import Path
@@ -96,6 +97,51 @@ def document_diff(root: str | Path, path: str) -> dict[str, Any]:
         if text.strip():
             return {"path": path, "since": sha, "since_at": at, "diff": text[:MOST_DIFF_CHARS], "truncated": len(text) > MOST_DIFF_CHARS}
     return nothing
+
+
+def accepted_base(root: str | Path) -> tuple[str | None, str | None]:
+    """What "changed since the last accepted sprint" compares against (plan WS.1), and how to say it.
+
+    The newest `sprint-<n>` tag; before any sprint is accepted, the scaffold's commit; with neither (a project
+    seeded from elsewhere), the first commit. `(None, None)` for a workspace with no commit yet.
+    """
+    from app.tools.version_control import accepted_sprints
+
+    root = Path(root)
+    if not _git(root, "rev-list", "--max-count=1", "--all").strip():
+        return None, None
+    sprints = accepted_sprints(root)
+    if sprints:
+        return f"refs/tags/sprint-{sprints[-1]}", f"sprint {sprints[-1]}"
+    scaffold = _git(root, "log", "--max-count=1", "--grep=^Scaffold:", "--format=%H").strip()
+    if _A_HASH.match(scaffold):
+        return scaffold, "the scaffold"
+    first = (_git(root, "rev-list", "--max-parents=0", "HEAD").split() or [""])[-1]
+    return (first, "the first commit") if _A_HASH.match(first) else (None, None)
+
+
+def file_diff(root: str | Path, path: str, now: str) -> dict[str, Any]:
+    """One file's diff from its copy at `accepted_base` to `now`, its text on disk; a file new since then is all added.
+
+    Compared here, not by `git diff`, so a file never committed (most of what a stage writes) has a diff too. The
+    path is a listed workspace file, taken literally; the base is the harness's own tag or a hash.
+    """
+    root = Path(root)
+    base, label = accepted_base(root)
+    found = {"path": path, "since": label, "diff": "", "truncated": False}
+    if base is None:
+        return found
+    there = _git(root, "--literal-pathspecs", "ls-tree", "--name-only", base, "--", path).strip() == path
+    before = _git(root, "cat-file", "blob", f"{base}:{path}") if there else ""
+    if "\x00" in before:
+        raise ChangesUnavailable("This file is not text.")
+    text = "\n".join(difflib.unified_diff(
+        before.splitlines(), now.splitlines(),
+        fromfile=f"a/{path}" if there else "/dev/null", tofile=f"b/{path}", lineterm="",
+    ))
+    if text:
+        text = f"diff --git a/{path} b/{path}\n{text}"
+    return {**found, "diff": text[:MOST_DIFF_CHARS], "truncated": len(text) > MOST_DIFF_CHARS}
 
 
 def diff(root: str | Path, sha: str) -> dict[str, Any]:

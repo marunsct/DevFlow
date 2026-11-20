@@ -43,6 +43,7 @@ import { RunNameField } from '../components/RunNameField';
 import { Timeline } from '../components/Timeline';
 import { Tabs } from '../ui';
 import { ChangesPanel } from '../components/ChangesPanel';
+import { WorkspacePanel } from '../components/WorkspacePanel';
 import { SteeringBox } from '../components/SteeringBox';
 import { ArtifactList } from '../components/ArtifactList';
 import { ExecutionFlow } from '../components/ExecutionFlow';
@@ -157,14 +158,22 @@ export const RunDashboard: React.FC = () => {
   // Kept in the address, so a link or a reload opens the same view and change.
   const [searchParams, setSearchParams] = useSearchParams();
   const viewParam = searchParams.get('view');
-  type CentreTab = 'activity' | 'results' | 'log' | 'changes' | 'audit' | 'doctor';
+  type CentreTab = 'activity' | 'results' | 'log' | 'changes' | 'workspace' | 'audit' | 'doctor';
   const centreTab: CentreTab =
-    viewParam === 'log' || viewParam === 'changes' || viewParam === 'results' || viewParam === 'audit' || viewParam === 'doctor' ? viewParam : 'activity';
+    viewParam === 'log' || viewParam === 'changes' || viewParam === 'workspace' || viewParam === 'results' || viewParam === 'audit' || viewParam === 'doctor' ? viewParam : 'activity';
   const selectedChange = searchParams.get('change');
+  const selectedFile = searchParams.get('file');
   const setCentreTab = (tab: CentreTab) => {
     const next = new URLSearchParams(searchParams);
     if (tab === 'activity') next.delete('view'); else next.set('view', tab);
     if (tab !== 'changes') next.delete('change');
+    if (tab !== 'workspace') next.delete('file');
+    setSearchParams(next, { replace: true });
+  };
+  const selectFile = (path: string | null) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('view', 'workspace');
+    if (path) next.set('file', path); else next.delete('file');
     setSearchParams(next, { replace: true });
   };
   const selectChange = (sha: string | null) => {
@@ -1008,6 +1017,11 @@ export const RunDashboard: React.FC = () => {
                 id: 'changes',
                 label: 'Changes',
                 content: <ChangesPanel runId={runId!} refreshKey={stageKey} selected={selectedChange} onSelect={selectChange} />,
+              },
+              {
+                id: 'workspace',
+                label: 'Workspace',
+                content: <WorkspacePanel runId={runId!} refreshKey={stageKey} logs={logs} selected={selectedFile} onSelect={selectFile} />,
               },
               {
                 id: 'log',

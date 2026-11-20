@@ -569,6 +569,33 @@ export const getDocumentDiff = async (runId: string, path: string): Promise<Docu
   return response.data;
 };
 
+/** The workspace's files as every stage's listing shows them (plan WS.1), and which changed since `since`. */
+export interface WorkspaceTree {
+  files: { path: string; size: number }[];
+  truncated: boolean;
+  /** What "changed" is measured from: "sprint 2", "the scaffold" - or null with no history yet. */
+  since: string | null;
+  changed: string[];
+}
+
+export const getWorkspaceFiles = async (runId: string): Promise<WorkspaceTree> => {
+  const response = await api.get<WorkspaceTree>(`/runs/${runId}/files`);
+  return response.data;
+};
+
+export const getWorkspaceFile = async (runId: string, path: string): Promise<{ path: string; content: string }> => {
+  const response = await api.get(`/runs/${runId}/files/content`, { params: { path } });
+  return response.data;
+};
+
+export const getWorkspaceFileDiff = async (
+  runId: string,
+  path: string,
+): Promise<{ path: string; since: string | null; diff: string; truncated: boolean; problem?: string }> => {
+  const response = await api.get(`/runs/${runId}/files/diff`, { params: { path } });
+  return response.data;
+};
+
 export const fetchArtifactContent = async (
   runId: string,
   path: string

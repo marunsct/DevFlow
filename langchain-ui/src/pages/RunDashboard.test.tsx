@@ -25,6 +25,8 @@ vi.mock('../api', () => {
     getSprints: { sprints: [] },
     fetchArtifactContent: null,
     getChanges: { commits: [] },
+    getWorkspaceFiles: { files: [{ path: 'src/app.py', size: 12 }], truncated: false, since: 'the scaffold', changed: [] },
+    getWorkspaceFile: { path: 'src/app.py', content: 'print("hi")\n' },
     getSteering: [],
     getPendingReview: { pending: false },
     getPendingApproval: { pending: false },
@@ -215,6 +217,22 @@ describe('the run page', () => {
     toggle.click();
 
     await waitFor(() => expect(known.setModelPin).toHaveBeenCalledWith('run-1', true));
+  });
+});
+
+describe('the workspace tab', () => {
+  it('opens on the file the address names, so a link shows the same code', async () => {
+    render(
+      <MemoryRouter initialEntries={['/runs/run-1?view=workspace&file=src%2Fapp.py']}>
+        <FeedbackProvider>
+          <Routes><Route path="/runs/:runId" element={<RunDashboard />} /></Routes>
+        </FeedbackProvider>
+      </MemoryRouter>,
+    );
+
+    expect((await screen.findByRole('tab', { name: 'Workspace' })).getAttribute('aria-selected')).toBe('true');
+    expect((await screen.findByLabelText('The text of src/app.py')).textContent).toContain('print("hi")');
+    expect(known.getWorkspaceFile).toHaveBeenCalledWith('run-1', 'src/app.py');
   });
 });
 

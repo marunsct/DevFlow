@@ -1044,6 +1044,61 @@ def create_runs_router(
         except ChangesUnavailable as error:
             return {"path": relative, "since": None, "since_at": None, "diff": "", "truncated": False, "problem": str(error)}
 
+    # -- the workspace view (plan WS.1): read-only, the files every stage's listing shows --
+
+    def _workspace_of(run_id: str, user: UserInDB) -> str:
+        record = _require_run(runner, run_id, user)
+        if not record.repo_root or not Path(record.repo_root).is_dir():
+            raise HTTPException(status_code=404, detail="This run has no workspace yet.")
+        return record.repo_root
+
+    def _listed_text(root: str, path: str) -> tuple[str, str]:
+        """The path as the tree names it and the file's text, or the refusal: the download route's containment."""
+        from app.server.workspace_files import NotReadable, NotShown, read
+
+        try:
+            relative = resolve_within_workspace(root, path).relative_to(Path(root).expanduser().resolve()).as_posix()
+        except WorkspaceError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        try:
+            return relative, read(root, relative)
+        except NotShown as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        except NotReadable as exc:
+            raise HTTPException(status_code=415, detail=str(exc))
+
+    @runs.get("/{run_id}/files")
+    async def get_workspace_files(
+        run_id: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> dict[str, Any]:
+        """The workspace's files with their sizes, and which changed since the last accepted sprint."""
+        from app.server.workspace_files import tree
+
+        root = _workspace_of(run_id, user)
+        return {"run_id": run_id, **await asyncio.to_thread(tree, root)}
+
+    @runs.get("/{run_id}/files/content")
+    async def get_workspace_file(
+        run_id: str, path: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> dict[str, Any]:
+        """One workspace file's text, for reading: a file the tree hides, a large one or a binary one is refused."""
+        relative, text = await asyncio.to_thread(_listed_text, _workspace_of(run_id, user), path)
+        return {"path": relative, "content": text}
+
+    @runs.get("/{run_id}/files/diff")
+    async def get_workspace_file_diff(
+        run_id: str, path: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> dict[str, Any]:
+        """One workspace file's change since the last accepted sprint (the scaffold before the first)."""
+        from app.server.changes import ChangesUnavailable, file_diff
+
+        root = _workspace_of(run_id, user)
+        relative, text = await asyncio.to_thread(_listed_text, root, path)
+        try:
+            return await asyncio.to_thread(file_diff, root, relative, text)
+        except ChangesUnavailable as error:
+            return {"path": relative, "since": None, "diff": "", "truncated": False, "problem": str(error)}
+
     @runs.get("/{run_id}/handover")
     async def download_handover(
         run_id: str, user: UserInDB = Depends(get_current_active_user)

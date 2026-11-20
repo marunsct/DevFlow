@@ -54,6 +54,7 @@ Source of truth: `src/app/switches.py` (defaults and `EXPERIMENTS_ON`) and `loop
 | DRAFTING_IN_WAVES | product files drafted in dependency order, later files shown earlier ones | fewer interface clashes (Rust, shared state) | on; never fired |
 | DIAGNOSE_A_RECURRING_CAUSE | one diagnosis call before a third fix of the same cause | fix rate at 3rd attempt up from 11% | on; never fired |
 | MUTATION_GAPS_BUNDLED | open mutation findings in one file go to one fixer; each closed only when the harness's check settles it (LF.1163) | calls and minutes on mutation defects fall, mutation score holds | OFF; needs 2 on / 2 off runs with mutation findings |
+| WEB_TOOLS_OFFERED | web search and the page reader offered to the stages that read docs, set by a run's "Always" lookups choice (LF.1166) | the tools are called and a stuck signature clears; hidden holds | OFF; on per run through "Always" |
 | WEB_LOOKUP_WHEN_STUCK | harness looks up a stuck fixer's error (WL.4 T1) | repeated-signature rounds or minutes to green fall, hidden holds | OFF in code; not in `GROUPS`, so not on the admin page or in `loop.sh measuring` (register it). Deploys at the next run boundary |
 
 ### Premium bundles (on; each needs an off arm on today's SHA)
@@ -70,12 +71,11 @@ Size S under a day, M a few days, L a week or more. "Proof" is the measurement t
 ### 3.1 Internet lookups (Appendix 10, WL). WL.1, WL.2 and WL.4's trigger T1 are built.
 | Item | Value | Size | Needs | Proof | Verified |
 |---|---|---|---|---|---|
-| WL.3 user setting "Internet lookups" (Off / When stuck / Always offered), per run, shown on the run record; admin keys, daily cap, provider order | the user controls outside requests | M | WL.2 | setting honoured per run; zero outside requests when Off (test) | not built (no setting or key fields in src or UI) |
 | WL.4 T2-T4: T2 install error the registry note does not explain; T3 recurring compile error code; T4 version look-up from the registry before a manifest line is written | moves LF.1132's registry versions from failure time to write time; the Rust, Java and C# struggles | M | WL.2, WL.3 | repeated-signature rounds and minutes to green fall, hidden holds | only T1 built (`graph/stuck_lookup.py`) |
 | WL.5 T5: a fixer's 2nd failed attempt is offered `search_the_web` and `read_web_page`, that fixer only | tests whether a model uses the tools when it has failed twice | S | WL.4 | calls made, signature cleared after; own switch | not built |
 | WL.6 optional paid provider (Tavily or Brave) and Context7; page reader as the MCP fetch server does it (main text, paged, robots.txt, redirect hops checked, private addresses refused); one-page Playwright render only as fallback for 403 or a script-only shell | general web when S3/S4 return under 2 results | M | WL.3 (keys) | answers per lookup, no private address reached | not built |
 | WL.7 answer probe for every outside source in `loop.sh ready` (warning, not a block) and in the built-but-silent audit | the search died silently for a month | S | none | probe fails loudly on a blocked source | not built (nothing for searx or the new sources in scripts/loop) |
-Order: WL.7, WL.3, WL.4 T2-T4, WL.5, WL.6.
+WL.7 and WL.3 are built (LF.1161, LF.1166; the daily request cap and provider order fold into WL.6). Order: WL.4 T2-T4, WL.5, WL.6.
 
 ### 3.2 Watch, try and steer a run (Appendix 11, WS). Nothing below is built except the pieces named.
 | Item | Value | Size | Needs | Proof | Verified |

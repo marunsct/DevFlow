@@ -102,7 +102,7 @@ export const LookupKeys: React.FC<{ isAdmin: boolean }> = ({ isAdmin }) => {
         })}
         {isAdmin && (
           <button type="button" disabled={busy || Object.keys(entered).length === 0} onClick={() => save(entered)}
-            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50">
             Save keys
           </button>
         )}

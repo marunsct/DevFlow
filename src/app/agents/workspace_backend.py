@@ -453,6 +453,44 @@ def starts_a_conversation(messages: Any) -> bool:
     return not any(getattr(m, "type", None) in ("ai", "tool") for m in (messages or ()))
 
 
+#: What a stage's reads are kept under to say what its last request showed the model.
+WHAT_THE_REQUEST_SHOWED = "visible_tool_results"
+#: Lines of a read compared against what the request showed, longest first.
+LINES_CHECKED_FOR_SIGHT = 3
+
+
+def note_what_the_request_shows(messages: Any) -> None:
+    """Keep the text of every tool result the model is about to be sent, for the stage's next read.
+
+    The read guard counts what the stage was *given*. Measured on two Java runs' testing stages, 172 of 207 reads
+    of a file read earlier came when that earlier text was no longer in the request (summarised away every few
+    calls), and the guard still said "you have already read this" about text the model could not see. A record of
+    what is in the request lets the guard tell the two apart. Recorded on every model call, in place: no message of
+    the conversation is touched, so the request's cached opening is unchanged.
+    """
+    from app.agents.stage_memory import store
+
+    shown = store(WHAT_THE_REQUEST_SHOWED, {})
+    if messages is None:
+        return
+    shown["text"] = "\n".join(
+        str(getattr(m, "content", "")) for m in messages if getattr(m, "type", None) == "tool"
+    )
+
+
+def _the_text_is_in_view(content: str) -> bool | None:
+    """Whether the lines of `content` are among the tool results of the stage's last request; None when unknown."""
+    from app.agents.stage_memory import store
+
+    shown = store(WHAT_THE_REQUEST_SHOWED, {}).get("text")
+    if shown is None:
+        return None
+    lines = sorted({line.strip() for line in content.splitlines() if line.strip()}, key=len, reverse=True)
+    if not lines:
+        return None
+    return all(line in shown for line in lines[:LINES_CHECKED_FOR_SIGHT])
+
+
 def build_fresh_conversation_middleware() -> Any:
     """Middleware that forgets what the stage's reads gave when a new conversation of the stage begins.
 
@@ -472,6 +510,7 @@ def build_fresh_conversation_middleware() -> Any:
                     from app.agents.stage_memory import forget
 
                     forget(*WHAT_THE_CONVERSATION_WAS_GIVEN)
+                note_what_the_request_shows(getattr(request, "messages", None))
             except Exception:  # noqa: BLE001 - the call is made either way
                 pass
             return handler(request)
@@ -923,6 +962,19 @@ class _NoticingRepeats:
             )
         return ""
 
+    def _forget_what_this_file_gave(self, file_path: str) -> None:
+        """Drop this file's byte counts and served lines; the stage-wide tally of repeats stays."""
+        from app.agents.stage_memory import store
+
+        try:
+            where = str(self._resolve_path(file_path))
+        except Exception:  # noqa: BLE001 - the key the model typed is the fallback
+            where = file_path
+        store("read_digests", getattr(self, "_read_digests", {})).pop(where, None)
+        spans = store("read_spans", getattr(self, "_read_spans", {}))
+        for key in [k for k in spans if str(k).lstrip("/") == str(file_path).lstrip("/")]:
+            spans.pop(key, None)
+
     def _the_repeated_read_tally(self) -> dict:
         """This stage's count of reads that returned nothing new.
 
@@ -1277,6 +1329,10 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
         if not isinstance(content, str):
             return result
         self._remember_the_version_read(file_path)
+        if _the_text_is_in_view(content) is False:
+            # Whatever the stage was given of this file earlier is no longer in front of the model (summarised or
+            # cut away), so this is not a repeat to it: it gets the text, and the file's counts start again.
+            self._forget_what_this_file_gave(file_path)
         self._withheld = False  # noqa: SLF001 - own attribute
         note = self._note_if_repeated(
             file_path, content, self._the_part_it_covered(result, content)

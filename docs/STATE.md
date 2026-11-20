@@ -5,9 +5,9 @@ the block below is written by `loop.sh state`. The map of all documents is `docs
 `docs/improvement-plan.md`; how the product works is `docs/PRODUCT.md`; how to run and test it is `docs/HANDOVER.md`;
 decisions in force are `docs/owner-decisions.md`; old information is found through `docs/ARCHIVE.md`.
 <!-- state:generated -->
-**As of:** 11-21 04:43 JST (written by `loop.sh state`). Harness 0b5335ba committed; d29ff5a8 deployed (not the same).
-**Live, and stopped in the last day:** run-426163d2 running at acceptance_review_3
-**Last scored:** run-42484a4f web-todo 10/10 (completed, handoff 1.0; scored 11-21 04:43 JST); run-a6b50450 notes-api 9/9 (completed, 119 active min, handoff 1.0; scored 11-21 04:03 JST); run-8808daaa fullstack-bookmarks 8/8 (completed, 108 active min, handoff 1.0; scored 11-21 03:13 JST).
+**As of:** 11-21 06:33 JST (written by `loop.sh state`). Harness 15c86176 committed; 15c86176 deployed.
+**Live, and stopped in the last day:** run-426163d2 running at specialist_testing_2
+**Last scored:** run-ef06e436 fullstack-bookmarks-py 8/8 (completed, handoff 1.0; scored 11-21 06:33 JST); run-42484a4f web-todo 10/10 (completed, 82 active min, handoff 1.0; scored 11-21 04:43 JST); run-a6b50450 notes-api 9/9 (completed, 119 active min, handoff 1.0; scored 11-21 04:03 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -26,10 +26,10 @@ runs only when the owner starts them. Everything under measurement: `docs/improv
 
 ## The last three runs (11-20, hidden / quality; local model)
 Earlier runs: `reports/status-board/`, git history of this file.
-- **Live:** notes-api-java container 5 (:1234, from 04:05); fullstack-bookmarks-py container 1 (:8888, from 04:49, `FIX_ORDER_CRITERIA_FIRST` on).
+- **Live:** notes-api-java container 5 (:1234, from 04:05); notes-api-csharp container 10 (:8888, from 06:37, `SUMMARISE_LATER_WITH_HEADROOM` on).
 - Scored today: web-todo 3 and 4 (10/10, 6/6), Ruby 2 and 3 (9/9, 8/8; 64 and 56 min against 267 before), Java 3 (9/9, 8/8),
   PHP 6 and 7 (9/9, 8/8; 42 and 78 min), C# 7 and 8 (9/9, 8/8), Java 4 (9/9, 8/8; 244 min, a start defect for three rounds), tasks-api 6 (10/10, 7/7; 110 min;
-not deliverable: one edge-probe 500 left), **web-todo 5 (10/10, 6/6; not deliverable on a 347px sideways overflow at 360px; 82 min; fix-order arm 2), notes-api 2 (9/9, 8/8; delivered, 119 min, mutation score 0), ,
+not deliverable: one edge-probe 500 left), **fullstack-bookmarks-py 1 (8/8, 7/7; delivered, 90 min; fix-order arm 3), web-todo 5 (10/10, 6/6; not deliverable on a 347px sideways overflow at 360px; 82 min; fix-order arm 2), notes-api 2 (9/9, 8/8; delivered, 119 min, mutation score 0), ,
   fullstack-bookmarks 2 (8/8, 6/7; delivered, 107 min; fix-order arm 1), **web-todo-react 1 (9/10, 6/6; not deliverable, false acceptance: four criteria deferred, 364 min on :1234)**, web-todo-react 2 (10/10, 5/6; delivered, 73 min), ,
   tasks-api 9 (10/10, 7/7, delivered, 136 min; QA trim shows no saving), notes-api-go 4 (9/9, 8/8, delivered, 51 min; `go.mod` lowered to 1.21, LF.1199), tasks-api 8 (10/10, 7/7, delivered, 83.5 min; prompt-size switches' second arm), ,
   notes-api 1 (9/9, 8/8, delivered, 70 min), fullstack-bookmarks 1 (8/8, 7/7; not deliverable on a false contract blocker being fixed; 289 min, 2.5 h on an unpassable test LF.1196 now catches), ,

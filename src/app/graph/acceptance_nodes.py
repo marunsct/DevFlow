@@ -1020,52 +1020,62 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     # with a problem "still open", which is a release gap.
     from app.acceptance import check_findings
 
+    # Each mechanical finding with the check that raised it, to hold back one that came back unchanged after a repair.
+    raised: list[tuple[str, str]] = []
+
+    def _noted(check: str, found: Any) -> list[Any]:
+        found = check_findings.noted(root, rounds, check, found)
+        raised.extend((check, str(item)) for item in found)
+        return found
+
     cannot_pass = suite.tests_that_cannot_pass(root, result)
     cannot = suite.findings_that_reopen(root, result, cannot_pass)
-    # A repair that left a test it was sent for exactly as it was goes back with the cannot-pass findings (and once
-    # at the review's limit, `cannot_pass_to_lock`).
-    cannot = [*cannot, *suite.tests_left_unrepaired(root, result)]
-    # Each of the checks inside `tests_that_cannot_pass` recorded under its own name (HR2.Q.1); a finding none of
-    # them raised (a repair left unrepaired) under the bucket's.
+    # Each of the checks inside `tests_that_cannot_pass` recorded under its own name (HR2.Q.1).
     named = getattr(cannot_pass, "checks", {}) or {}
     for check in dict.fromkeys(named.get(str(f), "tests_that_cannot_pass") for f in cannot):
-        check_findings.noted(root, rounds, check, [f for f in cannot
-                                                  if named.get(str(f), "tests_that_cannot_pass") == check])
+        _noted(check, [f for f in cannot if named.get(str(f), "tests_that_cannot_pass") == check])
+    # A repair that left a test it was sent for exactly as it was goes back with the cannot-pass findings (and once
+    # at the review's limit, `cannot_pass_to_lock`), recorded under the bucket's name. It says what the writers did,
+    # not what a check suspects, so it is never held back as a repeat.
+    unrepaired = suite.tests_left_unrepaired(root, result)
+    check_findings.noted(root, rounds, "tests_that_cannot_pass", unrepaired)
+    cannot = [*cannot, *unrepaired]
     problems.extend(cannot)
     # Against the specification's contract, before it is recorded at the lock (the rounds read the locked one).
-    problems.extend(check_findings.noted(root, rounds, "tests_that_want_json_from_a_204", suite.tests_that_want_json_from_a_204(
+    problems.extend(_noted("tests_that_want_json_from_a_204", suite.tests_that_want_json_from_a_204(
         root, getattr(state.get("technical_specification"), "interface_contract", None) or ())))
-    problems.extend(check_findings.noted(root, rounds, "tests_whose_success_status_the_contract_does_not_give",
+    problems.extend(_noted("tests_whose_success_status_the_contract_does_not_give",
                                          suite.tests_whose_success_status_the_contract_does_not_give(
         root, getattr(state.get("technical_specification"), "interface_contract", None) or ())))
     vacuous = suite.vacuous_green(root, result)
+    # A suite that proved nothing is evidence, not a check's suspicion: it is never held back as a repeat.
     problems.extend(check_findings.noted(root, rounds, "vacuous_green", vacuous))
     # Tests that pass a product that is not there (LR.23): assertions made only when the answer was good, and, at the
     # first writing before anything is built, tests that already pass.
-    problems.extend(check_findings.noted(root, rounds, "tests_guarded_by_the_answer", suite.tests_guarded_by_the_answer(root)))
+    problems.extend(_noted("tests_guarded_by_the_answer", suite.tests_guarded_by_the_answer(root)))
     nothing_built = (not state.get("acceptance_return_to") and not int(state.get("current_sprint_index") or 0)
                      and not any(str(key).startswith("specialist_") for key in (state.get("specialist_outputs") or {})))
-    problems.extend(check_findings.noted(root, rounds, "tests_that_pass_before_the_product",
+    problems.extend(_noted("tests_that_pass_before_the_product",
                                          suite.tests_that_pass_before_the_product(result, nothing_built)))
     # Too lenient rather than impossible: a suite that passes a product it
     # should fail. The review sends these back; a test round has nothing to
     # charge for them.
-    problems.extend(check_findings.noted(root, rounds, "locators_nobody_sees", suite.locators_nobody_sees(root)))
-    problems.extend(check_findings.noted(root, rounds, "locators_that_pick_one", suite.locators_that_pick_one(root)))
-    problems.extend(check_findings.noted(root, rounds, "controls_never_found_by_name",
+    problems.extend(_noted("locators_nobody_sees", suite.locators_nobody_sees(root)))
+    problems.extend(_noted("locators_that_pick_one", suite.locators_that_pick_one(root)))
+    problems.extend(_noted("controls_never_found_by_name",
         suite.controls_never_found_by_name(root, getattr(state.get("document"), "text", "") or "")
     ))
-    problems.extend(check_findings.noted(root, rounds, "records_never_found_as_the_brief_shows_them",
+    problems.extend(_noted("records_never_found_as_the_brief_shows_them",
         suite.records_never_found_as_the_brief_shows_them(root, getattr(state.get("document"), "text", "") or "")
     ))
-    partial = check_findings.noted(root, rounds, "outputs_held_only_in_part",
+    partial = _noted("outputs_held_only_in_part",
                                    suite.outputs_held_only_in_part(root, getattr(state.get("document"), "text", "") or ""))
-    partial = [*partial, *check_findings.noted(root, rounds, "whitespace_tested_with_spaces_only",
+    partial = [*partial, *_noted("whitespace_tested_with_spaces_only",
                                                 suite.whitespace_tested_with_spaces_only(root))]
-    partial = [*partial, *check_findings.noted(root, rounds, "words_broken_only_at_spaces",
+    partial = [*partial, *_noted("words_broken_only_at_spaces",
                                                 suite.words_broken_only_at_spaces(root))]
     problems.extend(partial)
-    problems.extend(check_findings.noted(root, rounds, "views_never_acted_within",
+    problems.extend(_noted("views_never_acted_within",
                                          suite.views_never_acted_within(root, getattr(state.get("document"), "text", "") or "")))
     # Plan item 16: at a first writing only; a repair is told to change nothing but the tests it was sent for.
     from app.acceptance import contract_coverage
@@ -1074,7 +1084,17 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         missing_lines = contract_coverage.lines_with_no_test(
             root, getattr(state.get("technical_specification"), "interface_contract", None) or ())
         if missing_lines:
-            problems.extend(check_findings.noted(root, rounds, "contract_lines_with_no_test", [contract_coverage.finding(missing_lines)]))
+            problems.extend(_noted("contract_lines_with_no_test", [contract_coverage.finding(missing_lines)]))
+    # A finding the review before raised the same, with a repair between, is not sent back to the writers again: it
+    # goes to the QA lead as a suspected false positive (per-role audit 2026-11-20: one came back seven rounds).
+    suspected = check_findings.withheld(root, rounds, raised) if result.ran and not vacuous else []
+    if suspected:
+        logger.warning("%d harness finding(s) came back unchanged after a repair: given to the QA lead, not the writers",
+                       len(suspected))
+        held = set(suspected)
+        problems = [p for p in problems if str(p) not in held]
+        cannot = [f for f in cannot if str(f) not in held]
+        partial = [f for f in partial if str(f) not in held]
     if not result.ran:
         if rounds < MAX_ACCEPTANCE_ROUNDS + 2:
             logger.warning("Acceptance suite could not run (exit %s); sent back to QA", result.exit_code)
@@ -1144,6 +1164,8 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         _the_specification_on_disk(root),
     ]) if product_at_fault.enabled() else []
     targeted = targeted or bool(no_fault_found)
+    # Findings held back from the writers are the QA lead's to judge: a suite with any is read, not locked unread.
+    targeted = targeted and not suspected
     # At the limit with the harness's own problems still open, a suite the QA lead never read would be locked unread
     # (per-role audit: 3 of 30 runs, one a false acceptance): it is read once, and what it finds is handled as below.
     unread_at_the_limit = bool(problems) and rounds >= MAX_ACCEPTANCE_ROUNDS and not _the_qa_lead_has_read_it(config)
@@ -1178,6 +1200,8 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         # What the tests are judged against, whole (see `app.acceptance.api_reference`).
         request["messages"][-1]["content"] += "\n" + api_reference(
             state.get("technical_specification"), getattr(state.get("document"), "text", "") or "")
+        if suspected:
+            request["messages"][-1]["content"] += "\n" + check_findings.for_the_qa_lead(suspected)
         update = _run_gated_agent(
             state, config,
             stage_name=f"acceptance_review_{rounds}",

@@ -56,7 +56,12 @@ def report(workspaces: Path) -> dict[str, dict]:
                 counts = filters[str(row.get("check"))]
                 counts["dropped" if row.get("severity_after") == "dropped" else "moved"] += 1
                 counts["relabelled" if row.get("verdict_before") != row.get("verdict_after") else "same verdict"] += 1
-        rows = [row for row in every if row.get("kind") != "filtered"]
+        # A finding held back from the writers as a suspected false positive (it came back unchanged after a repair)
+        # is counted apart: it is a measure of the check, not another finding.
+        for row in every:
+            if row.get("kind") == "withheld":
+                totals[str(row.get("check"))]["withheld"] += 1
+        rows = [row for row in every if row.get("kind") not in ("filtered", "withheld")]
         if not rows:
             continue
         for check, settled in settle(rows):
@@ -74,11 +79,13 @@ def main(argv: list[str]) -> int:
         print("check precision: no run has recorded a check finding yet")
         return 0
     for check, counts in sorted(found.items(), key=lambda item: -item[1].get("findings", 0)):
+        if not counts.get("findings"):
+            continue
         share = counts.get("settled", 0) / counts["findings"]
         verdict = ("DEMOTE CANDIDATE" if share < DEMOTE_BELOW and counts["findings"] >= LEAST_FINDINGS
                    else "too few to judge" if counts["findings"] < LEAST_FINDINGS else "holds")
         print(f"{check:<48} findings {counts['findings']:>4} runs {counts.get('runs', 0):>3} "
-              f"settled {share:.2f}  {verdict}")
+              f"settled {share:.2f}  {verdict}" + (f"  withheld {counts['withheld']}" if counts.get("withheld") else ""))
     for check, counts in sorted(filters.items()):
         print(f"{check:<48} filtered: {counts.get('dropped', 0)} dropped, {counts.get('moved', 0)} moved, "
               f"{counts.get('relabelled', 0)} verdict line(s) relabelled")

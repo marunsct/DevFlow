@@ -25,3 +25,14 @@ def test_a_finding_raised_again_is_repeated_and_one_not_raised_again_settled(tmp
     found = settling.report(tmp_path)
     assert found["locators_that_pick_one"] == {"findings": 2, "repeated": 1, "settled": 1, "runs": 1}
     assert found["vacuous_green"]["settled"] == 1
+
+
+def test_a_finding_held_back_as_suspected_false_is_counted_apart_not_as_another_finding(tmp_path):
+    _workspace(tmp_path, "workspace-run-a", [
+        {"check": "tests_that_want_json_from_a_204", "fingerprint": "f1", "round": 1},
+        {"check": "tests_that_want_json_from_a_204", "fingerprint": "f1", "round": 2},
+        {"check": "tests_that_want_json_from_a_204", "fingerprint": "f1", "round": 2, "kind": "withheld"},
+    ])
+    found = settling.report(tmp_path)
+    assert found["tests_that_want_json_from_a_204"] == {"findings": 2, "repeated": 1, "settled": 1, "runs": 1,
+                                                        "withheld": 1}

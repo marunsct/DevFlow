@@ -12,6 +12,11 @@ GO_MOD = """module {{package}}
 go %s
 """ % GO_VERSION
 
+#: The `go` line the module keeps, at every round (`StackPack.required_signatures`): the standard library's routing by
+#: method and path (`"GET /notes/{id}"`) needs Go 1.22. Measured on one run: a backend work order rewrote `go.mod` to
+#: `go 1.21`, every route then answered 404, and the product did not start for the acceptance suite.
+GO_LINE = {"go.mod": ((r"^go\s+1\.(?:2[2-9]|[3-9]\d)(?:\.\d+)?\s*$", f"go {GO_VERSION}"),)}
+
 MAIN = """package main
 
 import (
@@ -318,6 +323,7 @@ GO_KNOWN_ERRORS = {
 PACK = service_pack(
     golden_example={"server.go": GOLDEN_SERVER, "store.go": GOLDEN_STORE, "items_test.go": GOLDEN_TEST},
     known_errors=GO_KNOWN_ERRORS,
+    required_signatures=GO_LINE,
     sandbox_image=sandbox.GO,
     name="go-http-api",
     entrypoint="server.go",

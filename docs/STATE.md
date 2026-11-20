@@ -5,9 +5,9 @@ the block below is written by `loop.sh state`. The map of all documents is `docs
 `docs/improvement-plan.md`; how the product works is `docs/PRODUCT.md`; how to run and test it is `docs/HANDOVER.md`;
 decisions in force are `docs/owner-decisions.md`; old information is found through `docs/ARCHIVE.md`.
 <!-- state:generated -->
-**As of:** 11-20 13:03 JST (written by `loop.sh state`). Harness 6e563e3a committed; 6e563e3a deployed.
-**Live, and stopped in the last day:** run-50a7c5cc running at product_manager; run-0f60c7a7 running at defect_fix_1_0; run-e382df47 failed at failed
-**Last scored:** run-b668a924 notes-api-java 9/9 (completed, handoff 1.0; scored 11-20 13:03 JST); run-d2d6fd42 notes-api-csharp 9/9 (completed, mixed, 67 active min, handoff 1.0; scored 11-20 12:04 JST); run-aa3693b6 notes-api-php 9/9 (completed, 78 active min, handoff 1.0; scored 11-20 09:33 JST).
+**As of:** 11-20 14:35 JST (written by `loop.sh state`). Harness 0e7204c0 committed; 0e7204c0 deployed.
+**Live, and stopped in the last day:** run-5d08754b running at principal_architect; run-2df00e65 running at principal_architect; run-e382df47 failed at failed
+**Last scored:** run-50a7c5cc notes-api-csharp 9/9 (completed, handoff 1.0; scored 11-20 14:35 JST); run-0f60c7a7 tasks-api 10/10 (completed, mixed, 110 active min, handoff 1.0; scored 11-20 14:28 JST); run-b668a924 notes-api-java 9/9 (completed, mixed, 244 active min, handoff 1.0; scored 11-20 13:03 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -26,10 +26,11 @@ runs only when the owner starts them. Everything under measurement: `docs/improv
 
 ## The last three runs (11-20, hidden / quality; local model)
 Earlier runs: `reports/status-board/`, git history of this file.
-- **Live:** tasks-api container 6 (:8888, from 12:19, contested tests and stuck lookups on) at 46/47 at 13:05;
-  notes-api-csharp container 9 (:1234, from 13:03, both lookup switches and bundled mutation gaps on). Java container 4 finished 13:01: 9/9, quality 8/8, 244 active min.
+- **Live:** tasks-api container 7 (:8888, from 14:29, the three prompt-size switches and contested tests on); fullstack-bookmarks
+  container 1 (:1234, from 14:29, both lookup switches on).
 - Scored today: web-todo 3 and 4 (10/10, 6/6), Ruby 2 and 3 (9/9, 8/8; 64 and 56 min against 267 before), Java 3 (9/9, 8/8),
-  PHP 6 and 7 (9/9, 8/8; 42 and 78 min), C# 7 and 8 (9/9, 8/8), Java 4 (9/9, 8/8; 244 min, a start defect for three rounds), Go 3 (9/9, 8/8), tasks-api 5 (10/10, 7/7; 175 min).
+  PHP 6 and 7 (9/9, 8/8; 42 and 78 min), C# 7 and 8 (9/9, 8/8), Java 4 (9/9, 8/8; 244 min, a start defect for three rounds), tasks-api 6 (10/10, 7/7; 110 min;
+  not deliverable: one edge-probe 500 left), **C# 9 (9/9, quality 6/8; not deliverable: probe-found 500s never raised in a round - investigating)**, Go 3 (9/9, 8/8), tasks-api 5 (10/10, 7/7; 175 min).
   **Java 2 failed 0/9** (never started: an invented "SQLite via H2" mode; LF.1145-1147 fixed the evidence and the ceiling).
 - Every local family scored full hidden marks today except Rust (0/9 in four local runs; Haiku-built 9/9 twice).
 - Each run's product review: `reports/product-reviews/`.

@@ -5,9 +5,9 @@ the block below is written by `loop.sh state`. The map of all documents is `docs
 `docs/improvement-plan.md`; how the product works is `docs/PRODUCT.md`; how to run and test it is `docs/HANDOVER.md`;
 decisions in force are `docs/owner-decisions.md`; old information is found through `docs/ARCHIVE.md`.
 <!-- state:generated -->
-**As of:** 11-21 08:13 JST (written by `loop.sh state`). Harness 1ccebd77 committed; 15c86176 deployed (not the same).
-**Live, and stopped in the last day:** run-f7668f78 running at technical_lead
-**Last scored:** run-bdea5f76 notes-api-csharp 9/9 (completed, handoff 1.0; scored 11-21 08:13 JST); run-426163d2 notes-api-java 9/9 (completed, mixed, 178 active min, handoff 1.0; scored 11-21 07:14 JST); run-ef06e436 fullstack-bookmarks-py 8/8 (completed, mixed, 90 active min, handoff 1.0; scored 11-21 06:33 JST).
+**As of:** 11-21 08:43 JST (written by `loop.sh state`). Harness 8036ba6b committed; 15c86176 deployed (not the same).
+**Live, and stopped in the last day:** run-f7668f78 running at security_review
+**Last scored:** run-aaefe00d wordstats-cli 8/8 (completed, handoff 1.0; scored 11-21 08:43 JST); run-bdea5f76 notes-api-csharp 9/9 (completed, 92 active min, handoff 1.0; scored 11-21 08:13 JST); run-426163d2 notes-api-java 9/9 (completed, mixed, 178 active min, handoff 1.0; scored 11-21 07:14 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -15,7 +15,7 @@ decisions in force are `docs/owner-decisions.md`; old information is found throu
 |---|---|
 | Phase | **Learning runs, fixes deployed at once** (deep-review plan, owner 11-18: implement all; frozen-version measuring for Measure batches). The release-candidate count starts only when a full audit cycle finds nothing to fix. |
 | Models | :8888 `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` (key); :1234 `qwen3.6-35b-a3b-mtp@iq4_nl` (no key). Both the owner's; both take runs; each run is pinned to its port. |
-| Harness | Deployed 11-21 05:21 JST: f03b6a1a (LF.1140-1202). Deploying after both suites: LF.1203 `SUMMARISE_LATER_WITH_HEADROOM` (off). |
+| Harness | Deployed 11-21 06:05 JST: 15c86176 (LF.1140-1203). Deploying after both suites: LF.1204 `REPLY_ROOM_SIZED_PER_ROLE` (off). |
 | Switches | 53 fixes built in (always on). 29 optional switches (9 groups, `docs/measuring.md`); `WEB_LOOKUP_WHEN_STUCK` is off and set per run. Measure arms use `SWITCHES_OFF` per run. |
 | Operations | Nightly backups (`loop.sh backup --check`); finished runs older than 60 days cleared. Audit cron `01339d0d` every ~10 minutes (7-day expiry: recreate by 11-27). |
 | Suites | `loop.sh suite` and `loop.sh suite-production` both green at 18,701 passed. |
@@ -26,10 +26,10 @@ runs only when the owner starts them. Everything under measurement: `docs/improv
 
 ## The last three runs (11-20, hidden / quality; local model)
 Earlier runs: `reports/status-board/`, git history of this file.
-- **Live:** notes-api-java container 6 (:1234, from 07:17, `SUMMARISE_LATER_WITH_HEADROOM` on; 10/10 acceptance at 08:10); wordstats-cli container 3 (:8888, from 08:17).
+- **Live:** notes-api-java container 6 (:1234, from 07:17, `SUMMARISE_LATER_WITH_HEADROOM` on); textkit-lib container 3 (:8888, from 08:44).
 - Scored today: web-todo 3 and 4 (10/10, 6/6), Ruby 2 and 3 (9/9, 8/8; 64 and 56 min against 267 before), Java 3 (9/9, 8/8),
   PHP 6 and 7 (9/9, 8/8; 42 and 78 min), C# 7 and 8 (9/9, 8/8), Java 4 (9/9, 8/8; 244 min, a start defect for three rounds), tasks-api 6 (10/10, 7/7; 110 min;
-not deliverable: one edge-probe 500 left), **notes-api-csharp 10 (9/9, 8/8; delivered, 92 min, 4 fixes reverted), notes-api-java 5 (9/9, 8/8; delivered, 178 min, identical calls 36%), fullstack-bookmarks-py 1 (8/8, 7/7; delivered, 90 min; fix-order arm 3), web-todo 5 (10/10, 6/6; not deliverable on a 347px sideways overflow at 360px; 82 min; fix-order arm 2), notes-api 2 (9/9, 8/8; delivered, 119 min, mutation score 0), ,
+not deliverable: one edge-probe 500 left), **wordstats-cli 3 (8/8, 6/6; delivered, 23 min, mutation score 1.0), notes-api-csharp 10 (9/9, 8/8; delivered, 92 min, 4 fixes reverted), notes-api-java 5 (9/9, 8/8; delivered, 178 min, identical calls 36%), fullstack-bookmarks-py 1 (8/8, 7/7; delivered, 90 min; fix-order arm 3), web-todo 5 (10/10, 6/6; not deliverable on a 347px sideways overflow at 360px; 82 min; fix-order arm 2), notes-api 2 (9/9, 8/8; delivered, 119 min, mutation score 0), ,
   fullstack-bookmarks 2 (8/8, 6/7; delivered, 107 min; fix-order arm 1), **web-todo-react 1 (9/10, 6/6; not deliverable, false acceptance: four criteria deferred, 364 min on :1234)**, web-todo-react 2 (10/10, 5/6; delivered, 73 min), ,
   tasks-api 9 (10/10, 7/7, delivered, 136 min; QA trim shows no saving), notes-api-go 4 (9/9, 8/8, delivered, 51 min; `go.mod` lowered to 1.21, LF.1199), tasks-api 8 (10/10, 7/7, delivered, 83.5 min; prompt-size switches' second arm), ,
   notes-api 1 (9/9, 8/8, delivered, 70 min), fullstack-bookmarks 1 (8/8, 7/7; not deliverable on a false contract blocker being fixed; 289 min, 2.5 h on an unpassable test LF.1196 now catches), ,

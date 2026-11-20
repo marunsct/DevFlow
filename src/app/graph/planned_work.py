@@ -62,7 +62,8 @@ def work_orders_from_the_specification(
     """A milestone plan of one work order per role, made from the specification.
 
     None when it plans no files, or when the product is already built
-    (`BUILT_SHARE` of its planned files exist): changing it is the lead's.
+    (`BUILT_SHARE` of its planned files exist, a scaffold's unchanged stub not
+    counted): changing it is the lead's.
     """
     from app.agents.technical_lead import MilestonePlanOutput, SpecialistTask
     from app.graph.drafting import planned_files
@@ -77,8 +78,14 @@ def work_orders_from_the_specification(
     files = list(dict.fromkeys(path for path in files if not owned_by_the_harness(repo_root, path)))
     if not files:
         return None
-    if repo_root and sum((Path(repo_root) / path).is_file() for path in files) >= BUILT_SHARE * len(files):
-        return None
+    if repo_root:
+        from app.stacks.scaffold import files_still_as_the_scaffold_wrote_them
+
+        # A file the scaffold wrote and nothing has changed since is a stub, not the product's file built.
+        stubs = files_still_as_the_scaffold_wrote_them(repo_root)
+        built = sum((Path(repo_root) / path).is_file() and path not in stubs for path in files)
+        if built >= BUILT_SHARE * len(files):
+            return None
     interface_lines = getattr(specification, "interface_design", None) or []
     interface_files = {path for path in files if _naming(interface_lines, [path])}
     by_role: dict[str, list[str]] = {}

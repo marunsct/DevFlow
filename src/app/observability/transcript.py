@@ -383,12 +383,13 @@ def _specification_in(text: str) -> int:
 def _contract_in(text: str) -> int:
     """Characters of the environment contract inside a system prompt, or 0."""
     try:
-        from app.agents.environment_contract import environment_contract_text
+        from app.agents.environment_contract import environment_contract_text, environment_contracts_made
 
-        contract = environment_contract_text()
+        # Each workspace's contract names its own stack's commands: any one this process sent counts.
+        contracts = {environment_contract_text(), *environment_contracts_made()}
     except Exception:  # noqa: BLE001 - no contract, nothing to attribute
         return 0
-    return len(contract) if contract and contract in text else 0
+    return max((len(contract) for contract in contracts if contract and contract in text), default=0)
 
 
 def _text_of(content: Any) -> str:

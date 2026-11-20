@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -203,21 +204,46 @@ def _describe_the_browser_for_a_stage(runnable: list[str]) -> str:
     )
 
 
-def the_environment_contract() -> str:
+def the_commands_a_run_is_told(repo_root: str | Path | None = None) -> list[str]:
+    """The commands the contract names for this workspace, sorted.
+
+    Unpinned, every command the testing role may run. Once a stack is pinned, the commands of that stack's
+    toolchains (the sandbox's per-language table) and the ones every role has. The role's base list carries other
+    languages' runners, so a run pinned to a language outside it was told `cargo` and `go` and never the toolchain
+    of its own language, which the sandbox allows it.
+    """
+    from app.tools.sandbox import COMMON_EXECUTABLES, TOOLCHAINS, allowed_executables, project_stack
+
+    permitted = allowed_executables("testing_specialist", repo_root)
+    pinned = project_stack(repo_root)
+    if not pinned:
+        return sorted(permitted)
+    # The browser runner the contract names below, and how it is started, whatever the stack: the acceptance suites
+    # run on it in every language.
+    of_the_stack = set(COMMON_EXECUTABLES) | {"playwright", "npx"}
+    for key in pinned:
+        of_the_stack |= TOOLCHAINS.get(key, frozenset())
+    return sorted(command for command in permitted if command in of_the_stack)
+
+
+def the_environment_contract(repo_root: str | Path | None = None) -> str:
     """The facts every stage needs about the sandbox, in stable bytes.
 
-    Derived on every call from the same allowlist the sandbox enforces, so a
-    capability added or removed cannot leave the contract lying; computed once
-    at import into `ENVIRONMENT_CONTRACT`, so every call a process makes
-    carries identical bytes and the prefix cache is never broken by it.
+    Derived from the same allowlist the sandbox enforces for this workspace, so
+    a capability added or removed cannot leave the contract lying. A pure
+    function of the pinned stack, so every call after the stack is pinned
+    carries identical bytes; `environment_contract_text` keeps the result per
+    workspace and stack.
     """
     from app.tools.sandbox import allowed_executables
 
-    runnable = sorted(allowed_executables("testing_specialist"))
+    runnable = the_commands_a_run_is_told(repo_root)
+    # The browser by everything the role may run: a runner outside the pinned stack still runs.
+    browser = sorted(allowed_executables("testing_specialist", repo_root))
     return (
         "The execution environment, stated once for every stage - reference, not a request:\n"
         f"- Available commands: {', '.join(runnable)}.\n"
-        + _describe_the_browser_for_a_stage(runnable)
+        + _describe_the_browser_for_a_stage(browser)
         + _describe_the_network()
         + "- NOTHING IS RUNNING except the command you start. There is no database\n"
         "  server, no message broker, no cache and no application server waiting\n"
@@ -236,24 +262,39 @@ def the_environment_contract() -> str:
     )
 
 
-#: The contract, computed on first use and byte-stable for the life of the
-#: process afterwards. Not at import: `app.tools.sandbox` resolves its output
-#: budget through `app.agents`, so a module-level call back into the sandbox
-#: allowlist would import a half-built `sandbox` and fail every first import
-#: of it. First use is an agent build or a model call, long after every
-#: module is loaded. See `the_environment_contract`.
-_cached_contract: str | None = None
+#: The contract by workspace and pinned stack, computed on first use. Not at
+#: import: `app.tools.sandbox` resolves its output budget through `app.agents`,
+#: so a module-level call back into the sandbox allowlist would import a
+#: half-built `sandbox`. Keyed by the pinned stack as well as the workspace,
+#: because the stack is pinned after a run's first stages: the text changes at
+#: that stage boundary and never between two calls of one stage.
+_cached_contracts: dict[tuple[str, frozenset[str]], str] = {}
+
+#: How many contracts one process keeps; past this the oldest goes. A worker
+#: runs a few runs at a time, each with one or two pinned stacks.
+_MOST_CONTRACTS_KEPT = 64
 
 
-def environment_contract_text() -> str:
-    """The contract's bytes, computed once per process."""
-    global _cached_contract
-    if _cached_contract is None:
-        _cached_contract = the_environment_contract()
-    return _cached_contract
+def environment_contract_text(repo_root: str | Path | None = None) -> str:
+    """The contract's bytes for this workspace, computed once per workspace and pinned stack."""
+    from app.tools.sandbox import project_stack
+
+    key = (str(repo_root or ""), project_stack(repo_root))
+    text = _cached_contracts.get(key)
+    if text is None:
+        text = the_environment_contract(repo_root)
+        while len(_cached_contracts) >= _MOST_CONTRACTS_KEPT:
+            _cached_contracts.pop(next(iter(_cached_contracts)))
+        _cached_contracts[key] = text
+    return text
 
 
-def build_environment_contract_middleware() -> Any:
+def environment_contracts_made() -> list[str]:
+    """Every contract text this process has sent, so a request's characters can be attributed to it."""
+    return list(_cached_contracts.values())
+
+
+def build_environment_contract_middleware(repo_root: str | Path | None = None) -> Any:
     """Put the environment contract in every call's system prompt (or, with none, after the conversation).
 
     Built as middleware rather than added to each request builder for the
@@ -288,11 +329,13 @@ def build_environment_contract_middleware() -> Any:
                     from langchain_core.messages import SystemMessage
 
                     request = request.override(
-                        system_message=SystemMessage(content=f"{system.content}\n\n{environment_contract_text()}")
+                        system_message=SystemMessage(
+                            content=f"{system.content}\n\n{environment_contract_text(repo_root)}"
+                        )
                     )
                 else:
                     request = request.override(
-                        messages=[*messages, {"role": "user", "content": environment_contract_text()}]
+                        messages=[*messages, {"role": "user", "content": environment_contract_text(repo_root)}]
                     )
             except Exception:  # noqa: BLE001 - never fail a call over a hint
                 return handler(request)
@@ -305,5 +348,7 @@ __all__ = [
     "build_environment_contract_middleware",
     "describe_execution_environment",
     "environment_contract_text",
+    "environment_contracts_made",
+    "the_commands_a_run_is_told",
     "the_environment_contract",
 ]

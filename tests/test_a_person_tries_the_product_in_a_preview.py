@@ -50,13 +50,23 @@ def audited(monkeypatch):
     return lines
 
 
+def _the_worker_serves(monkeypatch, mode):
+    """The worker's preview loop says it serves, with the worker's setting; the app keeps its own, as deployed (only
+    the worker carries SANDBOX_EXECUTION_MODE=container)."""
+    from app.server import preview_worker
+
+    monkeypatch.setenv("SANDBOX_EXECUTION_MODE", mode)
+    preview_worker.say_it_serves()
+    monkeypatch.setenv("SANDBOX_EXECUTION_MODE", "in-container")
+
+
 @pytest.fixture
 def preview_on(monkeypatch, tmp_path):
     monkeypatch.setenv("PRODUCT_PREVIEW", "on")
-    monkeypatch.setenv("SANDBOX_EXECUTION_MODE", "container")
     monkeypatch.setenv("PRODUCT_PREVIEW_NETWORK", "preview-net")
     monkeypatch.setenv("WORKFLOW_WORKSPACE_ROOT", str(tmp_path / "workspaces"))
     monkeypatch.delenv("PRODUCT_PREVIEW_ORIGIN", raising=False)
+    _the_worker_serves(monkeypatch, "container")
 
 
 def _client(root, run_id, *, tenant="t"):
@@ -186,13 +196,51 @@ def test_another_tenant_s_operator_cannot_start_read_or_stop_it(tmp_path, previe
     assert _worker_requests(run_id) == []
 
 
-def test_in_worker_execution_has_no_container_for_a_preview(tmp_path, preview_on, monkeypatch, audited):
-    monkeypatch.setenv("SANDBOX_EXECUTION_MODE", "in-container")
+def test_a_worker_that_runs_commands_in_itself_has_no_container_for_a_preview(tmp_path, preview_on, monkeypatch,
+                                                                              audited):
+    _the_worker_serves(monkeypatch, "in-container")
     run_id = _a_run()
 
     refused = _client(_workspace(tmp_path), run_id).post(f"/api/runs/{run_id}/preview")
 
-    assert refused.status_code == 409 and _worker_requests(run_id) == []
+    assert refused.status_code == 409 and "SANDBOX_EXECUTION_MODE" in refused.json()["detail"]
+    assert _worker_requests(run_id) == []
+
+
+def test_with_no_worker_serving_previews_a_start_is_refused_as_unavailable(tmp_path, preview_on, audited):
+    """A real deployment: the app's start was refused as if commands ran in-process, because it read its own
+    SANDBOX_EXECUTION_MODE, which only the worker carries. With no worker's word, the start waits for a worker."""
+    from app.server.redis_client import get_redis_client
+
+    get_redis_client().delete("devflow:preview:worker")
+    run_id = _a_run()
+
+    refused = _client(_workspace(tmp_path), run_id).post(f"/api/runs/{run_id}/preview")
+
+    assert refused.status_code == 503 and "worker" in refused.json()["detail"]
+    assert _worker_requests(run_id) == [] and audited == []
+
+
+def test_the_worker_s_heartbeat_says_it_serves_and_the_app_starts_on_its_word(tmp_path, preview_on, monkeypatch,
+                                                                              audited):
+    """The app's own setting says in-container; the worker's says container. One beat of the worker's heartbeat is
+    what lets the app start a preview."""
+    from app.server import preview_worker
+    from app.server.redis_client import get_redis_client
+
+    redis = get_redis_client()
+    redis.delete("devflow:preview:worker")
+    monkeypatch.setattr(preview_worker, "_BEAT_SECONDS", 0)
+    monkeypatch.setenv("SANDBOX_EXECUTION_MODE", "container")
+    beats = iter([False, True])
+    preview_worker.keep_saying_it_serves(stop_when=lambda: next(beats))
+    monkeypatch.setenv("SANDBOX_EXECUTION_MODE", "in-container")
+    run_id = _a_run()
+
+    started = _client(_workspace(tmp_path), run_id).post(f"/api/runs/{run_id}/preview")
+
+    assert started.status_code == 200, started.text
+    assert redis.ttl("devflow:preview:worker") > 0  # it lapses when the worker stops saying it
 
 
 def test_the_product_is_served_through_the_signed_link_without_the_browser_s_cookies(tmp_path, preview_on, audited,

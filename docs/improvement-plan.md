@@ -5596,6 +5596,97 @@ main text only, paged, robots.txt for model-initiated reads, private addresses a
 - A free Stack Apps key and a GitHub token with no scopes, entered on the admin page.
 - Optional: a Brave Search API key. At an estimated 5–20 lookups a run, the $5 monthly credit covers about 50–200 runs.
 
+## Appendix 11 (2026-11-20): watch, try and steer a run - the workspace view (WS)
+
+**Owner, 2026-11-20:** run and check the product in the browser while it is built; IDE-style access, existing projects
+included; watch the agents work as in a coding-agent extension; steer the current agent or the whole run. Researched
+(OpenHands, Devin, Replit Agent, Bolt/WebContainers, Lovable, v0, Copilot coding agent, Cursor cloud agents, Claude
+Code, Codex cloud; code-server, openvscode-server, Theia, Monaco; E2B, Daytona and Gitpod preview links) and checked
+against what the harness has.
+
+### Verdict
+
+Valid and worth building: every leading agent product converges on the same four panels - a running preview, the
+code, one activity timeline, and steering - and they are what turns an unattended 1-3 hour run into one a person can
+trust and correct. Two parts of the idea change in its best form:
+
+1. **Not a full IDE first.** An editable VS Code beside agents that are writing the same files is the conflict users
+   complain about (Devin's take-over notes, Claude Code's rewind missing edits made outside it), and embedded
+   servers ship insecure defaults (openvscode-server's token-less image, OpenHands' VS Code tab "Forbidden" off
+   localhost). The best form is a read-only code view always, and an editable IDE only in a *take-over*: the run
+   pauses, the person edits, and on resume the harness tells the agents what the person changed.
+2. **Preview through the sandbox, not in the browser.** In-browser runtimes (WebContainers) run only JS/WASM; this
+   harness builds Python, Go, Java, C#, PHP, Ruby and Rust. Every multi-language product proxies a container port to
+   a private, token-gated preview origin - and the harness already starts products in their own containers.
+
+### What exists (inventory 2026-11-20)
+
+| Capability | Built | Gaps |
+|---|---|---|
+| Live activity | WebSocket `/{id}/events/stream` with replay from `last_event_id` (the OpenHands shape), `AgentActivity` lanes, tool calls and results, timeline, logs, sprint summary | no command output beyond clipped results, no live diff while a stage works, no plan panel apart from the log |
+| Code | artifacts list and viewer, per-commit diffs (`/changes`), product and handover zips | no file tree, no highlighted code view, no editing, no branch or push |
+| Preview | the start probe, the delivered start, page screenshots on every suite run (`DeliveryPanel`), how-to-run | nothing starts the product for a person or exposes its port |
+| Steering | notes with scope (run / next stage) and audience (`steering.py`, `SteeringBox`), pause at a boundary, resume with a direction, rewind points, review and approval gates, change requests | notes cannot be edited or withdrawn, nothing says an agent read a note, audience is API-only, no note to a paused run, the review policy cannot change mid-run, no "stop this stage now" |
+| Existing projects | seeding from git (validated URL, token), archive upload, from a finished run (`CHANGE_REQUEST_RUNS`, off); regression baseline (`REGRESSION_CONTRACT`, off) | no branch or PR delivery, no code map of the existing project, "Request a change" shown while its switch is off |
+
+### The design
+
+**WS.1 Workspace view (UI on existing endpoints, plus one).** A *Workspace* tab: a file tree (new
+`GET /{id}/files`, paths and sizes, the harness's own folders and tool-filled ones left out by the same table LF.1148
+uses), a read-only Monaco view with highlighting, and the diff of each file since the last accepted sprint, updated
+from the event stream as stages write. Nothing editable here.
+
+**WS.2 One activity timeline, readable.** The stream already carries messages, tool calls and results; add the
+command's output (folded, expandable), the files a stage changed as a diff link, and a plan panel apart from the log:
+the sprint's work orders with done/working/open, the attempt and round. Steps collapsed by default (OpenHands, Devin,
+Copilot all do this; a raw log overwhelms).
+
+**WS.3 Steering at three levels, with the agent's acknowledgement.**
+- *This agent*: a note to the stage working now, delivered at its next model call - the tool-call boundary Claude Code,
+  Replit ("Steer") and Copilot ("after the current tool call") all use; the stream records "read by <stage>".
+- *The whole run*: a note every later stage reads (the existing run scope), or the run's review policy changed live.
+- *Stop and redirect*: pause at the boundary, then resume with a direction (exists) - one control, not two.
+- Queued notes shown greyed until read, editable and withdrawable until then (Claude Code, Replit's queue).
+- A plan gate: the sprint plan shown with "go" and a timeout that proceeds on its own (Devin's 30 seconds), set per
+  run - the involvement choice on Home already holds the policy.
+
+**WS.4 Try it - a preview of the product.** `POST /{id}/preview` starts the product the way its user would (the
+delivered start, LF.1125/LF.1145) in its own container on a port from a fixed range; a reverse proxy serves it at a
+separate preview origin behind a short-lived signed token (Daytona's signed links, E2B's restricted access, v0's
+server-side proxy), iframe-sandboxed, stopped when idle. Two sources: *last accepted sprint* (stable, the default)
+and *live* (the workspace now, labelled "being built"). For a service without a page, the preview is a request
+console against its interface contract. Egress rules unchanged; no secrets in the product's environment.
+
+**WS.5 Point and say (web products).** In the preview, select an element and type what should change: it becomes a
+steering note or a change request carrying the element's selector, the page's screenshot crop and the source file the
+markup comes from (Lovable's and v0's select-to-edit, without their in-browser AST editing).
+
+**WS.6 Take over and hand back.** From a paused run, *Edit* opens a token-protected code-server (MIT, Open VSX)
+through the same proxy, on the workspace; *Hand back* commits the person's edits as their own, and the next stage is
+told what changed (the diff, as the note) - Devin's take-over, Cursor's "take over the desktop". Locked suites and the
+harness's files stay read-only in the editor.
+
+**WS.7 Existing projects end to end.** Deliver as a branch and pull request on the repository it was seeded from
+(Copilot `copilot/*`, Cursor, Codex), turn on the regression baseline for seeded products, add a code map of the
+existing project to intake (the files, their exports and tests - `workspace_digest` and the code graph already compute
+most of it), and hide "Request a change" while its switch is off.
+
+### Order and risk
+
+| Step | Size | Risk | Why this order |
+|---|---|---|---|
+| WS.3 steering acknowledgement, edit/withdraw, three levels | S | low | steering exists; this makes it trustworthy |
+| WS.1 workspace view | M | low (read-only) | everything it needs is built but one endpoint |
+| WS.2 timeline readability, plan panel | M | low | UI on the existing stream |
+| WS.4 preview | L | medium: ports, proxy, auth, lifecycle | the feature most asked for; needs WS.1's tab |
+| WS.7 existing projects: PR delivery, code map | M | medium | brownfield is where customers are |
+| WS.5 point and say | M | low once WS.4 exists | web products only |
+| WS.6 take over | L | medium: edit conflicts, IDE security | last: the read-only view and steering cover most needs |
+
+UI-only steps keep the release-candidate count (owner 2026-11-04). WS.4 and WS.6 add a service and are measured: the
+preview's start success rate against the delivered-start check, its time to first page, and zero access without a
+token.
+
 ## E. Earlier plans, merged into this document on 2026-10-19
 
 Two separate plan documents predate the appendices above. They are kept

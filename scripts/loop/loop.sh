@@ -5,6 +5,7 @@
 #   scripts/loop/loop.sh status [run]        state of the run (default: current) + anything else running
 #   scripts/loop/loop.sh start [brief]       create and start a run (default tests/brief_low.md)
 #   scripts/loop/loop.sh cancel [run-id]     cancel a run (default: the current one); needs LOOP_USER/LOOP_PASSWORD
+#   scripts/loop/loop.sh lookups               whether each outside lookup source answers (also shown by ready)
 #   scripts/loop/loop.sh measuring             one row per switch in docs/measuring.md, from the ledger and scores
 #   scripts/loop/loop.sh pin on|off [run-id] keep a run on its model / let it follow the settings (PIN_URL, PIN_MODEL_NAME pin it to an endpoint); PIN_MODEL=1 on start/bench pins at the start; RUN_NAME="..." on start/bench names the run
 #                                            SWITCHES_OFF="A B" / SWITCHES_ON="C" on start/bench set this run's own switches (an arm on one SHA, HR2.E.1)
@@ -500,7 +501,14 @@ ready)
   # The disk first (LR.3): a full disk stops the database and every run with it. Its verdict line stays above the
   # model's, and a disk under the floor makes the last line NOT ALL READY, so nothing gated on `ready` starts.
   if ! "$PY" "$HERE/disk_ready.py"; then in_worker model_ready.py "$@" | sed '$d'; echo "NOT ALL READY"; exit 1; fi
-  in_worker model_ready.py "$@" ;;
+  # The outside lookup sources, asked live (WL.7): above the verdict, never in place of it - the gated start reads the
+  # last line alone, and a source that does not answer only means a stuck fixer's lookups find less.
+  out=$(in_worker model_ready.py "$@"); status=$?
+  printf '%s\n' "$out" | sed '$d'
+  in_worker lookup_ready.py 2>/dev/null || true
+  printf '%s\n' "$out" | tail -1
+  exit "$status" ;;
+lookups) in_worker lookup_ready.py ;;
 fitness) shift; in_worker model_fitness.py "$@" ;;
 reasoning-probe) shift; in_worker reasoning_probe.py "${@:-plan}" ;;
 diagnose) shift; in_worker model_diagnose.py "$@" ;;

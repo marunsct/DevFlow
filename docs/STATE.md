@@ -15,7 +15,7 @@ decisions in force are `docs/owner-decisions.md`; old information is found throu
 |---|---|
 | Phase | **Learning runs, fixes deployed at once** (deep-review plan, owner 11-18: implement all; frozen-version measuring for Measure batches). The release-candidate count starts only when a full audit cycle finds nothing to fix. |
 | Models | :8888 `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` (key); :1234 `qwen3.6-35b-a3b-mtp@iq4_nl` (no key). Both the owner's; both take runs; each run is pinned to its port. |
-| Harness | Deployed 11-20 10:25 JST: 55975edc (LF.1140-1159, all of 11-20). Committed since: documentation consolidation, `WEB_LOOKUP_WHEN_STUCK` registered (not deployed). |
+| Harness | Deploying 11-20 11:27 JST: LF.1160 (the Spring pack holds the jar name), LF.1161 (WL.7: `ready` asks each lookup source live), LF.1162 (a mutant's test run cut off at 3x the normal run), the docs consolidation and the `WEB_LOOKUP_WHEN_STUCK` registration. Building in parallel worktrees: WL.3, WS.3, WS.1, mutation gaps to one fixer (built, merging next). |
 | Switches | 53 fixes built in (always on). 29 optional switches (9 groups, `docs/measuring.md`); `WEB_LOOKUP_WHEN_STUCK` is off and set per run. Measure arms use `SWITCHES_OFF` per run. |
 | Operations | Nightly backups (`loop.sh backup --check`); finished runs older than 60 days cleared. Audit cron `01339d0d` every ~10 minutes (7-day expiry: recreate by 11-27). |
 | Suites | `loop.sh suite` and `loop.sh suite-production` both green at 18,701 passed. |

@@ -792,7 +792,23 @@ def timeout_for(category: str, repo_root: str | Path | None = None) -> int:
             wait = 0
         if wait:
             limit = max(limit, wait + PROBE_AFTER_THE_SERVER_WAIT_SECONDS)
-    return int(min(limit, MAX_TIMEOUT_SECONDS))
+    cap = _A_CAP.get()
+    return int(min(limit, MAX_TIMEOUT_SECONDS, cap if cap else MAX_TIMEOUT_SECONDS))
+
+
+#: A tighter limit for the commands run inside `capped`: the harness's own measurement of a change it made, which may
+#: make the tests never return.
+_A_CAP: contextvars.ContextVar[int | None] = contextvars.ContextVar("a_cap", default=None)
+
+
+@contextmanager
+def capped(seconds: int):
+    """Every command run inside this block is held to at most `seconds`, whatever its category allows."""
+    token = _A_CAP.set(max(1, int(seconds)))
+    try:
+        yield
+    finally:
+        _A_CAP.reset(token)
 
 
 #: Seconds one acceptance file's run is given beyond its suite's wait for the server.

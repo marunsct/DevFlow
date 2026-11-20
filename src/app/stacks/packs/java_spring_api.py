@@ -307,6 +307,11 @@ class ItemControllerTest {
 }
 """
 
+#: The build's jar name, held at every round (`StackPack.required_signatures`): the pack's `start.sh` and Dockerfile run
+#: `target/app.jar`. Measured on one Java run: a work order rewrote `pom.xml` without `<finalName>app</finalName>`, the
+#: build made `notes-api-1.0.0.jar`, and every start said "Unable to access jarfile target/app.jar" for a whole attempt.
+JAR_NAME = {"pom.xml": ((r"<finalName>\s*app\s*</finalName>", "<finalName>app</finalName>"),)}
+
 PACK = service_pack(
     golden_example={
         "src/main/java/app/{{package}}/ItemStore.java": GOLDEN_STORE,
@@ -314,6 +319,7 @@ PACK = service_pack(
         "src/test/java/app/{{package}}/ItemControllerTest.java": GOLDEN_TEST,
     },
     known_errors=SPRING_KNOWN_ERRORS,
+    required_signatures=JAR_NAME,
     sandbox_image=sandbox.JAVA,
     name="java-spring-api",
     title="HTTP service in Java on Spring Boot",

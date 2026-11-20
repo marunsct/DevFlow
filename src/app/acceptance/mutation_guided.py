@@ -28,6 +28,7 @@ does is wrong.
 from __future__ import annotations
 
 import logging
+import time
 import os
 import re
 from pathlib import Path
@@ -162,7 +163,9 @@ def probe(
         from app.acceptance import mutation_equivalents
         run_unit = run_unit or (lambda: _run_the_unit_tests(root))
         run_suite = run_suite if run_suite is not None else _the_locked_suite(root)
+        started = time.monotonic()
         before = _passing(run_unit())
+        allowed = _allowed_after(started)
         if not before:
             # A finding is settled by a unit test that passes without the change;
             # with none passing now, nothing could settle it.
@@ -189,7 +192,10 @@ def probe(
         original = mutation._journal_before_changing(root, project, site)
         tried += 1
         try:
-            after = _passing(run_unit())
+            from app.tools.sandbox import capped
+
+            with capped(allowed):
+                after = _passing(run_unit())
             noticed = after is None or bool(before - after)
             if not noticed and run_suite is not None:
                 noticed = bool(held - run_suite())
@@ -336,6 +342,18 @@ def _located(root: Path, site: dict) -> dict | None:
     return None
 
 
+#: How much longer than the unchanged run the run with a change may take before it counts as one the tests notice -
+#: tests that never return have noticed it (mutation tools count a timed-out mutant as killed).
+CHANGE_RUN_FACTOR = 3
+#: Seconds a change's run is always allowed, however quick the unchanged run.
+MOST_SECONDS_FOR_A_CHANGE_FLOOR = 60
+
+
+def _allowed_after(started: float) -> int:
+    """Seconds a run with a change may take, from when the unchanged run began (now is its end)."""
+    return max(MOST_SECONDS_FOR_A_CHANGE_FLOOR, int((time.monotonic() - started) * CHANGE_RUN_FACTOR) + 30)
+
+
 def settled(
     repo_root: str | Path, defect: Any, *, run_unit: Callable[[], set[str] | bool | None] | None = None,
 ) -> bool | None:
@@ -357,9 +375,17 @@ def settled(
         if site is None:
             return None
         run_unit = run_unit or (lambda: _run_the_unit_tests(root))
+        # The run as it is first, timed: the change's run is held to a small multiple of it. Measured on one C# run:
+        # a change that made the unit tests never return waited out the whole 10-minute test limit at every check.
+        started = time.monotonic()
+        run_unit()
+        allowed = _allowed_after(started)
         original = mutation._journal_before_changing(root, root, site)
         try:
-            with_the_change = run_unit()
+            from app.tools.sandbox import capped
+
+            with capped(allowed):
+                with_the_change = run_unit()
         finally:
             mutation._restore_and_close_the_journal(root, root / site["file"], original)
         without_it = run_unit()

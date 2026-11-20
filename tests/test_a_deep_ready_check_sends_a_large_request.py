@@ -54,4 +54,4 @@ def test_the_deep_check_is_opt_in_and_reached_from_the_loop_script():
     assert 'DEEP = "deep" in sys.argv[1:]' in SOURCE
     loop = (ROOT / "scripts" / "loop" / "loop.sh").read_text()
     ready = loop[loop.index("\nready)"):loop.index("\nfitness)")]
-    assert 'in_worker model_ready.py "$@" ;;' in ready
+    assert 'in_worker model_ready.py "$@"' in ready, "ready passes its arguments (deep) to the model check"

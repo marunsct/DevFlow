@@ -996,12 +996,20 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     # A repair changes only the tests it was sent for: any other it rewrote goes back as the review approved it.
     problems, result, worse = _the_repair_measured(root)
     if worse:
-        # The suite as it was locked comes back before anything else reads this one; the writers are told what the
-        # repair lost, so it is never locked in place of the better suite.
-        put_back = suite.put_back_the_suite_before_the_repair(root)
-        logger.warning("A repair left the suite worse; put back %d file(s) as locked", len(put_back))
+        # The repair's best measured version comes back - or, without one, the suite as it was locked - before anything
+        # else reads this one; the writers are told what the repair lost and which version came back, so a worse suite
+        # is never locked in place of the better one.
+        best = suite.the_best_of_the_repair(root)
+        put_back = suite.put_back_the_best_of_the_repair(root)
+        logger.warning("A repair left the suite worse; put back %d file(s) %s", len(put_back),
+                       f"as the repair's best measured version ({best.get('passed')} of {best.get('tests')} passing)"
+                       if best else "as locked")
         result = suite.run(root)
         problems = [worse, *problems]
+    # The suite as measured here, when no worse than before the repair and than its best so far, is the version a
+    # later change that leaves it worse puts back (measured on one run: the harness's own rewrite of six tests was
+    # lost to the lock that way, and the six went back for repair again).
+    suite.keep_the_best_of_the_repair(root, result)
     if not result.ran:
         problems.append(
             f"The suite does not run: {result.problem}.\n{result.output[-1500:]}".strip()

@@ -34,6 +34,11 @@ logger = logging.getLogger(__name__)
 
 STATE_FILE = f"{contract.HARNESS_DIR}/acceptance.json"
 SNAPSHOT_DIR = f"{contract.HARNESS_DIR}/acceptance-snapshot"
+#: The best measured version of a suite under repair, beside the snapshot of its lock: a later change that leaves the
+#: suite worse puts back this one, not the lock. Measured on one run: the harness's own rewrite of six tests measured
+#: 57 of 62 passing where the lock had 52; QA's next change measured worse, the lock came back, the six rewrites were
+#: lost, and the six tests went back for repair again. Cleared at every lock.
+REPAIR_BEST_DIR = f"{contract.HARNESS_DIR}/acceptance-repair-best"
 #: Every version of the suite that was ever locked, `v1`, `v2`, ..., each next
 #: to `vN.diff` - what changed from the version before. A lock replaces the
 #: snapshot, so when QA repaired a reopened suite nothing showed what it
@@ -375,6 +380,8 @@ def lock(repo_root: str | Path) -> dict[str, str]:
     state.pop("repairing", None)
     state.pop("before_repair", None)
     state.pop("repair_bodies", None)
+    state.pop("repair_best", None)
+    shutil.rmtree(root / REPAIR_BEST_DIR, ignore_errors=True)
     _save_state(repo_root, state)
     # A reopened suite's findings go to its writers first, not compared with the rounds before this lock.
     from app.acceptance import check_findings
@@ -496,34 +503,113 @@ def a_repair_that_made_it_worse(repo_root: str | Path, result: AcceptanceResult)
     before = _state(repo_root).get("before_repair") or {}
     if not before or not is_being_repaired(repo_root) or not result.ran:
         return ""
-    tests = len(result.report.tests)
-    passed = sum(1 for test in result.report.tests if test.outcome == "passed")
-    if tests >= int(before.get("tests") or 0) and passed >= int(before.get("passed") or 0):
+    tests, passed = _counted(result)
+    if _no_worse_than(tests, passed, before):
         return ""
+    best = the_best_of_the_repair(repo_root)
+    changed = best.get("changed") or []
+    came_back = (
+        "The repair's best measured version so far has been put back: the suite as it was when it ran "
+        f"{best.get('tests')} test(s) and {best.get('passed')} passed, with the changes made up to then"
+        + (" (to " + ", ".join(f"`{name}`" for name in changed) + ")" if changed else "")
+        + ". Build on that version."
+        if best else "The suite as it was locked has been put back."
+    )
     return (
         f"The repair left the suite worse than it was: it now runs {tests} test(s) and {passed} pass, where before the "
-        f"repair it ran {before.get('tests')} and {before.get('passed')} passed. The suite as it was locked has been "
-        "put back. Change only the tests named for repair, and keep every other test running as it was."
+        f"repair it ran {before.get('tests')} and {before.get('passed')} passed. {came_back} Change only the tests "
+        "named for repair, and keep every other test running as it was."
     )
+
+
+def _counted(result: AcceptanceResult) -> tuple[int, int]:
+    """(tests run, tests passed) of a measurement."""
+    tests = list(result.report.tests)
+    return len(tests), sum(1 for test in tests if test.outcome == "passed")
+
+
+def _no_worse_than(tests: int, passed: int, than: dict[str, Any]) -> bool:
+    """Whether a measurement runs no fewer tests and passes no fewer than `than` ({"tests", "passed"})."""
+    return tests >= int(than.get("tests") or 0) and passed >= int(than.get("passed") or 0)
+
+
+def the_best_of_the_repair(repo_root: str | Path) -> dict[str, Any]:
+    """What the kept best version of a suite under repair measured ({"tests", "passed", "changed"}); {} when none."""
+    state = _state(repo_root)
+    best = state.get("repair_best") or {}
+    if not best or "lock" in state or not (Path(repo_root) / REPAIR_BEST_DIR).is_dir():
+        return {}
+    return best
+
+
+def keep_the_best_of_the_repair(repo_root: str | Path, result: AcceptanceResult) -> bool:
+    """Keep the suite as it stands as the repair's best version, when `result` measured it no worse than the suite
+    before the repair and than the best kept so far: no fewer tests run, no fewer passing. Whether it was kept.
+
+    A version that passes more by running fewer tests is never kept: a loss of tests is not a gain. A suite no
+    different from its lock is not kept either: the lock is what comes back without one. No model call. Never raises.
+    """
+    try:
+        state = _state(repo_root)
+        before = state.get("before_repair") or {}
+        if not before or not is_being_repaired(repo_root) or not result.ran:
+            return False
+        tests, passed = _counted(result)
+        if not (_no_worse_than(tests, passed, before) and _no_worse_than(tests, passed, state.get("repair_best") or {})):
+            return False
+        root = Path(repo_root)
+        now = {path.relative_to(root).as_posix(): path.read_text(encoding="utf-8", errors="replace")
+               for path in suite_files(repo_root)}
+        if not now or now == _the_files_of(root / SNAPSHOT_DIR):
+            return False
+        best = root / REPAIR_BEST_DIR
+        shutil.rmtree(best, ignore_errors=True)
+        for path in suite_files(repo_root):
+            target = best / path.relative_to(root)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, target)
+        # The tests sent for repair that this version changed: a test it keeps rewritten is a changed one, so
+        # `tests_left_unrepaired` never sends it back as "exactly as it was locked" after this version comes back.
+        bodies = _test_bodies(repo_root)
+        changed = sorted(name for name, body in (state.get("repair_bodies") or {}).items()
+                         if name in bodies and bodies[name].strip() != str(body).strip())
+        state["repair_best"] = {"tests": tests, "passed": passed, "changed": changed}
+        _save_state(repo_root, state)
+        return True
+    except Exception as error:  # noqa: BLE001 - without it, the lock is what comes back, as before
+        logger.debug("The repair's best version could not be kept: %s", error)
+        return False
+
+
+def put_back_the_best_of_the_repair(repo_root: str | Path) -> list[str]:
+    """Put back the repair's best measured version (`keep_the_best_of_the_repair`), or the suite as last locked when
+    none is kept. One line per file."""
+    if the_best_of_the_repair(repo_root):
+        return _put_back_from(Path(repo_root), Path(repo_root) / REPAIR_BEST_DIR,
+                              "is back as the repair's best measured version")
+    return put_back_the_suite_before_the_repair(repo_root)
 
 
 def put_back_the_suite_before_the_repair(repo_root: str | Path) -> list[str]:
     """Put back every file of the suite as it was last locked, and remove what was added since. One line per file."""
-    root = Path(repo_root)
-    snapshot = root / SNAPSHOT_DIR
-    if not snapshot.is_dir():
+    return _put_back_from(Path(repo_root), Path(repo_root) / SNAPSHOT_DIR, "is back as it was locked")
+
+
+def _put_back_from(root: Path, kept_in: Path, said: str) -> list[str]:
+    """Every file of the suite as kept under `kept_in`, and what was added since removed. One line per file."""
+    if not kept_in.is_dir():
         return []
-    kept = {path.relative_to(snapshot).as_posix() for path in snapshot.rglob("*") if path.is_file()}
+    kept = {path.relative_to(kept_in).as_posix() for path in kept_in.rglob("*") if path.is_file()}
     repairs = []
     for relative in sorted(kept):
         target = root / relative
-        source = snapshot / relative
+        source = kept_in / relative
         if target.is_file() and _digest(target) == _digest(source):
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
-        repairs.append(f"{relative} is back as it was locked.")
-    for path in suite_files(repo_root):
+        repairs.append(f"{relative} {said}.")
+    for path in suite_files(root):
         relative = path.relative_to(root).as_posix()
         if relative not in kept:
             path.unlink(missing_ok=True)

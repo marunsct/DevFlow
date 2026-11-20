@@ -75,11 +75,16 @@ def _named(tool: Any) -> str:
 
 
 def without_the_seldom_called(tools: Iterable[Any], keep: Iterable[str] = ()) -> list[Any]:
-    """`tools` less the seldom-called ones, but for those named in `keep`; all of them when the switch is off."""
+    """`tools` less the seldom-called ones, but for those named in `keep` and the web tools when the run's Internet
+    lookups choice offers them (`WEB_TOOLS_OFFERED`); all of them when the switch is off."""
     tools = list(tools)
     if not enabled():
         return tools
     kept = set(keep)
+    from app.tools import web_search
+
+    if web_search.offered():
+        kept |= web_search.WEB_TOOL_NAMES
     return [tool for tool in tools if _named(tool) not in SELDOM_CALLED or _named(tool) in kept]
 
 

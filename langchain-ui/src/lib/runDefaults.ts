@@ -5,8 +5,19 @@
  */
 import { api } from '../api';
 
+/** What the agents may look up on the internet in a run (plan WL.3). */
+export type InternetLookups = 'off' | 'when_stuck' | 'always';
+
+/** The choices, in the form's order: id, title, what it means. */
+export const INTERNET_LOOKUPS: [InternetLookups, string, string][] = [
+  ['off', 'Off', 'Nothing is looked up on the internet: no web search, no page reading, no error lookups.'],
+  ['when_stuck', 'When stuck', 'When a fix leaves an error open, the harness looks the error up (Stack Overflow, GitHub issues, the private web search) and shows the fixer what others found; only the error line is sent, without paths or names of the project.'],
+  ['always', 'Always', 'As When stuck, and the agents that read documentation are also offered a web search and a page reader.'],
+];
+
 export interface RunDefaults {
   delivery_mode?: 'fast' | 'thorough';
+  internet_lookups?: InternetLookups;
   use_frontier_model?: boolean;
   unattended?: boolean;
   auto_approve?: boolean;
@@ -59,6 +70,9 @@ export function describeRunDefaults(defaults: RunDefaults): string[] {
   else if (defaults.reviews) {
     const asked = REVIEW_POINTS.filter(([key]) => defaults.reviews?.[key]).map(([, words]) => words.toLowerCase());
     lines.push(asked.length ? `Stops for review at: ${asked.join(', ')}` : 'Stops for no review');
+  }
+  if (defaults.internet_lookups) {
+    lines.push(`Internet lookups: ${INTERNET_LOOKUPS.find(([id]) => id === defaults.internet_lookups)?.[1] ?? defaults.internet_lookups}`);
   }
   if (defaults.approval_timeout_minutes) lines.push(`A waiting gate approves itself after ${defaults.approval_timeout_minutes} min`);
   if (defaults.allow_subdirectories === false) lines.push('Writes only at the top of the workspace');

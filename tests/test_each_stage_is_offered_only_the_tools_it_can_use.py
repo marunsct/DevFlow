@@ -138,10 +138,35 @@ def test_with_the_switch_off_every_tool_is_offered_as_before(lean, tmp_path):
     from app.agents.specialists import create_specialist_agent
 
     lean.setenv("LEAN_TOOL_LISTS", "off")
+    lean.setenv("WEB_TOOLS_OFFERED", "on")
     offered, _ = _offered(lambda **kw: create_specialist_agent("backend", **kw), _seeded(tmp_path))
 
     assert {"changed_since_sprint", "search_the_web", "read_web_page", "use_runtime", "code_graph",
             "ask_specification"} <= set(offered)
+
+
+def test_a_run_that_chose_always_offers_the_web_tools_even_with_lean_lists(lean, tmp_path):
+    """The user's Internet lookups choice "always" (plan WL.3): the stages that read documentation get the web tools."""
+    from app.agents.principal_architect import create_principal_architect_agent
+    from app.agents.specialists import create_specialist_agent
+
+    lean.setenv("WEB_TOOLS_OFFERED", "on")
+    builder, _ = _offered(lambda **kw: create_specialist_agent("backend", **kw), _seeded(tmp_path))
+    architect, _ = _offered(create_principal_architect_agent, _with_a_document(_seeded(tmp_path)))
+
+    assert {"search_the_web", "read_web_page"} <= set(builder) & set(architect)
+
+
+def test_a_run_that_chose_off_is_never_offered_the_web_tools_even_with_full_lists(lean, tmp_path):
+    """The user's Internet lookups choice "off" (plan WL.3) holds whatever the tool lists' own switch says."""
+    from app.agents.specialists import create_specialist_agent
+
+    lean.setenv("LEAN_TOOL_LISTS", "off")
+    lean.setenv("WEB_TOOLS_OFFERED", "off")
+    offered, _ = _offered(lambda **kw: create_specialist_agent("backend", **kw), _seeded(tmp_path))
+
+    assert not {"search_the_web", "read_web_page"} & set(offered)
+    assert {"read_docs", "look_up_package"} <= set(offered), "package metadata and documentation stay"
 
 
 def test_the_new_line_avoids_the_banned_words():

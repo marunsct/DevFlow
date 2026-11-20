@@ -78,6 +78,15 @@ SETTABLE_SECRETS: dict[str, str] = {
     # model is not. See `app.models.roles`.
     "judgement_api_key": "JUDGEMENT_API_KEY",
 }
+# The internet lookup sources' keys (plan WL.3): read by `app.tools.lookups` when its variable is unset, never laid
+# into the model's environment - a stage, a sandbox or a model client has no use for them.
+LOOKUP_SECRETS: dict[str, str] = {
+    # A free Stack Apps key raises Stack Exchange's limit from 300 requests a day to 10,000.
+    "stackexchange_key": "STACKEXCHANGE_KEY",
+    # A GitHub token with no scopes raises the issue search's limit.
+    "github_token": "GITHUB_TOKEN",
+}
+SETTABLE_SECRETS.update(LOOKUP_SECRETS)
 
 # Settings an administrator may change at runtime, mapped to the environment
 # variable each one overrides. Credentials are deliberately absent: they belong
@@ -664,6 +673,8 @@ def effective_environment(
             environment.pop("JUDGEMENT_API_KEY", None)
     held_by_secret = ""
     for key, value in secrets().items():
+        if key in LOOKUP_SECRETS:
+            continue
         if value and SETTABLE_SECRETS[key] in withheld:
             held_by_secret = held_by_secret or (value if SETTABLE_SECRETS[key] != "JUDGEMENT_API_KEY" else "")
         elif value:
@@ -707,6 +718,7 @@ __all__ = [
     "CACHE_TTL_SECONDS",
     "SECRETS_TABLE_SQL",
     "SETTABLE_KEYS",
+    "LOOKUP_SECRETS",
     "SETTABLE_SECRETS",
     "MODEL_KEYS",
     "SETTINGS_TABLE_SQL",

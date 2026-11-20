@@ -166,6 +166,22 @@ export interface LocalModelSettingsPayload {
   thinking_mode?: "default" | "on" | "off";
 }
 
+/** Write-only, as the provider keys are: omitted or null leaves the stored key, "" deletes it, a value sets it. */
+export interface LookupKeysUpdate {
+  github_token?: string | null;
+  stackexchange_key?: string | null;
+}
+
+/** The internet lookup sources' keys as the admin page shows them: masked, never the value (plan WL.3). */
+export interface LookupKeysView {
+  github_token_configured: boolean;
+  github_token_from_environment: boolean;
+  github_token_hint: string | null;
+  stackexchange_key_configured: boolean;
+  stackexchange_key_from_environment: boolean;
+  stackexchange_key_hint: string | null;
+}
+
 /** Pin a run to the model it last ran on, or let it follow the current model settings again. With `base_url` and/or `model` (pinning only) the run is pinned to that endpoint and model instead, without touching the global settings. Neither carries a credential: the endpoint's key is resolved server-side, per endpoint. */
 export interface ModelPinRequest {
   /** Pin to this OpenAI-compatible address (http or https, no credentials in it). */
@@ -415,6 +431,8 @@ export interface RunStatusResponse {
   error: string | null;
   /** When a gate that is waiting for a person approves itself (the run's approval timeout), or null when nothing waits or the gate waits for the person however long it takes. */
   gate_deadline: string | null;
+  /** The Internet lookups choice the run was started with, or null when it follows the deployment's switches. */
+  internet_lookups: "off" | "when_stuck" | "always" | null;
   /** The deployment's ceiling on a run's priced spend (`MAX_RUN_COST_USD`), or null when none is set. */
   max_run_cost_usd: number | null;
   /** The deployment's bound on the tokens a run uses (`MAX_RUN_TOKENS`), or null when none is set. */
@@ -703,6 +721,8 @@ export interface StartRunRequest {
   auto_approve?: boolean | null;
   /** Fast: fewer, leaner stages. Thorough: every stage in full. Omit to keep what the run was registered with, else the deployment's default. */
   delivery_mode?: "fast" | "thorough" | null;
+  /** What the agents may look up on the internet in this run. 'off': nothing - no lookup of a stuck error and no web search or page reader (the package registries and official documentation stay: they are package metadata). 'when_stuck': the harness looks up an error a fix did not close. 'always': that, and the web search and page reader offered to every stage that reads documentation. Kept as the run's own switch settings; a switch named in `switches` beats it. Omitted, the run follows the deployment's switches. */
+  internet_lookups?: "off" | "when_stuck" | "always" | null;
   /** Override the provider for this run. */
   llm_provider?: string | null;
   /** Override the model for this run. */

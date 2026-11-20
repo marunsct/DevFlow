@@ -174,6 +174,17 @@ class StartRunRequest(BaseModel):
             "this run only: two runs on one harness version can then be a measurement's two arms."
         ),
     )
+    internet_lookups: Literal["off", "when_stuck", "always"] | None = Field(
+        default=None,
+        description=(
+            "What the agents may look up on the internet in this run. 'off': nothing - no lookup of a stuck "
+            "error and no web search or page reader (the package registries and official documentation stay: "
+            "they are package metadata). 'when_stuck': the harness looks up an error a fix did not close. "
+            "'always': that, and the web search and page reader offered to every stage that reads documentation. "
+            "Kept as the run's own switch settings; a switch named in `switches` beats it. Omitted, the run "
+            "follows the deployment's switches."
+        ),
+    )
     pin_model: bool = Field(
         default=False,
         description=(
@@ -565,6 +576,10 @@ class RunStatusResponse(BaseModel):
     model_pinned: bool = Field(
         default=False,
         description="Whether the run is kept on the model it last ran on (true) or follows the current model settings (false).",
+    )
+    internet_lookups: Literal["off", "when_stuck", "always"] | None = Field(
+        default=None,
+        description="The Internet lookups choice the run was started with, or null when it follows the deployment's switches.",
     )
     model_last: ModelSummary | None = Field(
         default=None,

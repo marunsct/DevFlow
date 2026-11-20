@@ -672,6 +672,87 @@
     "title": "LocalModelSettingsPayload",
     "type": "object"
    },
+   "LookupKeysUpdate": {
+    "additionalProperties": false,
+    "description": "Write-only, as the provider keys are: omitted or null leaves the stored key, \"\" deletes it, a value sets it.",
+    "properties": {
+     "github_token": {
+      "anyOf": [
+       {
+        "maxLength": 512,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Github Token"
+     },
+     "stackexchange_key": {
+      "anyOf": [
+       {
+        "maxLength": 512,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Stackexchange Key"
+     }
+    },
+    "title": "LookupKeysUpdate",
+    "type": "object"
+   },
+   "LookupKeysView": {
+    "description": "The internet lookup sources' keys as the admin page shows them: masked, never the value (plan WL.3).",
+    "properties": {
+     "github_token_configured": {
+      "default": false,
+      "title": "Github Token Configured",
+      "type": "boolean"
+     },
+     "github_token_from_environment": {
+      "default": false,
+      "title": "Github Token From Environment",
+      "type": "boolean"
+     },
+     "github_token_hint": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Github Token Hint"
+     },
+     "stackexchange_key_configured": {
+      "default": false,
+      "title": "Stackexchange Key Configured",
+      "type": "boolean"
+     },
+     "stackexchange_key_from_environment": {
+      "default": false,
+      "title": "Stackexchange Key From Environment",
+      "type": "boolean"
+     },
+     "stackexchange_key_hint": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Stackexchange Key Hint"
+     }
+    },
+    "title": "LookupKeysView",
+    "type": "object"
+   },
    "ModelPinRequest": {
     "additionalProperties": false,
     "description": "Pin a run to the model it last ran on, or let it follow the current model settings again.\n\nWith `base_url` and/or `model` (pinning only) the run is pinned to that endpoint and model instead,\nwithout touching the global settings. Neither carries a credential: the endpoint's key is resolved\nserver-side, per endpoint.",
@@ -1769,6 +1850,23 @@
       ],
       "description": "When a gate that is waiting for a person approves itself (the run's approval timeout), or null when nothing waits or the gate waits for the person however long it takes.",
       "title": "Gate Deadline"
+     },
+     "internet_lookups": {
+      "anyOf": [
+       {
+        "enum": [
+         "off",
+         "when_stuck",
+         "always"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "The Internet lookups choice the run was started with, or null when it follows the deployment's switches.",
+      "title": "Internet Lookups"
      },
      "max_run_cost_usd": {
       "anyOf": [
@@ -2995,6 +3093,23 @@
       ],
       "description": "Fast: fewer, leaner stages. Thorough: every stage in full. Omit to keep what the run was registered with, else the deployment's default.",
       "title": "Delivery Mode"
+     },
+     "internet_lookups": {
+      "anyOf": [
+       {
+        "enum": [
+         "off",
+         "when_stuck",
+         "always"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "What the agents may look up on the internet in this run. 'off': nothing - no lookup of a stuck error and no web search or page reader (the package registries and official documentation stay: they are package metadata). 'when_stuck': the harness looks up an error a fix did not close. 'always': that, and the web search and page reader offered to every stage that reads documentation. Kept as the run's own switch settings; a switch named in `switches` beats it. Omitted, the run follows the deployment's switches.",
+      "title": "Internet Lookups"
      },
      "llm_provider": {
       "anyOf": [
@@ -7360,6 +7475,78 @@
      }
     ],
     "summary": "Update Local Model Settings",
+    "tags": [
+     "settings"
+    ]
+   }
+  },
+  "/api/settings/lookup-keys": {
+   "get": {
+    "description": "Whether each internet lookup source has a key, masked.",
+    "operationId": "get_lookup_keys_api_settings_lookup_keys_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/LookupKeysView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Get Lookup Keys",
+    "tags": [
+     "settings"
+    ]
+   },
+   "put": {
+    "description": "Save or delete the internet lookup sources' keys, encrypted with the other credentials.",
+    "operationId": "set_lookup_keys_api_settings_lookup_keys_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/LookupKeysUpdate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/LookupKeysView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Set Lookup Keys",
     "tags": [
      "settings"
     ]

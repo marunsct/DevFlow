@@ -187,7 +187,9 @@ GROUPS: dict[str, tuple[str, ...]] = {
     # How a cause the fixes keep missing is worked: one diagnosis call before its third fix (deep review 1.4).
     "Recurring causes": ("DIAGNOSE_A_RECURRING_CAUSE",),
     # A stuck fixer is shown what others found for its error, looked up by the harness (plan WL.4): off until measured.
-    "Internet lookups": ("WEB_LOOKUP_WHEN_STUCK",),
+    # The web tools offered to the stages that read documentation (plan WL.3). Each run's "Internet lookups" choice
+    # sets both for that run (`app.internet_lookups`).
+    "Internet lookups": ("WEB_LOOKUP_WHEN_STUCK", "WEB_TOOLS_OFFERED"),
 }
 #: Every grouped switch, in the admin page's order.
 EXPERIMENTS = tuple(name for members in GROUPS.values() for name in members)

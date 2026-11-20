@@ -25,7 +25,7 @@ const keepDraft = (text: string): void => {
     /* the draft lives in this page only */
   }
 };
-import { readRunDefaults, saveRunDefaults } from '../lib/runDefaults';
+import { INTERNET_LOOKUPS, readRunDefaults, saveRunDefaults, type InternetLookups } from '../lib/runDefaults';
 
 // How much the run stops for the person who started it: three answers to one
 // question, each exactly the settings the form has always sent.
@@ -92,6 +92,8 @@ export const Home: React.FC = () => {
   // Whether the stages that need judgement use the frontier model. Off, every
   // stage runs on the local build model.
   const [useFrontierModel, setUseFrontierModel] = useState<boolean>(true);
+  // What the agents may look up on the internet in this run (plan WL.3); kept with the run.
+  const [internetLookups, setInternetLookups] = useState<InternetLookups>('when_stuck');
   // Set once the server says no frontier model is configured. See the check below.
   const noFrontierModel = useRef(false);
   // Minutes a review gate waits for a person before approving itself; blank
@@ -117,6 +119,7 @@ export const Home: React.FC = () => {
     readRunDefaults().then((saved) => {
       if (!live || !saved) return;
       if (saved.delivery_mode) setDeliveryMode(saved.delivery_mode);
+      if (saved.internet_lookups && INTERNET_LOOKUPS.some(([id]) => id === saved.internet_lookups)) setInternetLookups(saved.internet_lookups);
       if (saved.use_frontier_model !== undefined) setUseFrontierModel(saved.use_frontier_model && !noFrontierModel.current);
       if (saved.unattended !== undefined) setUnattended(saved.unattended);
       if (saved.auto_approve !== undefined) setAutoApprove(saved.auto_approve);
@@ -286,6 +289,7 @@ export const Home: React.FC = () => {
         auto_approve: unattended || autoApprove,
         delivery_mode: deliveryMode,
         use_frontier_model: useFrontierModel,
+        internet_lookups: internetLookups,
         approval_timeout_minutes:
           !unattended && parseInt(approvalTimeout, 10) > 0 ? parseInt(approvalTimeout, 10) : undefined,
         review_policy: unattended
@@ -317,6 +321,7 @@ export const Home: React.FC = () => {
       await saveRunDefaults({
         delivery_mode: deliveryMode,
         use_frontier_model: useFrontierModel,
+        internet_lookups: internetLookups,
         unattended,
         auto_approve: autoApprove,
         approval_timeout_minutes: parseInt(approvalTimeout, 10) > 0 ? parseInt(approvalTimeout, 10) : null,
@@ -372,6 +377,7 @@ export const Home: React.FC = () => {
     INVOLVEMENT.find((choice) => choice.id === involvement)?.title,
     useFrontierModel ? `local + frontier${frontier?.model ? ` (${frontier.model})` : ''}` : 'local model only',
     codebase || gitUrl.trim() ? 'from existing code' : null,
+    internetLookups === 'when_stuck' ? null : internetLookups === 'off' ? 'no internet lookups' : 'internet lookups always',
   ].filter(Boolean).join(' · ');
 
   return (
@@ -544,6 +550,21 @@ export const Home: React.FC = () => {
               <p className="text-xs text-success">Ready: {frontier.model} on {frontier.provider} answers.</p>
             )
           )}
+          <label htmlFor="internet-lookups" className="block pt-2 text-sm font-medium text-text-primary">
+            Internet lookups
+            <select
+              id="internet-lookups"
+              value={internetLookups}
+              onChange={(e) => setInternetLookups(e.target.value as InternetLookups)}
+              className="ml-2 rounded-md border border-border bg-surface px-2 py-1 text-sm font-normal"
+            >
+              {INTERNET_LOOKUPS.map(([id, title]) => <option key={id} value={id}>{title}</option>)}
+            </select>
+            <span className="block text-xs font-normal text-text-muted mt-1" data-testid="internet-lookups-help">
+              {INTERNET_LOOKUPS.find(([id]) => id === internetLookups)?.[2]} Package registries and official
+              documentation are read under every choice: that is how packages are installed and used.
+            </span>
+          </label>
         </Step>
 
         <details className="rounded-xl border border-border bg-surface/50">

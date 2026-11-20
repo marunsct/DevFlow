@@ -39,6 +39,7 @@ SIGNALS: dict[str, str] = {
     "STABLE_TOOLS": "is withheld at this point of the stage",
     "AGENT_LOOP_FIX_LIMITS": "and no file has changed since the first",
     "MUTANT_CHECK_IN_THE_FIX_STAGE": "The harness made the deliberate change described above",
+    "MUTATION_GAPS_BUNDLED": "The other changes no test notices in the same file, to settle in this same fix",
     "SPEC_DRY_RUN": "the dry run of the suite",
     "IDS_READ_WITHOUT_A_CREATE": "an id the test never created",
     "SETTLE_SPEC_CONTRADICTIONS": "The design review of this specification ended with these findings open",

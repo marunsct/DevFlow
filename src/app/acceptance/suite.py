@@ -34,11 +34,6 @@ logger = logging.getLogger(__name__)
 
 STATE_FILE = f"{contract.HARNESS_DIR}/acceptance.json"
 SNAPSHOT_DIR = f"{contract.HARNESS_DIR}/acceptance-snapshot"
-#: The best measured version of a suite under repair, beside the snapshot of its lock: a later change that leaves the
-#: suite worse puts back this one, not the lock. Measured on one run: the harness's own rewrite of six tests measured
-#: 57 of 62 passing where the lock had 52; QA's next change measured worse, the lock came back, the six rewrites were
-#: lost, and the six tests went back for repair again. Cleared at every lock.
-REPAIR_BEST_DIR = f"{contract.HARNESS_DIR}/acceptance-repair-best"
 #: The suite as it ran before an at-the-limit send-back, kept so a send-back can never cost the run its suite.
 BEFORE_THE_SEND_BACK = f"{contract.HARNESS_DIR}/suite-before-the-send-back.json"
 #: The review's once-per-lock send-backs at its limit, in the suite's state; every lock clears them with the copy
@@ -383,15 +378,14 @@ def lock(repo_root: str | Path) -> dict[str, str]:
     state = _state(repo_root)
     state["lock"] = checksums
     state["lock_version"] = _keep_this_version(root, snapshot, before)
-    state.pop("repairing", None)
-    state.pop("before_repair", None)
-    state.pop("repair_bodies", None)
-    state.pop("repair_best", None)
-    for key in ONCE_AT_THE_LIMIT:
+    # The repair's record goes with the repair (`suite_repair`), and so do the stores it replaced.
+    for key in ("repairing", "before_repair", "repair_bodies", "repair_best", *ONCE_AT_THE_LIMIT):
         state.pop(key, None)
-    shutil.rmtree(root / REPAIR_BEST_DIR, ignore_errors=True)
     (root / BEFORE_THE_SEND_BACK).unlink(missing_ok=True)
     _save_state(repo_root, state)
+    from app.acceptance import suite_repair
+
+    suite_repair.closed(repo_root)
     # A reopened suite's findings go to its writers first, not compared with the rounds before this lock.
     from app.acceptance import check_findings
 
@@ -449,8 +443,10 @@ def tests_left_unrepaired(repo_root: str | Path, result: Any = None,
     A test `result` shows passing is repaired whatever its own code: measured on one run, the fault was a shared
     fixture, the repair fixed the fixture, the three tests passed - and were sent back twice as "not changed".
     """
+    from app.acceptance import suite_repair
+
     state = _state(repo_root)
-    sent = state.get("repair_bodies") or {}
+    sent = suite_repair.sent(repo_root)
     if not sent:
         return []
     # A test QA examined and says is right - the product is at fault (`graph.product_at_fault`) - is left unchanged
@@ -475,7 +471,9 @@ def tests_left_unrepaired(repo_root: str | Path, result: Any = None,
 def what_a_put_back_undid(repo_root: str | Path, written: dict[str, str]) -> str:
     """The tests a repair was sent for that the writers changed and a put-back returned to their code as the repair
     began, as one line for the writers; "" when none. `written` is as for `tests_left_unrepaired`."""
-    sent = _state(repo_root).get("repair_bodies") or {}
+    from app.acceptance import suite_repair
+
+    sent = suite_repair.sent(repo_root)
     if not written or not sent:
         return ""
     now = _test_bodies(repo_root)
@@ -511,23 +509,15 @@ def repairing(repo_root: str | Path, tests: list[str], *, began: dict[str, str] 
 
     `began` is each test's code as the repair began (`test_bodies`), for a caller that has already changed them.
     """
+    from app.acceptance import suite_repair
+
     state = _state(repo_root)
     state["repairing"] = sorted({*state.get("repairing", []), *(str(t) for t in tests if str(t).strip())})
-    # Each named test's code as the repair began, so the lock can tell one it never changed (`tests_left_unrepaired`).
-    bodies = began if began is not None else _test_bodies(repo_root)
-    kept = dict(state.get("repair_bodies") or {})
-    for name in tests:
-        if str(name) in bodies and str(name) not in kept:
-            kept[str(name)] = bodies[str(name)]
-    if kept:
-        state["repair_bodies"] = kept
-    if "before_repair" not in state:
-        # What the locked suite measured before anything was changed, for `a_repair_that_made_it_worse`.
-        last = last_result(repo_root)
-        if last.get("ran"):
-            tests, passed = _run_and_passed(int(last.get("passed") or 0), int(last.get("failed") or 0))
-            state["before_repair"] = {"tests": tests, "passed": passed}
     _save_state(repo_root, state)
+    # Each named test's code as the repair began, so the lock can tell one it never changed (`tests_left_unrepaired`),
+    # and - at the first - what the locked suite measured before anything was changed (`a_repair_that_made_it_worse`).
+    suite_repair.opened(repo_root, [str(name) for name in tests],
+                        began if began is not None else _test_bodies(repo_root))
 
 
 def a_repair_that_made_it_worse(repo_root: str | Path, result: AcceptanceResult) -> str:
@@ -537,7 +527,9 @@ def a_repair_that_made_it_worse(repo_root: str | Path, result: AcceptanceResult)
     twenty browser tests from the run; one ended with a criterion deferred and its hidden test failed. A repair may
     change the tests it was sent for; it may not leave the suite running or passing less than it did.
     """
-    before = _state(repo_root).get("before_repair") or {}
+    from app.acceptance import suite_repair
+
+    before = suite_repair.before(repo_root)
     if not before or not is_being_repaired(repo_root) or not result.ran:
         return ""
     tests, passed = _counted(result)
@@ -583,57 +575,34 @@ def _no_worse_than(tests: int, passed: int, than: dict[str, Any]) -> bool:
 
 def the_best_of_the_repair(repo_root: str | Path) -> dict[str, Any]:
     """What the kept best version of a suite under repair measured ({"tests", "passed", "changed"}); {} when none."""
-    state = _state(repo_root)
-    best = state.get("repair_best") or {}
-    if not best or "lock" in state or not (Path(repo_root) / REPAIR_BEST_DIR).is_dir():
+    from app.acceptance import suite_repair
+
+    if is_locked(repo_root):
         return {}
-    return best
+    return suite_repair.best(repo_root)
 
 
-def keep_the_best_of_the_repair(repo_root: str | Path, result: AcceptanceResult) -> bool:
-    """Keep the suite as it stands as the repair's best version, when `result` measured it no worse than the suite
-    before the repair and than the best kept so far: no fewer tests run, no fewer passing. Whether it was kept.
+def keep_the_best_of_the_repair(repo_root: str | Path, result: AcceptanceResult, *, put_back: bool = False) -> bool:
+    """Record the suite as it stands as the repair's next measured version, and keep it as the best when `result`
+    measured it no worse than the suite before the repair and than the best kept so far: no fewer tests run, no fewer
+    passing, with the product started. Whether it was kept. `put_back` when the harness, not the writers, left it.
 
     A version that passes more by running fewer tests is never kept: a loss of tests is not a gain. A suite no
     different from its lock is not kept either: the lock is what comes back without one. No model call. Never raises.
     """
-    try:
-        state = _state(repo_root)
-        before = state.get("before_repair") or {}
-        if not before or not is_being_repaired(repo_root) or not result.ran:
-            return False
-        tests, passed = _counted(result)
-        if not (_no_worse_than(tests, passed, before) and _no_worse_than(tests, passed, state.get("repair_best") or {})):
-            return False
-        root = Path(repo_root)
-        now = {path.relative_to(root).as_posix(): path.read_text(encoding="utf-8", errors="replace")
-               for path in suite_files(repo_root)}
-        if not now or now == _the_files_of(root / SNAPSHOT_DIR):
-            return False
-        best = root / REPAIR_BEST_DIR
-        shutil.rmtree(best, ignore_errors=True)
-        for path in suite_files(repo_root):
-            target = best / path.relative_to(root)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(path, target)
-        # The tests sent for repair that this version changed: a test it keeps rewritten is a changed one, so
-        # `tests_left_unrepaired` never sends it back as "exactly as it was locked" after this version comes back.
-        bodies = _test_bodies(repo_root)
-        changed = sorted(name for name, body in (state.get("repair_bodies") or {}).items()
-                         if name in bodies and bodies[name].strip() != str(body).strip())
-        state["repair_best"] = {"tests": tests, "passed": passed, "changed": changed}
-        _save_state(repo_root, state)
-        return True
-    except Exception as error:  # noqa: BLE001 - without it, the lock is what comes back, as before
-        logger.debug("The repair's best version could not be kept: %s", error)
+    from app.acceptance import suite_repair
+
+    if not is_being_repaired(repo_root):
         return False
+    return suite_repair.measured(repo_root, result,
+                                 by=suite_repair.BY_A_PUT_BACK if put_back else suite_repair.BY_THE_WRITERS)
 
 
 def put_back_the_best_of_the_repair(repo_root: str | Path) -> list[str]:
     """Put back the repair's best measured version (`keep_the_best_of_the_repair`), or the suite as last locked when
     none is kept. One line per file."""
-    if the_best_of_the_repair(repo_root):
-        return _put_back_from(Path(repo_root), Path(repo_root) / REPAIR_BEST_DIR,
+    if best := the_best_of_the_repair(repo_root):
+        return _put_back_from(Path(repo_root), Path(repo_root) / best["files"],
                               "is back as the repair's best measured version")
     return put_back_the_suite_before_the_repair(repo_root)
 

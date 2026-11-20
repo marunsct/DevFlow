@@ -91,3 +91,29 @@ def test_a_repair_out_of_rounds_locks_its_best_measured_version_not_the_lock(tmp
     assert update["stage"] == "release"
     assert suite.is_locked(tmp_path) and spec.read_text() == REWRITTEN
     assert "best measured version was kept" in update["acceptance_open_problems"][0]
+
+
+def test_the_repair_s_record_holds_every_version_measured_and_which_is_the_best(tmp_path):
+    from app.acceptance import suite_repair
+
+    _reopened(tmp_path)
+    _reviewed(tmp_path, REWRITTEN, 1)
+
+    _reviewed(tmp_path, HALFWAY, 2)
+
+    record = suite_repair.read(tmp_path)
+    assert [(v["by"], v["tests"], v["passed"]) for v in record["versions"]] == [
+        ("lock", 3, 1), ("writers", 3, 3), ("writers", 3, 2), ("put back", 3, 3)]
+    assert record["versions"][record["best"]]["passed"] == 3
+    assert list(record["sent"]) == ["[AC-1] a"]
+
+
+def test_the_lock_ends_the_repair_s_record(tmp_path):
+    from app.acceptance import suite_repair
+
+    _reopened(tmp_path)
+    _reviewed(tmp_path, REWRITTEN, 1)
+
+    suite.lock(tmp_path)
+
+    assert suite_repair.read(tmp_path) == {} and suite.the_best_of_the_repair(tmp_path) == {}

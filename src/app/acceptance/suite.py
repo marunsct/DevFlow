@@ -461,7 +461,7 @@ def tests_left_unrepaired(repo_root: str | Path, result: Any = None,
     by_the_writers = now if written is None else written
     left = [name for name, body in sent.items()
             if name in now and now[name].strip() == str(body).strip() and name not in vouched
-            and by_the_writers.get(name, now[name]).strip() == str(body).strip()
+            and name in by_the_writers and by_the_writers[name].strip() == str(body).strip()
             and not _is_among(name, passing)]
     if not left:
         return []
@@ -476,10 +476,12 @@ def what_a_put_back_undid(repo_root: str | Path, written: dict[str, str]) -> str
     """The tests a repair was sent for that the writers changed and a put-back returned to their code as the repair
     began, as one line for the writers; "" when none. `written` is as for `tests_left_unrepaired`."""
     sent = _state(repo_root).get("repair_bodies") or {}
+    if not written or not sent:
+        return ""
     now = _test_bodies(repo_root)
     undone = sorted(name for name, body in sent.items()
                     if name in now and now[name].strip() == str(body).strip()
-                    and name in written and written[name].strip() != str(body).strip())
+                    and (name not in written or written[name].strip() != str(body).strip()))
     if not undone:
         return ""
     return (

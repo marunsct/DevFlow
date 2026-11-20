@@ -999,7 +999,9 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
                        f"as the repair's best measured version ({best.get('passed')} of {best.get('tests')} passing)"
                        if best else "as locked")
         result = suite.run(root)
-        problems = [worse, *filter(None, [suite.what_a_put_back_undid(root, written)]), *problems]
+        # The gaps of the version now in place, not of the worse one taken out (design review: a gap that version made
+        # by dropping a test's criterion tag was still sent after the put-back restored the tag).
+        problems = [worse, *filter(None, [suite.what_a_put_back_undid(root, written)]), *suite.gaps(root)]
     # The suite as measured here, when no worse than before the repair and than its best so far, is the version a
     # later change that leaves it worse puts back (measured on one run: the harness's own rewrite of six tests was
     # lost to the lock that way, and the six went back for repair again).
@@ -1276,7 +1278,8 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         decision="lock it",
         rationale=(
             what_the_lock_ran(result, len(suite.criteria(root))) + "; "
-            + ("every criterion is covered and the QA lead approved."
+            + (("every criterion is covered; locked again on the harness's checks, without the QA lead's review."
+                if targeted else "every criterion is covered and the QA lead approved.")
                if not open_problems else
                f"locked after {rounds} round(s) with these still open: " + "; ".join(open_problems))
             + (f"\n{changed}" if (changed := suite.changes_at_this_lock(root)) else "")

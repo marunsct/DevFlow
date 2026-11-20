@@ -504,9 +504,11 @@ def a_repair_that_made_it_worse(repo_root: str | Path, result: AcceptanceResult)
     if not before or not is_being_repaired(repo_root) or not result.ran:
         return ""
     tests, passed = _counted(result)
-    if _no_worse_than(tests, passed, before):
-        return ""
+    # Against the better of the suite before the repair and the repair's best version so far: measured on one run, a
+    # version that passed fewer than the best but more than before stayed, and was locked at the limit.
     best = the_best_of_the_repair(repo_root)
+    if _no_worse_than(tests, passed, before) and (not best or _no_worse_than(tests, passed, best)):
+        return ""
     changed = best.get("changed") or []
     came_back = (
         "The repair's best measured version so far has been put back: the suite as it was when it ran "
@@ -515,10 +517,12 @@ def a_repair_that_made_it_worse(repo_root: str | Path, result: AcceptanceResult)
         + ". Build on that version."
         if best else "The suite as it was locked has been put back."
     )
+    # A best version is never worse than the suite before the repair, so it is the bar whenever one is kept.
+    than = (f"where its best measured version ran {best.get('tests')} and {best.get('passed')} passed" if best else
+            f"where before the repair it ran {before.get('tests')} and {before.get('passed')} passed")
     return (
-        f"The repair left the suite worse than it was: it now runs {tests} test(s) and {passed} pass, where before the "
-        f"repair it ran {before.get('tests')} and {before.get('passed')} passed. {came_back} Change only the tests "
-        "named for repair, and keep every other test running as it was."
+        f"The repair left the suite worse than it was: it now runs {tests} test(s) and {passed} pass, {than}. "
+        f"{came_back} Change only the tests named for repair, and keep every other test running as it was."
     )
 
 

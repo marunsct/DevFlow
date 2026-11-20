@@ -2590,8 +2590,8 @@ SPRINT_REPLAN = "sprint_replan"
 
 
 def _kept_as_locked_before(state: dict, root: Path, why: str) -> dict | None:
-    """A repair that ran out of rounds keeps the suite as it was last locked and goes back where it came from; None
-    when the suite was never locked (a first writing still fails the run).
+    """A repair that ran out of rounds keeps its best measured version, else the suite as last locked, and goes back
+    where it came from; None when the suite was never locked (a first writing still fails the run).
 
     Measured on one run: a suite reopened after the build, for a locked test the product's own `conftest.py` skipped,
     went five rounds and then failed the run - a product passing every hidden test, its suite 22 of 22, never released.
@@ -2602,15 +2602,19 @@ def _kept_as_locked_before(state: dict, root: Path, why: str) -> dict | None:
     return_to = state.get("acceptance_return_to")
     if not return_to or not suite.is_being_repaired(root):
         return None
-    put_back = suite.put_back_the_suite_before_the_repair(root)
+    # The repair's best measured version, when one was kept, rather than the lock: it ran no fewer tests and passed no
+    # fewer than the suite before the repair, and one exit locking an older version than another would is a lost repair.
+    best = suite.the_best_of_the_repair(root)
+    put_back = suite.put_back_the_best_of_the_repair(root)
+    kept = "the repair's best measured version" if best else "the suite as last locked"
     suite.lock(root)
-    logger.warning("A repair ran out of rounds; the suite as last locked is kept (%d file(s) put back)", len(put_back))
+    logger.warning("A repair ran out of rounds; %s is kept (%d file(s) put back)", kept, len(put_back))
     result = suite.run(root)
     return _handing_on(
         stage="technical_lead" if return_to == SPRINT_REPLAN else return_to,
         acceptance_return_to=None,
         acceptance_feedback=[],
-        acceptance_open_problems=[f"The suite's repair ran out of rounds and the suite as last locked was kept; {why}"],
+        acceptance_open_problems=[f"The suite's repair ran out of rounds and {kept} was kept; {why}"],
         acceptance_result=result.as_dict(),
         revision_comments=list(state.get("revision_comments") or []),
     )

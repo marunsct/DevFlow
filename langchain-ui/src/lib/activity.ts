@@ -502,6 +502,31 @@ export function splitToolMessage(message: string): { tool: string; args: string 
   };
 }
 
+/** The tools that write, move or remove a workspace file. */
+const WRITING_TOOLS = new Set([
+  'write_artifact', 'edit_artifact', 'replace_lines', 'delete_artifact', 'move_artifact', 'write_file', 'edit_file',
+]);
+
+/**
+ * The sequence of the newest event that says a workspace file was written: an `artifact` event, or the result of
+ * a writing tool's call (the result carries no tool name; the call before it in the same stage does). 0 for none.
+ */
+export function lastWriteSequence(
+  logs: { event_type: string; message?: string; stage?: string; sequence?: number; metadata?: Record<string, unknown> }[],
+): number {
+  const calling = new Map<string, string>();
+  let last = 0;
+  for (const entry of logs) {
+    const stage = entry.stage ?? '';
+    if (entry.event_type === 'tool_call') {
+      calling.set(stage, ((entry.metadata?.tool as string) || splitToolMessage(entry.message || '').tool).toLowerCase());
+    } else if (entry.event_type === 'artifact' || (entry.event_type === 'tool_result' && WRITING_TOOLS.has(calling.get(stage) ?? ''))) {
+      last = Math.max(last, entry.sequence ?? 0);
+    }
+  }
+  return last;
+}
+
 /**
  * Statuses a run can be resumed from, from where it stopped. Mirrors
  * `RESUMABLE_STATUSES` in `app/server/runner.py`; a paused or cancelled run

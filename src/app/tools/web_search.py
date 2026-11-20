@@ -11,9 +11,11 @@ the error are the bcrypt issues that name the cause and the fix.
 
 The search is a private SearXNG on the compose network (`docker/searxng`),
 reached at `SEARXNG_URL`; off when that is unset or `WEB_SEARCH_ENABLED` is
-false. A page is read only from a public address - never a container on the
-compose network, the host, or a cloud's metadata service - and what comes back
-is labelled for what it is: what a page on the web says, not an instruction.
+false. A page is read by `page_reader`, the one place that decides whether an
+address may be read: only a public address - never a container on the compose
+network, the host, or a cloud's metadata service - with robots.txt obeyed and
+the page's main text kept; what comes back is labelled for what it is: what a
+page on the web says, not an instruction.
 """
 
 from __future__ import annotations
@@ -31,9 +33,9 @@ logger = logging.getLogger(__name__)
 MOST_RESULTS = 8
 #: Characters of one result's snippet.
 MOST_SNIPPET = 300
-#: Characters of one page returned.
+#: Characters of the part of a page about a topic.
 MAX_EXCERPT = 6_000
-#: Bytes of one page read.
+#: Bytes of one search answer read.
 MAX_PAGE = 3 * 1024 * 1024
 TIMEOUT_SECONDS = float(os.environ.get("WEB_SEARCH_TIMEOUT", "15"))
 
@@ -135,66 +137,33 @@ def _rank(item: dict[str, Any]) -> int:
     return len(_ANSWERING_HOSTS) + (1 if any(host == h or host.endswith("." + h) for h in _LISTING_HOSTS) else 0)
 
 
-def _public(url: str) -> str:
-    """Why `url` is not a public web address, or ""."""
-    parsed = urlparse(url)
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        return "only an http or https address of a public site can be read"
-    host = parsed.hostname.lower()
-    if "." not in host or host.endswith((".local", ".internal", ".localhost")):
-        return "that is not a public site"
-    from app.server.seeding import _resolves_to_private_address
+def read_page(url: str, topic: str = "", page: int = 0, *, fetch: Any = None, resolve: Any = None) -> dict[str, Any]:
+    """The page at `url` - the part about `topic`, or with `page` (from 1) that part of its whole text - as
+    {"source", "note", "excerpt", "pages"}, or {"error": ...}. Reading, its safety checks and robots.txt are
+    `page_reader`'s; `fetch` and `resolve` are its network edge."""
+    from app.tools import page_reader
+    from app.tools.docs import _sections_about, _words
 
-    if _resolves_to_private_address(host):
-        return "that address is not on the public internet"
-    return ""
-
-
-def read_page(url: str, topic: str = "", *, fetch: Fetch | None = None) -> dict[str, Any]:
-    """The page at `url`, cut to the parts about `topic`, or {"error": ...}."""
-    from app.tools.docs import _as_text, _sections_about, _words
-
-    url = str(url or "").strip()
-    for _ in range(4):
-        why = _public(url)
-        if why:
-            return {"error": f"Not reading {url!r}: {why}."}
-        try:
-            status, body, content_type = (fetch or _get_following)(url, None)
-        except Exception as exc:  # noqa: BLE001 - an unreadable page is an answer, not a crash
-            return {"error": f"The page could not be read ({type(exc).__name__})."}
-        if status in {301, 302, 303, 307, 308} and body.startswith(("http://", "https://")):
-            # A redirect is followed only to an address that is itself public.
-            url = body
-            continue
-        break
-    else:
-        return {"error": "The page redirected too many times."}
-    if status != 200:
-        return {"error": f"The page answered {status}."}
-    text = _as_text(body, content_type)
-    excerpt = _sections_about(text, _words(topic), MAX_EXCERPT) if topic.strip() else text[:MAX_EXCERPT]
+    try:
+        page = max(0, int(page or 0))
+    except (TypeError, ValueError):
+        page = 0
+    topic = str(topic or "")
+    if page or not topic.strip():
+        shown = page_reader.read(url, page or 1, fetch=fetch, resolve=resolve)
+        if "error" in shown:
+            return {"error": shown["error"]}
+        return {"source": shown["url"], "note": shown["note"], "excerpt": shown["text"], "page": shown["page"],
+                "pages": shown["pages"]}
+    whole = page_reader.text_of(url, fetch=fetch, resolve=resolve)
+    if "error" in whole:
+        return {"error": whole["error"]}
+    excerpt = _sections_about(whole["text"], _words(topic), MAX_EXCERPT)
     if not excerpt.strip():
         return {"error": f"Nothing about {topic!r} is on that page."}
-    return {"source": url, "note": PAGE_NOTE, "excerpt": defanged(excerpt, MAX_EXCERPT)}
-
-
-def _get_following(url: str, params: dict[str, Any] | None = None) -> tuple[int, str, str]:
-    """`_get`, handing a redirect's target back in the body so the caller checks it first."""
-    import httpx
-
-    headers = {"User-Agent": "software-harness-research", "Accept": "text/html, text/markdown, text/plain;q=0.9"}
-    with httpx.Client(timeout=TIMEOUT_SECONDS, follow_redirects=False, headers=headers) as client:
-        with client.stream("GET", url, params=params) as response:
-            if response.is_redirect:
-                return response.status_code, str(response.next_request.url if response.next_request else ""), ""
-            body = bytearray()
-            for chunk in response.iter_bytes():
-                body.extend(chunk)
-                if len(body) > MAX_PAGE:
-                    break
-            return response.status_code, bytes(body).decode("utf-8", errors="replace"), response.headers.get(
-                "content-type", "")
+    rest = f" The whole page is {whole['pages']} part(s) long; give page 1 to {whole['pages']} to read it in order."
+    return {"source": whole["url"], "note": PAGE_NOTE + rest, "excerpt": defanged(excerpt, MAX_EXCERPT),
+            "pages": whole["pages"]}
 
 
 def build_web_tools(on_call: Callable[[str, str, dict[str, Any]], None] | None = None) -> list[Any]:
@@ -234,19 +203,21 @@ def build_web_tools(on_call: Callable[[str, str, dict[str, Any]], None] | None =
         return answered("search_the_web", query, answer)
 
     @tool
-    def read_web_page(url: str, topic: str = "") -> dict[str, Any]:
+    def read_web_page(url: str, topic: str = "", page: int = 0) -> dict[str, Any]:
         """Read one page a search found, cut to the part about your topic.
 
         Args:
             url: the page's address, from `search_the_web`.
             topic: what you need from it, in a few words.
+            page: leave it out for the part about your topic; 1, 2, ... for
+                that part of the whole page, in order, when you need more.
         """
         from app.tools.research import found, over_its_share
 
         refusal = over_its_share("web")
         if refusal:
             return answered("read_web_page", url, {"error": refusal})
-        answer = read_page(url, topic, fetch=_get_following)
+        answer = read_page(url, topic, page)
         found(f"read_web_page {url}", answer)
         return answered("read_web_page", url, answer)
 

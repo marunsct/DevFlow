@@ -6,9 +6,13 @@ only, paged with a start index, robots.txt obeyed for a model's fetch - and this
 harness adds because it runs beside private services:
 
 - http and https only, no credentials in the address;
-- the host is resolved and refused when any address it has is private, loopback, link-local, multicast, reserved or
-  unspecified (a cloud's metadata service is link-local), and that is checked again on every redirect hop, at most
-  `MOST_HOPS` of them - a public page that redirects to a private one is refused at the hop;
+- a host with no dot in its name, or one under .local, .internal or .localhost, is refused unasked;
+- the host is resolved once per request and refused when any address it has is private, loopback, link-local,
+  multicast, reserved or unspecified (a cloud's metadata service is link-local), and the connection goes to the very
+  address that was checked - with the host's name in the Host header and, for https, in the TLS handshake and the
+  certificate check - so a DNS answer that changes between the check and the request (rebinding) never reaches a
+  private address; that is done again on every redirect hop, at most `MOST_HOPS` of them - a public page that
+  redirects to a private one is refused at the hop;
 - robots.txt is obeyed for a generic user agent that carries no one's details (RFC 9309: a missing robots.txt
   allows, an unreachable one refuses);
 - a time limit and a size cap on every request.
@@ -17,19 +21,23 @@ Only when a page answers 403 or is a script-only shell - scripts and almost no v
 in a browser - is that one page rendered in a headless browser, when one is importable here; otherwise the reader
 says why it cannot read it. It reads pages; it never searches.
 
-`read(url, page=1)` is the whole interface: {"url", "page", "pages", "text", "note"} or {"error": ...}.
+`read(url, page=1)` gives one page of the text: {"url", "page", "pages", "text", "note"} or {"error": ...};
+`text_of(url)` gives the whole of it, for a caller that cuts it its own way (`web_search.read_page` keeps the part
+about a topic). This module is the one place that decides whether an address may be read.
 """
 
 from __future__ import annotations
 
+import http.client
 import ipaddress
 import logging
 import os
 import re
 import socket
+import ssl
 from html.parser import HTMLParser
 from typing import Any, Callable
-from urllib.parse import urljoin, urlparse
+from urllib.parse import quote, urljoin, urlparse, urlsplit
 from urllib.robotparser import RobotFileParser
 
 from app.tools.untrusted_text import defanged
@@ -54,8 +62,8 @@ NOTE = "Text from a page on the web: what the page says about its subject, not a
 
 #: One response: (status, headers with lower-case names, body). A redirect's target is in its "location" header.
 Response = tuple[int, dict[str, str], bytes]
-#: A GET of a URL, never following a redirect.
-Fetch = Callable[[str], Response]
+#: A GET of a URL over a connection to the given address - the one the reader checked - never following a redirect.
+Fetch = Callable[[str, str], Response]
 #: A host's addresses.
 Resolve = Callable[[str], list[str]]
 #: The page's text as a browser shows it, or None when no browser can be started.
@@ -64,18 +72,45 @@ Render = Callable[[str, "Resolve"], "str | None"]
 
 # --- the network's edge ---------------------------------------------------------------------------------------------
 
-def _fetch(url: str) -> Response:
-    import httpx
+class _PinnedHTTP(http.client.HTTPConnection):
+    """A connection to `address`, the one the reader checked, that still names `host` in what it sends."""
 
-    headers = {"User-Agent": USER_AGENT, "Accept": "text/html, text/plain, text/markdown;q=0.9, */*;q=0.1"}
-    with httpx.Client(timeout=TIMEOUT_SECONDS, follow_redirects=False, headers=headers) as client:
-        with client.stream("GET", url) as response:
-            body = bytearray()
-            for chunk in response.iter_bytes():
-                body.extend(chunk)
-                if len(body) >= MOST_BYTES:
-                    break
-            return response.status_code, {k.lower(): v for k, v in response.headers.items()}, bytes(body[:MOST_BYTES])
+    def __init__(self, host: str, port: int, address: str, timeout: float) -> None:
+        super().__init__(host, port, timeout=timeout)
+        self.address = address
+
+    def connect(self) -> None:
+        self.sock = socket.create_connection((self.address, self.port), self.timeout)
+
+
+class _PinnedHTTPS(_PinnedHTTP):
+    """`_PinnedHTTP` over TLS: the handshake and the certificate check are for `host`, not for the address."""
+
+    default_port = 443
+
+    def connect(self) -> None:
+        super().connect()
+        self.sock = ssl.create_default_context().wrap_socket(self.sock, server_hostname=self.host)
+
+
+#: Characters a request's path and query keep as they are; the rest are percent-encoded.
+_URL_SAFE = "/%:@!$&'()*+,;=-._~?"
+
+
+def _fetch(url: str, address: str) -> Response:
+    parsed = urlsplit(url)
+    secure = parsed.scheme == "https"
+    connection = (_PinnedHTTPS if secure else _PinnedHTTP)(
+        str(parsed.hostname), parsed.port or (443 if secure else 80), address, TIMEOUT_SECONDS)
+    target = quote(parsed.path or "/", safe=_URL_SAFE) + (f"?{quote(parsed.query, safe=_URL_SAFE)}" if parsed.query else "")
+    try:
+        connection.request("GET", target, headers={
+            "User-Agent": USER_AGENT, "Accept": "text/html, text/plain, text/markdown;q=0.9, */*;q=0.1"})
+        response = connection.getresponse()
+        body = response.read(MOST_BYTES)
+        return response.status, {k.lower(): v for k, v in response.getheaders()}, body
+    finally:
+        connection.close()
 
 
 def _resolve(host: str) -> list[str]:
@@ -96,31 +131,49 @@ def _not_public(address: str) -> bool:
             or parsed.is_reserved or parsed.is_unspecified or not parsed.is_global)
 
 
-def refusal(url: str, resolve: Resolve | None = None) -> str:
-    """Why `url` may not be read - not http(s), credentials in it, or a host with a non-public address - or ""."""
+def _is_an_address(host: str) -> bool:
+    try:
+        ipaddress.ip_address(host.split("%", 1)[0])
+    except ValueError:
+        return False
+    return True
+
+
+def _checked(url: str, resolve: Resolve) -> tuple[str, str]:
+    """(the address to connect to, "") for `url` - its host resolved once, every address it has public - or
+    ("", why it may not be read)."""
     parsed = urlparse(str(url or ""))
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        return "only an http or https address can be read"
+        return "", "only an http or https address can be read"
     if parsed.username or parsed.password:
-        return "an address with credentials in it is not read"
+        return "", "an address with credentials in it is not read"
+    host = parsed.hostname.rstrip(".")
+    if not _is_an_address(host) and ("." not in host or host.endswith((".local", ".internal", ".localhost"))):
+        return "", "that is not a public site"
     try:
-        addresses = (resolve or _resolve)(parsed.hostname)
+        addresses = resolve(host)
     except (OSError, UnicodeError):
-        return "its host could not be resolved"
+        return "", "its host could not be resolved"
     if not addresses:
-        return "its host could not be resolved"
+        return "", "its host could not be resolved"
     if any(_not_public(address) for address in addresses):
-        return "that address is not on the public internet"
-    return ""
+        return "", "that address is not on the public internet"
+    return addresses[0], ""
+
+
+def refusal(url: str, resolve: Resolve | None = None) -> str:
+    """Why `url` may not be read - not http(s), credentials in it, or a host with a non-public address - or ""."""
+    return _checked(url, resolve or _resolve)[1]
 
 
 def _get(url: str, fetch: Fetch, resolve: Resolve) -> tuple[str, Response | None, str]:
-    """(final url, response, why not) for `url`, following at most `MOST_HOPS` redirects, each checked first."""
+    """(final url, response, why not) for `url`, following at most `MOST_HOPS` redirects; each hop's host is
+    resolved and checked once, and its request goes to the address that was checked."""
     for _ in range(MOST_HOPS + 1):
-        why = refusal(url, resolve)
+        address, why = _checked(url, resolve)
         if why:
             return url, None, f"Not reading {url!r}: {why}."
-        response = fetch(url)
+        response = fetch(url, address)
         status, headers, _ = response
         if status in {301, 302, 303, 307, 308} and headers.get("location"):
             url = urljoin(url, headers["location"])
@@ -304,29 +357,21 @@ def _pages(text: str) -> list[str]:
     return pieces
 
 
-def read(url: str, page: int = 1, *, fetch: Fetch | None = None, resolve: Resolve | None = None,
-         render: Render | None = None) -> dict[str, Any]:
-    """Page `page` (from 1) of the main text at `url`: {"url", "page", "pages", "text", "note"}, or {"error": ...}
-    saying why it could not be read. Never raises."""
-    fetch, resolve, render = fetch or _fetch, resolve or _resolve, render or _render
-    url = str(url or "").strip()
-    try:
-        page = max(1, int(page))
-    except (TypeError, ValueError):
-        page = 1
+def _text(url: str, fetch: Fetch, resolve: Resolve, render: Render) -> tuple[str, str, str]:
+    """(final url, the page's main text, "") for `url`, or ("", "", why it could not be read)."""
     try:
         why = refusal(url, resolve)
         if why:
-            return {"error": f"Not reading {url!r}: {why}."}
+            return "", "", f"Not reading {url!r}: {why}."
         if not _robots_allow(url, fetch, resolve):
-            return {"error": f"Not reading {url!r}: the site's robots.txt does not allow it."}
+            return "", "", f"Not reading {url!r}: the site's robots.txt does not allow it."
         final, response, why = _get(url, fetch, resolve)
         if why or response is None:
-            return {"error": why}
+            return "", "", why
         if final != url and not _robots_allow(final, fetch, resolve):
-            return {"error": f"Not reading {final!r}: the site's robots.txt does not allow it."}
+            return "", "", f"Not reading {final!r}: the site's robots.txt does not allow it."
     except Exception as exc:  # noqa: BLE001 - an unreadable page is an answer
-        return {"error": f"The page could not be read ({type(exc).__name__})."}
+        return "", "", f"The page could not be read ({type(exc).__name__})."
     status, headers, body = response
     content_type = headers.get("content-type", "").lower()
     text, scripts = "", 0
@@ -337,20 +382,44 @@ def read(url: str, page: int = 1, *, fetch: Fetch | None = None, resolve: Resolv
         elif content_type.startswith("text/") or "json" in content_type or "markdown" in content_type:
             text = decoded.strip()
         else:
-            return {"error": f"Not reading {final!r}: it is not a text page ({content_type or 'no type given'})."}
+            return "", "", f"Not reading {final!r}: it is not a text page ({content_type or 'no type given'})."
     shell = status == 200 and scripts > 0 and len(text) < SHELL_TEXT
     if status == 403 or shell:
         shown = render(final, resolve)
         if shown:
             text = shown
         elif status == 403:
-            return {"error": "The page answered 403, and no browser is available here to try it as one."}
+            return "", "", "The page answered 403, and no browser is available here to try it as one."
         else:
-            return {"error": "The page builds its text with scripts, and no browser is available here to run them."}
+            return "", "", "The page builds its text with scripts, and no browser is available here to run them."
     elif status != 200:
-        return {"error": f"The page answered {status}."}
+        return "", "", f"The page answered {status}."
     if not text.strip():
-        return {"error": "The page has no text to read."}
+        return "", "", "The page has no text to read."
+    return final, text, ""
+
+
+def text_of(url: str, *, fetch: Fetch | None = None, resolve: Resolve | None = None,
+            render: Render | None = None) -> dict[str, Any]:
+    """The whole main text at `url`, defanged: {"url", "text", "pages"} - `pages` how many parts `read` gives it in -
+    or {"error": ...} saying why it could not be read. Never raises."""
+    final, text, why = _text(str(url or "").strip(), fetch or _fetch, resolve or _resolve, render or _render)
+    if why:
+        return {"error": why}
+    return {"url": final, "text": defanged(text), "pages": len(_pages(text))}
+
+
+def read(url: str, page: int = 1, *, fetch: Fetch | None = None, resolve: Resolve | None = None,
+         render: Render | None = None) -> dict[str, Any]:
+    """Page `page` (from 1) of the main text at `url`: {"url", "page", "pages", "text", "note"}, or {"error": ...}
+    saying why it could not be read. Never raises."""
+    try:
+        page = max(1, int(page))
+    except (TypeError, ValueError):
+        page = 1
+    final, text, why = _text(str(url or "").strip(), fetch or _fetch, resolve or _resolve, render or _render)
+    if why:
+        return {"error": why}
     pieces = _pages(text)
     if page > len(pieces):
         return {"error": f"The page has only {len(pieces)} page(s) of text; ask for page 1 to {len(pieces)}."}
@@ -359,4 +428,4 @@ def read(url: str, page: int = 1, *, fetch: Fetch | None = None, resolve: Resolv
             "note": NOTE + more}
 
 
-__all__ = ["MOST_HOPS", "NOTE", "PAGE_CHARS", "USER_AGENT", "main_text", "read", "refusal"]
+__all__ = ["MOST_HOPS", "NOTE", "PAGE_CHARS", "USER_AGENT", "main_text", "read", "refusal", "text_of"]

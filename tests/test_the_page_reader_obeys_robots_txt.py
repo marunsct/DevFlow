@@ -15,7 +15,7 @@ PAGE = (200, {"content-type": "text/plain"}, b"How to configure the cache.")
 
 
 def _site(robots, sent):
-    def fetch(url):
+    def fetch(url, address):
         sent.append(url)
         if url == "https://docs.example.org/robots.txt":
             if isinstance(robots, Exception):

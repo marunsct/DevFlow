@@ -49,7 +49,7 @@ def test_a_failing_paid_source_s_log_line_carries_no_key(caplog):
 def test_the_readiness_lines_carry_no_key(monkeypatch, capsys):
     monkeypatch.setattr(lookups, "_get", _failing([]))
     monkeypatch.setattr(package_registry, "look_up", lambda ecosystem, name: {"version": "5.0.0"})
-    monkeypatch.setattr(page_reader, "_fetch", lambda url: (404, {}, b"") if url.endswith("robots.txt") else (
+    monkeypatch.setattr(page_reader, "_fetch", lambda url, address: (404, {}, b"") if url.endswith("robots.txt") else (
         200, {"content-type": "text/plain"}, b"Example Domain"))
     monkeypatch.setattr(page_reader, "_resolve", lambda host: ["93.184.215.14"])
     spec = importlib.util.spec_from_file_location("lookup_ready", ROOT / "scripts" / "loop" / "lookup_ready.py")

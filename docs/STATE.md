@@ -5,9 +5,9 @@ the block below is written by `loop.sh state`. The map of all documents is `docs
 `docs/improvement-plan.md`; how the product works is `docs/PRODUCT.md`; how to run and test it is `docs/HANDOVER.md`;
 decisions in force are `docs/owner-decisions.md`; old information is found through `docs/ARCHIVE.md`.
 <!-- state:generated -->
-**As of:** 11-20 18:38 JST (written by `loop.sh state`). Harness 12789532 committed; 12789532 deployed.
-**Live, and stopped in the last day:** run-5d08754b running at specialist_testing_1; run-e382df47 failed at failed
-**Last scored:** run-fba53958 notes-api 9/9 (completed, handoff 1.0; scored 11-20 18:38 JST); run-2df00e65 tasks-api 10/10 (completed, mixed, 136 active min, handoff 1.0; scored 11-20 17:04 JST); run-50a7c5cc notes-api-csharp 9/9 (completed, mixed, 73 active min, handoff 1.0; scored 11-20 14:35 JST).
+**As of:** 11-20 19:33 JST (written by `loop.sh state`). Harness 617188cf committed; 12789532 deployed (not the same).
+**Live, and stopped in the last day:** run-17363b6a running at defect_fix_2_1; run-e382df47 failed at failed
+**Last scored:** run-5d08754b fullstack-bookmarks 8/8 (completed, handoff 1.0; scored 11-20 19:33 JST); run-fba53958 notes-api 9/9 (completed, mixed, 70 active min, handoff 1.0; scored 11-20 18:38 JST); run-2df00e65 tasks-api 10/10 (completed, mixed, 136 active min, handoff 1.0; scored 11-20 17:04 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -26,11 +26,10 @@ runs only when the owner starts them. Everything under measurement: `docs/improv
 
 ## The last three runs (11-20, hidden / quality; local model)
 Earlier runs: `reports/status-board/`, git history of this file.
-- **Live:** tasks-api container 8 (:8888, from 18:38, the prompt-size switches' second arm); fullstack-bookmarks container 1 (:1234, from 14:29)
-  at 43/44 on an unpassable test (LF.1196 now flags it).
+- **Live:** tasks-api container 8 (:8888, from 18:38, prompt-size switches' second arm) at 38/39; web-todo-react container 1 (:1234, from 19:33).
 - Scored today: web-todo 3 and 4 (10/10, 6/6), Ruby 2 and 3 (9/9, 8/8; 64 and 56 min against 267 before), Java 3 (9/9, 8/8),
   PHP 6 and 7 (9/9, 8/8; 42 and 78 min), C# 7 and 8 (9/9, 8/8), Java 4 (9/9, 8/8; 244 min, a start defect for three rounds), tasks-api 6 (10/10, 7/7; 110 min;
-  not deliverable: one edge-probe 500 left), **notes-api 1 (9/9, 8/8, delivered, 70 min), tasks-api 7 (10/10, 7/7, delivered; the suite-repair bugs found and fixed in it), C# 9 (9/9, quality 6/8; not deliverable: probe-found 500s merged under a unit-test defect; fixed in LF.1186)**, Go 3 (9/9, 8/8), tasks-api 5 (10/10, 7/7; 175 min).
+  not deliverable: one edge-probe 500 left), **notes-api 1 (9/9, 8/8, delivered, 70 min), fullstack-bookmarks 1 (8/8, 7/7; not deliverable on a false contract blocker being fixed; 289 min, 2.5 h on an unpassable test LF.1196 now catches), tasks-api 7 (10/10, 7/7, delivered; the suite-repair bugs found and fixed in it), C# 9 (9/9, quality 6/8; not deliverable: probe-found 500s merged under a unit-test defect; fixed in LF.1186)**, Go 3 (9/9, 8/8), tasks-api 5 (10/10, 7/7; 175 min).
   **Java 2 failed 0/9** (never started: an invented "SQLite via H2" mode; LF.1145-1147 fixed the evidence and the ceiling).
 - Every local family scored full hidden marks today except Rust (0/9 in four local runs; Haiku-built 9/9 twice).
 - Each run's product review: `reports/product-reviews/`.

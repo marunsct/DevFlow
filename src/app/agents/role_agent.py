@@ -416,13 +416,18 @@ def _compaction_middleware(agent_name: str, model: Any = None) -> list:
             # with no base URL or key fails on every compaction.
             summariser = build_default_chat_model()
 
+        from app.agents import summarise_later
+
+        trigger = summarise_later.trigger_tokens(policy.trigger_tokens, min(policy.max_context_tokens,
+                                                                            budget.input_ceiling_tokens))
         return [
             RequestKeepingSummarization(
                 summariser,
                 backend=build_context_backend(agent_name),
-                trigger=("tokens", policy.trigger_tokens),
+                trigger=("tokens", trigger),
+                usual_trigger_tokens=policy.trigger_tokens,
                 keep=("messages", policy.keep_recent_messages),
-                most_kept_tokens=int(policy.trigger_tokens * KEPT_TAIL_SHARE),
+                most_kept_tokens=int(trigger * KEPT_TAIL_SHARE),
                 trim_tokens_to_summarize=policy.trim_tokens_to_summarize,
                 # Shorten large tool-call arguments in older messages before
                 # resorting to summarisation. Left unset - which it was - the

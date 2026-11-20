@@ -54,10 +54,13 @@ SIGNALS: dict[str, str] = {
     "LEAD_REPLAN_REQUEST_SMALLER": "Held whole: the files this sprint's last attempt planned and changed",
     # Recorded by the harness once per fix round whose order it changed (`app.graph.order_of_fixes`).
     "FIX_ORDER_CRITERIA_FIRST": "Failing criteria and release findings fixed ahead of the other defects",
+    # Recorded by the harness once per run and stage whose rewrite the later trigger kept off (`app.agents.summarise_later`).
+    "SUMMARISE_LATER_WITH_HEADROOM": "A conversation kept whole past the usual trigger, the window having room",
 }
 #: Transcript records the harness writes of what it did itself, with no model reading it: kind -> the field whose
 #: text a switch's signal is looked for in.
-HARNESS_RECORDS: dict[str, str] = {"repository_delivery": "message", "prompt_shaped": "message", "fix_order": "message"}
+HARNESS_RECORDS: dict[str, str] = {"repository_delivery": "message", "prompt_shaped": "message", "fix_order": "message",
+                                   "summarised_later": "message"}
 
 
 @dataclass(frozen=True)

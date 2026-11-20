@@ -119,8 +119,11 @@ class RequestKeepingSummarization(SummarizationMiddleware):
         # second summariser beside the default one.
         return "SummarizationMiddleware"
 
-    def __init__(self, *args: Any, most_kept_tokens: int | None = None, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, most_kept_tokens: int | None = None, usual_trigger_tokens: int | None = None,
+                 **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
+        # The trigger without `SUMMARISE_LATER_WITH_HEADROOM`; a request past it and short of the real one is noted.
+        self._usual_trigger = usual_trigger_tokens
         # The most of the conversation a compaction leaves whole (see
         # `_determine_cutoff_index`); None keeps the message count alone.
         self._most_kept_tokens = most_kept_tokens
@@ -242,6 +245,13 @@ class RequestKeepingSummarization(SummarizationMiddleware):
 
     def _should_summarize(self, messages: list[AnyMessage], total_tokens: int) -> bool:
         if not super()._should_summarize(messages, total_tokens):
+            usual = self._usual_trigger
+            trigger = getattr(self._lc_helper, "trigger", None)
+            if usual and isinstance(trigger, tuple) and len(trigger) == 2 and trigger[1] > usual <= total_tokens:
+                from app.agents import summarise_later
+                from app.observability.transcript import _stage_from_config
+
+                summarise_later.note_kept_whole(_stage_from_config(""), total_tokens, usual, int(trigger[1]))
             return False
         if messages and getattr(messages[0], "type", None) == "human" and self._is_summary_message(messages[0]):
             keep = getattr(self._lc_helper, "keep", None)

@@ -498,6 +498,19 @@ ARTIFACTS_ARE_NOT_THE_ANSWER = (
     "- A successful write is saved: never write a file again only to confirm it.\n"
 )
 
+#: Where a stage's own scratch files go, and that the harness's copies of command-line code are not among them. Measured
+#: (per-role audit 2026-11-20): a suite writer called `delete_artifact` 31 times on the harness's own `tmp-inline-*`
+#: copies, each answered "the harness removes it itself", because this rule said to remove scratch files when done.
+SCRATCH_FILES_RULE = (
+    "- Scratch files (debug scripts, probes) go in the project directory; remove\n"
+    "  them with `delete_artifact` when done. A `tmp-inline-*` file is not yours:\n"
+    "  the harness saves code passed on a command line there and removes it\n"
+    "  itself, so leave it. NEVER write a script whose purpose is to delete\n"
+    "  another script.\n"
+)
+#: The scratch rule's folder, for an agent that writes in one folder only (the acceptance suite's writer).
+_IN_THE_PROJECT_DIRECTORY = "go in the project directory;"
+
 _WRITING_RULES = (
     # One section per question, each said once. It had grown to about 9,000
     # characters: the directory rules twice (here and in PROJECT_LAYOUT, which
@@ -518,9 +531,7 @@ _WRITING_RULES = (
     "  needs from you goes in your structured response; documentation that\n"
     "  ships with the product goes in the project folder beside the code it\n"
     "  describes.\n"
-    "- Scratch files (debug scripts, probes) go in the project directory; remove\n"
-    "  them with `delete_artifact` when done. NEVER write a script whose purpose\n"
-    "  is to delete another script.\n"
+    + SCRATCH_FILES_RULE
     + PROJECT_LAYOUT
     + "\n\n"
     "HOW TO WRITE - one tool for every file job:\n"
@@ -678,6 +689,7 @@ def create_role_agent(
     extra_tools: list[BaseTool] | None = None,
     can_write: bool = True,
     kept_tools: tuple[str, ...] = (),
+    suite_folder: str | None = None,
 ) -> Any:
     """Create a narrow, safe Deep Agent for one workflow role.
 
@@ -703,6 +715,10 @@ def create_role_agent(
             role (e.g. a validation-runner tool for the testing specialist).
         kept_tools: names of seldom-called tools this stage's own request asks
             for, offered even when tool lists are lean (`app.agents.stage_tools`).
+        suite_folder: for the acceptance suite's writer, the one folder it
+            writes in ("" when not known yet): the layout and scratch rules
+            say it in place of "tests live beside the code" and "the project
+            directory". None for every other agent.
 
     Returns:
         A compiled LangGraph graph (the same shape `create_deep_agent` always
@@ -751,6 +767,11 @@ def create_role_agent(
     from app.agents.project_layout import for_this_workspace
 
     full_system_prompt = for_this_workspace(full_system_prompt, resolved_repo_root)
+    if suite_folder is not None and can_write:
+        from app.agents.project_layout import for_the_suite_writer
+
+        full_system_prompt = for_the_suite_writer(full_system_prompt, suite_folder).replace(
+            _IN_THE_PROJECT_DIRECTORY, "go in the one folder you write in, named below;", 1)
     # Without the blocks written against a small model's failures, for a model measured strong (`app.agents.lean_prompts`).
     from app.agents.lean_prompts import for_the_model
 

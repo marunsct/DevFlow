@@ -382,10 +382,11 @@ def render_workspace_digest(
     the agent explores the way it always did.
     """
     try:
-        from app.tools.repository import list_repository_files
+        from app.tools.repository import is_command_line_code, list_repository_files
 
         root = Path(repo_root)
-        names = list_repository_files(root)
+        # Not the harness's copies of command-line code: it removes them itself, and listed they were deleted by hand.
+        names = [name for name in list_repository_files(root) if not is_command_line_code(Path(name).name)]
     except Exception:  # noqa: BLE001 - see docstring
         logger.debug("Could not build a workspace digest for %s", repo_root, exc_info=True)
         return ""

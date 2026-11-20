@@ -7577,6 +7577,11 @@ def clear_the_throwaways_left_behind(repo_root: str | Path) -> list[str]:
 _A_COMMAND_LINE_S_CODE = re.compile(r"tmp-inline-[0-9a-f]{8}\.\w+")
 
 
+def is_command_line_code(name: str) -> bool:
+    """Whether a file name is one the harness saved a command line's code to (`tmp-inline-<hash>.<ext>`)."""
+    return bool(_A_COMMAND_LINE_S_CODE.fullmatch(name))
+
+
 def clear_the_code_of_command_lines(repo_root: str | Path) -> list[str]:
     """Delete every file the harness saved a command line's code to, across the workspace. Returns them. Never raises.
 
@@ -7592,7 +7597,7 @@ def clear_the_code_of_command_lines(repo_root: str | Path) -> list[str]:
         from app.analysis.walk import files_under
 
         for path in files_under(root, {*IGNORED_DIRECTORIES, ".agent-home", ".harness", "node_modules"}):
-            if _A_COMMAND_LINE_S_CODE.fullmatch(path.name):
+            if is_command_line_code(path.name):
                 path.unlink(missing_ok=True)
                 removed.append(path.relative_to(root).as_posix())
     except Exception:  # noqa: BLE001 - tidying must never fail the stage after it

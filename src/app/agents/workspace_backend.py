@@ -37,7 +37,12 @@ from app.analysis.walk import directories_under, files_under
 from app.agents.workspace_paths import the_same_place
 
 logger = logging.getLogger(__name__)
-from app.tools.repository import IGNORED_DIRECTORIES, NOT_SEARCHED_FOR_A_STAGE, is_harness_momentary
+from app.tools.repository import (
+    IGNORED_DIRECTORIES,
+    NOT_SEARCHED_FOR_A_STAGE,
+    is_command_line_code,
+    is_harness_momentary,
+)
 
 
 
@@ -1168,9 +1173,11 @@ def _is_hidden(entry: Any, under: str | None = "") -> bool:
         path = path[len(base):]
     parts = [part for part in path.split("/") if part]
     # And the harness's momentary files, which exist only while it checks or
-    # writes something. See `repository.is_harness_momentary`.
+    # writes something (`repository.is_harness_momentary`), and its copies of
+    # code passed on a command line, which it removes itself: listed, they were
+    # deleted by hand - 31 calls in one stage (per-role audit 2026-11-20).
     return any(part in IGNORED_DIRECTORIES for part in parts) or bool(
-        parts and is_harness_momentary(parts[-1])
+        parts and (is_harness_momentary(parts[-1]) or is_command_line_code(parts[-1]))
     )
 
 

@@ -19,6 +19,11 @@ broken when every hidden test of that product passed was wrong (Initiative
 AO.5). The result goes to `data/loop/check_precision.json`, which
 `integration_checks.checks_too_imprecise_to_block` reads: a check under 90% over
 five or more scored products can no longer block.
+
+`--write` also measures the acceptance suite's own checks (`.harness/check-findings.jsonl`, written by
+`app.acceptance.check_findings`): a finding on a test that stayed in the suite as it was last locked, in a run that
+scored full hidden marks, was wrong - the test it doubted judged a right product. A finding naming no test is not
+counted. The result goes to `data/loop/suite_check_precision.json`; it is a report and nothing reads it.
 """
 
 from __future__ import annotations
@@ -40,6 +45,10 @@ BENCH = Path("/app/data/bench")
 #: about the tests.
 ABOUT_THE_TESTS = re.compile(r"\b(?:tests?|suites?|runners?)\b", re.I)
 OUT = Path("/app/data/loop/check_precision.json")
+SUITE_OUT = Path("/app/data/loop/suite_check_precision.json")
+#: Where the suite as last locked is kept, and the record of every suite check's finding, in a workspace.
+SNAPSHOT = Path(".harness") / "acceptance-snapshot"
+FINDINGS = Path(".harness") / "check-findings.jsonl"
 
 
 def hidden_scores(bench: Path = BENCH) -> dict[str, float]:
@@ -70,6 +79,51 @@ def precision(breaking: dict[str, list[str]], scores: dict[str, float]) -> dict[
         false = sum(1 for ws in scored if scores[ws] >= 1.0)
         measured[name] = {"fired": len(scored), "false": false, "precision": round(1 - false / len(scored), 3)}
     return measured
+
+
+def _stayed_locked(snapshot: Path, cited: list[str]) -> bool:
+    """Whether a test a finding names is in the suite as last locked: a file of that name, or a test of that name."""
+    try:
+        files = [path for path in snapshot.rglob("*") if path.is_file()]
+    except OSError:
+        return False
+    for name in cited:
+        if "." in name and any(path.as_posix().endswith(name) for path in files):
+            return True
+        if "." not in name and any(name in path.read_text(encoding="utf-8", errors="replace") for path in files):
+            return True
+    return False
+
+
+def suite_check_precision(workspaces: Path, scores: dict[str, float]) -> dict[str, dict]:
+    """Per suite check: its findings on locked tests of scored runs, how many in runs with full hidden marks, precision.
+
+    One finding is counted once per run however many rounds raised it.
+    """
+    fired: dict[str, int] = defaultdict(int)
+    false: dict[str, int] = defaultdict(int)
+    for workspace in sorted(p for p in workspaces.glob("workspace-*") if p.name in scores):
+        try:
+            lines = (workspace / FINDINGS).read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        seen: set[tuple[str, str]] = set()
+        for line in lines:
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            check, cited = str(row.get("check") or ""), [str(t) for t in row.get("tests") or []]
+            if row.get("kind") in ("filtered", "withheld") or not check or not cited:
+                continue
+            key = (check, str(row.get("fingerprint")))
+            if key in seen or not _stayed_locked(workspace / SNAPSHOT, cited):
+                continue
+            seen.add(key)
+            fired[check] += 1
+            false[check] += scores[workspace.name] >= 1.0
+    return {check: {"fired": n, "false": false[check], "precision": round(1 - false[check] / n, 3)}
+            for check, n in fired.items()}
 
 
 def main() -> None:
@@ -108,6 +162,11 @@ def main() -> None:
         OUT.write_text(json.dumps(measured, indent=1, sort_keys=True))
         print(f"\nprecision against hidden tests ({len(measured)} checks that blocked a scored product) -> {OUT}")
         for name, row in sorted(measured.items(), key=lambda item: item[1]["precision"]):
+            print(f"  {row['precision']:.2f}  {row['false']}/{row['fired']}  {name}")
+        suite_measured = suite_check_precision(ROOT, hidden_scores())
+        SUITE_OUT.write_text(json.dumps(suite_measured, indent=1, sort_keys=True))
+        print(f"\nsuite checks on tests that stayed locked ({len(suite_measured)} checks) -> {SUITE_OUT}")
+        for name, row in sorted(suite_measured.items(), key=lambda item: item[1]["precision"]):
             print(f"  {row['precision']:.2f}  {row['false']}/{row['fired']}  {name}")
     print()
     for name, hits in sorted(flagged.items(), key=lambda item: -len(item[1])):

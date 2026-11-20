@@ -71,3 +71,28 @@ def test_a_check_about_the_tests_is_not_judged_by_the_hidden_tests(tmp_path):
                                  "the ids scripts reach for against the page": ["workspace-run-a"]}, scores)
 
     assert list(measured) == ["the ids scripts reach for against the page"]
+
+
+def _a_run(root, name, *, locked, findings):
+    (root / name / ".harness" / "acceptance-snapshot" / "notes" / "acceptance").mkdir(parents=True)
+    for file, text in locked.items():
+        (root / name / ".harness" / "acceptance-snapshot" / "notes" / "acceptance" / file).write_text(text)
+    (root / name / ".harness" / "check-findings.jsonl").write_text("\n".join(json.dumps(row) for row in findings))
+
+
+def test_a_suite_check_s_finding_on_a_test_still_locked_in_a_full_marks_run_counts_as_wrong(tmp_path):
+    """Per-role audit 2026-11-20: nothing measured the suite checks' precision against the hidden tests."""
+    spec = importlib.util.spec_from_file_location("check_precision_suite", SCRIPT)
+    script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(script)
+    the_204 = {"check": "json_204", "fingerprint": "f1", "tests": ["api.spec.js"]}
+    _a_run(tmp_path, "workspace-run-a", locked={"api.spec.js": "test('[AC-5] deletes')"},
+           findings=[the_204, {**the_204, "round": 2}, {**the_204, "kind": "withheld"},
+                     {"check": "json_204", "fingerprint": "f2", "tests": []}])
+    _a_run(tmp_path, "workspace-run-b", locked={"api.spec.js": "test('[AC-5] deletes')"}, findings=[the_204])
+    _a_run(tmp_path, "workspace-run-c", locked={"other.spec.js": "test('[AC-1] adds')"}, findings=[the_204])
+
+    measured = script.suite_check_precision(
+        tmp_path, {"workspace-run-a": 1.0, "workspace-run-b": 0.5, "workspace-run-c": 1.0})
+
+    assert measured == {"json_204": {"fired": 2, "false": 1, "precision": 0.5}}

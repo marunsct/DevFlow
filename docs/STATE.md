@@ -15,7 +15,7 @@ decisions in force are `docs/owner-decisions.md`; old information is found throu
 |---|---|
 | Phase | **Learning runs, fixes deployed at once** (deep-review plan, owner 11-18: implement all; frozen-version measuring for Measure batches). The release-candidate count starts only when a full audit cycle finds nothing to fix. |
 | Models | :8888 `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` (key); :1234 `qwen3.6-35b-a3b-mtp@iq4_nl` (no key). Both the owner's; both take runs; each run is pinned to its port. |
-| Harness | Deployed 11-20 18:02 JST: 1f273882 (LF.1140-1193). Deploying after both suites: LF.1194 the server's exception line, not a framework header, reaches defects and the stuck lookup. |
+| Harness | Deployed 11-20 18:19 JST: 36356924 (LF.1140-1194). Deploying after both suites: LF.1195 lookups search from the error name; LF.1196 a loose text match expected absent beside a longer text that contains it cannot pass. |
 | Switches | 53 fixes built in (always on). 29 optional switches (9 groups, `docs/measuring.md`); `WEB_LOOKUP_WHEN_STUCK` is off and set per run. Measure arms use `SWITCHES_OFF` per run. |
 | Operations | Nightly backups (`loop.sh backup --check`); finished runs older than 60 days cleared. Audit cron `01339d0d` every ~10 minutes (7-day expiry: recreate by 11-27). |
 | Suites | `loop.sh suite` and `loop.sh suite-production` both green at 18,701 passed. |

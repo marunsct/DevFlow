@@ -38,6 +38,7 @@ def outcome(
     past_the_cap: Iterable[str] = (),
     missing: Iterable[str] = (),
     reopened: bool = False,
+    confirmed: Iterable[str] = (),
 ) -> dict[str, Any]:
     """One dispute's decision: what the QA lead was shown, what its ruling named, and what the harness kept locked."""
     refused = [(str(name), str(why)) for name, why in refused]
@@ -50,6 +51,8 @@ def outcome(
         "service_stopped": names_in(service_stopped),
         "past_the_cap": names_in(past_the_cap),
         "missing": names_in(missing),
+        # Past the cap, and confirmed by the harness running the repair the ruling quotes (CONTESTED_TESTS_CONFIRMED).
+        "confirmed_past_the_cap": names_in(confirmed),
     }
     kept = {*record["passed_alone"], *record["service_stopped"], *record["past_the_cap"]}
     record["reopened"] = bool(reopened)
@@ -72,7 +75,7 @@ def summary(record: dict[str, Any]) -> str:
         for key, label in (
             ("shown", "shown"), ("called_wrong", "called wrong"), ("refused", "refused for the quote"),
             ("passed_alone", "passed alone"), ("service_stopped", "service stopped"), ("past_the_cap", "past the cap"),
-            ("missing", "missing from the suite"),
+            ("confirmed_past_the_cap", "confirmed past the cap"), ("missing", "missing from the suite"),
         )
         if record.get(key)
     )

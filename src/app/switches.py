@@ -188,6 +188,9 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "Recurring causes": ("DIAGNOSE_A_RECURRING_CAUSE",),
     # A stuck fixer is shown what others found for its error, looked up by the harness (plan WL.4): off until measured.
     "Internet lookups": ("WEB_LOOKUP_WHEN_STUCK",),
+    # Which locked tests a dispute may still send back past the reclassification cap: only those whose quoted repair
+    # the harness confirmed by running it (`graph.contested_tests`). Off until measured: it relaxes the cap.
+    "Suite disputes": ("CONTESTED_TESTS_CONFIRMED",),
 }
 #: Every grouped switch, in the admin page's order.
 EXPERIMENTS = tuple(name for members in GROUPS.values() for name in members)

@@ -123,6 +123,7 @@ SWITCHES: dict[str, str] = {
     "TESTS_OF_ACTIONS_WITHIN_A_VIEW": "app.acceptance.actions_within_a_view",
     "NAMING_FINDING_BEFORE_DEFERRAL": "app.graph.acceptance_nodes:naming_finding_switch",
     "QA_SAYS_THE_PRODUCT_IS_AT_FAULT": "app.graph.product_at_fault",
+    "CONTESTED_TESTS_CONFIRMED": "app.graph.contested_tests",
     "UNIT_TESTS_YIELD_TO_THE_LOCKED_SUITE": "app.graph.unit_tests_disagree",
     "LAST_TRY_ON_DEFERRED": "app.graph.last_try_on_deferred",
     "START_PROBE": "app.acceptance.start_probe",

@@ -52,6 +52,7 @@ Written by `loop.sh measuring` from 448 scored runs in the ledger. On and off co
 | `FIX_STAGES_THAT_CLOSE_NOTHING` | Efficiency | on | 55 | 9 | 1 | not measured: needs 0 more on and 1 more off |
 | `HARNESS_FINDINGS_RECHECKED` | Efficiency | on | 55 | no signal | 1 | not measured: needs 0 more on and 1 more off |
 | `MUTANT_CHECK_IN_THE_FIX_STAGE` | Efficiency | on | 55 | 14 | 1 | not measured: needs 0 more on and 1 more off |
+| `MUTATION_GAPS_BUNDLED` | Efficiency | off | 0 | 0 | 0 | not measured: needs 2 more on and 2 more off |
 | `NEAR_GREEN_REPAIR_TO_ROUND` | Efficiency | on | 55 | 0 | 1 | not measured: needs 0 more on and 1 more off |
 | `NEAR_GREEN_REPLANNED_ONCE` | Efficiency | on | 31 | 2 | 32 | measured: hidden 0.87 on / 0.79 off; minutes 103.91 / 120.75 |
 | `ONE_DESIGN_REVIEW` | Efficiency | on | 55 | 0 | 1 | not measured: needs 0 more on and 1 more off |
@@ -59,6 +60,7 @@ Written by `loop.sh measuring` from 448 scored runs in the ledger. On and off co
 | `SPRINT_TIME_BUDGET` | Efficiency | on | 55 | 0 | 1 | not measured: needs 0 more on and 1 more off |
 | `STABLE_MEMORY_ORDER` | Efficiency | on | 55 | 53 | 1 | not measured: needs 0 more on and 1 more off |
 | `WEB_LOOKUP_WHEN_STUCK` | Internet lookups | off | 0 | no signal | 0 | not measured: needs 2 more on and 2 more off |
+| `WEB_TOOLS_OFFERED` | Internet lookups | off | 0 | no signal | 0 | not measured: needs 2 more on and 2 more off |
 | `DIAGNOSE_A_RECURRING_CAUSE` | Recurring causes | on | 34 | 2 | 0 | not measured: needs 0 more on and 2 more off |
 | `DESIGN_REVISION_CROSS_CHECKED` | Review gates | on | 55 | 49 | 1 | not measured: needs 0 more on and 1 more off |
 | `INTAKE_ASKS_FIRST` | Review gates | on | 34 | 34 | 0 | not measured: needs 0 more on and 2 more off |

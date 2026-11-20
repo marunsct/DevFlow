@@ -15,7 +15,7 @@ decisions in force are `docs/owner-decisions.md`; old information is found throu
 |---|---|
 | Phase | **Learning runs, fixes deployed at once** (deep-review plan, owner 11-18: implement all; frozen-version measuring for Measure batches). The release-candidate count starts only when a full audit cycle finds nothing to fix. |
 | Models | :8888 `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` (key); :1234 `qwen3.6-35b-a3b-mtp@iq4_nl` (no key). Both the owner's; both take runs; each run is pinned to its port. |
-| Harness | Deploying 11-20 11:27 JST: LF.1160 (the Spring pack holds the jar name), LF.1161 (WL.7: `ready` asks each lookup source live), LF.1162 (a mutant's test run cut off at 3x the normal run), the docs consolidation and the `WEB_LOOKUP_WHEN_STUCK` registration. Merged, suites running, deploy next: LF.1163 mutation gaps to one fixer (`MUTATION_GAPS_BUNDLED`, off), LF.1164 WS.3 steering (read by / edit / withdraw / three levels), LF.1165 WS.1 Workspace tab. WL.3 (LF.1166, per-run Internet lookups Off / When stuck / Always; lookup keys on /admin) merged too. Building in worktrees: WS.2 timeline, contested-test confirmation. |
+| Harness | Deploying 11-20 11:27 JST: LF.1160 (the Spring pack holds the jar name), LF.1161 (WL.7: `ready` asks each lookup source live), LF.1162 (a mutant's test run cut off at 3x the normal run), the docs consolidation and the `WEB_LOOKUP_WHEN_STUCK` registration. Merged, suites running, deploy next: LF.1163 mutation gaps to one fixer (`MUTATION_GAPS_BUNDLED`, off), LF.1164 WS.3 steering (read by / edit / withdraw / three levels), LF.1165 WS.1 Workspace tab. WL.3 (LF.1166, per-run Internet lookups Off / When stuck / Always; lookup keys on /admin) merged too. WS.2 (LF.1167, readable timeline and plan panel) merged too; all in the suites, then one deploy. Building in worktrees: contested-test confirmation, WL.4 T2-T4. |
 | Switches | 53 fixes built in (always on). 29 optional switches (9 groups, `docs/measuring.md`); `WEB_LOOKUP_WHEN_STUCK` is off and set per run. Measure arms use `SWITCHES_OFF` per run. |
 | Operations | Nightly backups (`loop.sh backup --check`); finished runs older than 60 days cleared. Audit cron `01339d0d` every ~10 minutes (7-day expiry: recreate by 11-27). |
 | Suites | `loop.sh suite` and `loop.sh suite-production` both green at 18,701 passed. |
@@ -40,7 +40,7 @@ Earlier runs: `reports/status-board/`, git history of this file.
 2. Internet lookups: WL.7 and WL.3 built; next WL.4 T2-T4, WL.5, WL.6
    (`docs/improvement-plan.md` 3.1). Owner action: enter a free Stack Apps key and a no-scope GitHub token on /admin (Lookup keys); a paid key optional.
    Turn `WEB_LOOKUP_WHEN_STUCK` on for a measuring pair on C#, Java and Rust.
-3. Workspace view: WS.3 and WS.1 built (LF.1164, LF.1165); next WS.2 timeline, then WS.4 preview, then the WS.3 remainder (plan gate): `docs/improvement-plan.md` 3.2.
+3. Workspace view: WS.3, WS.1, WS.2 built (LF.1164, LF.1165, LF.1167); next WS.4 preview (the largest piece), then WS.7, WS.5 and the WS.3 remainder: `docs/improvement-plan.md` 3.2.
 4. Backlog (plan 3.3): contested tests past their repair cap; stack-decision check
    for a database named as one engine "via" another; the restart re-read pattern; Rust routing (owner).
 5. Open audit item: the per-role audit (suite writers, technical lead, prompts per role) is unfinished; its report goes to

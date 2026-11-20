@@ -80,6 +80,10 @@ x-app-env: &app-env
   WEB_TOOLS_OFFERED: ${WEB_TOOLS_OFFERED:-off}
   WEB_TOOLS_AFTER_TWO_FAILED_FIXES: ${WEB_TOOLS_AFTER_TWO_FAILED_FIXES:-off}
   CONTESTED_TESTS_CONFIRMED: ${CONTESTED_TESTS_CONFIRMED:-off}
+  # Per-role audit 2026-11-20 (items 4, 7, 8): smaller prompts, each read once per run, off until measured.
+  QA_PROMPT_TRIMMED: ${QA_PROMPT_TRIMMED:-off}
+  REVIEWER_SHAPED_PLUGIN_CONTENT: ${REVIEWER_SHAPED_PLUGIN_CONTENT:-off}
+  LEAD_REPLAN_REQUEST_SMALLER: ${LEAD_REPLAN_REQUEST_SMALLER:-off}
   # Plan WS.4: a person starts the product from the run page; it runs on the preview network below.
   PRODUCT_PREVIEW: ${PRODUCT_PREVIEW:-off}
   PRODUCT_PREVIEW_NETWORK: ${PRODUCT_PREVIEW_NETWORK:-devflow-preview}

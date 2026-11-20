@@ -586,8 +586,12 @@ def _the_pack_s_name(repo_root: str) -> List[str]:
     return [pack] if pack else []
 
 
-def build_plugin_instructions_middleware(repo_root: str, role: str = "") -> Any:
-    """Append the stack's framework instructions to every call's system prompt."""
+def build_plugin_instructions_middleware(repo_root: str, role: str = "", writing_the_suite: bool = False) -> Any:
+    """Append the stack's framework instructions to every call's system prompt.
+
+    `writing_the_suite`: the agent writes the acceptance suite (its role's name is the testing specialist's), so
+    `QA_PROMPT_TRIMMED` reaches it (`app.agents.prompt_size`).
+    """
     from langchain.agents.middleware import AgentMiddleware
 
     held: dict[str, Any] = {}
@@ -608,7 +612,20 @@ def build_plugin_instructions_middleware(repo_root: str, role: str = "") -> Any:
                 keys += guidance_key()
             except Exception:  # noqa: BLE001 - no guidance is the stack's guidance alone
                 pass
-            instructions = get_plugin_instructions(keys, role) if keys else ""
+            # A suite writer's or a reviewer's cut of it, when a switch says so (`app.agents.prompt_size`).
+            from app.agents import prompt_size
+
+            shape = prompt_size.plugin_shape(role, writing_the_suite)
+            instructions = (get_plugin_instructions(keys, role, **shape) if shape else get_plugin_instructions(keys, role)) if keys else ""
+            if shape and keys:
+                try:
+                    from app.observability.transcript import _stage_from_config as _the_stage
+
+                    who = f"{role} (the acceptance suite)" if writing_the_suite else role
+                    whole = get_plugin_instructions(keys, role) if prompt_size.unnoted(shape, who) else instructions
+                    prompt_size.note_shaped(shape, who, _the_stage(role), len(whole) - len(instructions))
+                except Exception:  # noqa: BLE001 - a record never fails a call
+                    logger.debug("Could not note a shaped prompt", exc_info=True)
             # The owner's direction for this run, sent while it runs, after
             # the stack's instructions (`app.server.steering`).
             try:

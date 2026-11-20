@@ -648,6 +648,27 @@ def _what_the_last_attempt_left(attempt: Any) -> str:
     return "\n".join(lines) + "\n\n"
 
 
+def _the_sprint_s_own_files(attempt: Any) -> str:
+    """On a re-plan, the section naming the files the sprint's last attempt planned and changed, or "".
+
+    Behind `LEAD_REPLAN_REQUEST_SMALLER` (off until measured): the lead's project memory then holds those whole and
+    the rest as their digest (`app.agents.prompt_size`). Measured: a lead's request ran to 96k-234k characters, 134k
+    of them project memory, with the most cut-off replies of any role.
+    """
+    from app.agents import prompt_size
+
+    if not isinstance(attempt, dict) or not prompt_size.lead_replan_smaller_switch.enabled():
+        return ""
+    files: list[str] = []
+    for order in attempt.get("work_orders") or []:
+        if isinstance(order, dict):
+            for path in [*(order.get("files_planned") or []), *(order.get("files_changed") or [])]:
+                path = str(path).strip().lstrip("/")
+                if path and path not in files:
+                    files.append(path)
+    return prompt_size.sprint_files_section(files)
+
+
 #: Measured on one run: the last sprint, whose goal was the responsive layout
 #: and the finish, declined every interface item the specification had adopted
 #: and its specialist found missing - "test suite passes, so ignore", "not
@@ -699,6 +720,7 @@ def build_milestone_planning_request(
             if learned else ""
         )
         + _what_the_last_attempt_left(last_attempt)
+        + _the_sprint_s_own_files(last_attempt)
         + f"You are now planning the milestone for this sprint: '{selected_sprint_goal}'.\n"
         "Draft the specialized tasks necessary to complete this specific sprint.\n\n"
         + PLANNED_PROJECT_DIRECTORY

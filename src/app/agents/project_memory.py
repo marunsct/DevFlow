@@ -430,7 +430,8 @@ def kept_by_the_harness(repo_root: str | Path) -> tuple[str, ...]:
 
 
 def render(repo_root: str | Path, budget_characters: int, focus: str = "",
-           for_a_fixer: bool = False, kept_out: tuple[str, ...] = (), sliced: bool = False) -> tuple[str, dict[str, str]]:
+           for_a_fixer: bool = False, kept_out: tuple[str, ...] = (), sliced: bool = False,
+           sprint_files: tuple[str, ...] = ()) -> tuple[str, dict[str, str]]:
     """The memory as text within `budget_characters`, and the files it holds by path.
 
     `for_a_fixer`: the product's code first, the acceptance criteria, and the specification as its outline and the
@@ -440,6 +441,10 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
     `memory_slices.MOST_CHARACTERS_WHOLE` is held as the lines around those its failure names (deep review C3).
 
     `sliced`: only the product files the request names, and what they import, held whole (`SLICED_MEMORY`).
+
+    `sprint_files`: a re-plan's sprint's own files (`LEAD_REPLAN_REQUEST_SMALLER`): only the product files among them,
+    and what they import, held whole, and every document longer than `memory_slices.MOST_CHARACTERS_WHOLE` held as
+    its digest. The whole memory as before when none of them is in the project.
     """
     files = current(repo_root)
     if not files or budget_characters <= 0:
@@ -449,6 +454,9 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
     ask = memory_slices.the_ask(focus)
     product = [path for path in files if not path.startswith(("docs/", "."))]
     the_slice = memory_slices.the_slice(repo_root, ask, files) if sliced else None
+    replan = _the_sprint_s_slice(repo_root, sprint_files, files) if sprint_files else None
+    if replan is not None:
+        the_slice = replan
     held: dict[str, str] = {}
     parts: list[str] = []
     from app.agents.canonical_memory import enabled as canonical_order
@@ -532,6 +540,8 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
         block = f"=== {path} ===\n{text.rstrip()}\n"
         # A small product's documents are held as a digest sooner (`STABLE_STAGE_PREFIX`, off until measured).
         largest = (shorter_documents or LARGEST_FILE_CHARACTERS) if path.startswith("docs/") else LARGEST_FILE_CHARACTERS
+        if replan is not None and path.startswith("docs/"):
+            largest = min(largest, memory_slices.MOST_CHARACTERS_WHOLE)
         if len(text) > largest and path.endswith(".md"):
             # Too large to hold whole: its outline and the sections this
             # stage's request points at, so it is not read window by window.
@@ -557,7 +567,8 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
         "[Project memory: the workflow's documents and the project's files as they are now, kept current "
         "by the harness. Use them as they are here; read a file only if it is named at the end as not "
         "included." + (" " + stable_memory_order.SAID if stable else "")
-        + (" " + memory_slices.SAID if the_slice is not None else "") + "]\n\n"
+        + (" " + _replan_said() if replan is not None
+           else " " + memory_slices.SAID if the_slice is not None else "") + "]\n\n"
     ) + where_things_stand(repo_root, files)
     # Named one by one only up to `MOST_NAMED_LEFT_OUT`, in the memory's own
     # order: a large project's left-out list was every path it has, larger
@@ -581,6 +592,35 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
     if shapes:
         tail += "\nWhat those files define (read one when you need its body):\n" + shapes + "\n"
     return head + "\n".join(parts) + tail, held
+
+
+def _the_sprint_s_slice(repo_root: str | Path, sprint_files: tuple[str, ...], files: dict[str, str]) -> set[str] | None:
+    """The product files a re-plan's memory holds whole: the sprint's own and what they import; None to hold all."""
+    from app.agents import memory_slices
+
+    product = [path for path in files if not path.startswith(("docs/", "."))]
+    named = "\n".join(sprint_files)
+    chosen = {path for path in product if memory_slices.named(named, path, product)}
+    if not chosen:
+        return None
+    return chosen | (memory_slices.imports_of(repo_root, chosen) & set(product))
+
+
+def _replan_said() -> str:
+    from app.agents.prompt_size import REPLAN_SAID
+
+    return REPLAN_SAID
+
+
+def _the_sprint_s_files(stage: str, opening: str) -> tuple[str, ...]:
+    """A lead's re-plan's sprint files, while `LEAD_REPLAN_REQUEST_SMALLER` is on; () otherwise."""
+    if not str(stage or "").startswith("technical_lead"):
+        return ()
+    from app.agents import prompt_size
+
+    if not prompt_size.lead_replan_smaller_switch.enabled():
+        return ()
+    return tuple(prompt_size.sprint_files_in(opening))
 
 
 def budget_for(model: Any) -> int:
@@ -824,7 +864,8 @@ def build_project_memory_middleware(repo_root: str) -> Any:
                                                               for_a_fixer=stage.startswith("defect_fix"),
                                                               kept_out=_kept_out_for(stage, repo_root),
                                                               sliced=memory_slices.enabled() and stage.startswith(
-                                                                  ("defect_fix", "specialist_")))
+                                                                  ("defect_fix", "specialist_")),
+                                                              sprint_files=_the_sprint_s_files(stage, opening))
                     visit["files"] = dict(current(repo_root))
                 memory = visit["snapshot"]
                 held = visit.get("held") or {}

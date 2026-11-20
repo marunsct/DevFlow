@@ -183,7 +183,7 @@ export const PreviewPanel: React.FC<{ runId: string }> = ({ runId }) => {
               src={preview.url}
               sandbox={preview.separate_origin ? `${SANDBOX} allow-same-origin` : SANDBOX}
               referrerPolicy="no-referrer"
-              className="min-h-112 w-full flex-1 rounded-lg border border-border/60 bg-white"
+              className="min-h-112 w-full flex-1 rounded-lg border border-border/60 bg-surface"
             />
           ) : (
             <RequestConsole link={preview.url} />

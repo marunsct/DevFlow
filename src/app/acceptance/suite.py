@@ -39,6 +39,12 @@ SNAPSHOT_DIR = f"{contract.HARNESS_DIR}/acceptance-snapshot"
 #: 57 of 62 passing where the lock had 52; QA's next change measured worse, the lock came back, the six rewrites were
 #: lost, and the six tests went back for repair again. Cleared at every lock.
 REPAIR_BEST_DIR = f"{contract.HARNESS_DIR}/acceptance-repair-best"
+#: The suite as it ran before an at-the-limit send-back, kept so a send-back can never cost the run its suite.
+BEFORE_THE_SEND_BACK = f"{contract.HARNESS_DIR}/suite-before-the-send-back.json"
+#: The review's once-per-lock send-backs at its limit, in the suite's state; every lock clears them with the copy
+#: above, so a reopened suite has them again. Found in a code review: a repair out of rounds locked without clearing
+#: them, so the next reopen had none and could later put back a suite from before that lock.
+ONCE_AT_THE_LIMIT = ("partial_strengthened_once", "cannot_pass_repaired_once", "strengthened_once", "cannot_pass_sent")
 #: Every version of the suite that was ever locked, `v1`, `v2`, ..., each next
 #: to `vN.diff` - what changed from the version before. A lock replaces the
 #: snapshot, so when QA repaired a reopened suite nothing showed what it
@@ -381,7 +387,10 @@ def lock(repo_root: str | Path) -> dict[str, str]:
     state.pop("before_repair", None)
     state.pop("repair_bodies", None)
     state.pop("repair_best", None)
+    for key in ONCE_AT_THE_LIMIT:
+        state.pop(key, None)
     shutil.rmtree(root / REPAIR_BEST_DIR, ignore_errors=True)
+    (root / BEFORE_THE_SEND_BACK).unlink(missing_ok=True)
     _save_state(repo_root, state)
     # A reopened suite's findings go to its writers first, not compared with the rounds before this lock.
     from app.acceptance import check_findings

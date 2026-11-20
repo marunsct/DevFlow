@@ -902,10 +902,9 @@ def _write_the_suite_s_files(files: dict[Path, str]) -> None:
             logger.debug("Could not write %s back", path, exc_info=True)
 
 
-#: The suite as it ran before an at-the-limit send-back, kept so a send-back can never cost the run its suite.
-BEFORE_THE_SEND_BACK = ".harness/suite-before-the-send-back.json"
-#: The once-per-lock send-backs at the review's limit; cleared when the suite is locked, so a reopened suite has them.
-ONCE_AT_THE_LIMIT = ("partial_strengthened_once", "cannot_pass_repaired_once", "strengthened_once", "cannot_pass_sent")
+#: The suite as it ran before an at-the-limit send-back, and the once-per-lock send-backs: both cleared by every lock.
+BEFORE_THE_SEND_BACK = suite.BEFORE_THE_SEND_BACK
+ONCE_AT_THE_LIMIT = suite.ONCE_AT_THE_LIMIT
 
 
 def _keep_before_the_send_back(root: str | Path) -> None:
@@ -946,14 +945,6 @@ def _put_back_before_the_send_back(root: str | Path) -> bool:
     target.unlink(missing_ok=True)
     logger.warning("The suite returned from a send-back at the limit could not be locked; the suite before it is back")
     return True
-
-
-def _the_send_backs_spent(root: str | Path) -> None:
-    """At the lock: the once-per-lock send-backs are available again, and the kept suite is no longer needed."""
-    state = suite._state(root)
-    if any(key in state for key in ONCE_AT_THE_LIMIT):
-        suite._save_state(root, {key: value for key, value in state.items() if key not in ONCE_AT_THE_LIMIT})
-    (Path(root) / BEFORE_THE_SEND_BACK).unlink(missing_ok=True)
 
 
 def _the_repair_measured(root: str | Path) -> tuple[list[str], Any, str]:
@@ -1254,7 +1245,6 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     if suite.undefer_what_a_test_now_carries(root):
         logger.info("Deferred criteria a test now carries are no longer deferred")
     suite.lock(root)
-    _the_send_backs_spent(root)
     update.update(product_at_fault.settled(root, no_fault_found))
     if no_fault_found:
         logger.warning("QA found no fault in the test(s) sent for repair, and the harness's checks agree; locked, nothing charged")

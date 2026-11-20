@@ -77,8 +77,8 @@ def _describe_the_browser(runnable: list[str]) -> str:
     automated = "playwright" in runnable
     if not automated:
         return (
-            "- There is NO browser and no display. Nothing can open a page, click a\n"
-            "  button, or read DevTools. 'Manual browser testing' cannot be carried\n"
+            "- There is NO browser and no display. Nothing can open a page, use its\n"
+            "  controls, or read DevTools. 'Manual browser testing' cannot be carried\n"
             "  out here by anyone: no human sees this workspace either.\n"
         )
     return (
@@ -91,7 +91,7 @@ def _describe_the_browser(runnable: list[str]) -> str:
         "  IS THE RIGHT ANSWER. They test different things and neither can do\n"
         "  the other's job: the built-in runner tests logic you can import and\n"
         "  call, and nothing built into a language runtime can open a page,\n"
-        "  click a button or read what the DOM now says. So write both into\n"
+        "  use its controls or read what the DOM now says. So write both into\n"
         "  `testing_framework` - for example '<the language's built-in runner>\n"
         "  for the logic, Playwright for the page' - rather than choosing one and\n"
         "  leaving the\n"

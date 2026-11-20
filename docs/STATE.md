@@ -5,9 +5,9 @@ the block below is written by `loop.sh state`. The map of all documents is `docs
 `docs/improvement-plan.md`; how the product works is `docs/PRODUCT.md`; how to run and test it is `docs/HANDOVER.md`;
 decisions in force are `docs/owner-decisions.md`; old information is found through `docs/ARCHIVE.md`.
 <!-- state:generated -->
-**As of:** 11-20 12:04 JST (written by `loop.sh state`). Harness 938b1a4a committed; de2ec8f5 deployed (not the same).
-**Live, and stopped in the last day:** run-b668a924 running at defect_fix_2_1; run-e382df47 failed at failed
-**Last scored:** run-d2d6fd42 notes-api-csharp 9/9 (completed, handoff 1.0; scored 11-20 12:04 JST); run-aa3693b6 notes-api-php 9/9 (completed, 78 active min, handoff 1.0; scored 11-20 09:33 JST); run-09fc4306 web-todo 10/10 (completed, mixed, 124 active min, handoff 1.0; scored 11-20 08:43 JST).
+**As of:** 11-20 13:03 JST (written by `loop.sh state`). Harness 6e563e3a committed; 6e563e3a deployed.
+**Live, and stopped in the last day:** run-50a7c5cc running at product_manager; run-0f60c7a7 running at defect_fix_1_0; run-e382df47 failed at failed
+**Last scored:** run-b668a924 notes-api-java 9/9 (completed, handoff 1.0; scored 11-20 13:03 JST); run-d2d6fd42 notes-api-csharp 9/9 (completed, mixed, 67 active min, handoff 1.0; scored 11-20 12:04 JST); run-aa3693b6 notes-api-php 9/9 (completed, 78 active min, handoff 1.0; scored 11-20 09:33 JST).
 <!-- /state:generated -->
 
 ## Live now

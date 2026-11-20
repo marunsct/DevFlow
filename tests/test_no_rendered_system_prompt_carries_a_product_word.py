@@ -22,12 +22,6 @@ BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I
 PACKS = ("browser-javascript", "csharp-aspnet-api", "python-cli")
 #: Text another change is rewording (the environment contract's description of the browser), cut before the scan.
 #: Remove an entry once its text no longer carries the word; nothing else may be added here.
-REWORDED_ELSEWHERE = (
-    re.compile(r"Nothing can open a page, click a\s+button, or read DevTools\."),
-    re.compile(r"can open a page,\s+click a button or read what the DOM now says\."),
-)
-
-
 def _render(root) -> dict[str, str]:
     """{agent name: the system prompt it is built with}, for every role agent built in `root`."""
     from deepagents import create_deep_agent
@@ -77,8 +71,6 @@ def test_every_stage_and_every_workspace_is_rendered(rendered):
 
 def test_no_rendered_system_prompt_carries_a_product_word(rendered):
     def hits(prompt: str) -> list[str]:
-        for passage in REWORDED_ELSEWHERE:
-            prompt = passage.sub("", prompt)
         return [" ".join(prompt[max(0, m.start() - 40):m.end() + 20].split()) for m in BANNED.finditer(prompt)]
 
     assert {name: found for name, prompt in rendered.items() if (found := hits(prompt))} == {}

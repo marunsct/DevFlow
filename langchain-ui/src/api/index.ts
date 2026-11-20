@@ -170,15 +170,23 @@ export const getServerHealth = async (): Promise<ServerHealth> => {
  * Whether a finished product may be changed by a new run (`PREMIUM_CHANGE_REQUESTS`), read from the switches every
  * signed-in person may see. False when the list cannot be read: the server refuses such a run while it is off.
  */
-export const changeRequestsOn = async (): Promise<boolean> => {
+export const changeRequestsOn = async (): Promise<boolean> => switchOn('PREMIUM_CHANGE_REQUESTS');
+
+/**
+ * Whether a run seeded from a repository may deliver its change as a pull request (`PULL_REQUEST_DELIVERY`, plan
+ * WS.7). False when the list cannot be read: the token would then only be sealed and never used.
+ */
+export const pullRequestDeliveryOn = async (): Promise<boolean> => switchOn('PULL_REQUEST_DELIVERY');
+
+/** Whether the named switch is on, read from the switches every signed-in person may see; false when unreadable. */
+async function switchOn(name: string): Promise<boolean> {
   try {
     const response = await api.get<Array<{ name: string; on: boolean }>>('/settings/switches');
-    return Array.isArray(response.data)
-      && response.data.some((entry) => entry.name === 'PREMIUM_CHANGE_REQUESTS' && entry.on === true);
+    return Array.isArray(response.data) && response.data.some((entry) => entry.name === name && entry.on === true);
   } catch {
     return false;
   }
-};
+}
 
 export const getRun = async (runId: string): Promise<RunStatusResponse> => {
   const response = await api.get<RunStatusResponse>(`/runs/${runId}`);

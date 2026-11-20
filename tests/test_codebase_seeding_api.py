@@ -273,6 +273,37 @@ def test_a_clone_token_never_reaches_the_audit_log(client, run_id, tmp_path, mon
     assert not any("ghp_supersecrettoken" in str(row[0]) for row in rows)
 
 
+def test_a_delivery_token_is_in_no_response_about_the_run(client, run_id, tmp_path, monkeypatch):
+    """WS.7: the pull-request token typed in the new-run form is kept sealed for the delivery only; no answer the
+    API gives about the run - its start, its record, the run list, its status, its stages - carries it back."""
+    monkeypatch.setenv("SEED_ALLOWED_SCHEMES", "file")
+    monkeypatch.setenv("PULL_REQUEST_DELIVERY", "on")
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    env = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "T", "GIT_AUTHOR_EMAIL": "t@e.x",
+        "GIT_COMMITTER_NAME": "T", "GIT_COMMITTER_EMAIL": "t@e.x",
+    }
+    subprocess.run(["git", "init", "-q", "-b", "main", str(origin)], check=True, env=env)
+    (origin / "a.py").write_text("x")
+    subprocess.run(["git", "-C", str(origin), "add", "-A"], check=True, env=env)
+    subprocess.run(["git", "-C", str(origin), "commit", "-qm", "c"], check=True, env=env)
+    token = "ghp_delivery_token_never_echoed"
+
+    started = client.post(
+        f"/api/runs/{run_id}/start",
+        json={"source": {"type": "git", "url": f"file://{origin}", "depth": 0, "delivery_token": token}},
+    )
+
+    answers = [started] + [client.get(path) for path in (
+        f"/api/runs/{run_id}", "/api/runs", f"/api/runs/{run_id}/status", f"/api/runs/{run_id}/stages",
+        f"/api/runs/{run_id}/plan", f"/api/runs/{run_id}/sprints",
+    )]
+    assert [answer.status_code for answer in answers[:3]] == [202, 200, 200], started.text
+    assert [answer.request.url.path for answer in answers if token in answer.text] == []
+
+
 def test_an_unknown_source_type_is_rejected_by_the_schema(client, run_id):
     response = client.post(
         f"/api/runs/{run_id}/start", json={"source": {"type": "ftp", "url": "ftp://x/y"}}

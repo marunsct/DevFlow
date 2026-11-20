@@ -15,7 +15,7 @@ decisions in force are `docs/owner-decisions.md`; old information is found throu
 |---|---|
 | Phase | **Learning runs, fixes deployed at once** (deep-review plan, owner 11-18: implement all; frozen-version measuring for Measure batches). The release-candidate count starts only when a full audit cycle finds nothing to fix. |
 | Models | :8888 `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` (key); :1234 `qwen3.6-35b-a3b-mtp@iq4_nl` (no key). Both the owner's; both take runs; each run is pinned to its port. |
-| Harness | Deployed 11-20 18:38 JST: 12789532 (LF.1140-1196). Deploying after both suites: LF.1197 a contract page line no bare visit can check is not checked, never broken. Building: the page probe fills form fields by their meaning. |
+| Harness | Deployed 11-20 19:55 JST: 7932b2a1 (LF.1140-1197). Deploying after both suites: LF.1198 the page probe fills a form's fields by their meaning. |
 | Switches | 53 fixes built in (always on). 29 optional switches (9 groups, `docs/measuring.md`); `WEB_LOOKUP_WHEN_STUCK` is off and set per run. Measure arms use `SWITCHES_OFF` per run. |
 | Operations | Nightly backups (`loop.sh backup --check`); finished runs older than 60 days cleared. Audit cron `01339d0d` every ~10 minutes (7-day expiry: recreate by 11-27). |
 | Suites | `loop.sh suite` and `loop.sh suite-production` both green at 18,701 passed. |

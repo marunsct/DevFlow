@@ -493,7 +493,7 @@ Supporting: `measured_once.py` (an unchanged product is not measured again), `un
 
 With `CONTESTED_TESTS_CONFIRMED` (off until measured), rulings that quote identical code at fault count as one cause for the cap, and a ruling past the cap reopens a test only after the harness confirms its quoted repair: no line that checks a result changed, the locked test fails alone, a corrected copy beside it passes, and that copy still fails against at least one of up to 3 deliberate changes to the product (`graph/contested_tests.py`).
 
-A suite-check finding that comes back with the same check, wording and tests after a repair changed the suite is not sent to the authors again: it goes to the QA lead as a suspected false finding and is recorded (`suspected false finding`, a `withheld` row in `check-findings.jsonl`; LF.1177). The suite writer's system prompt names only its acceptance folder (LF.1178).
+A finding of the suite's dry run carries the cause when the runner's error is a known one (`spec_dry_run.SUITE_KNOWN_ERRORS`), and is never held back, since it is what running the test's own code did (LF.1183). Any other suite-check finding that comes back with the same check, wording and tests after a repair changed the suite is not sent to the authors again: it goes to the QA lead as a suspected false finding and is recorded (`suspected false finding`, a `withheld` row in `check-findings.jsonl`; LF.1177). The suite writer's system prompt names only its acceptance folder (LF.1178).
 
 ### 6.6 Brownfield: the regression contract
 

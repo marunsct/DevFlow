@@ -130,3 +130,22 @@ def test_the_finding_s_words_keep_to_the_rule(tmp_path, monkeypatch):
     monkeypatch.setenv("SPEC_DRY_RUN", "on")
     text = spec_dry_run.findings(_workspace(tmp_path, BROKEN))[0]
     assert not re.search(r"\b(task|tasks|to-do|todo|button|click|checkbox)\b", text, re.I)
+
+
+SHADOWED = ("import path from 'node:path';\n"
+            "test('[AC-1] x', async () => { const { fileURLToPath } = await import('node:url'); "
+            "const __filename = fileURLToPath(import.meta.url); expect(path.dirname(__filename)).toBeTruthy(); });")
+
+
+def test_a_spec_that_declares_the_runner_s_own_file_name_is_told_why_it_fails(tmp_path, monkeypatch):
+    """Measured on a C# run: three rounds of "correct that line" moved the declaration and kept the cause."""
+    monkeypatch.setenv("SPEC_DRY_RUN", "on")
+    text = spec_dry_run.findings(_workspace(tmp_path, SHADOWED))[0]
+    assert "before initialization" in text
+    assert "The cause:" in text and "Do not declare `__filename` or `__dirname`" in text
+    assert not re.search(r"\b(task|tasks|to-do|todo|button|click|checkbox)\b", text, re.I)
+
+
+def test_an_error_with_no_known_cause_keeps_the_plain_finding(tmp_path, monkeypatch):
+    monkeypatch.setenv("SPEC_DRY_RUN", "on")
+    assert "The cause:" not in spec_dry_run.findings(_workspace(tmp_path, BROKEN))[0]

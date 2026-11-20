@@ -148,6 +148,29 @@ def _run_in_its_container(repo_root: Path, base: Path, specs: list[str]) -> dict
         shutil.rmtree(place, ignore_errors=True)
 
 
+#: Errors the suite's own runner is known to raise, by a phrase of the message, and their cause. Measured on a C#
+#: run: the writer declared `const __filename = fileURLToPath(import.meta.url)` in a spec; the runner compiles
+#: `import.meta.url` to code that reads `__filename`, so the declaration read itself before it was set, and three
+#: rounds of "correct that line" moved the line without changing the cause.
+SUITE_KNOWN_ERRORS: dict[str, str] = {
+    **{
+        f"cannot access '{name}' before initialization": (
+            f"the test runner compiles `import.meta.url` to code that reads `{name}`, so a spec that declares its own "
+            f"`{name}` reads that name before it is set. Do not declare `__filename` or `__dirname` in a spec: name "
+            "the variable something else (`specFile`, `specDir`), or reach files with `path.resolve(...)` from the "
+            "project folder."
+        )
+        for name in ("__filename", "__dirname")
+    },
+}
+
+
+def _with_its_cause(error: str) -> str:
+    """` The cause: ...` for an error the suite's runner is known to raise, else ''."""
+    lowered = error.lower()
+    return next((f" The cause: {cause}" for phrase, cause in SUITE_KNOWN_ERRORS.items() if phrase in lowered), "")
+
+
 def findings(repo_root: str | Path) -> list[str]:
     """One line per fault the dry run found in the locked suite; [] when off, or not a suite this runs. Never raises."""
     try:
@@ -167,6 +190,7 @@ def findings(repo_root: str | Path) -> list[str]:
             + f": the dry run of the suite, with the product replaced by a stand-in that answers everything and every "
             f"assertion passing, stopped at `{item['test'][:80]}` on `{item['error'][:200]}`. That is the test's own "
             "code: it fails the same way on every product, before the product's answer is looked at. Correct that line."
+            + _with_its_cause(str(item.get("error") or ""))
             for item in (run(directory, repo_root=repo_root).get("findings") or [])[:MOST_FINDINGS]
         ]
     except Exception:  # noqa: BLE001 - the other checks stand without this one

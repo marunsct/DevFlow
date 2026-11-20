@@ -75,3 +75,21 @@ def test_what_the_qa_lead_is_told_about_held_back_findings_avoids_the_banned_wor
     told = check_findings.for_the_qa_lead(["`api.spec.js` line(s) 2: a test asserts a JSON content type on a DELETE"])
     assert told.startswith(check_findings.SUSPECTED_HEADING) and "api.spec.js" in told
     assert not BANNED.search(told)
+
+
+def test_a_finding_from_running_the_test_s_own_code_is_never_held_back(tmp_path):
+    """The dry run reports what the test's code did when it ran: true however often it comes back."""
+    from app.acceptance import suite
+
+    (tmp_path / "acceptance").mkdir()
+    (tmp_path / "acceptance" / "a.spec.js").write_text(SUITE)
+    original = suite.suite_files
+    suite.suite_files = lambda root: [tmp_path / "acceptance" / "a.spec.js"]
+    try:
+        ran = [("spec_dry_run", "`a.spec.js` line 3: the dry run of the suite stopped at `[AC-2] x`")]
+        read_only = [("qa_lead", "`a.spec.js`: [AC-2] reads the wrong field")]
+        assert check_findings.withheld(tmp_path, 1, ran + read_only) == []
+        (tmp_path / "acceptance" / "a.spec.js").write_text(REPAIRED)
+        assert check_findings.withheld(tmp_path, 2, ran + read_only) == [read_only[0][1]]
+    finally:
+        suite.suite_files = original

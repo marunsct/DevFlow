@@ -117,6 +117,12 @@ SUSPECTED_SAID = (
 )
 
 
+#: Checks whose finding is what running the test's own code did, not a reading of it: never held back as suspected
+#: false. Measured on a C# run: the dry run's "cannot access '__filename' before initialization" was true, was held
+#: back after one repair, and came back the next round regardless.
+RAN_THE_CODE = frozenset({"spec_dry_run"})
+
+
 def _key(check: str, text: str) -> str:
     """One finding across rounds: its check, its wording without the values that vary, and the tests it names."""
     return "|".join((check, _fingerprint(text), ",".join(sorted(set(_A_TEST_NAME.findall(str(text)))))))
@@ -157,7 +163,7 @@ def withheld(root: str | Path, review_round: int, raised: Sequence[tuple[str, An
         repaired = bool(last) and (not digest or last.get("suite") != digest)
         before = set(last.get("raised") or []) if repaired else set(last.get("withheld") or [])
         keys = [(check, str(text), _key(check, str(text))) for check, text in raised]
-        held = [(check, text, key) for check, text, key in keys if key in before]
+        held = [(check, text, key) for check, text, key in keys if key in before and check not in RAN_THE_CODE]
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({"suite": digest, "raised": sorted({key for _, _, key in keys}),
                                     "withheld": sorted({key for _, _, key in held})}), encoding="utf-8")
@@ -215,5 +221,5 @@ def read(root: str | Path) -> list[dict[str, Any]]:
     return rows
 
 
-__all__ = ["FILE", "LAST_REVIEW_FILE", "SUSPECTED_FALSE", "filtered", "for_the_qa_lead", "forgotten", "noted", "read",
+__all__ = ["RAN_THE_CODE", "FILE", "LAST_REVIEW_FILE", "SUSPECTED_FALSE", "filtered", "for_the_qa_lead", "forgotten", "noted", "read",
            "withheld"]

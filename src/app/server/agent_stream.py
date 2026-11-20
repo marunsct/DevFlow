@@ -21,7 +21,7 @@ import logging
 import os
 import uuid
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Mapping
 
 from langchain_core.callbacks.base import BaseCallbackHandler
 
@@ -152,15 +152,70 @@ class AgentActivityStream(BaseCallbackHandler):
 
     def on_tool_start(
         self, serialized: dict[str, Any], input_str: str, **kwargs: Any
-    ) -> None:  # noqa: ARG002
+    ) -> None:
         name = (serialized or {}).get("name") or "tool"
-        self._publish("tool_call", f"{name}: {_clip(input_str)}", {"tool": name})
+        self._publish("tool_call", f"{name}: {_clip(input_str)}", {"tool": name, **_the_call(kwargs)})
 
-    def on_tool_end(self, output: Any, **kwargs: Any) -> None:  # noqa: ARG002
-        self._publish("tool_result", _clip(output))
+    def on_tool_end(self, output: Any, **kwargs: Any) -> None:
+        try:
+            text, facts = what_the_tool_returned(output)
+        except Exception:  # noqa: BLE001 - the raw text is narration enough
+            text, facts = str(output), {}
+        self._publish("tool_result", _clip(text), {**facts, **_the_call(kwargs)})
 
-    def on_tool_error(self, error: BaseException, **kwargs: Any) -> None:  # noqa: ARG002
-        self._publish("tool_result", f"Failed: {_clip(str(error))}", {"failed": True})
+    def on_tool_error(self, error: BaseException, **kwargs: Any) -> None:
+        self._publish("tool_result", f"Failed: {_clip(str(error))}", {"failed": True, **_the_call(kwargs)})
+
+
+def _the_call(kwargs: Mapping[str, Any]) -> dict[str, str]:
+    """The call a tool event belongs to (plan WS.2): its start and its result share LangChain's `run_id`.
+
+    The run page put a result under the action just above it, which in parallel mode is often another worker's.
+    """
+    call = kwargs.get("run_id")
+    return {"call_id": str(call)} if call else {}
+
+
+def what_the_tool_returned(output: Any) -> tuple[str, dict[str, Any]]:
+    """A tool's result as the run page reads it: its own text, and for a command its exit status (plan WS.2).
+
+    The stream sent `str(ToolMessage)` - `content='{"stdout": "...\\n..."}' name=... tool_call_id=...` - so a
+    command's output arrived JSON-escaped inside a repr, and its exit status was a string to dig for. A command's
+    result (a JSON object with a `returncode`) is sent as its output, standard output then the rest under headings,
+    with `exit_code` beside it; any other result is sent as its own text, as before but unwrapped.
+    """
+    content = getattr(output, "content", output)
+    facts: dict[str, Any] = {}
+    name = getattr(output, "name", None)
+    if isinstance(name, str) and name:
+        facts["tool"] = name
+    if isinstance(content, list):
+        content = "\n".join(
+            str(part.get("text", "")) if isinstance(part, dict) else str(part) for part in content
+        )
+    if not isinstance(content, str):
+        try:
+            content = json.dumps(content)
+        except (TypeError, ValueError):
+            content = str(content)
+    if not content.lstrip().startswith("{"):
+        return content, facts
+    try:
+        result = json.loads(content)
+    except ValueError:
+        return content, facts
+    if not isinstance(result, dict) or "returncode" not in result:
+        return content, facts
+    try:
+        facts["exit_code"] = int(str(result.get("returncode")).strip())
+    except ValueError:
+        pass
+    parts = [str(result.get("stdout") or "").rstrip()]
+    for heading in ("stderr", "error", "note"):
+        value = str(result.get(heading) or "").rstrip()
+        if value:
+            parts.append(f"--- {heading} ---\n{value}")
+    return "\n".join(part for part in parts if part) or "(no output)", facts
 
 
 def activity_stream_enabled() -> bool:

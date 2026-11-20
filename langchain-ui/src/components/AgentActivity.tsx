@@ -14,6 +14,7 @@ import {
   UserCheck,
 } from 'lucide-react';
 import {
+  commandOutcome,
   describeAction,
   describeStage,
   laneOf,
@@ -21,6 +22,7 @@ import {
   readRangeFromResult,
   shortenPath,
   splitToolMessage,
+  workspacePath,
 } from '../lib/activity';
 import { Markdown } from './Markdown';
 import { useStreamedText } from '../hooks/useStreamedText';
@@ -33,7 +35,13 @@ interface AgentActivityProps {
   bare?: boolean;
   /** A moment to show: the feed scrolls to its first entry from then (the timeline, plan BG.14). */
   focusAt?: string | null;
+  /** Open a written file in the Workspace tab with its change (plan WS.2); without it the link is a plain address. */
+  onOpenFile?: (path: string) => void;
 }
+
+/** The address that opens a file in the Workspace tab with its change, as the run page reads it. */
+export const workspaceHref = (path: string): string =>
+  `?view=workspace&file=${encodeURIComponent(path)}&diff=1`;
 
 /** How many entries the feed shows at once, and adds each time earlier ones are asked for. */
 const SHOWN_AT_ONCE = 300;
@@ -79,6 +87,14 @@ interface Item {
   pending?: boolean;
   /** The harness answered with what the agent already had, instead of what it asked. */
   heldBack?: boolean;
+  /** The call's id, which its result carries too (newer events). */
+  callId?: string;
+  /** A command's exit status, once its result says it. */
+  exitCode?: number;
+  /** Characters of a command's output the stream left out. */
+  leftOut?: number;
+  /** A written file, as the Workspace tab names it. */
+  file?: string;
 }
 
 /** Consecutive items from the same workflow step, shown under one heading. */
@@ -155,24 +171,42 @@ function buildItems(logs: LogEntry[]): Item[] {
       const split = splitToolMessage(entry.message || '');
       const tool = (entry.metadata?.tool as string) || split.tool;
       const action = describeAction(tool, split.args);
+      const callId = typeof entry.metadata?.call_id === 'string' ? entry.metadata.call_id : undefined;
       items.push({
         key, type: 'action', stage, at,
         text: action.summary, target: action.target, kind: action.kind,
-        range: action.range, detail: split.args, pending: true,
+        range: action.range, detail: split.args, pending: true, callId,
       });
       continue;
     }
 
-    // A result belongs to the action just above it. Attaching it there keeps the
-    // feed one line per action; only a failure changes what is displayed,
-    // because a successful result adds nothing a reader needs.
-    const previous = items[items.length - 1];
+    // A result belongs to its call: the one with the same id when the event
+    // carries it (side-by-side workers interleave), else the action just above
+    // it. Attaching it there keeps the feed one line per action; only a failure
+    // changes what is displayed, because a successful result adds nothing a
+    // reader needs - except a command's exit status, and its output folded.
+    const resultCall = typeof entry.metadata?.call_id === 'string' ? entry.metadata.call_id : undefined;
+    let previous: Item | undefined = items[items.length - 1];
+    if (resultCall) {
+      for (let index = items.length - 1; index >= 0; index -= 1) {
+        if (items[index].callId === resultCall) {
+          previous = items[index];
+          break;
+        }
+      }
+    }
     const heldBack = HELD_BACK.test(entry.message || '');
     const failed = !heldBack && (entry.metadata?.failed === true || /^Failed:/i.test(entry.message || ''));
     if (previous && previous.type === 'action') {
       previous.detail = entry.message;
       previous.pending = false;
       previous.heldBack = heldBack;
+      if (previous.kind === 'run' && !failed && !heldBack) {
+        const outcome = commandOutcome(entry.message || '', entry.metadata);
+        previous.exitCode = outcome.exitCode;
+        previous.leftOut = outcome.leftOut;
+        previous.detail = outcome.output;
+      }
       // Fill in a filename the call itself could not supply, so a write stops
       // being narrated as "Saved a document".
       if (!failed && !previous.target && previous.kind === 'write') {
@@ -195,6 +229,8 @@ function buildItems(logs: LogEntry[]): Item[] {
       if (failed) {
         previous.failed = true;
         previous.text = `${previous.text} — didn't work`;
+      } else if (previous.kind === 'write') {
+        previous.file = workspacePath(previous.target);
       }
     } else if (failed) {
       items.push({
@@ -281,11 +317,83 @@ const MessageRow: React.FC<{
   );
 };
 
+/**
+ * A command: its command line and exit status on one line, its output folded
+ * (plan WS.2). The output is what reached the page; when the stream clipped it,
+ * the fold says so and where the whole of it is.
+ */
+const CommandRow: React.FC<{ item: Item; live: boolean }> = ({ item, live }) => {
+  const [open, setOpen] = useState(false);
+  const running = live && item.pending;
+  const settled = !item.pending && !item.failed && !item.heldBack;
+  const exit = item.exitCode;
+  const line = item.target || item.text;
+
+  return (
+    <div className="group" data-testid="command">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-label={`${line}${exit === undefined ? '' : `, exit ${exit}`}: ${open ? 'hide' : 'show'} its output`}
+        className={`w-full flex items-center gap-2 rounded-lg py-1.5 pl-2 pr-1 text-left transition-colors ${
+          item.failed || (exit !== undefined && exit !== 0) ? 'hover:bg-danger-bg' : 'hover:bg-overlay'
+        }`}
+      >
+        <span className="flex-none grid place-items-center h-4 w-4">
+          {running ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+          ) : item.failed || (exit !== undefined && exit !== 0) ? (
+            <span className="h-1.5 w-1.5 rounded-full bg-danger" />
+          ) : item.heldBack ? (
+            <span className="h-1.5 w-1.5 rounded-full bg-text-muted" />
+          ) : (
+            <Check className="h-3.5 w-3.5 text-success/70" />
+          )}
+        </span>
+        <Terminal className="h-3.5 w-3.5 flex-none text-text-muted" aria-hidden="true" />
+        <code className={`min-w-0 flex-1 truncate font-mono text-[12px] ${item.failed ? 'text-danger' : 'text-text-secondary'}`} title={line}>
+          {line}
+        </code>
+        {settled && exit !== undefined && (
+          <span
+            data-testid="exit-status"
+            className={`flex-none rounded px-1.5 py-px text-xs font-medium tabular-nums ${
+              exit === 0 ? 'bg-success-bg text-success' : 'bg-danger-bg text-danger'
+            }`}
+          >
+            exit {exit}
+          </span>
+        )}
+        {item.heldBack && (
+          <span className="flex-none rounded bg-overlay px-1.5 py-px text-xs font-medium text-text-muted">held back</span>
+        )}
+        <ChevronRight className={`h-3.5 w-3.5 flex-none text-text-muted transition-transform ${open ? 'rotate-90' : ''}`} aria-hidden="true" />
+      </button>
+
+      {open && (
+        <div className="mb-2 ml-8 mr-1 mt-1">
+          <pre tabIndex={0} aria-label={`The output of ${line}`} className="max-h-72 overflow-auto rounded-lg bg-inset p-3 font-mono text-xs leading-relaxed text-text-secondary whitespace-pre-wrap break-all">
+            {item.pending ? 'Still running.' : item.detail?.trim() || '(no output)'}
+          </pre>
+          {!!item.leftOut && (
+            <p className="mt-1 text-xs text-text-muted">
+              Clipped: the page is sent the first 2,000 characters; {item.leftOut.toLocaleString()} more are in the run&apos;s transcript.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 /** One action: a sentence, its state, and the raw payload behind a disclosure. */
-const ActionRow: React.FC<{ item: Item; live: boolean }> = ({ item, live }) => {
+const ActionRow: React.FC<{ item: Item; live: boolean; onOpenFile?: (path: string) => void }> = ({ item, live, onOpenFile }) => {
   const [open, setOpen] = useState(false);
   const Icon = KIND_ICON[item.kind ?? 'think'];
   const running = live && item.pending;
+
+  if (item.kind === 'run') return <CommandRow item={item} live={live} />;
 
   return (
     <div className="group">
@@ -321,9 +429,9 @@ const ActionRow: React.FC<{ item: Item; live: boolean }> = ({ item, live }) => {
               held back: already read
             </span>
           )}
-          {(item.target || item.range) && (
+          {((item.target && !item.file) || item.range) && (
             <span className="mt-0.5 flex items-center gap-1.5 min-w-0">
-              {item.target && (
+              {item.target && !item.file && (
                 <span className="text-xs text-text-muted font-mono truncate" title={item.target}>
                   {shortenPath(item.target)}
                 </span>
@@ -345,6 +453,24 @@ const ActionRow: React.FC<{ item: Item; live: boolean }> = ({ item, live }) => {
           />
         )}
       </button>
+
+      {/* A written file opens in the Workspace tab with its change (plan WS.2).
+          A link beside the row, not inside its button: a link in a button is
+          neither, to a keyboard or a screen reader. */}
+      {item.file && (
+        <a
+          href={workspaceHref(item.file)}
+          onClick={(event) => {
+            if (!onOpenFile || event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+            event.preventDefault();
+            onOpenFile(item.file!);
+          }}
+          title={`Open ${item.file} in the Workspace tab with its change`}
+          className="-mt-1 mb-0.5 ml-[3.4rem] mr-1 block truncate font-mono text-xs text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] rounded"
+        >
+          {shortenPath(item.file)}
+        </a>
+      )}
 
       {open && item.detail && (
         <pre tabIndex={0} className="mb-2 ml-8 mr-1 mt-1 max-h-56 overflow-auto rounded-lg bg-inset p-3 text-xs leading-relaxed text-text-secondary whitespace-pre-wrap break-all">
@@ -386,7 +512,7 @@ const DecisionRow: React.FC<{ item: Item }> = ({ item }) => (
  * Each action carries its own state, so an unfinished one reads as in progress
  * instead of looking identical to a finished one.
  */
-export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = false, bare = false, focusAt = null }) => {
+export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = false, bare = false, focusAt = null, onOpenFile }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [pinned, setPinned] = useState(true);
   const all = useMemo(() => buildItems(logs), [logs]);
@@ -488,10 +614,22 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
     );
   }, [streamingKey]);
 
+  // Steps folded to one line each (plan WS.2): the newest step - the one
+  // working now, or where a finished run ended - stays open, and a step the
+  // reader opens or folds stays as they left it.
+  const [folding, setFolding] = useState<ReadonlyMap<string, boolean>>(() => new Map());
+  // The entry a moment from the timeline lands on: its step is opened.
+  const focusKey = useMemo(() => {
+    if (!focusAt) return undefined;
+    const from = Date.parse(focusAt);
+    return items.find((item) => Date.parse(item.at) >= from)?.key;
+  }, [items, focusAt]);
+
   // A moment older than the entries shown: show back to it first.
   const [reach, setReach] = useState<string | null>(null);
   if (focusAt !== reach) {
     setReach(focusAt);
+    if (focusAt) setFolding(new Map());
     if (focusAt) {
       const index = items.findIndex((item) => Date.parse(item.at) >= Date.parse(focusAt));
       if (index >= 0 && index < hidden) setShownCount(items.length - index + 20);
@@ -592,21 +730,37 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
                 )}
                 {groups.map((group, index) => {
                   const span = formatSpan(group.from, group.to);
+                  const id = `${group.stage}:${group.items[0].key}`;
+                  const newest = index === groups.length - 1;
+                  const open = folding.get(id) ?? (newest || (!!focusKey && group.items.some((item) => item.key === focusKey)));
+                  const title = describeStage(group.stage).title;
+                  const count = group.items.length;
                   return (
-                    <section key={`${group.stage}-${group.from}-${index}`} className="mb-1">
+                    <section key={id} className="mb-1" data-testid="activity-step">
                       {/* Sticky, so the step you are reading stays named however
                           far down its actions run. */}
                       {/* Fully opaque. At 95% the entries scrolling underneath
                           showed through as a smear of half-legible text along
                           the top edge of the panel. */}
-                      <header className="sticky top-0 z-10 -mx-2 flex items-baseline gap-2 border-b border-border/40 bg-surface-raised px-4 py-1.5">
-                        <h3 className="text-xs font-semibold uppercase tracking-wider text-text-secondary truncate">
-                          {describeStage(group.stage).title}
+                      <header className="sticky top-0 z-10 -mx-2 border-b border-border/40 bg-surface-raised">
+                        <h3 className="m-0">
+                          <button
+                            type="button"
+                            aria-expanded={open}
+                            onClick={() => setFolding((was) => new Map(was).set(id, !open))}
+                            className="flex w-full items-baseline gap-2 px-4 py-1.5 text-left hover:bg-overlay focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                          >
+                            <ChevronRight className={`h-3 w-3 flex-none self-center text-text-muted transition-transform ${open ? 'rotate-90' : ''}`} aria-hidden="true" />
+                            <span className="min-w-0 truncate text-xs font-semibold uppercase tracking-wider text-text-secondary">{title}</span>
+                            {newest && isRunning && <span className="flex-none text-xs font-medium text-primary">working now</span>}
+                            <span className="ml-auto flex-none text-xs text-text-muted tabular-nums">
+                              {count} {count === 1 ? 'entry' : 'entries'}{span ? ` · ${span}` : ''}
+                            </span>
+                          </button>
                         </h3>
-                        {span && <span className="ml-auto text-xs text-text-muted tabular-nums">{span}</span>}
                       </header>
 
-                      <div className="space-y-0.5 pt-1">
+                      {open && <div className="space-y-0.5 pt-1">
                         {group.items.map((item) => (
                           <div key={item.key} data-at={item.at} className="animate-activity-in">
                             {item.type === 'decision' ? (
@@ -621,11 +775,11 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
                                 onStreamed={markStreamed}
                               />
                             ) : (
-                              <ActionRow item={item} live={item.key === lastKey && isRunning} />
+                              <ActionRow item={item} live={item.key === lastKey && isRunning} onOpenFile={onOpenFile} />
                             )}
                           </div>
                         ))}
-                      </div>
+                      </div>}
                     </section>
                   );
                 })}

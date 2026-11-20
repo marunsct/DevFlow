@@ -114,12 +114,20 @@ export const WorkspacePanel: React.FC<{
   logs: LogEntry[];
   selected: string | null;
   onSelect: (path: string | null) => void;
-}> = ({ runId, refreshKey, logs, selected, onSelect }) => {
+  /** Open the selected file on its change since the last accepted sprint: a written file opened from the feed (plan WS.2). */
+  diff?: boolean;
+}> = ({ runId, refreshKey, logs, selected, onSelect, diff: diffAsked = false }) => {
   const [tree, setTree] = useState<WorkspaceTree | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [loads, setLoads] = useState(0);
   const [shown, setShown] = useState<Shown | null>(null);
-  const [showDiff, setShowDiff] = useState(false);
+  const [showDiff, setShowDiff] = useState(diffAsked);
+  // Asked again for another file while the tab is open: show that file's change too.
+  const [asked, setAsked] = useState({ diffAsked, selected });
+  if (asked.diffAsked !== diffAsked || asked.selected !== selected) {
+    setAsked({ diffAsked, selected });
+    if (diffAsked) setShowDiff(true);
+  }
   const [diff, setDiff] = useState<Diff | null>(null);
   const written = useMemo(() => lastWriteSequence(logs), [logs]);
 
@@ -157,6 +165,8 @@ export const WorkspacePanel: React.FC<{
   const changed = useMemo(() => new Set(tree?.changed ?? []), [tree]);
   const file = shown && shown.path === selected ? shown : null;
   const fileDiff = diff && diff.path === selected ? diff : null;
+  // A workspace with no history has no change to show, whatever was asked.
+  const diffing = showDiff && !!tree?.since;
 
   if (problem && !tree) return <p className="p-4 text-sm text-text-muted">{problem}</p>;
   return (
@@ -182,13 +192,13 @@ export const WorkspacePanel: React.FC<{
           {!selected && <p className="p-4 text-sm text-text-muted">Choose a file to read it. Nothing here can be edited.</p>}
           {selected && !file && <p className="p-4 text-sm text-text-muted" role="status">Loading…</p>}
           {file && 'problem' in file && <p className="p-4 text-sm text-text-muted">{file.problem}</p>}
-          {file && 'text' in file && showDiff && fileDiff && (
+          {file && 'text' in file && diffing && fileDiff && (
             fileDiff.text
               ? <DiffText text={fileDiff.text} truncated={fileDiff.truncated} />
               : <p className="p-4 text-sm text-text-muted">No change since {fileDiff.since ?? 'the last accepted sprint'}.</p>
           )}
-          {file && 'text' in file && showDiff && !fileDiff && <p className="p-4 text-sm text-text-muted" role="status">Loading…</p>}
-          {file && 'text' in file && !showDiff && <Code text={file.text} path={file.path} />}
+          {file && 'text' in file && diffing && !fileDiff && <p className="p-4 text-sm text-text-muted" role="status">Loading…</p>}
+          {file && 'text' in file && !diffing && <Code text={file.text} path={file.path} />}
         </div>
       </div>
     </div>

@@ -421,7 +421,7 @@ export function describeAction(toolName: string, rawArgs: string): ActionCopy {
     return { summary: `Searched the project for "${pattern ?? 'a phrase'}"`, target: pattern, kind: 'search' };
   }
   if (tool === 'run_terminal_command' || tool === 'execute') {
-    const command = /\[([^\]]*)\]/.exec(rawArgs)?.[1]?.replace(/['"]/g, '') ?? '';
+    const command = commandLine(rawArgs);
     return { summary: command ? `Ran ${command}` : 'Ran a command', target: command, kind: 'run' };
   }
   if (tool === 'run_validation') {
@@ -533,6 +533,54 @@ export function lastWriteSequence(
  * keeps everything it has done.
  */
 export const RESUMABLE: string[] = ['failed', 'waiting_for_budget', 'paused', 'cancelled'];
+
+/** What a command's result says, for its one line and its folded output (plan WS.2). */
+export interface CommandOutcome {
+  /** The exit status, when the result states one. */
+  exitCode?: number;
+  /** The output, without the stream's clipping marker. */
+  output: string;
+  /** Characters the stream left out; the run's transcript keeps the whole output. 0 when nothing was left out. */
+  leftOut: number;
+}
+
+/**
+ * A command's result as the feed folds it. The stream sends a command's output with `exit_code` beside it; an
+ * older event carried the tool's JSON inside a message repr, and its `returncode` is read from there. Either way
+ * only the first 2,000 characters reach the page, and the marker the server appends says how many more there were.
+ */
+export function commandOutcome(message: string, metadata?: Record<string, unknown>): CommandOutcome {
+  const raw = message || '';
+  const marker = /\n*\[\+([\d,]+) more characters\]\s*$/.exec(raw);
+  const output = marker ? raw.slice(0, marker.index) : raw;
+  const leftOut = marker ? Number(marker[1].replace(/,/g, '')) : 0;
+  const stated = metadata?.exit_code;
+  if (typeof stated === 'number') return { exitCode: stated, output, leftOut };
+  const found = /\\?["']returncode\\?["']\s*:\s*\\?["']?(-?\d+)/.exec(raw);
+  return { exitCode: found ? Number(found[1]) : undefined, output, leftOut };
+}
+
+/** The command line a call ran, from its argument blob: `npm run test`. '' when none is found. */
+export function commandLine(rawArgs: string): string {
+  const list = /\[([^\]]*)\]/.exec(rawArgs || '')?.[1];
+  if (!list) return '';
+  const parts = [...list.matchAll(/"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'/g)].map((m) => m[1] ?? m[2]);
+  return (parts.length ? parts : [list.replace(/['"]/g, '')]).join(' ').trim();
+}
+
+/**
+ * A written file's path as the Workspace tab names it, so a write in the feed can open it there; undefined for a
+ * path that cannot be one (an absolute host path is cut to the part after the workspace's folder).
+ */
+export function workspacePath(path: string | undefined): string | undefined {
+  if (!path) return undefined;
+  let relative = path.trim();
+  const inside = /\/workspaces\/[^/]+\/(.+)$/.exec(relative);
+  if (inside) relative = inside[1];
+  relative = relative.replace(/^\.?\/+/, '');
+  if (!relative || relative.split('/').includes('..')) return undefined;
+  return relative;
+}
 
 /** Which lane a stage works in, for the lane filter: its role, or the kind of step. */
 export function laneOf(stage: string): string {

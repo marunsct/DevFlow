@@ -160,6 +160,33 @@ def work_order_outcomes(plan: Any, outputs: Mapping[str, Any] | None) -> list[di
     return rows
 
 
+def work_orders_now(
+    plan: Any, outputs: Mapping[str, Any] | None, started: Iterable[str], live: bool
+) -> list[dict[str, Any]]:
+    """The current sprint's work orders as the run page's plan panel shows them (plan WS.2): done, working or open.
+
+    Done: its specialist returned (an output is recorded under its stage). Working: not done, and its stage has
+    started since the plan was made, while the run is live - in parallel mode several at once. Open: the rest.
+    """
+    started = set(started)
+    done = {index for index in (_stage_index(str(stage)) for stage in (outputs or {})) if index is not None}
+    rows = []
+    for index, task in enumerate(list(getattr(plan, "delegated_tasks", None) or [])):
+        role = str(getattr(task, "specialist_role", "") or "unassigned")
+        title = _flat(getattr(task, "title", "")) or _flat(
+            next((line for line in str(getattr(task, "task_description", "")).splitlines() if line.strip()), "")
+        )[:120] or "Untitled work order"
+        if index in done:
+            state = "done"
+        elif live and f"specialist_{role}_{index}" in started:
+            state = "working"
+        else:
+            state = "open"
+        rows.append({"title": title, "role": role, "state": state,
+                     "files": [str(f) for f in getattr(task, "files", None) or []]})
+    return rows
+
+
 def defect_log(cycle: Any) -> list[dict[str, Any]]:
     """Every tracked defect, numbered, with how it was fixed and what proved it."""
     rows: list[dict[str, Any]] = []
@@ -359,4 +386,5 @@ __all__ = [
     "scope_cuts",
     "with_dispositions",
     "work_order_outcomes",
+    "work_orders_now",
 ]

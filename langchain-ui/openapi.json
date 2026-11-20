@@ -2644,6 +2644,64 @@
     "title": "SprintDefectView",
     "type": "object"
    },
+   "SprintPlanNow": {
+    "additionalProperties": false,
+    "description": "Where the current sprint stands: its work orders, attempt, test round and open defects (plan WS.2).",
+    "properties": {
+     "attempt": {
+      "default": 0,
+      "description": "Which attempt at this sprint, from 1; 0 before it starts.",
+      "title": "Attempt",
+      "type": "integer"
+     },
+     "goal": {
+      "default": "",
+      "description": "The sprint plan's goal for this sprint.",
+      "title": "Goal",
+      "type": "string"
+     },
+     "open_defects": {
+      "default": 0,
+      "description": "Defects of this attempt not yet fixed.",
+      "title": "Open Defects",
+      "type": "integer"
+     },
+     "planned_total": {
+      "default": 0,
+      "description": "How many sprints the plan has.",
+      "title": "Planned Total",
+      "type": "integer"
+     },
+     "round": {
+      "default": 0,
+      "description": "Test rounds this attempt has run.",
+      "title": "Round",
+      "type": "integer"
+     },
+     "sprint": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "The current sprint's place in the plan, from 1; null before sprints are planned.",
+      "title": "Sprint"
+     },
+     "work_orders": {
+      "description": "The current sprint's work orders, in plan order.",
+      "items": {
+       "$ref": "#/components/schemas/WorkOrderNow"
+      },
+      "title": "Work Orders",
+      "type": "array"
+     }
+    },
+    "title": "SprintPlanNow",
+    "type": "object"
+   },
    "SprintRevision": {
     "additionalProperties": false,
     "description": "One pass through a sprint. A rejected review starts a new revision of the same sprint.",
@@ -3901,6 +3959,47 @@
      "status"
     ],
     "title": "WizardSummary",
+    "type": "object"
+   },
+   "WorkOrderNow": {
+    "additionalProperties": false,
+    "description": "One work order of the current sprint, as the plan panel shows it (plan WS.2).",
+    "properties": {
+     "files": {
+      "description": "The files it plans to write.",
+      "items": {
+       "type": "string"
+      },
+      "title": "Files",
+      "type": "array"
+     },
+     "role": {
+      "description": "The specialist it is given to.",
+      "title": "Role",
+      "type": "string"
+     },
+     "state": {
+      "description": "done: its specialist returned; working: its stage has started; open: not started.",
+      "enum": [
+       "done",
+       "working",
+       "open"
+      ],
+      "title": "State",
+      "type": "string"
+     },
+     "title": {
+      "description": "What the work order asks for.",
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "title",
+     "role",
+     "state"
+    ],
+    "title": "WorkOrderNow",
     "type": "object"
    },
    "WorkspaceSource": {
@@ -6315,6 +6414,54 @@
      }
     ],
     "summary": "Pause Run",
+    "tags": [
+     "runs"
+    ]
+   }
+  },
+  "/api/runs/{run_id}/plan": {
+   "get": {
+    "description": "The current sprint's work orders (done, working, open), its attempt, test round and open defects (plan WS.2).\n\nRead-only, from the graph state the sprints route reads and the run's stage starts; nothing is computed\nthat `/sprints` does not already say, except which work order is being worked on.",
+    "operationId": "get_plan_now_api_runs__run_id__plan_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "title": "Run Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SprintPlanNow"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Get Plan Now",
     "tags": [
      "runs"
     ]

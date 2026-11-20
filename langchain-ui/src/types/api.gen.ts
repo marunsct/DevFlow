@@ -600,6 +600,24 @@ export interface SprintDefectView {
   status: string;
 }
 
+/** Where the current sprint stands: its work orders, attempt, test round and open defects (plan WS.2). */
+export interface SprintPlanNow {
+  /** Which attempt at this sprint, from 1; 0 before it starts. */
+  attempt: number;
+  /** The sprint plan's goal for this sprint. */
+  goal: string;
+  /** Defects of this attempt not yet fixed. */
+  open_defects: number;
+  /** How many sprints the plan has. */
+  planned_total: number;
+  /** Test rounds this attempt has run. */
+  round: number;
+  /** The current sprint's place in the plan, from 1; null before sprints are planned. */
+  sprint: number | null;
+  /** The current sprint's work orders, in plan order. */
+  work_orders: WorkOrderNow[];
+}
+
 /** One pass through a sprint. A rejected review starts a new revision of the same sprint. */
 export interface SprintRevision {
   /** 1 for the first pass; increments on each rejection. */
@@ -900,6 +918,18 @@ export interface WizardSummary {
   status_label: string;
   /** Test rounds executed - from the remediation cycle in graph state. */
   test_runs: number;
+}
+
+/** One work order of the current sprint, as the plan panel shows it (plan WS.2). */
+export interface WorkOrderNow {
+  /** The files it plans to write. */
+  files: string[];
+  /** The specialist it is given to. */
+  role: string;
+  /** done: its specialist returned; working: its stage has started; open: not started. */
+  state: "done" | "working" | "open";
+  /** What the work order asks for. */
+  title: string;
 }
 
 /** Where a run's workspace content comes from. Two scenarios use this platform. Greenfield - no existing code, the agents create it - is the default and needs nothing here. Brownfield - adding features to something that already exists - needs that code materialised into the workspace before the first agent reads it. */

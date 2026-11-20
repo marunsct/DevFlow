@@ -25,6 +25,8 @@ export type {
   SprintRevision,
   SprintView,
   SprintsResponse,
+  SprintPlanNow,
+  WorkOrderNow,
   StageUsage,
   StartRunRequest,
   WizardModel,

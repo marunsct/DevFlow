@@ -35,6 +35,7 @@ def unauthenticated_client(setup_db):
         ("get", "/api/runs/run-1/files"),
         ("get", "/api/runs/run-1/files/content?path=x"),
         ("get", "/api/runs/run-1/files/diff?path=x"),
+        ("get", "/api/runs/run-1/plan"),
         ("get", "/api/runs/run-1/logs"),
         ("get", "/api/runs/run-1/decisions"),
         ("get", "/api/runs/run-1/evidence"),

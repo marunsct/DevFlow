@@ -81,7 +81,6 @@ WL.3-WL.7 are built (LF.1159, LF.1161, LF.1166, LF.1170, LF.1172, LF.1173). Next
 ### 3.2 Watch, try and steer a run (Appendix 11, WS). Nothing below is built except the pieces named.
 | Item | Value | Size | Needs | Proof | Verified |
 |---|---|---|---|---|---|
-| WS.5 point and say (select an element in the preview, write the change; it becomes a note or change request with selector, crop, source file) | web products | M | WS.4 | note carries selector and file | not built |
 | WS.6 take over and hand back (token-protected code-server on a paused run; hand back commits the edit and tells the next stage the diff) | person edits safely | L | WS.4 | no edit conflicts; locked suites read-only | not built; last |
 UI-only steps keep the release-candidate count; WS.4 and WS.6 add a service and are measured.
 

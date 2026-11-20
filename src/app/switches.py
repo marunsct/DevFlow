@@ -96,6 +96,9 @@ BUILT_IN = frozenset({
     "LAST_TRY_ON_DEFERRED", "START_PROBE", "EXTENSIONS_BEFORE_A_RUN", "REFUSALS_FOLDED",
     # A security fix (deep review 2026-11-18, E2): an install fetches no invented or days-old package.
     "DEPENDENCY_GATE",
+    # A dependency manifest is drafted with the registry's current releases in front of it (plan WL.4 T4): invented
+    # versions cost one Ruby run 267 minutes. Package metadata, not an internet lookup, so every run has it.
+    "REGISTRY_VERSIONS_BEFORE_A_MANIFEST",
     # Measured and kept: they change what a run proves or how it repairs, so they are quality, not options (owner,
     # 2026-11-05: bug fixes and changes that affect quality are always on, with no switch).
     "TARGETED_SUITE_REPAIR",

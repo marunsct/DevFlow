@@ -349,7 +349,7 @@ def fix_request(root: Path, path: str, defect: Any, failure: str, specification:
     """What one file's rewrite is asked. `co_failures`: the other open defects that point at this file (`co_defect_failures`)."""
     from app.agents.shared_facts import the_facts_section
     from app.agents.specialists import specification_for_the_work_order
-    from app.graph.drafting import _neighbours, _stack_line, the_reference_code
+    from app.graph.drafting import _neighbours, _stack_line, _the_registry_s_releases, the_reference_code
     from types import SimpleNamespace
 
     from app.graph import anchored_edits
@@ -393,6 +393,8 @@ def fix_request(root: Path, path: str, defect: Any, failure: str, specification:
         kept.strip(),
         ("--- The compiler still reports, in the files just written ---\n" + "\n".join(diagnostics)) if diagnostics else "",
         ("--- Edits from the last pass that were not made, and why ---\n" + "\n".join(unapplied)) if unapplied else "",
+        # The registry's current releases, for a rewrite of a dependency manifest (plan WL.4 T4).
+        _the_registry_s_releases(root, path, specification, stack),
     )
     project = f"--- The project ---\n{neighbours}" if neighbours else ""
     the_file = ((anchored_edits.in_the_memory(path) if held.get(path) == now

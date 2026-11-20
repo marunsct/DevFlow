@@ -2,16 +2,26 @@
 
 Behind `WEB_LOOKUP_WHEN_STUCK` (off in code; the compose file and each run's own setting say whether it is on - the
 user's control). Measured the night it was built: the local model, offered search tools in about 3,500 requests,
-never called them, and every open-source harness researched leaves that decision to the model. So the harness decides:
-a defect shown to a fixer again after an attempt that did not close it, whose text states a concrete error, is looked
-up once (`app.tools.lookups` - free official sources first, a week's cache, only the cleaned error sent), and what was
-found goes into the fixer's request as quoted leads. Each lookup is a ledger record, so the audit can say whether it
-fired and helped.
+never called them, and every open-source harness researched leaves that decision to the model. So the harness decides,
+on three triggers:
+
+- T1: a defect shown to a fixer again after an attempt that did not close it, whose text states a concrete error;
+- T2: an install or a setup that failed with an error the registry note does not explain (a version or a feature that
+  does not exist is answered from the registry instead, `contract._the_versions_that_exist`);
+- T3: a build or compile error the round before reported too (`build_errors_in`), looked up with the stack's
+  toolchain and the version this project runs.
+
+Each distinct cleaned error is looked up once per run, whichever trigger meets it (`app.tools.lookups` - free official
+sources first, a week's cache, only the cleaned error sent), and what was found goes into the request as quoted
+leads. Each lookup is a ledger record naming its trigger, so the audit can say whether it fired and helped.
 """
 
 from __future__ import annotations
 
+import json
 import logging
+import re
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +33,10 @@ logger = logging.getLogger(__name__)
 ON_BY_DEFAULT = False
 #: The ledger's event for a lookup made.
 LOOKUP_EVENT = "lookup"
+#: The ledger's names for each trigger, so the audit can count them apart.
+TRIGGER_STUCK = "T1 stuck"
+TRIGGER_INSTALL = "T2 install"
+TRIGGER_RECURRING = "T3 recurring build error"
 
 #: (workspace, cleaned query) already looked up in this process: one lookup per error per run.
 _DONE: dict[tuple[str, str], str] = {}
@@ -63,9 +77,85 @@ def _the_private_words(repo_root: str | Path) -> list[str]:
     return [w for w in words if w]
 
 
+def _once_each(words: str) -> str:
+    seen: set[str] = set()
+    kept = []
+    for word in words.split():
+        if word.lower() not in seen:
+            seen.add(word.lower())
+            kept.append(word)
+    return " ".join(kept)
+
+
+def _the_toolchain_words(repo_root: str | Path, stack: Any) -> str:
+    """The stack's language and framework, its toolchain's name and, where it is known, the version this project runs:
+    a compiler's message means different things in different releases. From the language table and the runtime the
+    project pinned, else the version this environment has; never a guess."""
+    words = [_the_stack_s_words(stack)]
+    try:
+        from app.stacks import languages
+        from app.tools import package_registry, runtimes
+
+        said = str(getattr(stack, "language", "") or "").strip().lower()
+        row = languages.language(said) or languages.language(said.replace("#", "sharp").replace(" ", ""))
+        toolchain = row.sandbox_toolchain if row is not None and isinstance(row.sandbox_toolchain, str) else ""
+        version = ""
+        if row is not None and isinstance(row.runtime_version, str):
+            version = str((runtimes.recorded(repo_root).get(row.runtime_version) or {}).get("version") or "")
+        ecosystem = package_registry.ecosystem_named(row.name if row is not None else said)
+        if not version and ecosystem:
+            here = package_registry.runtime_here(ecosystem)
+            numbers = package_registry._numbers(here) if "not installed" not in here else ()  # noqa: SLF001
+            version = ".".join(str(n) for n in numbers[:3])
+        words.append(" ".join(part for part in (toolchain, version) if part))
+    except Exception:  # noqa: BLE001 - the language and framework alone
+        pass
+    return _once_each(" ".join(words))
+
+
+def _the_installer_words(repo_root: str | Path, stack: Any) -> str:
+    """The stack's language and framework and the tool its install runs (the contract's first install command)."""
+    tool = ""
+    try:
+        from app.stacks import contract
+
+        commands = (contract.read(repo_root) or {}).get("install") or []
+        tool = Path(str(commands[0][0])).name if commands and commands[0] else ""
+    except Exception:  # noqa: BLE001 - the stack's names alone
+        tool = ""
+    return _once_each(" ".join(part for part in (_the_stack_s_words(stack), tool) if part))
+
+
+def _looked_up(repo_root: str | Path, error: str, stack_words: str, *, trigger: str, stage_name: str,
+               defect: Any = None) -> str:
+    """`error` looked up once per run - the same cleaned error met by any trigger is asked once - as the section a
+    request carries; each first lookup a ledger record naming its trigger. "" when nothing was found."""
+    from app.tools import lookups
+
+    private = _the_private_words(repo_root)
+    key = (str(repo_root), lookups.cleaned(error, private))
+    if not key[1]:
+        return ""
+    if key in _DONE:
+        return _DONE[key]
+    answer = lookups.look_up(error, stack_words, private)
+    shown = lookups.as_a_section(answer)
+    shown = ("\n" + shown) if shown else ""
+    _DONE[key] = shown
+    try:
+        from app.observability import defect_ledger
+
+        defect_ledger.note(LOOKUP_EVENT, stage_name, defect=defect, detail=(
+            f"{trigger}: searched {answer.get('query')!r}: {len(answer.get('found') or [])} found"
+            + (" (cached)" if answer.get("cached") else f" from {', '.join(answer.get('asked') or [])}")))
+    except Exception:  # noqa: BLE001 - a record must never fail the stage
+        pass
+    return shown
+
+
 def section(repo_root: str | Path, defect: Any, stack: Any, stage_name: str = "defect_fix") -> str:
-    """What others found for this stuck defect's error, as its fixer's request carries it; "" when off, not stuck,
-    with no concrete error, already looked up in this run, or when nothing was found. Never raises."""
+    """T1: what others found for this stuck defect's error, as its fixer's request carries it; "" when off, not stuck,
+    with no concrete error, or when nothing was found. Never raises."""
     try:
         if not enabled() or not _stuck(defect):
             return ""
@@ -76,28 +166,182 @@ def section(repo_root: str | Path, defect: Any, stack: Any, stage_name: str = "d
         error = _the_error_line(defect)
         if not error:
             return ""
-        from app.tools import lookups
-
-        private = _the_private_words(repo_root)
-        key = (str(repo_root), lookups.cleaned(error, private))
-        if key in _DONE:
-            return _DONE[key]
-        answer = lookups.look_up(error, _the_stack_s_words(stack), private)
-        shown = lookups.as_a_section(answer)
-        shown = ("\n" + shown) if shown else ""
-        _DONE[key] = shown
-        try:
-            from app.observability import defect_ledger
-
-            defect_ledger.note(LOOKUP_EVENT, stage_name, defect=defect, detail=(
-                f"searched {answer.get('query')!r}: {len(answer.get('found') or [])} found"
-                + (" (cached)" if answer.get("cached") else f" from {', '.join(answer.get('asked') or [])}")))
-        except Exception:  # noqa: BLE001 - a record must never fail the fix
-            pass
-        return shown
+        return _looked_up(repo_root, error, _the_stack_s_words(stack), trigger=TRIGGER_STUCK, stage_name=stage_name,
+                          defect=defect)
     except Exception:  # noqa: BLE001 - the fix goes on without it
         logger.debug("Could not look up a stuck defect's error", exc_info=True)
         return ""
 
 
-__all__ = ["LOOKUP_EVENT", "ON_BY_DEFAULT", "enabled", "section"]
+# --- T2: an install or a setup that failed with an error the registry does not explain ------------------------------
+
+#: A line naming an error outright, preferred over one that only says something failed or could not be done.
+_SAYS_ERROR = re.compile(r"\berror\b|\bERR!", re.I)
+
+
+def _the_installer_s_error(said: str) -> str:
+    """The line of what an installer or a setup printed that says what went wrong, or "": of the lines stating an
+    error, the longest of those that name one outright (a tool's generic lines are short, the one with the cause is
+    not); only the installer's own words, after "it said:", where the harness's note quotes them."""
+    from app.stacks import contract
+
+    text = str(said or "")
+    if "it said:" in text:
+        text = text.partition("it said:")[2].partition("; it ended")[0]
+    stated = [line for line in contract._what_the_installer_said_went_wrong(text).splitlines()  # noqa: SLF001
+              if line.strip() and contract.INSTALL_FAILED not in line]
+    outright = [line for line in stated if _SAYS_ERROR.search(line)] or stated
+    return max(outright, key=len)[:300] if outright else ""
+
+
+def for_an_install_that_failed(repo_root: str | Path, defect: Any, stack: Any, stage_name: str = "defect_fix") -> str:
+    """T2: for the defect saying the project's dependencies do not install, what others found for the installer's
+    error, from its first fix - unless the registry already explains it (a version or a feature that does not exist,
+    for which the note carries the registry's answer). "" when off or not such a defect. Never raises."""
+    try:
+        if not enabled():
+            return ""
+        from app.stacks import contract
+
+        said = str(getattr(defect, "actual_behavior", "") or "")
+        if contract.INSTALL_FAILED not in said or contract.the_registry_explains(said):
+            return ""
+        error = _the_installer_s_error(said)
+        if not error:
+            return ""
+        return _looked_up(repo_root, error, _the_installer_words(repo_root, stack), trigger=TRIGGER_INSTALL,
+                          stage_name=stage_name, defect=defect)
+    except Exception:  # noqa: BLE001 - the fix goes on without it
+        logger.debug("Could not look up an install's error", exc_info=True)
+        return ""
+
+
+def for_a_failed_setup(repo_root: str | Path, problem: str, stack: Any, stage_name: str = "stack_setup") -> str:
+    """T2, for the setup stage sent back: what others found for the error its last setup failed on; "" when off, with
+    no stated error, or with one the registry explains. Never raises."""
+    try:
+        if not enabled() or not str(problem or "").strip():
+            return ""
+        from app.stacks import contract
+
+        if contract.the_registry_explains(problem):
+            return ""
+        error = _the_installer_s_error(problem)
+        if not error:
+            return ""
+        return _looked_up(repo_root, error, _the_installer_words(repo_root, stack), trigger=TRIGGER_INSTALL,
+                          stage_name=stage_name)
+    except Exception:  # noqa: BLE001 - the setup is asked again without it
+        logger.debug("Could not look up a setup's error", exc_info=True)
+        return ""
+
+
+# --- T3: a build or compile error that recurs across rounds ---------------------------------------------------------
+
+#: Each round's build and compile errors, by sprint and round, kept in the workspace so a resumed run still has them.
+ROUNDS_FILE = ".harness/build-errors-by-round.json"
+#: Rounds kept in the file.
+MOST_ROUNDS_KEPT = 12
+#: A compiler's code beside the word "error" (`error CS1503:`, `error[E0502]:`, `error TS2345:`), or a tool's code
+#: before a colon (`NU1102:`).
+_A_CODE = re.compile(r"\berror\s*\[?\s*([A-Z]{1,4}\d{3,5})\b\]?|\b([A-Z]{2,4}\d{4}):")
+#: A compiler's located error that has no code: `Main.java:12: error: incompatible types`, `main.c:3:5: error: ...`.
+_A_LOCATED_ERROR = re.compile(r"\S+\.\w+(?::\d+(?::\d+)?|\(\d+(?:,\d+)?\)):?\s*(?:fatal\s+)?error:\s*(\S.*)$", re.I)
+#: What changes between two reports of one error: quoted names and numbers.
+_VARYING = re.compile(r"\"[^\"]*\"|'[^']*'|`[^`]*`|\d+")
+#: The project a build tool names at the end of an error line, in brackets: `... [/src/app/app.proj]`.
+_A_TRAILING_PROJECT = re.compile(r"\s*\[[^\]]*\]\s*$")
+
+_WRITING = threading.Lock()
+
+
+def build_errors_in(text: str) -> list[tuple[str, str]]:
+    """(signature, the line to look up) for each build or compile error `text` reports, each signature once: the code
+    where the compiler gives one, else its message without the values that change from round to round."""
+    found: dict[str, str] = {}
+    for line in str(text or "").splitlines():
+        line = " ".join(line.split())
+        code = _A_CODE.search(line)
+        if code:
+            # From the code on: not the file and line before it, nor the project a build tool names after it.
+            found.setdefault(code.group(1) or code.group(2), _A_TRAILING_PROJECT.sub("", line[code.start():]))
+            continue
+        located = _A_LOCATED_ERROR.search(line)
+        if located:
+            message = located.group(1)
+            found.setdefault("error: " + " ".join(_VARYING.sub("_", message).split()).lower()[:120],
+                             "error: " + message)
+    return list(found.items())
+
+
+def _the_rounds(repo_root: str | Path) -> dict[str, list[str]]:
+    try:
+        data = json.loads((Path(repo_root) / ROUNDS_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {str(key): [str(s) for s in value] for key, value in data.items() if isinstance(value, list)}
+
+
+def _keep_the_round(repo_root: str | Path, round_key: str, signatures: list[str]) -> None:
+    with _WRITING:
+        rounds = _the_rounds(repo_root)
+        if rounds.get(round_key) == signatures:
+            return
+        rounds.pop(round_key, None)
+        rounds[round_key] = signatures
+        path = Path(repo_root) / ROUNDS_FILE
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(dict(list(rounds.items())[-MOST_ROUNDS_KEPT:])) + "\n", encoding="utf-8")
+        except OSError:
+            pass
+
+
+def _the_text_of(defect: Any) -> str:
+    return f"{getattr(defect, 'description', '') or ''}\n{getattr(defect, 'actual_behavior', '') or ''}"
+
+
+def for_a_recurring_build_error(repo_root: str | Path, defect: Any, defects: list[Any], stack: Any, *, round_: int,
+                                sprint: int = 0, stage_name: str = "defect_fix", look_up: bool = True) -> str:
+    """T3: when this defect reports a build or compile error the round before reported too, what others found for it,
+    looked up with the stack's toolchain and version; "" when off, when the error is new this round, for a mutation
+    finding, or with `look_up` false. Keeps this round's errors (of all `defects`) for the next round. Never raises."""
+    try:
+        if not enabled():
+            return ""
+        from app.acceptance import mutation_guided
+
+        this_round = list(dict.fromkeys(
+            signature for one in (defects or [defect]) if not mutation_guided.is_a_finding(one)
+            for signature, _ in build_errors_in(_the_text_of(one))))
+        before = set(_the_rounds(repo_root).get(f"{sprint}:{int(round_) - 1}") or [])
+        _keep_the_round(repo_root, f"{sprint}:{int(round_)}", this_round)
+        if not look_up or mutation_guided.is_a_finding(defect):
+            return ""
+        for signature, line in build_errors_in(_the_text_of(defect)):
+            if signature in before:
+                return _looked_up(repo_root, line, _the_toolchain_words(repo_root, stack), trigger=TRIGGER_RECURRING,
+                                  stage_name=stage_name, defect=defect)
+        return ""
+    except Exception:  # noqa: BLE001 - the fix goes on without it
+        logger.debug("Could not look up a recurring build error", exc_info=True)
+        return ""
+
+
+def for_a_fixer(repo_root: str | Path, defect: Any, defects: list[Any], stack: Any, *, round_: int, sprint: int = 0,
+                stage_name: str = "defect_fix") -> str:
+    """What others found for one fixer's defect, from the first trigger that applies: an install's error (T2), a build
+    error the round before had too (T3), then the error of a defect an attempt left open (T1). One block, so a request
+    carries one; "" when none applies or nothing was found. Never raises."""
+    installing = for_an_install_that_failed(repo_root, defect, stack, stage_name)
+    # Called whatever T2 found: it keeps this round's build errors for the next round.
+    recurring = for_a_recurring_build_error(repo_root, defect, defects, stack, round_=round_, sprint=sprint,
+                                            stage_name=stage_name, look_up=not installing)
+    return installing or recurring or section(repo_root, defect, stack, stage_name)
+
+
+__all__ = ["LOOKUP_EVENT", "ON_BY_DEFAULT", "ROUNDS_FILE", "TRIGGER_INSTALL", "TRIGGER_RECURRING", "TRIGGER_STUCK",
+           "build_errors_in", "enabled", "for_a_failed_setup", "for_a_fixer", "for_a_recurring_build_error",
+           "for_an_install_that_failed", "section"]

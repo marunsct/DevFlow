@@ -295,6 +295,15 @@ def _where_dependencies_go(root: Path) -> str:
         return ""
 
 
+def _the_registry_s_releases(root: Path, path: str, specification: Any, stack: Any) -> str:
+    try:
+        from app.graph import registry_versions
+
+        return registry_versions.section(root, path, specification, stack)
+    except Exception:  # noqa: BLE001 - the request as it was
+        return ""
+
+
 def _the_naming_standard(stack: Any) -> str:
     try:
         from app.stacks.naming import standard_for
@@ -378,6 +387,8 @@ def draft_request(root: Path, path: str, task: Any, specification: Any, stack: A
         _the_builder_s_facts(root, path),
         _the_naming_standard(stack),
         _where_dependencies_go(root),
+        # The registry's current releases, before a dependency manifest is written (plan WL.4 T4).
+        _the_registry_s_releases(root, path, specification, stack),
         f"Reply with the complete content of `{path}` and nothing else, in one fenced code block. "
         "Every name, signature, message, import and library call is the one the specification "
         "gives; where it gives none, write the plainest code that meets the work order.",

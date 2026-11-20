@@ -3159,6 +3159,22 @@
     "title": "StartRunRequest",
     "type": "object"
    },
+   "SteeringEdit": {
+    "description": "New words for a note no model call has read yet (plan WS.3).",
+    "properties": {
+     "text": {
+      "maxLength": 2000,
+      "minLength": 1,
+      "title": "Text",
+      "type": "string"
+     }
+    },
+    "required": [
+     "text"
+    ],
+    "title": "SteeringEdit",
+    "type": "object"
+   },
    "SteeringNote": {
     "description": "The owner's direction to a running run, carried by its next model calls.",
     "properties": {
@@ -6996,6 +7012,134 @@
      }
     ],
     "summary": "Post Steering",
+    "tags": [
+     "runs"
+    ]
+   }
+  },
+  "/api/runs/{run_id}/steering/{note_id}": {
+   "patch": {
+    "description": "Change a note no model call has read yet; one already read is refused, with the stage that read it.",
+    "operationId": "edit_steering_api_runs__run_id__steering__note_id__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "title": "Run Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "note_id",
+      "required": true,
+      "schema": {
+       "title": "Note Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SteeringEdit"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Edit Steering Api Runs  Run Id  Steering  Note Id  Patch",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Edit Steering",
+    "tags": [
+     "runs"
+    ]
+   }
+  },
+  "/api/runs/{run_id}/steering/{note_id}/withdraw": {
+   "post": {
+    "description": "Withdraw a note no model call has read yet: no later call carries it.",
+    "operationId": "withdraw_steering_api_runs__run_id__steering__note_id__withdraw_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "title": "Run Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "note_id",
+      "required": true,
+      "schema": {
+       "title": "Note Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Withdraw Steering Api Runs  Run Id  Steering  Note Id  Withdraw Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Withdraw Steering",
     "tags": [
      "runs"
     ]

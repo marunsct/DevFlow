@@ -66,6 +66,7 @@ from app.server.models import (
     SpinnerResponse,
     StartRunRequest,
     SprintRevision,
+    SteeringEdit,
     SteeringNote,
     WizardModel,
     WizardNote,
@@ -1360,17 +1361,60 @@ def create_runs_router(
         record = _require_run(runner, run_id, user)
         if not record.repo_root or record.status in ("completed", "failed", "cancelled"):
             raise HTTPException(status_code=409, detail="Only a run that is still going can be steered.")
-        if record.status in ("paused", "waiting_for_budget"):
-            # A note on a run that is not running reaches nothing until it is
-            # resumed, and the owner reads "sent" as "followed" (Initiative AS).
-            raise HTTPException(status_code=409, detail="This run is paused. Resume it first, then send the direction.")
         try:
             note = add(record.repo_root, body.text, user.username, body.scope, body.audience)
             record_audit(actor=user.username, tenant_id=user.tenant_id, action="run.steering", subject=run_id,
                          detail={"scope": body.scope, "characters": len(body.text)})
-            return {"run_id": run_id, "note": note}
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
+        answer: dict[str, Any] = {"run_id": run_id, "note": note}
+        if record.status in ("paused", "waiting_for_budget"):
+            # Kept and shown as waiting (plan WS.3): it is read by the first model call after the run resumes. It
+            # used to be refused, so a direction for a paused run had to wait until the person had resumed it.
+            answer["waiting"] = "The run is paused; the note waits and is read when the run resumes."
+        return answer
+
+    @runs.patch("/{run_id}/steering/{note_id}")
+    async def edit_steering(
+        run_id: str, note_id: str, body: SteeringEdit, user: UserInDB = Depends(require_operator)
+    ) -> dict[str, Any]:
+        """Change a note no model call has read yet; one already read is refused, with the stage that read it."""
+        from app.server.steering import NoteNotFound, NoteSettled, edit
+
+        record = _require_run(runner, run_id, user)
+        if not record.repo_root:
+            raise HTTPException(status_code=404, detail="This run has no notes.")
+        try:
+            note = edit(record.repo_root, note_id, body.text, user.username)
+        except NoteNotFound as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except NoteSettled as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        record_audit(actor=user.username, tenant_id=user.tenant_id, action="run.steering_edit", subject=run_id,
+                     detail={"note": note_id, "characters": len(body.text)})
+        return {"run_id": run_id, "note": note}
+
+    @runs.post("/{run_id}/steering/{note_id}/withdraw")
+    async def withdraw_steering(
+        run_id: str, note_id: str, user: UserInDB = Depends(require_operator)
+    ) -> dict[str, Any]:
+        """Withdraw a note no model call has read yet: no later call carries it."""
+        from app.server.steering import NoteNotFound, NoteSettled, withdraw
+
+        record = _require_run(runner, run_id, user)
+        if not record.repo_root:
+            raise HTTPException(status_code=404, detail="This run has no notes.")
+        try:
+            note = withdraw(record.repo_root, note_id, user.username)
+        except NoteNotFound as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except NoteSettled as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        record_audit(actor=user.username, tenant_id=user.tenant_id, action="run.steering_withdraw", subject=run_id,
+                     detail={"note": note_id})
+        return {"run_id": run_id, "note": note}
 
     @runs.get("/{run_id}/review")
     async def get_pending_review(

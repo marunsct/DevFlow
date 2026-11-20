@@ -3,8 +3,9 @@
 The owner's note reached the end of the system prompt and nothing said so: no
 acknowledgement, no scope, and a box shown on a run that was paused. Each note
 now has an id, a scope (the run, or the one stage that first reads it), a record
-the first time it reaches a call, and the endpoint refuses it while the run is
-paused.
+the first time it reaches a call. The endpoint refused a note while the run was
+paused; since plan WS.3 a paused run keeps it, shown as waiting, for when it
+resumes (`test_a_steering_note_says_who_read_it_and_can_be_changed_until_then`).
 """
 from __future__ import annotations
 
@@ -62,16 +63,6 @@ def test_the_injected_words_use_none_of_the_banned_ones(tmp_path):
     steering.add(tmp_path, "Keep it simple.", "owner")
 
     assert not BANNED.search(steering.as_instructions(tmp_path, "s", "r"))
-
-
-def test_a_paused_run_refuses_a_note():
-    """Left reading the route's source: the route needs the database this file does not start (see the hand-off)."""
-    import inspect
-
-    from app.server import runs
-
-    source = inspect.getsource(runs)
-    assert 'record.status in ("paused", "waiting_for_budget")' in source and "Resume it first" in source
 
 
 def test_the_run_s_figures_count_the_notes_that_reached_a_call(tmp_path):

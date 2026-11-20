@@ -233,9 +233,9 @@ export const submitApproval = async (
   return response.data;
 };
 
-/** Stop a running run at its next step and keep it to be resumed. */
-export const pauseRun = async (runId: string): Promise<{ message: string }> => {
-  const response = await api.post<{ message: string }>(`/runs/${runId}/pause`);
+/** Stop a running run at its next step and keep it to be resumed; `atBoundary` lets the working stage end first. */
+export const pauseRun = async (runId: string, atBoundary = false): Promise<{ message: string }> => {
+  const response = await api.post<{ message: string }>(`/runs/${runId}/pause${atBoundary ? '?at=boundary' : ''}`);
   return response.data;
 };
 
@@ -651,9 +651,13 @@ export interface SteeringNote {
   by: string;
   at: string;
   scope?: 'run' | 'next_stage';
+  /** Waiting for a model call, read by one, or withdrawn before any read it (plan WS.3). */
+  state?: 'queued' | 'read' | 'withdrawn';
   /** Set when the first model call carried the note: the stage it was read in. */
   applied_stage?: string;
   applied_at?: string;
+  edited_at?: string;
+  withdrawn_at?: string;
 }
 
 export const getSteering = async (runId: string): Promise<SteeringNote[]> => {
@@ -667,5 +671,17 @@ export const sendSteering = async (
   scope: 'run' | 'next_stage' = 'run',
 ): Promise<SteeringNote> => {
   const response = await api.post(`/runs/${runId}/steering`, { text, scope });
+  return response.data.note;
+};
+
+/** New words for a note no model call has read yet; refused (409) once one has. */
+export const editSteering = async (runId: string, noteId: string, text: string): Promise<SteeringNote> => {
+  const response = await api.patch(`/runs/${runId}/steering/${encodeURIComponent(noteId)}`, { text });
+  return response.data.note;
+};
+
+/** Withdraw a note no model call has read yet: no later call carries it. */
+export const withdrawSteering = async (runId: string, noteId: string): Promise<SteeringNote> => {
+  const response = await api.post(`/runs/${runId}/steering/${encodeURIComponent(noteId)}/withdraw`);
   return response.data.note;
 };

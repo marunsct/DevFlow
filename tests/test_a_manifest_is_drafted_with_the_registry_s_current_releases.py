@@ -100,3 +100,17 @@ def test_a_rewrite_of_the_manifest_is_shown_them_too(tmp_path, registry):
                           SimpleNamespace(language="TypeScript", framework="Hono"), [], [])
 
     assert "`hono`: 4.10.2" in request
+
+
+def test_a_library_call_is_asked_of_the_registry_by_its_package_never_by_the_call():
+    """Measured: `fastapi.Depends(...)` was asked of PyPI whole; PyPI has an unrelated package of that name, and the
+    drafting stage was told to pin it. A call names its package's root where package names hold no dots."""
+    specification = SimpleNamespace(library_usage=["fastapi.Depends(get_db) injects the session",
+                                                   "@scope/kit.parse(text) reads the file",
+                                                   "Microsoft.Data.Sqlite.SqliteConnection(path) opens the store"],
+                                    configuration=[])
+
+    assert registry_versions.named_packages(specification, "pypi")[0] == "fastapi"
+    assert "@scope/kit" in registry_versions.named_packages(specification, "npm")
+    assert "Microsoft.Data.Sqlite.SqliteConnection" in registry_versions.named_packages(specification, "nuget")
+    assert "fastapi.Depends" not in registry_versions.named_packages(specification, "pypi")

@@ -90,9 +90,27 @@ def registry_of(path: str, stack: Any = None) -> str | None:
     return package_registry.ecosystem_named(str(getattr(stack, "language", "") or ""))
 
 
-def named_packages(specification: Any) -> list[str]:
+#: Where a library call's first name stops being the package, by registry: `fastapi.Depends(...)` names `fastapi` on
+#: PyPI. Measured: the whole dotted call was asked of PyPI, which has an unrelated package of that name, and the
+#: drafting stage was told to pin it. Registries whose package names hold dots (NuGet, Maven, Go paths, Packagist) are
+#: not cut.
+_A_CALL_S_PACKAGE_ENDS_AT = {"pypi": ".", "npm": ".", "rubygems": ".", "crates": "::"}
+
+
+def _the_package_of_a_call(name: str, registry: str | None) -> str:
+    """The package a library call's first name belongs to in `registry`: `fastapi.Depends` -> `fastapi` on PyPI;
+    `@scope/pkg.fn` -> `@scope/pkg` on npm; unchanged where dots are part of package names."""
+    separator = _A_CALL_S_PACKAGE_ENDS_AT.get(str(registry or ""))
+    if not separator:
+        return name
+    head, slash, tail = name.partition("/") if name.startswith("@") else ("", "", name)
+    return head + slash + tail.split(separator, 1)[0]
+
+
+def named_packages(specification: Any, registry: str | None = None) -> list[str]:
     """The packages the specification names, in the order it names them: the library each library-call entry opens
-    with, and each name given a version in it or in the configuration. Runtimes (`node 22`) are not packages."""
+    with (cut to its package for `registry`), and each name given a version in it or in the configuration. Runtimes
+    (`node 22`) are not packages."""
     from app.tools import package_registry
 
     names: list[str] = []
@@ -100,7 +118,7 @@ def named_packages(specification: Any) -> list[str]:
     for entry in calls:
         first = _THE_FIRST_NAME.match(entry)
         if first:
-            names.append(first.group(1))
+            names.append(_the_package_of_a_call(first.group(1), registry))
     for entry in [*calls, *(str(e) for e in getattr(specification, "configuration", None) or [])]:
         names.extend(match.group(1) or match.group(2) for match in _A_NAME_AND_VERSION.finditer(entry))
         if _ABOUT_A_DEPENDENCY.search(entry):
@@ -125,7 +143,7 @@ def section(root: str | Path, path: str, specification: Any, stack: Any = None) 
         if key in _SHOWN:
             return _SHOWN[key]
         registry = registry_of(path, stack)
-        names = named_packages(specification)
+        names = named_packages(specification, registry)
         if not registry or not names:
             return ""
         from app.tools import package_registry

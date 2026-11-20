@@ -180,7 +180,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "Efficiency": ("EQUIVALENT_MUTANTS_REMEMBERED", "MUTANT_CHECK_IN_THE_FIX_STAGE", "REVIEWS_WITHOUT_REASONING",
                    "HARNESS_FINDINGS_RECHECKED", "NEAR_GREEN_REPLANNED_ONCE", "STABLE_MEMORY_ORDER",
                    "NEAR_GREEN_REPAIR_TO_ROUND", "FIX_STAGES_THAT_CLOSE_NOTHING", "ONE_DESIGN_REVIEW",
-                   "SPRINT_TIME_BUDGET", "MUTATION_GAPS_BUNDLED"),
+                   "SPRINT_TIME_BUDGET", "MUTATION_GAPS_BUNDLED", "FIX_ORDER_CRITERIA_FIRST"),
     # What a stack's setup stage may write (docs/measuring.md M6): measured off and on before it is kept.
     "Setup scope": ("SETUP_SCOPE_GUARD",),
     # Which review findings may send a sprint back (docs/measuring.md M7).

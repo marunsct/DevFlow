@@ -112,6 +112,7 @@ SWITCHES: dict[str, str] = {
     "MUTANT_CHECK_IN_THE_FIX_STAGE": "app.acceptance.mutant_check_in_stage",
     "MUTATION_TEST_RETENTION": "app.acceptance.mutation_retention",
     "MUTATION_GAPS_BUNDLED": "app.graph.mutation_gaps_bundled",
+    "FIX_ORDER_CRITERIA_FIRST": "app.graph.order_of_fixes",
     "EQUIVALENT_MUTANTS_REMEMBERED": "app.acceptance.mutation_equivalents",
     "REVIEWS_WITHOUT_REASONING": "app.agents.reviews_without_reasoning",
     "DISPUTE_QUOTES_THE_CRITERION": "app.agents.suite_dispute:criterion_quoted_switch",

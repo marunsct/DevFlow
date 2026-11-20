@@ -4099,8 +4099,12 @@ def _record_execution(
     category: str = "default",
     duration_seconds: float | None = None,
     memory_peak_bytes: int | None = None,
-) -> None:
-    """Append one command's outcome to the run's ledger. Never raises.
+    earlier: dict | None = None,
+) -> dict | None:
+    """Append one command's outcome to the run's ledger, and return the entry (None when not written). Never raises.
+
+    `earlier` is the kept result a repeat was answered from (`app.tools.unchanged_rerun`): the entry takes that
+    run's counts, names when it was taken (`reused_from`) and how long the run it saved took (`saved_seconds`).
 
     Verification is otherwise self-reported: a specialist writes
     `tests: ["ran pytest, all green"]` and nothing establishes whether anything
@@ -4119,15 +4123,15 @@ def _record_execution(
     """
     path = _ledger_path(repo_root)
     if path is None:
-        return
+        return None
     try:
-        totals = _the_counts_a_test_run_reported(result)
-        if category == "test" and not totals:
+        totals = dict(earlier.get("counts") or {}) if earlier else _the_counts_a_test_run_reported(result)
+        if category == "test" and not totals and not earlier:
             totals = _the_counts_its_report_holds(repo_root, command, duration_seconds)
         # A pack's own command writes its report whenever a test runs, and that report was read above: one with no
         # fresh report ran no test (it did not compile, or the product did not start), which is not a summary
         # left unread. Measured on the C# and Java runs: those were most of the counter's notes.
-        if category == "test" and not totals and not _a_command_of_the_pack_s_own(repo_root, command):
+        if category == "test" and not totals and not earlier and not _a_command_of_the_pack_s_own(repo_root, command):
             _count_a_test_run_whose_totals_were_not_read(command, result)
         entry = {
             "at": datetime.now(timezone.utc).isoformat(),
@@ -4154,10 +4158,16 @@ def _record_execution(
             # (`_MEMORY_PEAK_OF_THE_COMMAND`), so a worker killed for memory
             # has a record naming the command that grew.
             entry["memory_peak_mb"] = round(memory_peak_bytes / 1024**2, 1)
+        if earlier:
+            # A repeat answered from an earlier result, not run: what the audit counts as time saved.
+            entry["reused_from"] = earlier.get("at")
+            entry["saved_seconds"] = earlier.get("seconds")
         with path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(entry) + "\n")
+        return entry
     except OSError:
         logger.debug("Could not append to the execution ledger", exc_info=True)
+        return None
 
 
 #: Set while the harness runs a command itself - its scaffold, its runs of
@@ -5613,6 +5623,19 @@ class SandboxExecutor:
 
         already_timed_out = 0 if harness else timed_out_this_way_before(repo_root, command, working_directory, category)
         later_sprints = ""
+        # A test command run again with nothing changed since its last result is answered from that result rather
+        # than run (see `app.tools.unchanged_rerun`): the answer is the real one, and the run would only repeat it.
+        from app.tools import unchanged_rerun
+
+        kept_as = None
+        if not harness and category == "test" and not extra_env and not already_timed_out:
+            kept_as = (_where_it_ran(working_directory), _the_stage_running_now(), role_name)
+        earlier = None
+        if kept_as:
+            last = read_execution_ledger(repo_root, limit=1)
+            earlier = unchanged_rerun.the_earlier_result(
+                repo_root, command, *kept_as, latest=last[-1] if last else None)
+        before = None
         if already_timed_out:
             outcome = {
                 "error": (
@@ -5622,21 +5645,28 @@ class SandboxExecutor:
                     + _timeout_advice(repo_root, working_directory)
                 )
             }
+        elif earlier:
+            _MEMORY_PEAK_OF_THE_COMMAND.set(None)
+            outcome = unchanged_rerun.answered_from(earlier)
+            later_sprints = earlier.get("later_sprints") or ""
         else:
             began = time.time()
             # A peak left from an earlier command on this context is not this one's.
             _MEMORY_PEAK_OF_THE_COMMAND.set(None)
+            before = unchanged_rerun.what_the_workspace_holds(repo_root) if kept_as else None
             outcome = cls._run(
                 command, repo_root, role_name, category, extra_env, working_directory
             )
             if not harness and _as_exit_code(outcome.get("returncode")) not in (None, 0):
                 later_sprints = _failures_a_later_sprint_owns(repo_root, began)
+        ran = outcome
         notes = [n for n in (redundant_cd, doubled, redirected, _a_missing_path_that_is_here(outcome),
                              _a_relative_path_missing_from_where_it_ran(outcome, repo_root, working_directory),
                              later_sprints) if n]
         if notes:
             outcome = {**outcome, "note": " ".join(notes)}
-        regressed = _fewer_pass_than_last_time(
+        # An answer from the earlier result already says it is one; the repeat notes would say it again.
+        regressed = "" if earlier else _fewer_pass_than_last_time(
             repo_root, command, working_directory, outcome
         )
         if regressed:
@@ -5644,7 +5674,7 @@ class SandboxExecutor:
                 **outcome,
                 "note": f"{outcome['note']}{regressed}" if outcome.get("note") else regressed.strip(),
             }
-        note = _note_about_running_this_again(
+        note = "" if earlier else _note_about_running_this_again(
             repo_root, command, outcome, role_name, working_directory
         ) or _a_silent_success(outcome)
         if note:
@@ -5674,11 +5704,15 @@ class SandboxExecutor:
                     **outcome,
                     "note": f"{outcome['note']} {hint}" if outcome.get("note") else hint,
                 }
-        _record_execution(
+        entry = _record_execution(
             repo_root, role_name, command, outcome, working_directory, category,
             duration_seconds=time.monotonic() - started,
             memory_peak_bytes=None if already_timed_out else _MEMORY_PEAK_OF_THE_COMMAND.get(),
+            earlier=earlier,
         )
+        if kept_as and not earlier:
+            unchanged_rerun.keep(repo_root, command, *kept_as, entry=entry, outcome=ran,
+                                 later_sprints=later_sprints, before=before)
         return outcome
 
     @classmethod

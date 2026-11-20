@@ -523,8 +523,8 @@ def repairing(repo_root: str | Path, tests: list[str], *, began: dict[str, str] 
         # What the locked suite measured before anything was changed, for `a_repair_that_made_it_worse`.
         last = last_result(repo_root)
         if last.get("ran"):
-            passed, failed = int(last.get("passed") or 0), int(last.get("failed") or 0)
-            state["before_repair"] = {"tests": passed + failed, "passed": passed}
+            tests, passed = _run_and_passed(int(last.get("passed") or 0), int(last.get("failed") or 0))
+            state["before_repair"] = {"tests": tests, "passed": passed}
     _save_state(repo_root, state)
 
 
@@ -561,10 +561,17 @@ def a_repair_that_made_it_worse(repo_root: str | Path, result: AcceptanceResult)
     )
 
 
+def _run_and_passed(passed: int, failed: int) -> tuple[int, int]:
+    """(tests run, tests passed): the one count every comparison of a repair's versions uses. A skipped test did not
+    run. Found in the suite-repair design review: the suite before a repair was counted without its skipped tests and
+    each repaired version with them, so a repair that made failing tests skip read as no worse and could be kept as
+    the best."""
+    return passed + failed, passed
+
+
 def _counted(result: AcceptanceResult) -> tuple[int, int]:
-    """(tests run, tests passed) of a measurement."""
-    tests = list(result.report.tests)
-    return len(tests), sum(1 for test in tests if test.outcome == "passed")
+    """(tests run, tests passed) of a measurement (`_run_and_passed`)."""
+    return _run_and_passed(result.report.passed, result.report.failed)
 
 
 def _no_worse_than(tests: int, passed: int, than: dict[str, Any]) -> bool:

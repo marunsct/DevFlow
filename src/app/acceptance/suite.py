@@ -3961,6 +3961,14 @@ def reads_of_what_the_test_does_not_have(repo_root: str | Path) -> list[str]:
 
 #: An assertion that a response's content type is JSON.
 _ASSERTS_JSON_CONTENT = re.compile(r"content-type['\"`]?\s*\]?[\s\S]{0,160}?(?:application/)?json", re.I)
+#: A content type a test sends, not one it reads: a request's own `headers: {...}` (and `extraHTTPHeaders`), a headers
+#: object made to send, or a `.set('Content-Type', ...)` on a request. Per-role audit 2026-11-20: the header a create
+#: sent was taken as an assertion on the DELETE's 204, and the same finding came back seven rounds running.
+_A_HEADER_SENT = re.compile(
+    r"(?:headers\s*[:=]|setExtraHTTPHeaders\s*\(|new\s+Headers\s*\()\s*\{[^{}]*\}"
+    r"|\.\s*set\s*\(\s*['\"`]content-type['\"`]\s*,\s*['\"`][^'\"`]*['\"`]\s*\)",
+    re.I,
+)
 #: A DELETE request: the fixture's call, or a table entry a loop sends.
 _A_DELETE_CALL = re.compile(r"\.delete\s*\(")
 _A_DELETE_ENTRY = re.compile(r"method\s*:\s*['\"`]delete['\"`]", re.I)
@@ -4016,10 +4024,13 @@ def tests_that_want_json_from_a_204(repo_root: str | Path, contract_lines: Seque
         except OSError:
             continue
         starts = [m.start() for m in _A_TEST_CALL.finditer(text)]
+        # What a request sends is blanked to the same length, so only what a test reads of an answer is an assertion.
+        read_only = _A_HEADER_SENT.sub(lambda m: " " * len(m.group(0)), text)
         lines: list[int] = []
         for at, start in enumerate(starts):
-            block = text[start:starts[at + 1] if at + 1 < len(starts) else len(text)]
-            if not _ASSERTS_JSON_CONTENT.search(block):
+            end = starts[at + 1] if at + 1 < len(starts) else len(text)
+            block = text[start:end]
+            if not _ASSERTS_JSON_CONTENT.search(read_only[start:end]):
                 continue
             looped = _inside_a_loop_over_a_delete(text, start)
             if looped or _A_DELETE_ENTRY.search(block):

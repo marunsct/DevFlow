@@ -9,6 +9,8 @@ from __future__ import annotations
 import re
 from types import SimpleNamespace
 
+import pytest
+
 from app.acceptance import suite
 from app.stacks import contract, pack_named
 
@@ -162,3 +164,35 @@ def test_a_delete_asserted_to_answer_204_with_a_content_type_is_still_found(tmp_
 def test_a_delete_with_no_status_asserted_is_still_found(tmp_path):
     _suite(tmp_path, THE_404_ANSWER.replace("  expect(resp.status()).toBe(404);\n", ""))
     assert suite.tests_that_want_json_from_a_204(tmp_path, CONTRACT)
+
+
+#: Per-role audit 2026-11-20: a test sent the JSON content type with its create and asserted only the DELETE's 204.
+#: The header it sent was read as an assertion on an answer, and the same finding came back seven rounds running.
+SENDS_THE_HEADER = """test('[AC-5] deletes a note', async ({ request }) => {
+  const created = await request.post('/notes', {
+    headers: { 'Content-Type': 'application/json' },
+    data: { title: 'a' },
+  });
+  const id = (await created.json()).id;
+  const res = await request.delete(`/notes/${id}`, { headers: { 'content-type': 'application/json' } });
+  expect(res.status()).toBe(204);
+});
+"""
+
+
+SETS_THE_HEADER = """test('[AC-5] deletes a note', async () => {
+  const res = await api.delete('/notes/1').set('Content-Type', 'application/json');
+  expect(res.status).toBe(204);
+});
+"""
+
+
+@pytest.mark.parametrize("spec", [SENDS_THE_HEADER, SETS_THE_HEADER], ids=["request options", "a set header"])
+def test_a_content_type_the_test_sends_with_its_request_is_not_an_assertion_on_the_204(tmp_path, spec):
+    assert suite.tests_that_want_json_from_a_204(_suite(tmp_path, spec), CONTRACT) == []
+
+
+def test_a_test_that_sends_the_header_and_asserts_json_from_the_204_is_still_found(tmp_path):
+    asserted = SENDS_THE_HEADER.replace(
+        "expect(res.status()).toBe(204);", "expect(res.headers()['content-type']).toContain('application/json');")
+    assert len(suite.tests_that_want_json_from_a_204(_suite(tmp_path, asserted), CONTRACT)) == 1

@@ -426,8 +426,13 @@ def test_bodies(repo_root: str | Path) -> dict[str, str]:
     return _test_bodies(repo_root)
 
 
-def tests_left_unrepaired(repo_root: str | Path, result: Any = None) -> list[str]:
+def tests_left_unrepaired(repo_root: str | Path, result: Any = None,
+                          written: dict[str, str] | None = None) -> list[str]:
     """The tests a repair was sent for whose code it has not changed, as one problem; [] when none or no repair is open.
+
+    `written` is each test's code as the writers left it (`test_bodies` before the harness put anything back): a test
+    they changed and the harness then put back is not one they left unchanged. Measured on one run: a put-back of the
+    lock restored three rewritten tests, and the writers were told they "had not changed" them.
 
     Measured on one run: a repair sent for three tests a dispute ruled wrong changed one file and left two of the
     three as they were; locked again, the ruled-wrong test failed the rest of the run and a right product was escalated.
@@ -444,8 +449,10 @@ def tests_left_unrepaired(repo_root: str | Path, result: Any = None) -> list[str
     vouched = " ".join(str(claim) for claim in state.get(PRODUCT_AT_FAULT_CLAIMS) or ())
     now = _test_bodies(repo_root)
     passing = _passing_names(result)
+    by_the_writers = now if written is None else written
     left = [name for name, body in sent.items()
             if name in now and now[name].strip() == str(body).strip() and name not in vouched
+            and by_the_writers.get(name, now[name]).strip() == str(body).strip()
             and not _is_among(name, passing)]
     if not left:
         return []
@@ -454,6 +461,25 @@ def tests_left_unrepaired(repo_root: str | Path, result: Any = None) -> list[str
         + ("it" if len(left) == 1 else "them") + ": each is exactly as it was locked. Repair each as its finding says - "
         "the fault named is in that test's own code."
     ]
+
+
+def what_a_put_back_undid(repo_root: str | Path, written: dict[str, str]) -> str:
+    """The tests a repair was sent for that the writers changed and a put-back returned to their code as the repair
+    began, as one line for the writers; "" when none. `written` is as for `tests_left_unrepaired`."""
+    sent = _state(repo_root).get("repair_bodies") or {}
+    now = _test_bodies(repo_root)
+    undone = sorted(name for name, body in sent.items()
+                    if name in now and now[name].strip() == str(body).strip()
+                    and name in written and written[name].strip() != str(body).strip())
+    if not undone:
+        return ""
+    return (
+        "The harness's put-back returned " + ", ".join(f"`{name}`" for name in undone)
+        + (" to the code it had when the repair began: the change made to it was" if len(undone) == 1 else
+           " to the code they had when the repair began: the changes made to them were")
+        + " undone by the harness, not left out. Repair "
+        + ("it" if len(undone) == 1 else "each") + " again on the version put back, as its finding says."
+    )
 
 
 def _passing_names(result: Any) -> list[str]:

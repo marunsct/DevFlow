@@ -989,6 +989,9 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
 
     root = _root(state)
     rounds = int(state.get("acceptance_round") or 1)
+    # Each test's code as the writers left it, before the harness renames, corrects or puts anything back: a test the
+    # harness puts back is never one the writers "have not changed".
+    written = suite.test_bodies(root)
     # A file the runner skips only for its name's separator is renamed, not sent back (five rounds once ran out on it).
     suite.rename_files_the_runner_skips(root)
     # So is a read of `request.baseURL`, left through three rounds although each named the corrected line.
@@ -1005,7 +1008,7 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
                        f"as the repair's best measured version ({best.get('passed')} of {best.get('tests')} passing)"
                        if best else "as locked")
         result = suite.run(root)
-        problems = [worse, *problems]
+        problems = [worse, *filter(None, [suite.what_a_put_back_undid(root, written)]), *problems]
     # The suite as measured here, when no worse than before the repair and than its best so far, is the version a
     # later change that leaves it worse puts back (measured on one run: the harness's own rewrite of six tests was
     # lost to the lock that way, and the six went back for repair again).
@@ -1045,7 +1048,7 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     # A repair that left a test it was sent for exactly as it was goes back with the cannot-pass findings (and once
     # at the review's limit, `cannot_pass_to_lock`), recorded under the bucket's name. It says what the writers did,
     # not what a check suspects, so it is never held back as a repeat.
-    unrepaired = suite.tests_left_unrepaired(root, result)
+    unrepaired = suite.tests_left_unrepaired(root, result, written)
     check_findings.noted(root, rounds, "tests_that_cannot_pass", unrepaired)
     cannot = [*cannot, *unrepaired]
     problems.extend(cannot)

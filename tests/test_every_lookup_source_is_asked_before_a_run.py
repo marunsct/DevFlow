@@ -37,3 +37,29 @@ def test_ready_prints_the_sources_above_the_model_s_verdict_and_keeps_its_status
     assert "lookup_ready.py" in ready, "ready asks the lookup sources"
     assert re.search(r"tail -1", ready), "the verdict is printed last, alone"
     assert re.search(r"exit \"?\$status\"?", ready), "ready keeps the model check's exit status"
+
+
+def test_an_optional_source_with_no_key_or_at_its_cap_says_so_instead_of_being_asked(tmp_path, monkeypatch, capsys):
+    """WL.6: the paid searches are listed with no key, and a source at its daily cap is listed as capped, unasked."""
+    from app.tools import lookups, package_registry, page_reader
+
+    sent = []
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("WEB_SEARCH_ENABLED", "false")
+    monkeypatch.setenv("LOOKUP_DAILY_CAPS", "context7=0")
+    for variable in ("BRAVE_API_KEY", "TAVILY_API_KEY", "LOOKUP_ORDER"):
+        monkeypatch.delenv(variable, raising=False)
+    monkeypatch.setattr(lookups, "_get", lambda url, headers, body=None: sent.append(url) or (200, '{"items": []}'))
+    monkeypatch.setattr(package_registry, "look_up", lambda ecosystem, name: {"version": "5.0.0"})
+    monkeypatch.setattr(page_reader, "_fetch", lambda url: (404, {}, b"") if url.endswith("robots.txt") else (
+        200, {"content-type": "text/plain"}, b"Example Domain"))
+    monkeypatch.setattr(page_reader, "_resolve", lambda host: ["93.184.215.14"])
+
+    _module().main()
+
+    printed = capsys.readouterr().out.splitlines()
+    assert "LOOKUPS brave: no key (optional; asked only with one)" in printed
+    assert "LOOKUPS tavily: no key (optional; asked only with one)" in printed
+    assert any(line.startswith("LOOKUPS context7: capped (daily cap of 0 requests reached)") for line in printed)
+    assert any(line.startswith("LOOKUPS page reader: answers") for line in printed)
+    assert not [url for url in sent if "context7" in url or "brave" in url or "tavily" in url]

@@ -676,6 +676,30 @@
     "additionalProperties": false,
     "description": "Write-only, as the provider keys are: omitted or null leaves the stored key, \"\" deletes it, a value sets it.",
     "properties": {
+     "brave_api_key": {
+      "anyOf": [
+       {
+        "maxLength": 512,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Brave Api Key"
+     },
+     "context7_api_key": {
+      "anyOf": [
+       {
+        "maxLength": 512,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Context7 Api Key"
+     },
      "github_token": {
       "anyOf": [
        {
@@ -699,6 +723,18 @@
        }
       ],
       "title": "Stackexchange Key"
+     },
+     "tavily_api_key": {
+      "anyOf": [
+       {
+        "maxLength": 512,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Tavily Api Key"
      }
     },
     "title": "LookupKeysUpdate",
@@ -707,6 +743,48 @@
    "LookupKeysView": {
     "description": "The internet lookup sources' keys as the admin page shows them: masked, never the value (plan WL.3).",
     "properties": {
+     "brave_api_key_configured": {
+      "default": false,
+      "title": "Brave Api Key Configured",
+      "type": "boolean"
+     },
+     "brave_api_key_from_environment": {
+      "default": false,
+      "title": "Brave Api Key From Environment",
+      "type": "boolean"
+     },
+     "brave_api_key_hint": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Brave Api Key Hint"
+     },
+     "context7_api_key_configured": {
+      "default": false,
+      "title": "Context7 Api Key Configured",
+      "type": "boolean"
+     },
+     "context7_api_key_from_environment": {
+      "default": false,
+      "title": "Context7 Api Key From Environment",
+      "type": "boolean"
+     },
+     "context7_api_key_hint": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Context7 Api Key Hint"
+     },
      "github_token_configured": {
       "default": false,
       "title": "Github Token Configured",
@@ -748,6 +826,27 @@
        }
       ],
       "title": "Stackexchange Key Hint"
+     },
+     "tavily_api_key_configured": {
+      "default": false,
+      "title": "Tavily Api Key Configured",
+      "type": "boolean"
+     },
+     "tavily_api_key_from_environment": {
+      "default": false,
+      "title": "Tavily Api Key From Environment",
+      "type": "boolean"
+     },
+     "tavily_api_key_hint": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Tavily Api Key Hint"
      }
     },
     "title": "LookupKeysView",

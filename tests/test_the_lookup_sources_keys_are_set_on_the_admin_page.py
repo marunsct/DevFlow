@@ -72,3 +72,23 @@ def test_a_saved_lookup_key_is_never_in_a_model_s_environment():
 
     assert "GITHUB_TOKEN" not in environment and "STACKEXCHANGE_KEY" not in environment
 
+
+def test_a_paid_search_key_saved_here_is_shown_masked_and_sent_only_to_its_search(client, monkeypatch):
+    """WL.6: the Brave, Tavily and Context7 keys are set on the same page, write-only."""
+    for variable in ("BRAVE_API_KEY", "TAVILY_API_KEY", "CONTEXT7_API_KEY"):
+        monkeypatch.delenv(variable, raising=False)
+    saved = client.put("/api/settings/lookup-keys", json={"brave_api_key": "brave-canary-4321"})
+    sent: list[tuple[str, dict[str, str]]] = []
+
+    def fetch(url, headers, body=None):
+        sent.append((url, headers))
+        return 200, '{"items": []}'
+
+    lookups.look_up("TypeError: Argument #2 must be of type callable", "PHP", fetch=fetch)
+
+    shown = client.get("/api/settings/lookup-keys").json()
+    assert saved.status_code == 200 and "canary" not in saved.text + str(shown)
+    assert shown["brave_api_key_hint"] == "****4321" and shown["tavily_api_key_configured"] is False
+    assert [h.get("X-Subscription-Token") for url, h in sent if "api.search.brave.com" in url] == ["brave-canary-4321"]
+    assert not [h for url, h in sent if "api.search.brave.com" not in url and "brave-canary-4321" in str(h)]
+

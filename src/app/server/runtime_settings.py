@@ -85,6 +85,11 @@ LOOKUP_SECRETS: dict[str, str] = {
     "stackexchange_key": "STACKEXCHANGE_KEY",
     # A GitHub token with no scopes raises the issue search's limit.
     "github_token": "GITHUB_TOKEN",
+    # Optional paid web searches (plan WL.6): asked only with a key, and only when the free sources found too little.
+    "brave_api_key": "BRAVE_API_KEY",
+    "tavily_api_key": "TAVILY_API_KEY",
+    # Optional: Context7's library documentation answers without one, at a lower limit.
+    "context7_api_key": "CONTEXT7_API_KEY",
 }
 SETTABLE_SECRETS.update(LOOKUP_SECRETS)
 

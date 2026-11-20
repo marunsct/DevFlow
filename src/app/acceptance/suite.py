@@ -376,6 +376,10 @@ def lock(repo_root: str | Path) -> dict[str, str]:
     state.pop("before_repair", None)
     state.pop("repair_bodies", None)
     _save_state(repo_root, state)
+    # A reopened suite's findings go to its writers first, not compared with the rounds before this lock.
+    from app.acceptance import check_findings
+
+    check_findings.forgotten(repo_root)
     return checksums
 
 

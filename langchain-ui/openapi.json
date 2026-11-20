@@ -1604,6 +1604,25 @@
     "title": "ReviewInfo",
     "type": "object"
    },
+   "ReviewPolicyChange": {
+    "additionalProperties": false,
+    "description": "Reviews to switch on or off while the run is live (plan WS.3); points left out keep their setting.",
+    "properties": {
+     "review_policy": {
+      "additionalProperties": {
+       "type": "boolean"
+      },
+      "description": "Review point -> whether the run stops there for a person, from the next gate it reaches.",
+      "title": "Review Policy",
+      "type": "object"
+     }
+    },
+    "required": [
+     "review_policy"
+    ],
+    "title": "ReviewPolicyChange",
+    "type": "object"
+   },
    "RewindRequest": {
     "additionalProperties": false,
     "description": "Which point of a run's history to rewind it to (`GET /runs/{id}/rewind-points`).",
@@ -4385,6 +4404,19 @@
     "additionalProperties": false,
     "description": "Where a run's workspace content comes from.\n\nTwo scenarios use this platform. Greenfield - no existing code, the agents\ncreate it - is the default and needs nothing here. Brownfield - adding\nfeatures to something that already exists - needs that code materialised\ninto the workspace before the first agent reads it.",
     "properties": {
+     "delivery_token": {
+      "anyOf": [
+       {
+        "maxLength": 512,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "Access token that may push a branch and open a pull request on the repository, for type=git (behind PULL_REQUEST_DELIVERY). Kept sealed outside the workspace until the run delivers its change, never written to the run record, the audit log or a log line; without it the change is delivered as a git bundle and a patch for download.",
+      "title": "Delivery Token"
+     },
      "depth": {
       "default": 1,
       "description": "Clone depth; 0 for full history. Shallow by default - the agents need the code, not the history.",
@@ -7429,6 +7461,114 @@
      }
     ],
     "summary": "Submit Review",
+    "tags": [
+     "runs"
+    ]
+   }
+  },
+  "/api/runs/{run_id}/review-policy": {
+   "get": {
+    "description": "The reviews this run stops at now, as its next gate reads them.",
+    "operationId": "get_review_policy_api_runs__run_id__review_policy_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "title": "Run Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Get Review Policy Api Runs  Run Id  Review Policy Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Get Review Policy",
+    "tags": [
+     "runs"
+    ]
+   },
+   "put": {
+    "description": "Switch reviews on or off while the run is live (plan WS.3); the next gate the run reaches follows it.\n\nBefore, a run's reviews were fixed when it started: an owner who wanted to see the plan, or who no longer\nwanted to stop at each sprint, had to cancel the run and start another.",
+    "operationId": "change_review_policy_api_runs__run_id__review_policy_put",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "title": "Run Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ReviewPolicyChange"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Change Review Policy Api Runs  Run Id  Review Policy Put",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Change Review Policy",
     "tags": [
      "runs"
     ]

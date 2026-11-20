@@ -349,6 +349,12 @@ export interface ReviewInfo {
   updated_at: string;
 }
 
+/** Reviews to switch on or off while the run is live (plan WS.3); points left out keep their setting. */
+export interface ReviewPolicyChange {
+  /** Review point -> whether the run stops there for a person, from the next gate it reaches. */
+  review_policy: Record<string, boolean>;
+}
+
 /** Which point of a run's history to rewind it to (`GET /runs/{id}/rewind-points`). */
 export interface RewindRequest {
   /** The checkpoint before the stage. */
@@ -997,6 +1003,8 @@ export interface WorkOrderNow {
 
 /** Where a run's workspace content comes from. Two scenarios use this platform. Greenfield - no existing code, the agents create it - is the default and needs nothing here. Brownfield - adding features to something that already exists - needs that code materialised into the workspace before the first agent reads it. */
 export interface WorkspaceSource {
+  /** Access token that may push a branch and open a pull request on the repository, for type=git (behind PULL_REQUEST_DELIVERY). Kept sealed outside the workspace until the run delivers its change, never written to the run record, the audit log or a log line; without it the change is delivered as a git bundle and a patch for download. */
+  delivery_token?: string | null;
   /** Clone depth; 0 for full history. Shallow by default - the agents need the code, not the history. */
   depth?: number;
   /** Branch or tag to clone, for type=git. Defaults to the remote's HEAD. */

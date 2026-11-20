@@ -305,10 +305,51 @@ def _last_lines(content: str, limit: int) -> str:
         )
     else:
         text = content
-    lines = [line for line in text.splitlines() if line.strip()]
+    lines = _without_repeats([line for line in text.splitlines() if line.strip()])
     if len(lines) <= limit:
         return "\n".join(lines)
-    return "... (earlier output omitted)\n" + "\n".join(lines[-limit:])
+    tail = lines[-limit:]
+    # What the output stated went wrong, when its end does not show it: measured on one PHP run, a shared 500 on every
+    # route was shown as forty lines of the server's access log ("Accepted", "Closing"), its error cut off above them.
+    try:
+        from app.acceptance.what_went_wrong import the_errors_stated
+
+        shown = " ".join(" ".join(tail).split())
+        stated = [line for line in the_errors_stated("\n".join(lines[:-limit])) if line not in shown]
+    except Exception:  # noqa: BLE001 - the tail as it was
+        stated = []
+    head = ("The errors it stated earlier:\n" + "\n".join(stated) + "\n") if stated else ""
+    return head + "... (earlier output omitted)\n" + "\n".join(tail)
+
+
+#: Every run of digits: a timestamp, a port, a request id, a count.
+_DIGITS = re.compile(r"\d+")
+
+
+def _without_repeats(lines: list[str]) -> list[str]:
+    """`lines` with each run of lines that differ only in their numbers - one line again and again, or a short cycle
+    of them, as an access log's "Accepted" and "Closing" - kept once, and how many lines it stood for."""
+    out: list[str] = []
+    recent: list[str] = []  # the shapes of the last lines kept, newest last
+    count = 0
+    for line in lines:
+        shape = _DIGITS.sub("#", line)
+        if shape in recent:
+            count += 1
+            continue
+        if count:
+            out.append(f"  ({count} more line(s) like the ones above)")
+            count = 0
+            recent = []
+        out.append(line)
+        recent = [*recent, shape][-_A_CYCLE:]
+    if count:
+        out.append(f"  ({count} more line(s) like the ones above)")
+    return out
+
+
+#: The longest cycle of lines folded: an access log writes two or three lines a request.
+_A_CYCLE = 3
 
 
 #: The key, in a message's `additional_kwargs`, under which the project memory says

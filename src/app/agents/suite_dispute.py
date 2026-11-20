@@ -91,6 +91,49 @@ class SuiteDisputeWithRulings(SuiteDispute):
     )
 
 
+class ProposedRepair(BaseModel):
+    """The repair a test called wrong implies, quoted from its own code (behind `CONTESTED_TESTS_CONFIRMED`)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    test: str = Field(..., description="The failing test's name exactly as given.")
+    the_faulty_code: str = Field(
+        ...,
+        description=(
+            "The code in that test's own file that makes it wrong, copied character for character: one expression "
+            "or one line of its steps, never a line that checks a result."
+        ),
+    )
+    the_corrected_code: str = Field(
+        ...,
+        description=(
+            "What that code should be so the test checks what its criterion says. The harness runs a copy of the "
+            "test with only this change against the product, and against a deliberately broken one; the locked "
+            "suite itself is not changed by it."
+        ),
+    )
+
+
+#: What the dispute is told of the `repairs` it may add.
+REPAIRS_DESCRIPTION = (
+    "For a test named as wrong whose fault is in its own steps - a value it sends, reads or builds - and not in what "
+    "it checks: the code at fault and its correction. Rulings quoting the same code at fault are one cause. Empty "
+    "when no correction is clear."
+)
+
+
+class SuiteDisputeWithRepairs(SuiteDispute):
+    """The prose answer, with the repairs it implies."""
+
+    repairs: list[ProposedRepair] = Field(default_factory=list, description=REPAIRS_DESCRIPTION)
+
+
+class SuiteDisputeWithRulingsAndRepairs(SuiteDisputeWithRulings):
+    """The answer with one ruling per failing test, and the repairs it implies."""
+
+    repairs: list[ProposedRepair] = Field(default_factory=list, description=REPAIRS_DESCRIPTION)
+
+
 class _StructuredDisputeVerdict:
     """`STRUCTURED_DISPUTE_VERDICT` as the switch registry reads one: off in code and in compose until measured."""
 
@@ -172,6 +215,17 @@ def build_dispute_request(
     return {"messages": [{"role": "user", "content": content}]}
 
 
+def answer_format() -> type[SuiteDispute]:
+    """The dispute's answer schema: with rulings when the verdict is structured, with repairs to confirm when
+    `CONTESTED_TESTS_CONFIRMED` is on (`graph.contested_tests`)."""
+    from app.graph import contested_tests
+
+    structured = structured_verdict_switch.enabled()
+    if contested_tests.enabled():
+        return SuiteDisputeWithRulingsAndRepairs if structured else SuiteDisputeWithRepairs
+    return SuiteDisputeWithRulings if structured else SuiteDispute
+
+
 def create_suite_dispute_agent(
     model: str | BaseChatModel | None = None,
     *,
@@ -184,7 +238,7 @@ def create_suite_dispute_agent(
         name="suite_dispute",
         stage="acceptance_dispute",
         system_prompt=_SYSTEM_PROMPT,
-        response_format=SuiteDisputeWithRulings if structured_verdict_switch.enabled() else SuiteDispute,
+        response_format=answer_format(),
         model=model,
         checkpointer=checkpointer,
         repo_root=repo_root,
@@ -445,6 +499,10 @@ def tests_it_names(
 __all__ = [
     "SuiteDispute",
     "ONE_SHARED_SERVICE",
+    "ProposedRepair",
+    "SuiteDisputeWithRepairs",
+    "SuiteDisputeWithRulingsAndRepairs",
+    "answer_format",
     "build_dispute_request",
     "create_suite_dispute_agent",
     "judged_by_the_code",

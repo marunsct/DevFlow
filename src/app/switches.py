@@ -190,6 +190,9 @@ GROUPS: dict[str, tuple[str, ...]] = {
     # The web tools offered to the stages that read documentation (plan WL.3). Each run's "Internet lookups" choice
     # sets both for that run (`app.internet_lookups`).
     "Internet lookups": ("WEB_LOOKUP_WHEN_STUCK", "WEB_TOOLS_OFFERED"),
+    # Which locked tests a dispute may still send back past the reclassification cap: only those whose quoted repair
+    # the harness confirmed by running it (`graph.contested_tests`). Off until measured: it relaxes the cap.
+    "Suite disputes": ("CONTESTED_TESTS_CONFIRMED",),
 }
 #: Every grouped switch, in the admin page's order.
 EXPERIMENTS = tuple(name for members in GROUPS.values() for name in members)

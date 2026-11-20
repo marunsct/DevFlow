@@ -45,6 +45,7 @@ SIGNALS: dict[str, str] = {
     "SETTLE_SPEC_CONTRADICTIONS": "The design review of this specification ended with these findings open",
     "BRIEF_OVER_SPEC_ADDITIONS": "What the specification adds beyond the brief",
     "TESTS_OF_ACTIONS_WITHIN_A_VIEW": "changes the state a current view depends on",
+    "CONTESTED_TESTS_CONFIRMED": "The harness ran a copy of this test with",
 }
 
 

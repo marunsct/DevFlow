@@ -331,8 +331,9 @@ def acceptance_dispute_node(state: WorkflowGraphState, config: RunnableConfig, c
         *(criterion for _, criterion, _ in failing),
     ))
     refused: list[tuple[str, str]] = []
+    answer = update.pop("__suite_dispute__")
     named = tests_it_names(
-        update.pop("__suite_dispute__"), [name for name, _, _ in failing], standard=standard, refused=refused,
+        answer, [name for name, _, _ in failing], standard=standard, refused=refused,
         criteria_of={name: criterion for name, criterion, _ in failing},
     )
     called_wrong = list(named)
@@ -358,8 +359,22 @@ def acceptance_dispute_node(state: WorkflowGraphState, config: RunnableConfig, c
     # Past it the tests stay as they are and the run carries them to its
     # release rather than rewriting what it is checked against.
     # One cause, one place under the cap: rulings that blame one helper of the suite are grouped.
-    named, past_the_cap, causes = acceptance_nodes.within_the_cap_by_cause(
-        state, acceptance_nodes.by_shared_cause(named, code))
+    from app.graph import contested_tests
+
+    contesting = contested_tests.enabled()
+    repairs = contested_tests.proposed_repairs(answer) if contesting else []
+    groups = acceptance_nodes.by_shared_cause(named, code)
+    if contesting:
+        # And rulings quoting the same code at fault, written inline in several tests (CONTESTED_TESTS_CONFIRMED).
+        groups = contested_tests.by_shared_expression(groups, repairs, root)
+    named, past_the_cap, causes = acceptance_nodes.within_the_cap_by_cause(state, groups)
+    # Past the cap, a ruling the harness confirms by running the repair it quotes still goes to QA's repair.
+    confirmed: list[str] = []
+    if past_the_cap and contesting and repairs and not state.get("pending_inner_thread_id"):
+        confirmed, past_the_cap, confirmed_causes, _ = contested_tests.confirmed_past_the_cap(
+            root, groups, past_the_cap, repairs)
+        named = [*named, *confirmed]
+        causes += confirmed_causes
     if past_the_cap:
         logger.warning(
             "Disputed test(s) %s are past this run's reclassification cap; they stay as they are",
@@ -390,7 +405,7 @@ def acceptance_dispute_node(state: WorkflowGraphState, config: RunnableConfig, c
         record = dispute_outcomes.outcome(
             shown=[name for name, _, _ in failing], called_wrong=called_wrong, refused=refused,
             passed_alone=passed_alone, service_stopped=service_stopped, past_the_cap=past_the_cap,
-            missing=missing, reopened=reopened,
+            missing=missing, reopened=reopened, confirmed=confirmed,
         )
         dispute_outcomes.write(root, record, sprint=_this_attempt(state))
         record_decision(
@@ -409,5 +424,13 @@ def acceptance_dispute_node(state: WorkflowGraphState, config: RunnableConfig, c
         if reopened is not None:
             _the_outcome(True)
             return _handing_on(**{**update, **reopened, "disputed_sprints": disputed, "dispute_returns_to": None, "dispute_reason": None})
+    if confirmed:
+        # Confirmed, but the suite may not be repaired again: carried to the release as contested tests, with why,
+        # rather than planned against again.
+        beyond = criteria_past_the_cap(failing, confirmed)
+        if beyond:
+            acceptance_nodes.defer_what_is_beyond_repair(state, beyond, [
+                f"{line}: the harness confirmed the dispute's ruling, and the suite may not be repaired again"
+                for line in past_the_cap_with_their_criteria(failing, confirmed)])
     _the_outcome(False)
     return _handing_on(**update, stage=carry_on, disputed_sprints=disputed, dispute_returns_to=None, dispute_reason=None)

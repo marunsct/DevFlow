@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import logging
 import re
+import shlex
 
 from difflib import SequenceMatcher
 from pathlib import Path, PurePosixPath
@@ -124,8 +125,6 @@ def with_borrowed_files_noted(milestone: Any) -> Any:
 
 def _words_of(command: str) -> list[str]:
     """The path-like words of a command line, without quotes or a leading `./`."""
-    import shlex
-
     try:
         words = shlex.split(command)
     except ValueError:
@@ -242,7 +241,9 @@ def with_a_testing_work_order(milestone: Any, repo_root: str | Path | None) -> t
         def union(field: str) -> list[str]:
             return list(dict.fromkeys(str(v) for t in behaviour for v in getattr(t, field, None) or [] if str(v).strip()))
 
-        command = " ".join(str(part) for part in getattr(pack, "unit_test", ()) or ())
+        # Quoted where an argument needs it: joined with spaces, an argument holding a `;` read as a shell operator
+        # and the harness's own work order was sent back by the harness's own readiness check.
+        command = shlex.join(str(part) for part in getattr(pack, "unit_test", ()) or ())
         testing = type(behaviour[0])(
             specialist_role=_TESTING,
             title="Automated tests for this milestone's work orders",

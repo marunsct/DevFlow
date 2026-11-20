@@ -10,6 +10,7 @@ imported from `app.graph.workflow` when they run.
 from __future__ import annotations
 
 import logging
+import shlex
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
@@ -39,8 +40,9 @@ def _the_specification_s_work_orders(state: Any, goal: str) -> Any:
             f"{c.id}: {c.text}" for c in acceptance_nodes.suite.criteria(root) if not due or c.id in due
         ]
         unit = (contract.read(root) or {}).get("unit_test") or []
+        # Quoted where an argument needs it: an argument holding a `;` joined with spaces read as a shell operator.
         return work_orders_from_the_specification(
-            state.get("technical_specification"), goal, criteria, [" ".join(map(str, unit))] if unit else [],
+            state.get("technical_specification"), goal, criteria, [shlex.join(map(str, unit))] if unit else [],
             root,
         )
     except Exception as error:  # noqa: BLE001 - the lead writes the plan

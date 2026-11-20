@@ -99,6 +99,38 @@ def entrypoint_is_still_the_stub(repo_root: str | Path) -> str | None:
 
 
 
+def files_still_as_the_scaffold_wrote_them(repo_root: str | Path | None) -> frozenset[str]:
+    """Workspace-relative paths of the pack's files that are still byte for byte what the scaffold wrote.
+
+    A stub the scaffold wrote is not the product's file built: counted as built, a one-file service had half its
+    planned files "built" before any work order ran, and fast delivery handed its first plan to a model. Empty
+    when there is no pack, the run was not scaffolded, or nothing can be read. Never raises.
+    """
+    try:
+        from app.stacks import contract
+
+        record = contract.read(repo_root)
+        found = contract.the_pack(repo_root)
+        if not record or not found or not record.get("scaffolded", True):
+            return frozenset()
+        pack = found[0]
+        project = str(record.get("project") or "")
+        package = str(record.get("package") or "") or None
+        rendered = pack.render(project, str(record.get("title") or ""), package)
+        unchanged: set[str] = set()
+        for relative, content in rendered.items():
+            path = f"{project}/{relative}" if project else relative
+            try:
+                if (Path(str(repo_root)) / path).read_text(encoding="utf-8") == content:
+                    unchanged.add(path)
+            except (OSError, UnicodeDecodeError):
+                continue
+        return frozenset(unchanged)
+    except Exception:  # noqa: BLE001 - nothing known as the scaffold's: every file counts as written
+        logger.debug("Could not compare the workspace with the scaffold", exc_info=True)
+        return frozenset()
+
+
 def _served_entrypoints(repo_root: str | Path) -> tuple[str, list[str]]:
     """(the project folder, its pack's entrypoints as project-relative paths); ("", []) when unknown."""
     from app.stacks import contract, pack_named

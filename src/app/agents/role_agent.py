@@ -799,7 +799,7 @@ def create_role_agent(
         # every call, ahead of the listing that changes. Thirteen request
         # builders reach twelve of thirteen - middleware reaches all of them.
         # See `app.agents.environment_contract` (Initiative K.1).
-        build_environment_contract_middleware(),
+        build_environment_contract_middleware(resolved_repo_root),
         build_workspace_digest_middleware(resolved_repo_root),
         # The project's documents and files, current, at the start of every
         # call; a read of one it already holds is answered with a pointer.

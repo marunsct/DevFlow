@@ -414,6 +414,11 @@ def _test_bodies(repo_root: str | Path) -> dict[str, str]:
     return found
 
 
+def test_bodies(repo_root: str | Path) -> dict[str, str]:
+    """Each acceptance test's own code by its name, as it is now."""
+    return _test_bodies(repo_root)
+
+
 def tests_left_unrepaired(repo_root: str | Path, result: Any = None) -> list[str]:
     """The tests a repair was sent for whose code it has not changed, as one problem; [] when none or no repair is open.
 
@@ -457,12 +462,15 @@ def _is_among(name: str, reported: list[str]) -> bool:
     return any(r == name or r.endswith((f"::{name}", f".{name}", f" › {name}", f" {name}")) for r in reported)
 
 
-def repairing(repo_root: str | Path, tests: list[str]) -> None:
-    """Record the tests a reopened suite is being repaired for, until it is locked again."""
+def repairing(repo_root: str | Path, tests: list[str], *, began: dict[str, str] | None = None) -> None:
+    """Record the tests a reopened suite is being repaired for, until it is locked again.
+
+    `began` is each test's code as the repair began (`test_bodies`), for a caller that has already changed them.
+    """
     state = _state(repo_root)
     state["repairing"] = sorted({*state.get("repairing", []), *(str(t) for t in tests if str(t).strip())})
     # Each named test's code as the repair began, so the lock can tell one it never changed (`tests_left_unrepaired`).
-    bodies = _test_bodies(repo_root)
+    bodies = began if began is not None else _test_bodies(repo_root)
     kept = dict(state.get("repair_bodies") or {})
     for name in tests:
         if str(name) in bodies and str(name) not in kept:
@@ -1802,6 +1810,9 @@ def tests_that_broke_themselves(repo_root: str | Path, result: AcceptanceResult)
         # never gave - `expect(received).toMatch(expected)` ... `Received has value: undefined` - is the product's
         # too: measured on one run, a missing `Location` header reopened the suite twice as "the test's own code".
         said = message.split(_PAGE_MARK, 1)[0].split(_SERVICE_ERRORS_MARK, 1)[0]
+        if failed_because_the_product_did_not_start(said):
+            # The product's start trace, not the test's code: its `NameError` or `TypeError` is the product's.
+            continue
         if _A_PROMISE_RECEIVED.search(said):
             broken.append(
                 f"`{test.name}` cannot pass whatever is built: its matcher received `[object Promise]` - the test "
@@ -1925,7 +1936,8 @@ def tests_broken_by_their_own_setup(repo_root: str | Path, result: AcceptanceRes
     groups: dict[str, list[str]] = {}
     for test in result.report.tests:
         message = str(test.message or "")
-        if test.outcome != "failed" or not start_output._AT_SETUP.search(message):
+        if (test.outcome != "failed" or not start_output._AT_SETUP.search(message)
+                or failed_because_the_product_did_not_start(message)):
             continue
         found = _A_CALL_IT_DOES_NOT_TAKE.search(message)
         if found:
@@ -2195,6 +2207,39 @@ _NEVER_STARTED = re.compile(
 )
 #: The start of every "the product did not start" problem.
 PRODUCT_DID_NOT_START = "The product did not start for the acceptance suite"
+
+
+def failed_because_the_product_did_not_start(message: Any) -> bool:
+    """Whether a test's failure says, in the runner's own words, that the product it tests never came up.
+
+    Such a failure measures nothing about the test: every test of a product that does not start fails that way, and
+    the start's own trace (a product's `NameError`, its database error) is the product's. Measured on one run: each
+    test of a repair request was shown "failed on setup with "Failed: The service did not start: ...", and the suite
+    writer, sent for two tests, tried six times to edit the product's database module instead.
+    """
+    said = str(message or "").split(_PAGE_MARK, 1)[0].split(_SERVICE_ERRORS_MARK, 1)[0]
+    return bool(_NEVER_STARTED.search(said))
+
+
+def the_product_did_not_start_when_last_measured(repo_root: str | Path) -> bool:
+    """Whether the suite's last measurement says the product did not start for it. Never raises.
+
+    Its problem says so, or every test that failed did only because the product did not start, and they were most
+    of the tests run.
+    """
+    try:
+        saved = last_result(repo_root) or {}
+        if str(saved.get("problem") or "").startswith(PRODUCT_DID_NOT_START):
+            return True
+        tests = [test for key in ("criteria", "change_requests") for item in (saved.get(key) or {}).values()
+                 for test in item.get("tests") or []]
+        failed = [test for test in tests if test.get("outcome") == "failed"]
+        passed = sum(1 for test in tests if test.get("outcome") == "passed")
+        return bool(failed) and len(failed) >= passed and all(
+            failed_because_the_product_did_not_start(test.get("message")) for test in failed)
+    except Exception:  # noqa: BLE001 - nothing known, the request goes as it did
+        logger.debug("Could not read whether the product started", exc_info=True)
+        return False
 
 #: A line of a failed start that says what went wrong, rather than where.
 _STATES_A_CAUSE = re.compile(
@@ -5981,7 +6026,9 @@ def findings_that_reopen(repo_root: str | Path, result: Any, found: Sequence[str
         nothing_measured = str(getattr(result, "problem", "") or "").startswith(PRODUCT_DID_NOT_START)
         if not tests and not nothing_measured:
             return list(found)
-        failing = [] if nothing_measured else [str(t.name) for t in tests if t.outcome == "failed"]
+        # A test that failed only because the product did not start has measured nothing about its own code.
+        failing = [] if nothing_measured else [str(t.name) for t in tests if t.outcome == "failed"
+                                               and not failed_because_the_product_did_not_start(t.message)]
         kept: list[str] = []
         notes: list[str] = []
         for finding in found:

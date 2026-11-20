@@ -37,6 +37,12 @@ MOST_TESTS = 6
 MOST_FAILURE_CHARACTERS = 3_000
 MOST_HEAD_CHARACTERS = 4_000
 
+#: Said once, in place of each test's failure, when the product did not start for the measurement the repair is from.
+NOT_STARTED = (
+    "The product does not start yet, so every test failed the same way, before reaching it. That is the builders' to "
+    "fix, in their own stages, and is no fault of the tests. This repair is only about the findings named below."
+)
+
 SYSTEM = (
     "You correct automated tests of a software product. You reply with the complete replacement of each test you "
     "change, each under its title, and nothing else."
@@ -137,8 +143,14 @@ def request_for(root: str | Path, targets: list[tuple[Placed, str, str]], siblin
         f"--- The start of `{path}`, before its first test ---\n{((_tests_in(files[path]) or ('', {}))[0])[:MOST_HEAD_CHARACTERS]}"
         for path in paths
     )
+    from app.acceptance.suite import failed_because_the_product_did_not_start as did_not_start
+
+    # A failure that says only that the product did not start is the same for every test and says nothing of any.
+    not_started = any(did_not_start(message) for _, _, message in targets) or any(
+        did_not_start(message) for _, message in siblings)
     asked = []
     for test, finding, message in targets:
+        message = "" if did_not_start(message) else message
         criteria = " ".join(f"{item['criterion']}: {item['text']}" for item in _results(root) if item["name"] == test.name)[:600]
         asked.append(
             f"### {test.title}\nFile: `{test.path}`\n"
@@ -150,11 +162,12 @@ def request_for(root: str | Path, targets: list[tuple[Placed, str, str]], siblin
     same = [
         f"### {test.title}\nFile: `{test.path}`\nIts failure begins: {_first_line(message)[:300]}\n"
         f"The test as it is now:\n```\n{block_of(test)}```"
-        for test, message in siblings
+        for test, message in siblings if not did_not_start(message)
     ]
     return "\n\n".join(part for part in (
         "A locked acceptance test cannot pass whatever the product does, because of an error in its own code. "
         "Correct it. " + REPAIR_RULE,
+        NOT_STARTED if not_started else "",
         ("The QA lead's ruling on it: " + reason.strip()) if reason.strip() else "",
         "--- The tests to correct ---\n" + "\n\n".join(asked),
         ("--- Other tests that fail with the same message ---\nIf one of these has the very same fault in its own "
@@ -269,7 +282,8 @@ def repair(
     rewritten: list[str] = []
     calls = 0
     for group in groups:
-        shared = _first_line(group[0][2])
+        # Tests that fail only because the product did not start share nothing but that: none is offered as one.
+        shared = "" if suite.failed_because_the_product_did_not_start(group[0][2]) else _first_line(group[0][2])
         siblings: list[tuple[Placed, str]] = []
         for item in results:
             other = place(root, item["name"], files) if shared and item.get("outcome") == "failed" else None
@@ -302,6 +316,9 @@ def repair(
     changed = sorted(path for path, text in files.items() if text != originals[path])
     if not changed:
         return None
+    # Each test's code as the repair began, read before anything is written: recorded after the writes, a test
+    # repaired for sharing the fault was "exactly as it was locked" to the review and sent back as never changed.
+    began = suite.test_bodies(root)
     # The suite is open for its repair; the author's own first step, taken here.
     suite.unlock(root)
     try:
@@ -313,7 +330,7 @@ def repair(
             (base / path).write_text(text, encoding="utf-8")
         return None
     # A test repaired for sharing the fault is under repair too, so the checks lock the suite again without a second review.
-    suite.repairing(root, rewritten)
+    suite.repairing(root, rewritten, began=began)
     logger.info("Rewrote %d locked test(s) in %d call(s): %s", len(rewritten), calls, "; ".join(t[:60] for t in rewritten))
     return {"files": changed, "tests": rewritten, "calls": calls}
 

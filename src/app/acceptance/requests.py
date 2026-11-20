@@ -261,6 +261,29 @@ def _the_product_does_not_install(repo_root: str | Path) -> str:
         return ""
 
 
+#: Said once to a suite repair when the product did not start for the measurement it is from.
+THE_PRODUCT_DOES_NOT_START_YET = (
+    "The product does not start at the moment, so every test fails before it reaches the product. That is the "
+    "builders' to fix, in their own stages, and is no fault of the tests: the product's files are not part of the "
+    "suite. This repair is only about the findings named under \"What the last review of this suite found\": repair "
+    "the tests they name by reading them against the criteria and the brief, not by running them. "
+)
+
+
+def _the_product_does_not_start(repo_root: str | Path) -> str:
+    """What QA repairing a locked suite is told when the product did not start for its last measurement; else "".
+
+    Measured on one run: a repair sent for two tests' own fault, with the product not starting, spent three rounds
+    while its writer tried six times to edit the product's database module, refused each time.
+    """
+    try:
+        if suite.is_being_repaired(repo_root) and suite.the_product_did_not_start_when_last_measured(repo_root):
+            return THE_PRODUCT_DOES_NOT_START_YET
+    except Exception:  # noqa: BLE001 - the request goes as it did
+        pass
+    return ""
+
+
 def build_author_request(
     repo_root: str | Path,
     criteria: Sequence[Criterion],
@@ -307,7 +330,8 @@ def build_author_request(
             "fix it, and your tests stay as the criteria require.\n\n"
         )
     # A suite reopened for repair is repaired against a product that exists.
-    built = bool((suite.last_result(repo_root) or {}).get("passed"))
+    not_started = _the_product_does_not_start(repo_root)
+    built = bool((suite.last_result(repo_root) or {}).get("passed")) or bool(not_started)
     state_of_the_product = (
         "The product is partly built and the suite is being repaired: change only what the "
         "review names. "
@@ -315,7 +339,7 @@ def build_author_request(
         else "Nothing of the product's features is built yet. Write its acceptance suite now: "
         "the tests that decide whether it is done. " + NOT_BUILT_SO_IT_FAILS
     )
-    state_of_the_product += _the_product_does_not_install(repo_root)
+    state_of_the_product += not_started + _the_product_does_not_install(repo_root)
     content = (
         "The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
         "You are the QA engineer. " + state_of_the_product + "Once "

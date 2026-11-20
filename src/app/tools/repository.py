@@ -2006,7 +2006,8 @@ def _the_harness_s_own_or_the_locked_suite(root: Path, target: Path) -> str | No
         if where and not inside:
             return _outside_its_own_files() + (
                 f"'{relative}' is not part of the acceptance suite. QA writes only "
-                f"`{where}/`; the product is built and fixed by the stages that own it. A test that fails "
+                f"`{where}/`; the product is built and fixed by the stages that own it, and a product that does "
+                "not start is theirs to fix too. A test that fails "
                 "because the product is wrong is right as it is: leave it failing for them. Change a test "
                 "only where it checks something its criterion does not say."
             )
@@ -2105,13 +2106,14 @@ def _a_tester_changing_the_product(root: Path, target: Path, content: str = "") 
             "write the code. Write the test against the interface as the plan gives it, "
             "even if the code is not there yet. If the code a test needs is missing or "
             "does not match its interface, say exactly what in `blockers` - the "
-            "milestone review reads it and the owner makes the change. Tests, test "
+            "milestone review reads it and the owner makes the change. A product that does not "
+            "start is the builders' to fix as well. Tests, test "
             "configuration and the package manifest are yours to change. "
             "Nothing was written."
         )
     return _outside_its_own_files() + (
         f"'{shown}' is product code, and this is a test round: its job is to find "
-        "what fails and report it, not to change the product. A fix made here is "
+        "what fails and report it, not to change the product, even one that does not start. A fix made here is "
         "recorded nowhere - not in the defect log, not in the Sprint Record, not by "
         "the role that owns the file. Report it in `defects` with that role as the "
         "owner, the reproduction, and the change you would make; the owner makes it "

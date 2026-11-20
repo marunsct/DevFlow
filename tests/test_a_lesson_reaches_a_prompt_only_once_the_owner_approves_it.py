@@ -127,12 +127,23 @@ def test_lessons_are_framed_as_conventions_and_scoped_to_a_role(tmp_path):
     assert "Only for the backend." not in testing and "For everyone." in testing
 
 
-def test_the_plugin_middleware_is_built_with_the_role():
-    import inspect
+def test_a_role_agent_asks_for_the_lessons_of_its_own_role(tmp_path, monkeypatch):
+    """A lesson written for one role reaches that role: the stack's instructions are asked for by the agent's name."""
+    from langgraph.checkpoint.memory import InMemorySaver
 
-    from app.agents import role_agent
+    from app.agents.role_agent import create_role_agent
+    from tests.a_role_agent import Answer, Scripted, Stopped
 
-    assert "build_plugin_instructions_middleware(resolved_repo_root, name)" in inspect.getsource(role_agent)
+    asked = []
+    monkeypatch.setattr("app.plugins.middleware._extract_stack_keywords", lambda root: ["python"])
+    monkeypatch.setattr("app.plugins.middleware.get_plugin_instructions", lambda keys, role: asked.append(role) or "")
+    agent = create_role_agent(name="security_reviewer", stage="probe", system_prompt="You are the probe.\n",
+                              response_format=Answer, model=Scripted(replies=[], requests=[], offered=[]),
+                              repo_root=str(tmp_path), checkpointer=InMemorySaver(), can_write=False)
+    with pytest.raises(Stopped):
+        agent.invoke({"messages": [{"role": "user", "content": "go"}]}, {"configurable": {"thread_id": "t"}})
+
+    assert asked and set(asked) == {"security_reviewer"}
 
 
 def _lessons_api_as(role, tmp_path, monkeypatch):

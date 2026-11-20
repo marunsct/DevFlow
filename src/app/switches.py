@@ -174,7 +174,8 @@ GROUPS: dict[str, tuple[str, ...]] = {
     # How much of a long conversation a model is sent: cost and cache, not what the run proves.
     "Context and cost": ("OBSERVATION_FOLDING", "STABLE_STAGE_PREFIX", "BATCH_ACCEPTANCE_AUTHOR",
                          "REASONING_KEPT_AFTER_AN_ANSWER", "LEAN_TOOL_LISTS", "SLICED_MEMORY",
-                         "LEAN_PROMPTS_FOR_STRONG_MODELS"),
+                         "LEAN_PROMPTS_FOR_STRONG_MODELS", "QA_PROMPT_TRIMMED", "REVIEWER_SHAPED_PLUGIN_CONTENT",
+                         "LEAD_REPLAN_REQUEST_SMALLER"),
     # Fewer calls on mutation findings: time, not what the run proves.
     "Efficiency": ("EQUIVALENT_MUTANTS_REMEMBERED", "MUTANT_CHECK_IN_THE_FIX_STAGE", "REVIEWS_WITHOUT_REASONING",
                    "HARNESS_FINDINGS_RECHECKED", "NEAR_GREEN_REPLANNED_ONCE", "STABLE_MEMORY_ORDER",

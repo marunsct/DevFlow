@@ -1355,6 +1355,15 @@ _PROVE_THE_WORK = (
 )
 
 
+#: What a builder documents of the code it writes; the section ends with the blank line before the next.
+BEGINNER_DOCUMENTATION = """Beginner documentation requirement:
+- Any non-obvious code or configuration you describe must explain purpose,
+  inputs, outputs, control flow, failure behavior, and security assumptions in
+  comments in the code you write or in your `documentation` field.
+
+"""
+
+
 def _system_prompt(role: SpecialistRole, writing_the_suite: bool = False) -> str:
     """Build the full system prompt for one specialist role.
 
@@ -1371,6 +1380,10 @@ def _system_prompt(role: SpecialistRole, writing_the_suite: bool = False) -> str
     validation = _VALIDATION_NOTE if role == "testing" else ""
     prove = _PROVE_THE_SUITE if writing_the_suite else _PROVE_THE_WORK
     testability = "" if writing_the_suite else TESTABILITY_RULE
+    # The suite's writer documents no product code (`QA_PROMPT_TRIMMED`, off until measured: `app.agents.prompt_size`).
+    from app.agents.prompt_size import qa_prompt_trimmed_switch
+
+    beginner = "" if writing_the_suite and qa_prompt_trimmed_switch.enabled() else BEGINNER_DOCUMENTATION
     return f"""{role_description}
 
 Responsibilities:
@@ -1387,12 +1400,7 @@ Responsibilities:
   test environment. If the environment lacks something the product needs, fix the
   test setup with the tooling this run's stack guidance names, never the product.
 
-Beginner documentation requirement:
-- Any non-obvious code or configuration you describe must explain purpose,
-  inputs, outputs, control flow, failure behavior, and security assumptions in
-  comments in the code you write or in your `documentation` field.
-
-Constraints:
+{beginner}Constraints:
 {runs_programs}
 - `run_terminal_command` runs one program with its arguments, with no shell
   between them: `&&`, `|`, `;` and `$(...)` reach the program as plain words,

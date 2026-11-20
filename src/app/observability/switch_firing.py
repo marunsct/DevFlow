@@ -48,10 +48,14 @@ SIGNALS: dict[str, str] = {
     "CONTESTED_TESTS_CONFIRMED": "The harness ran a copy of this test with",
     "WEB_TOOLS_AFTER_TWO_FAILED_FIXES": "Two fixes of this defect have failed, so `search_the_web` and `read_web_page`",
     "PULL_REQUEST_DELIVERY": "Delivered to the seeded repository",
+    # Recorded by the harness once per run and role (`app.agents.prompt_size`); the lead's in its memory's own words.
+    "QA_PROMPT_TRIMMED": "Stack guidance kept to its parts about tests for",
+    "REVIEWER_SHAPED_PLUGIN_CONTENT": "Stack guidance kept to its review lines for",
+    "LEAD_REPLAN_REQUEST_SMALLER": "Held whole: the files this sprint's last attempt planned and changed",
 }
 #: Transcript records the harness writes of what it did itself, with no model reading it: kind -> the field whose
 #: text a switch's signal is looked for in.
-HARNESS_RECORDS: dict[str, str] = {"repository_delivery": "message"}
+HARNESS_RECORDS: dict[str, str] = {"repository_delivery": "message", "prompt_shaped": "message"}
 
 
 @dataclass(frozen=True)

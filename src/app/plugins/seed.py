@@ -443,6 +443,25 @@ SEED_INSTRUCTIONS["playwright"] = (
 )
 
 
+#: What of the rows above is about the tests rather than the product's own code: texts a row carries whole, and the
+#: labels of a row's one-line items. The acceptance suite's writer and the QA lead are given only these parts of a row
+#: while `QA_PROMPT_TRIMMED` is on (`app.plugins.registry`); a row a model wrote has none, so it is left out for them.
+TESTING_TEXTS: tuple[str, ...] = (
+    _JAVASCRIPT_TEST_WRITING, _BROWSER_PAGE_TESTING, _JAVASCRIPT_TESTING, _BROWSER_PAGE_SETUP, _PYTHON_SETUP,
+    SEED_INSTRUCTIONS["playwright"],
+)
+TESTING_LABELS: tuple[str, ...] = ("Testing", "Async tests")
+#: What of the rows above tells a writer what to install and how to set up, build and run: a review role writes and
+#: runs nothing, and is given a row without these while `REVIEWER_SHAPED_PLUGIN_CONTENT` is on (`app.plugins.registry`).
+HOW_TO_TEXTS: tuple[str, ...] = (
+    _JAVASCRIPT_TESTING, _BROWSER_PAGE_SETUP, _PYTHON_SETUP, JUNIT_REPORTS, SEED_INSTRUCTIONS["playwright"],
+)
+HOW_TO_LABELS: tuple[str, ...] = (
+    "Dependency Management", "Build Tools", "Linting & Formatting", "Linting", "Compilation", "Execution",
+    "Environments", "Testing",
+)
+
+
 #: Development servers, per language: each is the framework's or the standard library's server for trying code out,
 #: not for serving a product (harness review HR2.PR.12 - both Falcon products served through `wsgiref`). A product no
 #: pack set up that serves through one ships with a note saying so; a pack that chose one on purpose is not read.
@@ -453,4 +472,4 @@ DEVELOPMENT_SERVERS: dict[str, tuple[str, ...]] = {
     "javascript": ("http-server ", "live-server "),
 }
 
-__all__ = ["DEVELOPMENT_SERVERS", "SEED_INSTRUCTIONS", "SETUP"]
+__all__ = ["DEVELOPMENT_SERVERS", "HOW_TO_LABELS", "HOW_TO_TEXTS", "SEED_INSTRUCTIONS", "SETUP", "TESTING_LABELS", "TESTING_TEXTS"]

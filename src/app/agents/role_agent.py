@@ -827,7 +827,8 @@ def create_role_agent(
         # After the path rewrite, so it sees the path the tool will resolve.
         # See `app.agents.project_memory`.
         build_project_memory_middleware(resolved_repo_root),
-        build_plugin_instructions_middleware(resolved_repo_root, name),
+        build_plugin_instructions_middleware(resolved_repo_root, name,
+                                             writing_the_suite=suite_folder is not None and can_write),
         _workspace_filesystem_middleware(resolved_repo_root, readers),
         # A reply's edits to one file that parse only together are made one edit (`app.agents.edits_together`).
         build_edits_together_middleware(resolved_repo_root),

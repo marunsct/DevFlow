@@ -430,7 +430,8 @@ def kept_by_the_harness(repo_root: str | Path) -> tuple[str, ...]:
 
 
 def render(repo_root: str | Path, budget_characters: int, focus: str = "",
-           for_a_fixer: bool = False, kept_out: tuple[str, ...] = (), sliced: bool = False) -> tuple[str, dict[str, str]]:
+           for_a_fixer: bool = False, kept_out: tuple[str, ...] = (), sliced: bool = False,
+           sprint_files: tuple[str, ...] = ()) -> tuple[str, dict[str, str]]:
     """The memory as text within `budget_characters`, and the files it holds by path.
 
     `for_a_fixer`: the product's code first, the acceptance criteria, and the specification as its outline and the
@@ -440,6 +441,10 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
     `memory_slices.MOST_CHARACTERS_WHOLE` is held as the lines around those its failure names (deep review C3).
 
     `sliced`: only the product files the request names, and what they import, held whole (`SLICED_MEMORY`).
+
+    `sprint_files`: a re-plan's sprint's own files (`LEAD_REPLAN_REQUEST_SMALLER`): only the product files among them,
+    and what they import, held whole, and every document longer than `memory_slices.MOST_CHARACTERS_WHOLE` held as
+    its digest. The whole memory as before when none of them is in the project.
     """
     files = current(repo_root)
     if not files or budget_characters <= 0:
@@ -449,6 +454,9 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
     ask = memory_slices.the_ask(focus)
     product = [path for path in files if not path.startswith(("docs/", "."))]
     the_slice = memory_slices.the_slice(repo_root, ask, files) if sliced else None
+    replan = _the_sprint_s_slice(repo_root, sprint_files, files) if sprint_files else None
+    if replan is not None:
+        the_slice = replan
     held: dict[str, str] = {}
     parts: list[str] = []
     from app.agents.canonical_memory import enabled as canonical_order
@@ -532,6 +540,8 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
         block = f"=== {path} ===\n{text.rstrip()}\n"
         # A small product's documents are held as a digest sooner (`STABLE_STAGE_PREFIX`, off until measured).
         largest = (shorter_documents or LARGEST_FILE_CHARACTERS) if path.startswith("docs/") else LARGEST_FILE_CHARACTERS
+        if replan is not None and path.startswith("docs/"):
+            largest = min(largest, memory_slices.MOST_CHARACTERS_WHOLE)
         if len(text) > largest and path.endswith(".md"):
             # Too large to hold whole: its outline and the sections this
             # stage's request points at, so it is not read window by window.
@@ -557,7 +567,8 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
         "[Project memory: the workflow's documents and the project's files as they are now, kept current "
         "by the harness. Use them as they are here; read a file only if it is named at the end as not "
         "included." + (" " + stable_memory_order.SAID if stable else "")
-        + (" " + memory_slices.SAID if the_slice is not None else "") + "]\n\n"
+        + (" " + _replan_said() if replan is not None
+           else " " + memory_slices.SAID if the_slice is not None else "") + "]\n\n"
     ) + where_things_stand(repo_root, files)
     # Named one by one only up to `MOST_NAMED_LEFT_OUT`, in the memory's own
     # order: a large project's left-out list was every path it has, larger
@@ -581,6 +592,75 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
     if shapes:
         tail += "\nWhat those files define (read one when you need its body):\n" + shapes + "\n"
     return head + "\n".join(parts) + tail, held
+
+
+def _the_sprint_s_slice(repo_root: str | Path, sprint_files: tuple[str, ...], files: dict[str, str]) -> set[str] | None:
+    """The product files a re-plan's memory holds whole: the sprint's own and what they import; None to hold all."""
+    from app.agents import memory_slices
+
+    product = [path for path in files if not path.startswith(("docs/", "."))]
+    named = "\n".join(sprint_files)
+    chosen = {path for path in product if memory_slices.named(named, path, product)}
+    if not chosen:
+        return None
+    return chosen | (memory_slices.imports_of(repo_root, chosen) & set(product))
+
+
+def render_for_a_replan(repo_root: str | Path, budget_characters: int, opening: str, sprint_files: tuple[str, ...],
+                        kept_out: tuple[str, ...] = ()) -> tuple[str, dict[str, str], str]:
+    """A re-plan's memory, the files it holds and the request it goes with (`LEAD_REPLAN_REQUEST_SMALLER`).
+
+    Never longer than the request it replaces: the memory, the request and the line naming the held files together
+    are held to the length they have without the switch, the request less its list of the sprint's files. Measured
+    on a small window: the budget the sliced files freed filled with the documents the whole memory had to leave out,
+    and the request grew. So the smaller memory gets no more budget than the whole one used, and where it is still
+    not shorter, the whole memory and the request without the list are sent, as with the switch off.
+    """
+    from app.agents import prompt_size
+
+    plain = opening.replace(prompt_size.sprint_files_section(list(sprint_files)), "", 1)
+    whole, whole_held = render(repo_root, budget_characters, plain, kept_out=kept_out)
+
+    def length(memory: str, held: dict[str, str], request: str) -> int:
+        return (len(memory) + 2 if memory else 0) + len(request) + len(files_held_line(list(held)))
+
+    smaller, smaller_held = render(repo_root, min(budget_characters, len(whole)), opening, kept_out=kept_out,
+                                   sprint_files=sprint_files)
+    if smaller and length(smaller, smaller_held, opening) < length(whole, whole_held, plain):
+        return smaller, smaller_held, opening
+    return whole, whole_held, plain
+
+
+def _without_the_list(messages: list[Any], opening: str, request: str) -> list[Any]:
+    """`messages` with the opening request as `request` (the re-plan's list of files taken out), or as they are."""
+    if request == opening:
+        return messages
+    from langchain_core.messages import HumanMessage
+
+    for index, message in enumerate(messages):
+        if getattr(message, "type", None) == "human" and getattr(message, "content", None) == opening:
+            return [*messages[:index], HumanMessage(content=request, additional_kwargs=dict(
+                getattr(message, "additional_kwargs", None) or {})), *messages[index + 1:]]
+        if isinstance(message, dict) and message.get("role") == "user" and message.get("content") == opening:
+            return [*messages[:index], {**message, "content": request}, *messages[index + 1:]]
+    return messages
+
+
+def _replan_said() -> str:
+    from app.agents.prompt_size import REPLAN_SAID
+
+    return REPLAN_SAID
+
+
+def _the_sprint_s_files(stage: str, opening: str) -> tuple[str, ...]:
+    """A lead's re-plan's sprint files, while `LEAD_REPLAN_REQUEST_SMALLER` is on; () otherwise."""
+    if not str(stage or "").startswith("technical_lead"):
+        return ()
+    from app.agents import prompt_size
+
+    if not prompt_size.lead_replan_smaller_switch.enabled():
+        return ()
+    return tuple(prompt_size.sprint_files_in(opening))
 
 
 def budget_for(model: Any) -> int:
@@ -820,12 +900,21 @@ def build_project_memory_middleware(repo_root: str) -> Any:
                     stage = str(_from_the_graph()[1] or "")
                     from app.agents import memory_slices
 
-                    visit["snapshot"], visit["held"] = render(repo_root, budget_for(getattr(request, "model", None)), opening,
-                                                              for_a_fixer=stage.startswith("defect_fix"),
-                                                              kept_out=_kept_out_for(stage, repo_root),
-                                                              sliced=memory_slices.enabled() and stage.startswith(
-                                                                  ("defect_fix", "specialist_")))
+                    sprint_files = _the_sprint_s_files(stage, opening)
+                    if sprint_files:
+                        visit["snapshot"], visit["held"], visit["request"] = render_for_a_replan(
+                            repo_root, budget_for(getattr(request, "model", None)), opening, sprint_files,
+                            kept_out=_kept_out_for(stage, repo_root))
+                        visit["opening"] = opening
+                    else:
+                        visit["snapshot"], visit["held"] = render(repo_root, budget_for(getattr(request, "model", None)), opening,
+                                                                  for_a_fixer=stage.startswith("defect_fix"),
+                                                                  kept_out=_kept_out_for(stage, repo_root),
+                                                                  sliced=memory_slices.enabled() and stage.startswith(
+                                                                      ("defect_fix", "specialist_")))
                     visit["files"] = dict(current(repo_root))
+                if visit.get("request") is not None:
+                    messages = _without_the_list(messages, visit["opening"], visit["request"])
                 memory = visit["snapshot"]
                 held = visit.get("held") or {}
                 # Each file as this visit first held it, so a read of one that
@@ -840,6 +929,8 @@ def build_project_memory_middleware(repo_root: str) -> Any:
                     for held_path, held_content in held.items():
                         remember_if_unseen(held_path, held_content)
                 changed = _with_memory(messages, memory, list(held)) if memory else None
+                if changed is None and messages is not getattr(request, "messages", None):
+                    changed = messages  # a re-plan's request without its list, and no memory to put before it
                 if changed is not None:
                     note = changes_since(visit.get("files") or {}, current(repo_root))
                     if note:

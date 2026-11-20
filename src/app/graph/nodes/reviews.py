@@ -302,6 +302,8 @@ def acceptance_dispute_node(state: WorkflowGraphState, config: RunnableConfig, c
         f"--- {path.relative_to(Path(root)).as_posix()} ---\n{path.read_text(encoding='utf-8', errors='replace')}"
         for path in acceptance_suite.suite_files(root)
     )[:16000]
+    # What the runner's own matching rules out in a failing test's code: told to the judge, and never kept as sound.
+    shown_by_the_code = acceptance_suite.what_the_code_shows_of(root, [name for name, _, _ in failing])
     agent = create_suite_dispute_agent(
         model=ctx.judgement_model, checkpointer=ctx.checkpointer,
         repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories,
@@ -315,7 +317,8 @@ def acceptance_dispute_node(state: WorkflowGraphState, config: RunnableConfig, c
         initial_request=with_the_facts(_with_the_api(_with_the_reason(
             build_dispute_request(failing, code, getattr(state.get("document"), "text", "") or "",
                                   measured=acceptance_suite.the_suite_s_own_words_when_last_measured(root),
-                                  shared_service=shares_one_service(root)),
+                                  shared_service=shares_one_service(root),
+                                  found_in_the_code=list(dict.fromkeys(finding for _, finding in shown_by_the_code))),
             str(state.get("dispute_reason") or ""),
         ), state), state["repository"].root_path),
         output_key="__suite_dispute__",
@@ -337,6 +340,12 @@ def acceptance_dispute_node(state: WorkflowGraphState, config: RunnableConfig, c
         criteria_of={name: criterion for name, criterion, _ in failing},
     )
     called_wrong = list(named)
+    # A test the harness read cannot pass is named even when the judge kept it.
+    for name, finding in shown_by_the_code:
+        if not any(f"`{name}`" in item for item in named):
+            logger.warning("The dispute kept `%s`, which its own code shows cannot pass; it is reopened", name)
+            named.append(f"`{name}` cannot pass for any product that does what its criterion says: {finding} "
+                         "Fix the test so that it checks what the criterion says.")
     passed_alone: list[str] = []
     # The executable leg before a reclassification (Initiative J.2): each
     # named test is run alone against the delivered surface in the

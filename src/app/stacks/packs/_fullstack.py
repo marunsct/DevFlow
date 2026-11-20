@@ -770,6 +770,7 @@ def fullstack_pack(frontend: Frontend, service: Service) -> StackPack:
         locators_by_a_missing_name=js.LOCATORS_BY_A_NAME_THE_ROLE_NEVER_HAS,
         finds_by_name=js.FINDS_BY_NAME,
         contradicting_locators=js.asserted_without_the_text_it_is_found_by,
+        absences_a_longer_text_meets=js.absences_a_longer_text_also_meets,
         locator_left_behind=js.a_locator_left_behind,
         opens_no_page=js.tests_that_never_open_the_page,
         storage_before_page_open=js.storage_before_page_open,

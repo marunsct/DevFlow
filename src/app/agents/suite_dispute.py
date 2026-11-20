@@ -186,12 +186,14 @@ ONE_SHARED_SERVICE = (
 
 def build_dispute_request(
     failing: Sequence[tuple[str, str, str]], test_code: str, brief: str, measured: Sequence[str] = (),
-    *, shared_service: bool = False,
+    *, shared_service: bool = False, found_in_the_code: Sequence[str] = (),
 ) -> dict[str, list[dict[str, str]]]:
     """The QA lead's input: (test name, criterion, failure) for each, the suite's code, the brief, and what was measured.
 
     `measured`: `suite.the_suite_failed_in_its_own_words`. Measured on one run: a dispute ruled on what 46 tests assert,
-    found each fair, and none of them had ever reached the product.
+    found each fair, and none of them had ever reached the product. `found_in_the_code`: `suite.what_the_code_shows_of`,
+    what the test runner's own matching rules out. Measured on one run: a dispute called a test sound whose expected
+    absence its own locator could never give.
     """
     shown = "\n\n".join(
         f"### {name}\nCriterion: {criterion}\nHow it failed:\n{message[:FAILURE_CHARS]}"
@@ -205,6 +207,12 @@ def build_dispute_request(
             "A fair assertion that never ran proves nothing: rule on whether these tests can pass as the suite stands, "
             "not only on what they assert.\n\n"
             if measured else ""
+        )
+        + (
+            "--- What the harness found in these tests' own code ---\n" + "\n".join(found_in_the_code) + "\n"
+            "Each of these follows from how the test runner matches what a test looks for, not from the product: a "
+            "test named here cannot pass as it is written. Name it.\n\n"
+            if found_in_the_code else ""
         )
         + (ONE_SHARED_SERVICE if shared_service else "")
         + f"--- The suite's code ---\n{test_code}\n\n"

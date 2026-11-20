@@ -3239,6 +3239,39 @@ def locators_that_contradict_their_assertions(repo_root: str | Path) -> list[str
     return problems[:6]
 
 
+#: What a regular expression literal reads as other than itself.
+_REGEX_SPECIAL = re.compile(r"[.*+?^${}()|\[\]\\/]")
+
+
+def absences_a_longer_text_also_meets(repo_root: str | Path) -> list[str]:
+    """Where a test expects a locator gone that also finds a longer text it expects shown. See the pack's
+    `absences_a_longer_text_meets`."""
+    found = contract.the_pack(repo_root)
+    if found is None or found[0].absences_a_longer_text_meets is None:
+        return []
+    root = Path(repo_root)
+    problems = []
+    for path in suite_files(repo_root):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for line, said, longer in list(found[0].absences_a_longer_text_meets(text))[:3]:
+            pattern = _REGEX_SPECIAL.sub(lambda special: "\\" + special.group(0), said)
+            problems.append(
+                f"`{path.relative_to(root).as_posix()}` line {line} expects what is found by the text \"{said}\" to be "
+                f"absent, while the same test, with no step between, expects what shows \"{longer}\" to be there. "
+                "A string given as `hasText`, to `getByText`, or as a role's `name` without `exact: true` is matched "
+                f"ignoring case and as part of the text, so that locator also matches what shows \"{longer}\": the "
+                "absence can never hold, whatever the product does. Make it match only "
+                f"\"{said}\": `getByText('{said}', {{ exact: true }})` (inside a record, "
+                f"`filter({{ has: page.getByText('{said}', {{ exact: true }}) }})`), or a regular expression with "
+                f"anchors, `/^{pattern}$/`, which matches an element whose whole text is exactly that. "
+                "This is about the test, not the product."
+            )
+    return problems[:6]
+
+
 def locators_by_a_name_the_role_never_has(repo_root: str | Path) -> list[str]:
     """Where the suite finds something by a name its role never takes from what it shows.
 
@@ -6042,6 +6075,7 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
         *_by(checks, "tests_that_expect_what_they_never_gave", tests_that_expect_what_they_never_gave(repo_root)),
         *_by(checks, "tests_that_assert_an_unstated_order", tests_that_assert_an_unstated_order(repo_root)),
         *_by(checks, "locators_that_contradict_their_assertions", locators_that_contradict_their_assertions(repo_root)),
+        *_by(checks, "absences_a_longer_text_also_meets", absences_a_longer_text_also_meets(repo_root)),
         *_by(checks, "tests_with_module_system_mismatch", tests_with_module_system_mismatch(repo_root)),
         *_by(checks, "tests_with_unawaited_async_helpers", tests_with_unawaited_async_helpers(repo_root)),
         *_by(checks, "tests_whose_value_and_length_disagree", tests_whose_value_and_length_disagree(repo_root)),
@@ -6147,6 +6181,23 @@ def findings_that_reopen(repo_root: str | Path, result: Any, found: Sequence[str
     except Exception:  # noqa: BLE001 - as before: every finding acts
         logger.debug("Could not weigh the findings against the measurement", exc_info=True)
         return list(found)
+
+
+#: The checks whose finding settles a dispute: what each reads in a test cannot hold for any product, by the runner's
+#: own documented matching, whatever the test asserts. The dispute is told it, and a test it names is never kept as
+#: sound. Measured on one run: a dispute called a test right whose absence its own other assertion ruled out.
+_SETTLE_A_DISPUTE = (absences_a_longer_text_also_meets,)
+
+
+def what_the_code_shows_of(repo_root: str | Path, names: Sequence[str]) -> list[tuple[str, str]]:
+    """(test name, finding) for each of `names` a check in `_SETTLE_A_DISPUTE` says cannot pass. Never raises."""
+    try:
+        found = [finding for check in _SETTLE_A_DISPUTE for finding in check(repo_root)]
+        return [(name, finding) for finding in found for name in names
+                if any(_fails(title, [name]) for title in _the_tests_at(repo_root, finding))]
+    except Exception:  # noqa: BLE001 - nothing read, nothing said
+        logger.debug("Could not read the suite's code for the dispute", exc_info=True)
+        return []
 
 
 def _keep_notes(repo_root: str | Path, notes: Sequence[str]) -> None:

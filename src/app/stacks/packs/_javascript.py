@@ -761,7 +761,161 @@ def asserted_without_the_text_it_is_found_by(text: str) -> list[tuple[int, str, 
     return found
 
 
-_FAILED_LOCATOR_TEXT = re.compile(r"""Locator:[^\n]*\.filter\(\{\s*hasText:\s*(?:'([^'\n]+)'|"([^"\n]+)"|/([^/\n]+)/\w*)""")
+#: A quoted string with nothing interpolated: `'x'`, `"x"`, `` `x` ``.
+_A_PLAIN_STRING = r"""(?:'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\.|[^`\\$])*`)"""
+#: Where a locator is given a text: `hasText:`, `getByText(`, a `getByRole(...)` option `name:`; then a string, a
+#: regular expression literal or a name bound to a string.
+_A_TEXT_GIVEN = re.compile(
+    r"""(?:\bhasText\s*:\s*|\bgetByText\s*\(\s*|\bgetByRole\s*\(\s*""" + _A_PLAIN_STRING + r"""\s*,\s*\{[^{}()]*?\bname\s*:\s*)"""
+    r"""(?P<text>""" + _A_PLAIN_STRING + r"""|/(?:\\.|[^/\\\n])+/[a-z]*|[A-Za-z_$][\w$]*)"""
+)
+_EXACT = re.compile(r"""\bexact\s*:\s*true\b""")
+_A_BOUND_STRING = re.compile(r"""\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(""" + _A_PLAIN_STRING + r""")\s*[;\n]""")
+_A_BOUND_EXPRESSION = re.compile(r"""\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*""")
+_AN_EXPECT = re.compile(r"""\bexpect(?:\s*\.\s*soft)?\s*\(""")
+_ITS_MATCHER = re.compile(
+    r"""\s*\.\s*(?P<not>not\s*\.\s*)?(?P<matcher>toBeAttached|toBeVisible|toBeHidden|toHaveCount)\s*\((?P<args>[^()]*)\)"""
+)
+#: How long an assertion waits, which changes nothing it asserts: `{ timeout: 5000 }`.
+_WAITING_ONLY = re.compile(r"""(?:,\s*)?\{\s*timeout\s*:\s*[\w.]+\s*,?\s*\}""")
+#: An awaited step that is not an assertion: what the page shows may change across it.
+_A_STEP = re.compile(r"""\bawait\s+(?!expect\b)""")
+
+
+def _the_closing_paren(text: str, opened: int) -> int:
+    """Where the `(` just before `opened` closes, past quoted text; -1 if it never does."""
+    depth, at, quote = 1, opened, ""
+    while at < len(text):
+        char = text[at]
+        if quote:
+            if char == "\\":
+                at += 1
+            elif char == quote:
+                quote = ""
+        elif char in "'\"`":
+            quote = char
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if not depth:
+                return at
+        at += 1
+    return -1
+
+
+def _the_string(literal: str) -> str:
+    return re.sub(r"\\(.)", r"\1", literal[1:-1])
+
+
+def _the_locator_named(body: str, name: str, before: int, depth: int = 0) -> str:
+    """The expression `name` was last bound to before `before`, with a bound locator it starts from written out."""
+    bound = [m for m in _A_BOUND_EXPRESSION.finditer(body, 0, before) if m.group(1) == name]
+    if not bound or depth > 3:
+        return ""
+    start = bound[-1].end()
+    end = start
+    parens = 0
+    while end < len(body):
+        if parens <= 0 and (body[end] == ";" or (body[end] == "\n" and not body[end:].lstrip().startswith("."))):
+            break
+        parens += {"(": 1, ")": -1}.get(body[end], 0)
+        end += 1
+    expression = body[start:end].strip()
+    head = re.match(r"([A-Za-z_$][\w$]*)\s*\.", expression)
+    if head and head.group(1) not in ("page", "request"):
+        written = _the_locator_named(body, head.group(1), bound[-1].start(), depth + 1)
+        if written:
+            expression = written + expression[len(head.group(1)):]
+    return expression
+
+
+def _texts_and_frame(expression: str, strings: dict[str, str]) -> tuple[list[tuple[str, bool]], str]:
+    """Each text a locator is given, with whether it is matched loosely, and the locator with its texts blanked out.
+
+    Loosely: a string Playwright matches ignoring case and as part of the text. Exactly: with `exact: true` anywhere
+    in the locator, or a regular expression (its text kept only when it has nothing but anchors around it).
+    """
+    exact = bool(_EXACT.search(expression))
+    texts: list[tuple[str, bool]] = []
+    for match in _A_TEXT_GIVEN.finditer(expression):
+        given = match.group("text")
+        if given[0] in "'\"`":
+            texts.append((_the_string(given), not exact))
+        elif given[0] == "/":
+            whole = re.fullmatch(r"/\^?((?:[^\\.*+?()\[\]{}|^$/]|\\[-.()\[\]{}*+?|/\\])+)\$?/[a-hj-z]*", given)
+            if whole:
+                texts.append((re.sub(r"\\(.)", r"\1", whole.group(1)), False))
+        elif given in strings:
+            texts.append((strings[given], not exact))
+    frame = _A_TEXT_GIVEN.sub(lambda m: m.group(0)[: m.start("text") - m.start()] + "#", expression)
+    frame = re.sub(r",?\s*\bexact\s*:\s*true\s*", "", frame)
+    frame = re.sub(r",\s*\{\s*\}", "", frame)
+    return texts, " ".join(frame.split()).replace(" ", "")
+
+
+def absences_a_longer_text_also_meets(text: str) -> list[tuple[int, str, str]]:
+    """(line, text, longer) where a test expects a locator found by `text` absent and, with no step between, one found by
+    `longer` present, and `longer` holds `text` in any case.
+
+    Playwright matches a string given as `hasText`, to `getByText` or as a role's `name` without `exact: true` ignoring
+    case and as part of the text, so the first locator also matches what shows `longer`: the absence cannot hold on any
+    page the test's other assertion accepts. Measured on one run: a locked test made records titled 'case-work' and
+    'case-Work', filtered, then expected the item with 'case-work' gone and the one with 'case-Work' shown; three
+    attempts over two hours went to a product that already filtered right, and a dispute called the test sound.
+    Only the same locator in both assertions, its texts aside, is read: a different one may look in another place.
+    """
+    code = code_only(text)
+    in_the_file = {m.group(1): _the_string(m.group(2)) for m in _A_BOUND_STRING.finditer(code)}
+    found: list[tuple[int, str, str]] = []
+    starts = [m.start() for m in _A_TEST.finditer(code)] + [len(code)]
+    for begin, end in zip(starts, starts[1:]):
+        body = code[begin:end]
+        strings = {**in_the_file, **{m.group(1): _the_string(m.group(2)) for m in _A_BOUND_STRING.finditer(body)}}
+        absent: list[tuple[int, int, list[tuple[str, bool]], str]] = []
+        present: list[tuple[int, int, list[tuple[str, bool]], str]] = []
+        for opened in _AN_EXPECT.finditer(body):
+            closes = _the_closing_paren(body, opened.end())
+            matcher = _ITS_MATCHER.match(body, closes + 1) if closes > 0 else None
+            if matcher is None:
+                continue
+            what = body[opened.end():closes].strip()
+            if re.fullmatch(r"[A-Za-z_$][\w$]*", what):
+                what = _the_locator_named(body, what, opened.start())
+            texts, frame = _texts_and_frame(what, strings)
+            if not texts:
+                continue
+            negated, name = bool(matcher.group("not")), matcher.group("matcher")
+            args = _WAITING_ONLY.sub("", matcher.group("args")).strip()
+            if name == "toHaveCount":
+                if negated or not re.fullmatch(r"\d+", args):
+                    continue
+                is_absent = int(args) == 0
+            elif args:
+                continue
+            else:
+                is_absent = negated != (name == "toBeHidden")
+            (absent if is_absent else present).append((opened.start(), matcher.end(), texts, frame))
+        for at, finished, texts, frame in absent:
+            for said, loose in texts:
+                if not loose or not said.strip():
+                    continue
+                folded = " ".join(said.split()).casefold()
+                for other_at, other_finished, others, other_frame in present:
+                    if other_frame != frame:
+                        continue
+                    # Up to and with the later assertion's own `expect`, so its `await` reads as an assertion's.
+                    between = body[min(finished, other_finished):max(at, other_at) + len("expect")]
+                    if _A_STEP.search(between):
+                        continue
+                    longer = next((t for t, _ in others if t != said and folded in " ".join(t.split()).casefold()), "")
+                    if longer:
+                        found.append((code.count("\n", 0, begin + at) + 1, said, longer))
+                        break
+    return list(dict.fromkeys(found))
+
+
+_FAILED_LOCATOR_TEXT =re.compile(r"""Locator:[^\n]*\.filter\(\{\s*hasText:\s*(?:'([^'\n]+)'|"([^"\n]+)"|/([^/\n]+)/\w*)""")
 _EXPECTED_TEXT = re.compile(r'Expected (?:substring|string): "([^"\n]+)"')
 
 

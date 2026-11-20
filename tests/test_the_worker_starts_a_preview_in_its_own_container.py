@@ -366,3 +366,38 @@ def _read(path: Path) -> str:
         return path.read_text()
     except OSError:
         return ""
+
+
+def test_a_preview_start_that_takes_longer_than_the_heartbeat_s_life_does_not_stop_other_starts(started, monkeypatch):
+    """A start holds the preview loop while it copies the product and runs the container (up to a minute). A word
+    said only between requests lapsed meanwhile, and a second person's start was refused: no worker serving previews.
+    Docker's `run` is held open here for longer than the heartbeat lives (shortened to one second)."""
+    import threading
+
+    monkeypatch.setattr(preview, "WORKER_SECONDS", 1)
+    monkeypatch.setattr(preview_worker, "_BEAT_SECONDS", 0.2, raising=False)
+    entered, release, done = threading.Event(), threading.Event(), threading.Event()
+    real_run = subprocess.run
+
+    def docker_held_open(argv, *args, **kwargs):
+        if list(argv[:2]) == ["docker", "run"]:
+            entered.set()
+            release.wait(30)
+            return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+        return real_run(argv, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", docker_held_open)
+    preview.start(f"run-{uuid.uuid4().hex[:10]}", str(started.root), "accepted")
+    loop = preview_worker.serve_in_the_background(stop_when=done.is_set)
+    try:
+        assert entered.wait(20)
+        time.sleep(2)  # twice the heartbeat's life, with the start still held
+
+        second = preview.start(f"run-{uuid.uuid4().hex[:10]}", str(started.root), "live")
+    finally:
+        done.set()
+        release.set()
+        preview.ask_the_worker({})  # wakes the loop so it sees it is done
+        loop.join(15)
+
+    assert second["state"] == "starting"

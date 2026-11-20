@@ -221,19 +221,19 @@ def test_with_no_worker_serving_previews_a_start_is_refused_as_unavailable(tmp_p
     assert _worker_requests(run_id) == [] and audited == []
 
 
-def test_the_worker_s_preview_loop_says_it_serves_and_the_app_starts_on_its_word(tmp_path, preview_on, monkeypatch,
-                                                                                 audited):
-    """The app's own setting says in-container; the worker's says container. One pass of the worker's loop is what
-    lets the app start a preview."""
+def test_the_worker_s_heartbeat_says_it_serves_and_the_app_starts_on_its_word(tmp_path, preview_on, monkeypatch,
+                                                                              audited):
+    """The app's own setting says in-container; the worker's says container. One beat of the worker's heartbeat is
+    what lets the app start a preview."""
     from app.server import preview_worker
     from app.server.redis_client import get_redis_client
 
     redis = get_redis_client()
-    redis.delete("devflow:preview:worker", "devflow:preview:requests")
-    redis.lpush("devflow:preview:requests", "{}")  # something to take, so the pass does not wait
+    redis.delete("devflow:preview:worker")
+    monkeypatch.setattr(preview_worker, "_BEAT_SECONDS", 0)
     monkeypatch.setenv("SANDBOX_EXECUTION_MODE", "container")
-    passes = iter([False, True])
-    preview_worker.serve_for_ever(stop_when=lambda: next(passes))
+    beats = iter([False, True])
+    preview_worker.keep_saying_it_serves(stop_when=lambda: next(beats))
     monkeypatch.setenv("SANDBOX_EXECUTION_MODE", "in-container")
     run_id = _a_run()
 

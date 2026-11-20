@@ -2,8 +2,8 @@
 
 Only the worker reaches Docker, and its pool may be busy with runs for hours, so previews are not Celery tasks: a
 daemon thread on the Celery parent takes the app's requests from a Redis list (`preview.REQUESTS_KEY`) and ends
-previews nobody has used for a while. On every pass it says in Redis (`preview.WORKER_KEY`, lapsing in seconds) that
-it serves previews and whether its commands run in containers of their own: the app refuses a start on that word,
+previews nobody has used for a while. A second thread says every few seconds in Redis (`preview.WORKER_KEY`, lapsing
+in seconds) that the worker serves previews and whether its commands run in containers of their own: the app refuses a start on that word,
 since only the worker carries `SANDBOX_EXECUTION_MODE`.
 
 The product is started as the delivered start starts it (`acceptance.start_output`): its own start command
@@ -50,6 +50,8 @@ _DOCKER_SECONDS = 60
 #: The port forwarder the preview's container runs beside the product (`docker_command`), and its name in the copy.
 _FORWARDER = Path(__file__).with_name("preview_forwarder.js")
 _FORWARDER_NAME = "forward.js"
+#: How often the worker says it serves previews (`keep_saying_it_serves`): well inside `preview.WORKER_SECONDS`.
+_BEAT_SECONDS = 5
 
 
 class CannotStart(Exception):
@@ -334,11 +336,9 @@ def serve_for_ever(stop_when: Callable[[], bool] = lambda: False) -> None:
     while not stop_when():
         try:
             client = preview._redis()
-            say_it_serves(client)
             found = client.brpop(preview.REQUESTS_KEY, timeout=_WAIT_SECONDS)
             if found:
                 handle(found[1], client)
-                say_it_serves(client)
             if time.monotonic() - last_sweep >= 30:
                 last_sweep = time.monotonic()
                 end_the_idle(client)
@@ -347,11 +347,25 @@ def serve_for_ever(stop_when: Callable[[], bool] = lambda: False) -> None:
             time.sleep(_WAIT_SECONDS)
 
 
-def serve_in_the_background() -> threading.Thread:
-    thread = threading.Thread(target=serve_for_ever, name="product-previews", daemon=True)
+def keep_saying_it_serves(stop_when: Callable[[], bool] = lambda: False) -> None:
+    """Say it serves every `_BEAT_SECONDS`, for the worker's life, on a thread of its own: the loop may spend a minute
+    on one start, and the word must mean the worker is alive, not that the loop is idle. Never raises."""
+    while not stop_when():
+        try:
+            say_it_serves()
+        except Exception:  # noqa: BLE001 - Redis away for a moment: the app refuses starts until it is back
+            logger.debug("Could not say the worker serves previews", exc_info=True)
+        time.sleep(_BEAT_SECONDS)
+
+
+def serve_in_the_background(stop_when: Callable[[], bool] = lambda: False) -> threading.Thread:
+    """The preview loop and its heartbeat, as daemon threads that end with the worker; the loop's thread."""
+    threading.Thread(target=keep_saying_it_serves, args=(stop_when,), name="product-previews-heartbeat",
+                     daemon=True).start()
+    thread = threading.Thread(target=serve_for_ever, args=(stop_when,), name="product-previews", daemon=True)
     thread.start()
     return thread
 
 
 __all__ = ["CannotStart", "copy_the_product", "docker_command", "end_the_idle", "handle", "inner_port",
-           "say_it_serves", "serve_for_ever", "serve_in_the_background", "start", "stop"]
+           "keep_saying_it_serves", "say_it_serves", "serve_for_ever", "serve_in_the_background", "start", "stop"]

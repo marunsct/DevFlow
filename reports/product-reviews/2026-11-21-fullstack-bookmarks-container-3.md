@@ -1,0 +1,9 @@
+# Product review: fullstack-bookmarks container 3 (run-f3e4e297-a975-4797-97c9-a96eac0e8ce2)
+
+**Result (finished 16:35 JST, started 14:08 on :8888, about 147 minutes): delivered, hidden 8 of 8, quality 6 of 7, handoff 1.0; no KPI past 1.5x its 5-run mean.** The sprint ended with every acceptance test passing and only the unit tests failing ("escalated to a person"), and the release was delivered.
+
+- **What cost the time.** A unit test (`tests/lock.test.js`) blocked its own thread in a synchronous lock, so `npm test` ran to the 300-second limit; `tests/index.test.js` also imported `supertest`, which `package.json` did not list. For about 100 minutes and six rounds the defect read "The unit tests fail. The runner's output ends: (no output)": a CI snapshot kept the run without the sandbox's time-limit message and the test round read the kept record. The fixers rewrote `tests/index.test.js` at least five times without being told the command never finished.
+- **What changed.** LF.1210 (deployed 16:22 into the run) keeps the sandbox's reason with the kept run: the record now reads "Command timed out after 300 seconds...". The sprint still ended with the unit tests failing, 12 minutes after the deploy, so it did not buy a unit fix in this run, but it is the first time the evidence was true.
+- **Quality miss:** `markup in a title is shown as text and never run` failed on a count of the rendered titles. One case; counted.
+- **Open:** one locked test reclassified under dispute (AC-3); design finding DR-4 settled (the specification says opposite things on data loss). A unit command that never finishes should be answered by a per-file probe naming the hanging file (not built; one case so far, decide after the next).
+- **Other harnesses:** most run each test file in its own process with a limit, which is how a hanging file gets named.

@@ -318,6 +318,14 @@ GO_KNOWN_ERRORS = {
         "`package main` and use each other's names with no import at all: either move the code into that folder "
         "with its own package name, or drop the import."
     ),
+    # Measured on one Go run: `server_test.go` said `package server` and `store.go` said `package store` beside
+    # `main.go`'s `package main`; the product did not start, and the first fix left the package lines as they were.
+    "found packages": (
+        "A Go folder holds one package: every `.go` file in it declares the same `package` line (a test file may add "
+        "`_test` to it). A file declaring another name belongs in its own subfolder, imported as the `module` path plus "
+        "that folder (`notes-api/store`); in the top folder, make `main.go`, the server, the store and their tests all "
+        "`package main`."
+    ),
 }
 
 PACK = service_pack(

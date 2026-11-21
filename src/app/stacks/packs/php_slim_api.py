@@ -310,6 +310,13 @@ SLIM_KNOWN_ERRORS = {
         "`$handler->handle($request)` (`Psr\\Http\\Server\\RequestHandlerInterface`); `callable $next` and "
         "`$next($request, $response)` are Slim 3's."
     ),
+    # Measured on one run: a container was passed to `AppFactory::create()` as its first argument; every request
+    # failed with this TypeError and the product never started.
+    "AppFactory::create(): Argument #1 ($responsefactory)": (
+        "`Slim\\Factory\\AppFactory::create()` takes a response factory first, not a container: call "
+        "`AppFactory::setContainer($container)` before `AppFactory::create()`, or pass the container as the "
+        "second argument (`AppFactory::create(null, $container)`)."
+    ),
 }
 
 PACK = service_pack(

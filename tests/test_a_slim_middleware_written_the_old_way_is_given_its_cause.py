@@ -23,3 +23,18 @@ def test_the_slim_4_handler_shape_is_named(tmp_path):
         owner="backend")])
 
     assert KNOWN_CAUSE in defect.actual_behavior and "$handler->handle($request)" in defect.actual_behavior
+
+
+def test_a_container_passed_to_the_app_factory_first_is_given_its_cause(tmp_path):
+    """Measured on one PHP run: `AppFactory::create($container)` failed every request and the product never started."""
+    contract.write(tmp_path, pack_named("php-slim-api"), "notes-api", "Notes")
+    said = ("[WebServer] PHP Fatal error:  Uncaught TypeError: Slim\\Factory\\AppFactory::create(): Argument #1 "
+            "($responseFactory) must be of type ?Psr\\Http\\Message\\ResponseFactoryInterface, "
+            "Psr\\Container\\ContainerInterface@anonymous given, called in /workspace/notes-api/src/Service.php on line 97")
+
+    (defect,) = with_known_causes(tmp_path, [ReportedDefect(
+        description="The product does not start for the acceptance suite.", severity="major",
+        reproduction_steps="sh start.sh", expected_behavior="it answers", actual_behavior=said, affected_files=[],
+        owner="backend")])
+
+    assert KNOWN_CAUSE in defect.actual_behavior and "AppFactory::setContainer($container)" in defect.actual_behavior

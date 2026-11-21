@@ -5688,6 +5688,13 @@ def _contract_lines_nothing_can_read(state: Any) -> Any:
     if (not interface_contract.unread_at_review_switch.enabled() or state.get("specification_contract_lines_checked")
             or state.get("architecture_revision_count", 0) + 1 >= _the_revision_limit()):
         return None
+    from app.stacks import product_kind
+
+    # A library's interface is its public functions: its contract lines are calls, the three forms the reader knows
+    # (a request, a page control, a command line) do not apply to it, and the finding asked for a rewrite no product of
+    # that kind can use (measured on a library run: ten calls written `AC-1 command textkit.slugify(...) -> ...`).
+    if product_kind(state.get("technology_stack")) == "library":
+        return None
     lines = getattr(state.get("technical_specification"), "interface_contract", None) or ()
     text = interface_contract.unread_lines_finding(lines)
     if not text:

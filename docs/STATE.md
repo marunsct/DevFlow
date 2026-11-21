@@ -5,9 +5,9 @@ the block below is written by `loop.sh state`. The map of all documents is `docs
 `docs/improvement-plan.md`; how the product works is `docs/PRODUCT.md`; how to run and test it is `docs/HANDOVER.md`;
 decisions in force are `docs/owner-decisions.md`; old information is found through `docs/ARCHIVE.md`.
 <!-- state:generated -->
-**As of:** 11-22 02:13 JST (written by `loop.sh state`). Harness f876fab2 committed; f876fab2 deployed.
-**Live, and stopped in the last day:** run-413aebe4 running at defect_fix_2_1; run-f60ad0cf failed at failed; run-bf96efa0 failed at failed
-**Last scored:** run-aa9bd19e wordstats-cli 8/8 (completed, handoff 1.0; scored 11-22 02:13 JST); run-2cca573e notes-api-php 9/9 (completed, mixed, 88 active min, handoff 1.0; scored 11-22 01:17 JST); run-c4649ed6 notes-api-go 9/9 (completed, mixed, 54 active min, handoff 1.0; scored 11-22 01:13 JST).
+**As of:** 11-22 02:45 JST (written by `loop.sh state`). Harness 51bf2129 committed; f876fab2 deployed (not the same).
+**Live, and stopped in the last day:** run-f60ad0cf failed at failed; run-bf96efa0 failed at failed
+**Last scored:** run-05cbbca3 textkit-lib 8/8 (completed, handoff 1.0; scored 11-22 02:45 JST); run-413aebe4 notes-api-java 9/9 (completed, mixed, 71 active min, handoff 1.0; scored 11-22 02:43 JST); run-aa9bd19e wordstats-cli 8/8 (completed, 46 active min, handoff 1.0; scored 11-22 02:13 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -26,8 +26,9 @@ runs only when the owner starts them. Everything under measurement: `docs/improv
 
 ## The last three runs (11-20, hidden / quality; local model)
 Earlier runs: `reports/status-board/`, git history of this file.
-- **Live:** notes-api-java container 9 (:8888, from 01:21). LF.1205-LF.1220 and LF.1206 deployed (10:25 JST, b97d9f2).
-- Scored 2026-11-22: **wordstats-cli 5 (8/8, 6/6; delivered, 47 min, mutation 0.67)**, **notes-api-go 10 (9/9, 8/8; delivered, 60 min; flat layout again), notes-api-php 10 (9/9, 8/8; delivered, 91 min, mutation 0.70; Slim not-found loop again)**. Scored 11-21: **notes-api-go 9 (9/9, 8/8; delivered, 37 min; LF.1217 + LF.1218 live: flat package layout)**, **tasks-api 12 (10/10, 7/7; delivered, 104 min, mutation 0.83)**, **notes-api-go 8 (9/9, 7/8; not deliverable: DR-7 left open; 33 min; LF.1217 chose the Go pack)**, **tasks-api 11 (10/10, 7/7; not deliverable: AC-18/AC-21 deferred on a suite test counting shared rows; 214 min; LF.1213, LF.1214, LF.1216)**, **notes-api-go 6 (0/9, 0/8; failed, 58 min: service split into packages the brief did not ask for; LF.1215)**, **notes-api-csharp 12 (9/9, 8/8; delivered, 59 min, mutation 1.0; one unit test shipped failing)**, **notes-api-ruby 4 (9/9,
+- **Live:** (none until the next start). LF.1205-LF.1220 and LF.1206 deployed (10:25 JST, b97d9f2).
+- Scored 2026-11-22: **notes-api-java 9 (9/9, 8/8; delivered, 76 min, mutation 1.0), textkit-lib 5 (8/8, 7/7; delivered, 24 min, mutation 1.0)**, **wordstats-cli 5 (8/8, 6/6; delivered, 47 min, mutation 0.67)**, **notes-api-go 10 (9/9, 8/8; delivered, 60 min; flat layout again), notes-api-php 10 (9/9, 8/8; delivered, 91 min, mutation 0.70; Slim not-found loop again)**. Scored 11-21: **notes-api-go 9 (9/9, 8/8; delivered, 37 min; LF.1217 + LF.1218 live: flat package layout)**, **tasks-api 12 (10/10, 7/7; delivered, 104 min, mutation 0.83)**, **notes-api-go 8 (9/9, 7/8; not deliverable: DR-7 left open; 33 min; LF.1217 chose the Go pack)**, **tasks-api 11 (10/10, 7/7; not deliverable: AC-18/AC-21 deferred on a suite test counting shared rows; 214 min; LF.1213, LF.1214, LF.1216)**, **notes-api-go 6 (0/9, 0/8; failed, 58 min: service split into packages the brief did not ask for; LF.1215)**,
+  **notes-api-csharp 12 (9/9, 8/8; delivered, 59 min, mutation 1.0; one unit test shipped failing)**, **notes-api-ruby 4 (9/9,
   8/8; delivered, 52 min, mutation 0.46)**, **textkit-lib 4 (8/8,
   7/7; delivered, 21 min; mutation 0.67)**, **web-todo-react 3 (10/10, 6/6; delivered, 62 min; mutation 0.33)**, **wordstats-cli 4 (8/8, 6/6; delivered, 55 min,
   mutation 1.0; eight parallel fixers 45 min)**, **fullstack-bookmarks 3 (8/8, 6/7; delivered,

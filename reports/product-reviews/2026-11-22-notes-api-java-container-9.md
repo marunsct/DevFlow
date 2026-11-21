@@ -1,0 +1,8 @@
+# Product review: notes-api-java container 9 (run-413aebe4-d8af-41a3-aee5-4a54ae9bbf84)
+
+**Result (finished 02:37 JST, started 01:21 on :8888, about 76 minutes): delivered, hidden 9 of 9, quality 8 of 8, handoff 1.0, mutation 1.0; no KPI past 1.5x its 5-run mean.** The first Java run since LF.1206 (stdout piped) and LF.1207 (Hibernate dialect cause) that finished without a start failure lasting more than an hour: Java 7 failed 2 of 9 on the same brief and model, Java 8 delivered in 117 minutes.
+
+- **What happened.** The first sprint's Maven build failed (`@Transactional` with no transaction dependency, a duplicate `HealthController` class, a missing `org.springframework.jdbc.datasource` class); the second attempt started the service and all 18 acceptance tests answered 500 with `path to '<folder>/notes.db': '<folder>' does not exist` (SQLite's driver creates the file and not its folder). LF.1206 put the real error in front of the fixers, who named the folder cause in their own reasoning; the 500s were fixed in about 45 minutes and an edge-probe finding on `POST /notes` in one attempt. LF.1220 (the Spring pack names the missing data folder; deployed 02:11) did not fire: the fix landed before the next test round.
+- **Cost.** About 55 minutes on the start path, against Java 7's whole run and Java 8's 110 minutes; the unit-test class error stayed open in the ledger at release.
+- **Open:** DR-8 settled (the specification's component section and its test cases disagree about the service's run); the open unit-test defect was set aside by the release rules.
+- **Other harnesses:** a real start-up error shown beside the failing request is what turned a 110-minute start failure into 45; the pack's known-cause table is the cheaper second layer.

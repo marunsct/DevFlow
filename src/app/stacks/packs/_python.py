@@ -156,6 +156,15 @@ PYTHON_KNOWN_ERRORS["context manager protocol"] = (
     "`contextlib.contextmanager` inside the test module - in every test of the file in one rewrite. Changing the "
     "product's function to suit some tests breaks its other callers."
 )
+#: Measured on one FastAPI run (14 repeats over three rounds): unit tests wrapped their setup in
+#: `patch.object(app.state, 'db_path', ...)` while the product never defines that attribute, so every test failed in its
+#: fixture with `<State object> does not have the attribute 'db_path'`; the fixers rewrote the product's startup, not the tests.
+PYTHON_KNOWN_ERRORS["does not have the attribute"] = (
+    "`mock.patch.object(target, 'name', value)` needs `name` to exist on `target` already: the test names an attribute "
+    "the product never defines. Read what the product really reads (a module-level setting, an environment variable "
+    "such as `DATA_DIR`, a dependency it takes) and patch or set that in every test of the file in one rewrite, or "
+    "pass `create=True` for a name only the test adds. Do not add the attribute to the product only to satisfy one test."
+)
 #: Measured on one Flask run: the product did not start and the unit tests failed with this message 92 times over three
 #: rounds; each fix rewrote the entry file or the tests and none named the rule.
 PYTHON_KNOWN_ERRORS["working outside of application context"] = (

@@ -312,6 +312,15 @@ SLIM_KNOWN_ERRORS = {
     ),
     # Measured on one run: a container was passed to `AppFactory::create()` as its first argument; every request
     # failed with this TypeError and the product never started.
+    # Measured on one run: the service used its own namespace (`NotesApi\\...`) while `composer.json` maps only `App\\`
+    # to `src/`; every request died with `Class "NotesApi\\SqliteNoteRepository" not found` and the product never
+    # started, through three rounds that rewrote the entry file and the tests.
+    'Uncaught Error: Class "': (
+        "PHP found no file for that class: Composer's autoloader loads a class only when its namespace is mapped in "
+        "`composer.json` (`autoload.psr-4`, here `App\\` to `src/`) and the file is named for the class "
+        "(`src/Name.php` for `App\\Name`). Use the mapped namespace (`namespace App;`) in every file under `src/`, "
+        "or map the namespace you use and run `composer dump-autoload`."
+    ),
     "AppFactory::create(): Argument #1 ($responsefactory)": (
         "`Slim\\Factory\\AppFactory::create()` takes a response factory first, not a container: call "
         "`AppFactory::setContainer($container)` before `AppFactory::create()`, or pass the container as the "

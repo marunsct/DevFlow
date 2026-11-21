@@ -471,12 +471,23 @@ def what_came_back(case: dict[str, Any], found: dict[str, Any]) -> str:
     return answered + said
 
 
+#: Said when a request at a huge id failed: the store refuses a number beyond its integer range before any lookup runs,
+#: the service's own error handler may print nothing, and the cause is then guessed at (measured on two runs: one
+#: fixer searched the routing, the handler and the signup route for hours).
+_A_HUGE_NUMBER = (
+    " A number taken from the path or the body that is larger than the store's integer type (64 bits in most stores) "
+    "fails inside the store before any lookup runs: check that it fits the store's range before it reaches the store, "
+    "and answer as the specification does for a record that does not exist (usually 404) or for an invalid value."
+)
+
+
 def edge_description(found: list[tuple[dict[str, Any], dict[str, Any]]]) -> str:
     """The defect's description: each request, what came back, and what a product does with such a request."""
     each = "; ".join(f"{_the_request(case)} {what_came_back(case, f)}" for case, f in found[:8])
     more = f"; and {len(found) - 8} more" if len(found) > 8 else ""
     return (
-        f"{EDGE_CASES_FAILED} {each}{more}. A request at the edge of what the contract describes - a field missing, "
+        f"{EDGE_CASES_FAILED} {each}{more}.{_A_HUGE_NUMBER if any(IDS[-1] in str(c.get('shown')) for c, _ in found) else ''}"
+        " A request at the edge of what the contract describes - a field missing, "
         "null, empty, only spaces, of the wrong type, very long or in another script; an id that is not a number, "
         "negative, huge or already deleted - is answered with a status under 500, accepted or refused as the "
         "specification says; a refused write stores and changes nothing; and a record created is read back with "

@@ -365,6 +365,7 @@ def concurrent_write_errors(repo_root: str | Path, *, runner: Any = None) -> lis
                         errors.append((check, findings))
                     elif outcome == "failed":
                         unchecked.append(f"{check.line} (the probe got no findings back)")
+                errors = with_what_the_server_printed(errors, ic.what_the_server_printed(root / project_name))
         state = suite._state(root)  # noqa: SLF001 - read again: the runner's suite calls may have saved it
         state[_UNASKED_KEY] = list(dict.fromkeys(unchecked))
         suite._save_state(root, state)  # noqa: SLF001
@@ -380,6 +381,28 @@ def concurrent_write_errors(repo_root: str | Path, *, runner: Any = None) -> lis
         return None
 
 
+def with_what_the_server_printed(errors: list[tuple[Any, dict[str, Any]]], printed: str) -> list[tuple[Any, dict[str, Any]]]:
+    """`errors`, each create line the server answered 500 for given the error the server printed (`printed`, its output
+    while the probe ran): the one near that request, else the last errors it printed at all.
+
+    Measured on one run: sixteen creates at once answered 500, the defect showed only the statuses, and four fixes in a
+    row guessed ("probably a locked database") while the service had printed the real error - a table it never made.
+    """
+    from app.acceptance import what_went_wrong
+    from app.tools.untrusted_text import defanged
+
+    if not printed:
+        return errors
+    for check, found in errors:
+        if not any(isinstance(s, (int, float)) and s >= 500 for s in found.get("statuses") or []):
+            continue
+        said = (what_went_wrong.what_the_server_printed_for(printed, check.path, check.method)
+                or what_went_wrong.what_the_server_printed(printed))
+        if said:
+            found["printed"] = defanged(said, what_went_wrong.MOST_PRINTED)
+    return errors
+
+
 def what_came_back(found: dict[str, Any]) -> str:
     """What the creates sent at once were answered, and what the ids and the listing showed."""
     statuses = [int(s) for s in found.get("statuses") or [] if isinstance(s, (int, float))]
@@ -390,6 +413,10 @@ def what_came_back(found: dict[str, Any]) -> str:
     listed, made = found.get("listed"), found.get("made")
     if isinstance(listed, int) and isinstance(made, int) and listed < made:
         parts.append(f"`GET {found.get('list') or ''}` listed {listed} of the {made} created")
+    if found.get("printed"):
+        from app.acceptance import what_went_wrong
+
+        parts.append(f"{what_went_wrong.THE_SERVER_PRINTED} {found['printed']}")
     return "; ".join(parts)
 
 

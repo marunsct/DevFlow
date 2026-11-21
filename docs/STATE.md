@@ -5,9 +5,9 @@ the block below is written by `loop.sh state`. The map of all documents is `docs
 `docs/improvement-plan.md`; how the product works is `docs/PRODUCT.md`; how to run and test it is `docs/HANDOVER.md`;
 decisions in force are `docs/owner-decisions.md`; old information is found through `docs/ARCHIVE.md`.
 <!-- state:generated -->
-**As of:** 11-21 20:13 JST (written by `loop.sh state`). Harness fcc6582b committed; 08b934cf deployed (not the same).
-**Live, and stopped in the last day:** run-3f3a422f running at specialist_testing_1; run-bf96efa0 failed at failed
-**Last scored:** run-8f1d53f6 notes-api-csharp 9/9 (completed, handoff 1.0; scored 11-21 20:13 JST); run-a7de0505 notes-api-ruby 9/9 (completed, mixed, 47 active min, handoff 1.0; scored 11-21 19:03 JST); run-7b7e79f9 textkit-lib 8/8 (completed, 21 active min, handoff 1.0; scored 11-21 18:03 JST).
+**As of:** 11-21 21:24 JST (written by `loop.sh state`). Harness dd6d9c02 committed; dd6d9c02 deployed.
+**Live, and stopped in the last day:** run-f60ad0cf failed at failed; run-3f3a422f running at test_round_0; run-bf96efa0 failed at failed
+**Last scored:** run-f60ad0cf notes-api-go 0/9 (failed, handoff 0.429; scored 11-21 21:24 JST); run-8f1d53f6 notes-api-csharp 9/9 (completed, 55 active min, handoff 1.0; scored 11-21 20:13 JST); run-a7de0505 notes-api-ruby 9/9 (completed, mixed, 47 active min, handoff 1.0; scored 11-21 19:03 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -27,7 +27,8 @@ runs only when the owner starts them. Everything under measurement: `docs/improv
 ## The last three runs (11-20, hidden / quality; local model)
 Earlier runs: `reports/status-board/`, git history of this file.
 - **Live:** tasks-api container 11 (:1234, from 18:04; LF.1213 deployed into it 19:01). LF.1205-LF.1213 and LF.1206 deployed (10:25 JST, b97d9f2).
-- Scored today: **notes-api-csharp 12 (9/9, 8/8; delivered, 59 min, mutation 1.0; one unit test shipped failing)**, **notes-api-ruby 4 (9/9, 8/8; delivered, 52 min, mutation 0.46)**, **textkit-lib 4 (8/8, 7/7; delivered, 21 min; mutation 0.67)**, **web-todo-react 3 (10/10, 6/6; delivered, 62 min; mutation 0.33)**, **wordstats-cli 4 (8/8, 6/6; delivered, 55 min, mutation 1.0; eight parallel fixers 45 min)**, **fullstack-bookmarks 3 (8/8, 6/7; delivered, 147 min; a unit run that never finished read as no output for 100 min, LF.1210)**, **notes-api-php 9 (9/9, 8/8; delivered, 103 min; namespace/autoload start failure, LF.1209)**, **notes-api-go 5 (9/9, 8/8; delivered, 77 min; redundant reads 30%)**, **tasks-api 10 (10/10, 6/7; delivered, 98 min; LF.1208 closed a 45-minute concurrent-write defect in one attempt)**, **notes-api-java 8 (9/9, 8/8; delivered,
+- Scored today: **notes-api-go 6 (0/9, 0/8; failed, 58 min: service split into packages the brief did not ask for; LF.1215)**, **notes-api-csharp 12 (9/9, 8/8; delivered, 59 min, mutation 1.0; one unit test shipped failing)**, **notes-api-ruby 4 (9/9, 8/8; delivered, 52 min, mutation 0.46)**, **textkit-lib 4 (8/8, 7/7; delivered, 21 min; mutation 0.67)**, **web-todo-react 3 (10/10, 6/6; delivered, 62 min; mutation 0.33)**, **wordstats-cli 4 (8/8, 6/6; delivered, 55 min, mutation 1.0; eight parallel fixers 45 min)**, **fullstack-bookmarks 3 (8/8, 6/7; delivered, 147 min; a unit run that never finished read as no output for 100 min, LF.1210)**, **notes-api-php 9 (9/9, 8/8; delivered, 103 min; namespace/autoload start failure, LF.1209)**, **notes-api-go 5 (9/9, 8/8; delivered, 77 min; redundant reads 30%)**, **tasks-api 10 (10/10, 6/7; delivered,
+  98 min; LF.1208 closed a 45-minute concurrent-write defect in one attempt)**, **notes-api-java 8 (9/9, 8/8; delivered,
   117 min; LF.1206+LF.1207 turned Java 7's failure into a delivery)**, **notes-api-csharp 11 (9/9, 8/8; delivered, 48 min; one vacuous AC-18 test)**, **notes-api-php 8 (9/9, 8/8; delivered, 94 min,
   mutation 0.25; LF.1205)**, **notes-api-java 7 (2/9, 2/8; failed: start error hidden by Playwright ignoring stdout, then 500s; LF.1206)**, web-todo 3 and 4 (10/10, 6/6), Ruby 2 and 3 (9/9, 8/8; 64 and 56 min against 267 before), Java 3 (9/9, 8/8),
   PHP 6 and 7 (9/9, 8/8; 42 and 78 min), C# 7 and 8 (9/9, 8/8), Java 4 (9/9, 8/8; 244 min, a start defect for three rounds), tasks-api 6 (10/10, 7/7; 110 min;

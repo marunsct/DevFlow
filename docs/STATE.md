@@ -5,9 +5,9 @@ the block below is written by `loop.sh state`. The map of all documents is `docs
 `docs/improvement-plan.md`; how the product works is `docs/PRODUCT.md`; how to run and test it is `docs/HANDOVER.md`;
 decisions in force are `docs/owner-decisions.md`; old information is found through `docs/ARCHIVE.md`.
 <!-- state:generated -->
-**As of:** 11-22 04:24 JST (written by `loop.sh state`). Harness 4f3c64dd committed; 99127d48 deployed (not the same).
-**Live, and stopped in the last day:** run-2eb4a3a0 running at defect_fix_1_1; run-f60ad0cf failed at failed; run-bf96efa0 failed at failed
-**Last scored:** run-8e3b5e4e notes-api-csharp 9/9 (completed, handoff 1.0; scored 11-22 04:24 JST); run-d5dadffb textkit-lib 8/8 (completed, 16 active min, handoff 1.0; scored 11-22 03:43 JST); run-6e3b1844 textkit-lib 8/8 (completed, 21 active min, handoff 1.0; scored 11-22 03:23 JST).
+**As of:** 11-22 04:53 JST (written by `loop.sh state`). Harness 76fd88ac committed; 99127d48 deployed (not the same).
+**Live, and stopped in the last day:** run-8c79997c running at acceptance_author_1; run-f60ad0cf failed at failed; run-bf96efa0 failed at failed
+**Last scored:** run-2eb4a3a0 notes-api-ruby 9/9 (completed, handoff 1.0; scored 11-22 04:53 JST); run-8e3b5e4e notes-api-csharp 9/9 (completed, mixed, 84 active min, handoff 1.0; scored 11-22 04:24 JST); run-d5dadffb textkit-lib 8/8 (completed, 16 active min, handoff 1.0; scored 11-22 03:43 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -26,8 +26,8 @@ runs only when the owner starts them. Everything under measurement: `docs/improv
 
 ## The last three runs (11-20, hidden / quality; local model)
 Earlier runs: `reports/status-board/`, git history of this file.
-- **Live:** notes-api-ruby container 5 (:1234, from 03:44). LF.1205-LF.1221 (the library finding follow-up verified on textkit-lib 7) and LF.1206 deployed (10:25 JST, b97d9f2).
-- Scored 2026-11-22: **notes-api-csharp 13 (9/9, 8/8; delivered with cuts: AC-10/AC-11 deferred on suite tests that cannot pass; 85 min, mutation 0.90)**, **textkit-lib 7 (8/8, 7/7; delivered, 16 min, mutation 1.0; no unread-lines finding: LF.1221 verified)**, **textkit-lib 6 (8/8, 7/7; delivered, 20 min, mutation 1.0)**, **notes-api-java 9 (9/9, 8/8; delivered, 76 min, mutation 1.0), textkit-lib 5 (8/8, 7/7; delivered, 24 min, mutation 1.0)**, **wordstats-cli 5 (8/8, 6/6; delivered, 47 min, mutation 0.67)**, **notes-api-go 10 (9/9, 8/8; delivered, 60 min; flat layout again), notes-api-php 10 (9/9, 8/8; delivered, 91 min, mutation 0.70; Slim not-found loop again)**. Scored 11-21: **notes-api-go 9 (9/9, 8/8; delivered, 37 min; LF.1217 + LF.1218 live: flat package layout)**, **tasks-api 12 (10/10, 7/7; delivered, 104 min, mutation 0.83)**, **notes-api-go 8 (9/9,
+- **Live:** fullstack-bookmarks container 4 (:8888, from 04:27). LF.1205-LF.1221 (the library finding follow-up verified on textkit-lib 7) and LF.1206 deployed (10:25 JST, b97d9f2).
+- Scored 2026-11-22: **notes-api-ruby 5 (9/9, 8/8; delivered, 60 min, mutation 1.0)**, **notes-api-csharp 13 (9/9, 8/8; delivered with cuts: AC-10/AC-11 deferred on suite tests that cannot pass; 85 min, mutation 0.90)**, **textkit-lib 7 (8/8, 7/7; delivered, 16 min, mutation 1.0; no unread-lines finding: LF.1221 verified)**, **textkit-lib 6 (8/8, 7/7; delivered, 20 min, mutation 1.0)**, **notes-api-java 9 (9/9, 8/8; delivered, 76 min, mutation 1.0), textkit-lib 5 (8/8, 7/7; delivered, 24 min, mutation 1.0)**, **wordstats-cli 5 (8/8, 6/6; delivered, 47 min, mutation 0.67)**, **notes-api-go 10 (9/9, 8/8; delivered, 60 min; flat layout again), notes-api-php 10 (9/9, 8/8; delivered, 91 min, mutation 0.70; Slim not-found loop again)**. Scored 11-21: **notes-api-go 9 (9/9, 8/8; delivered, 37 min; LF.1217 + LF.1218 live: flat package layout)**, **tasks-api 12 (10/10, 7/7; delivered, 104 min, mutation 0.83)**, **notes-api-go 8 (9/9,
   7/8; not deliverable: DR-7 left open; 33 min; LF.1217 chose the Go pack)**, **tasks-api 11 (10/10,
   7/7; not deliverable: AC-18/AC-21 deferred on a suite test counting shared rows; 214 min; LF.1213, LF.1214, LF.1216)**, **notes-api-go 6 (0/9, 0/8; failed,
   58 min: service split into packages the brief did not ask for; LF.1215)**,

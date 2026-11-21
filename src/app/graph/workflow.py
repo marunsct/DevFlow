@@ -5693,7 +5693,7 @@ def _contract_lines_nothing_can_read(state: Any) -> Any:
     # A library's interface is its public functions: its contract lines are calls, the three forms the reader knows
     # (a request, a page control, a command line) do not apply to it, and the finding asked for a rewrite no product of
     # that kind can use (measured on a library run: ten calls written `AC-1 command textkit.slugify(...) -> ...`).
-    if product_kind(state.get("technology_stack")) == "library":
+    if product_kind(getattr(state.get("stack_selection"), "technology_stack", None)) == "library":
         return None
     lines = getattr(state.get("technical_specification"), "interface_contract", None) or ()
     text = interface_contract.unread_lines_finding(lines)

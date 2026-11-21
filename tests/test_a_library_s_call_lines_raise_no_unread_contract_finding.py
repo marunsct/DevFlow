@@ -17,7 +17,9 @@ def _state(kind: str):
                                                "AC-2 command textkit.word_count('a b c') -> 3"])
     stack = SimpleNamespace(language="Python", framework="", frontend_framework="", database="",
                             testing_framework="pytest", additional_tools=[], product_kind=kind)
-    return {"technical_specification": spec, "technology_stack": stack, "architecture_revision_count": 0}
+    # The key the workflow's state really carries: the selector's output, holding the stack.
+    return {"technical_specification": spec, "stack_selection": SimpleNamespace(technology_stack=stack),
+            "architecture_revision_count": 0}
 
 
 def test_a_library_raises_no_finding(monkeypatch):

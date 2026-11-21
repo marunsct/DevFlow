@@ -156,6 +156,15 @@ PYTHON_KNOWN_ERRORS["context manager protocol"] = (
     "`contextlib.contextmanager` inside the test module - in every test of the file in one rewrite. Changing the "
     "product's function to suit some tests breaks its other callers."
 )
+#: Measured on one Flask run: the product did not start and the unit tests failed with this message 92 times over three
+#: rounds; each fix rewrote the entry file or the tests and none named the rule.
+PYTHON_KNOWN_ERRORS["working outside of application context"] = (
+    "Flask's `current_app`, `g` and `request` exist only while an application or request context is active. Code that "
+    "uses them at import time, at start-up before the app is served, or in a unit test that calls the function "
+    "directly fails with this. Do the start-up work inside `with app.app_context():`, or give the function the app or "
+    "the connection as a parameter instead of reading `current_app`; in a test, call it inside "
+    "`with app.app_context():` (a fixture) or through `app.test_client()`."
+)
 #: Measured on one run: `DELETE /items/99999999999999999999` answered 500 on a Flask service on SQLite - its `<int:...>`
 #: path converter takes an integer of any size, and sqlite3 refused it before the query ran; five fixes in a row did not
 #: find it.

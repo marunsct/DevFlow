@@ -144,10 +144,11 @@ _A_TRAILING_NOTE = re.compile(r"\s+\([^()]*\)\s*$")
 #: and none was read.
 _A_KIND_BEFORE_THE_METHOD = re.compile(
     r"^(" + _CRITERION + r")\s+(?:route|http|endpoint|api|request|call)\s+(?=(?:GET|POST|PUT|PATCH|DELETE)\b)", re.I)
-#: What a line is for, said after its statuses: `-> 404 for an id no note has`. Moved before the arrow, where the
-#: several-methods form keeps it as the line's note.
+#: What a line is for, or what it gives, said after its statuses: `-> 404 for an id no note has`, `-> 201 application/json`,
+#: `-> 200 ordered by id ASC` (measured on one run: five of its lines were written so and none was read at release).
+#: Moved before the arrow, where the several-methods form keeps it as the line's note.
 _A_REASON_AFTER_THE_STATUSES = re.compile(
-    r"(\s*->\s*\d{3}(?:\s*(?:or|/|,|\|)\s*\d{3})*)\s+((?:for|when|if|on|with|because|unless|where)\b.*)$", re.I)
+    r"(\s*->\s*\d{3}(?:\s*(?:or|/|,|\|)\s*\d{3})*)\s+(?![|/,(]|(?:or|and)\b)(\D.*)$", re.I)
 
 #: Where the compiled checks are written, inside the project, for one release run.
 CHECK_DIR = "harness-contract"

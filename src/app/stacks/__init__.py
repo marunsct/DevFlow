@@ -598,14 +598,16 @@ def product_kind(stack: Any, text: str = "") -> str:
 
 
 #: Words in a framework field that name no framework: languages, runtimes,
-#: versions and filler.
+#: versions and filler. `net` is the first half of Go's `net/http` once the field is split on its slash: measured on
+#: one run, "net/http (stdlib)" read `net` as a framework no pack implements, the Go pack was not chosen, and the run
+#: was set up by hand and spent an hour on a suite that could not start the product.
 _NOT_A_FRAMEWORK = re.compile(
     r"(?:javascript|typescript|js|ts|node|node\.?js|nodejs|ecmascript|es\d*\+?|esm|commonjs|"
     r"html5?|css3?|python3?|cpython|go|golang|java|jdk|jvm|kotlin|c#|csharp|\.net|dotnet|rust|"
     r"ruby|php|v?\d+(?:\.\d+)*(?:\+|\.x)?|lts|latest|"
     r"none|n/a|na|no|vanilla|plain|native|pure|standard|library|stdlib|std|built-in|builtin|core|"
     r"runtime|only|framework|frameworks|with|and|on|the|its|own|of|for|a|an|"
-    r"http|https|net/http|server|web|api|rest|module|modules|package|packages|"
+    r"http|https|net|net/http|server|web|api|rest|module|modules|package|packages|"
     r"[-+/.#]+)"
 )
 

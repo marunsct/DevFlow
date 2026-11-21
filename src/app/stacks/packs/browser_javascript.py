@@ -193,7 +193,9 @@ into `document.body.innerHTML` in `beforeEach`. To run one file, run
 `node --import ./test-setup.mjs --test tests/<module>.test.js` in the project
 directory: a bare `node --test` skips the setup, and every test that touches the
 page fails with `document is not defined`. What a user does across the whole
-page is the acceptance suite's to prove."""
+page is the acceptance suite's to prove.
+Show text a person typed with `textContent` (or a text node), never `innerHTML`, and do not escape it first:
+`textContent` already shows markup as plain text, and a string escaped before it reads `&lt;b&gt;` on the page."""
 
 ACCEPTANCE_GUIDE = """Acceptance tests go in `acceptance/`, named `<feature>.spec.js`, using
 `@playwright/test` (`import { test, expect } from '@playwright/test'`). The

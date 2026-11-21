@@ -88,7 +88,9 @@ The service is built by `createApp()` in `src/app.js`: the JSON interface under
 as a module). The page reaches the service with `fetch('/api/...')`. Data the
 service stores lives under the directory in `DATA_DIR` (default `data/`). Unit
 tests cover the service's modules and the page's modules that do not touch the
-page; the page itself is covered by the acceptance suite."""
+page; the page itself is covered by the acceptance suite.
+Show text a person typed with `textContent` (or a text node), never `innerHTML`, and do not escape it first:
+`textContent` already shows markup as plain text, and a string escaped before it reads `&lt;b&gt;` on the page."""
 
 ACCEPTANCE_GUIDE = """Acceptance tests go in `acceptance/`, named `<feature>.spec.js`, using
 `@playwright/test`. The configuration starts the product's own service with an

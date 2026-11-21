@@ -149,6 +149,16 @@ SPRING_KNOWN_ERRORS = {
         "(`spring.jpa.database-platform=org.hibernate.community.dialect.SQLiteDialect`) - or in a JSON file, as the "
         "golden example does."
     ),
+    # Measured on two Java runs (about 42 repeats of the line in one): the service exited at start with this message and
+    # three rounds of fixes rewrote `pom.xml` and the controller, which are not where it comes from.
+    "Unable to determine Dialect without JDBC metadata": (
+        "Hibernate could not get a database connection to ask its dialect, or has no dialect for SQLite. First check "
+        "that the folder the JDBC URL names exists before the first connection (create `DATA_DIR` at start; "
+        "`jdbc:sqlite:${DATA_DIR}/...` fails when it does not) and that the property has a default. Then, with "
+        "`org.xerial:sqlite-jdbc`, add `org.hibernate.orm:hibernate-community-dialects` and set "
+        "`spring.jpa.database-platform=org.hibernate.community.dialect.SQLiteDialect`. Or skip JPA and keep a plain "
+        "JSON file, as the golden example does."
+    ),
     "package org.springframework.boot.test.mock.bean does not exist": (
         "`@MockBean` is `org.springframework.boot.test.mock.mockito.MockBean` (deprecated since Spring Boot 3.4); "
         "its replacement is `@MockitoBean` from `org.springframework.test.context.bean.override.mockito`."

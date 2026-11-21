@@ -1,0 +1,8 @@
+# Product review: wordstats-cli container 4 (run-91cd1922-3466-44c0-88fd-865ef112a243)
+
+**Result (finished 17:23 JST, started 16:28 on :1234, 55 minutes): delivered, hidden 8 of 8, quality 6 of 6, handoff 1.0, mutation score 1.0.** KPI regressions: redundant reads 0.26 (5-run mean 0.13) and 5 defects left open (mean 2.6).
+
+- **What happened.** The first sprint's product failed four acceptance lines (missing-file exit status 2, counts, JSON output, errors to standard error); eight fixers worked in parallel for about 45 minutes with no defect closing in the ledger. The suite was reopened by dispute (two locked tests reclassified: `test_ac4_stdin_multiple_lines`, `test_ac7_empty_file`) and the second round passed every acceptance test; two unit tests the product failed twice while the locked suite passed in full were set aside. The sprint ended at 17:23 with "every acceptance test due passes and only the unit tests fail; escalated to a person" and the release delivered.
+- **Cost.** Redundant reads (26%) and open defects are the two regressions; the 5 open defects are the parallel fixers' attempts that did not close before the dispute settled the suite. The server reports no cache on :1234.
+- **Open:** a design finding settled by DR-8 (the specification said opposite things about external dependencies); the parallel-fix width (eight attempts) on a small brief is worth measuring against a narrower round: eight fixers on a four-line defect set spent about 45 minutes where the dispute's reopening settled it.
+- **Other harnesses:** a failing run where the checker and the product disagree is settled by reopening the check; ours does it through the dispute stage, and here it was the cheaper path.

@@ -1,0 +1,8 @@
+# Product review: wordstats-cli container 5 (run-aa9bd19e-301c-4938-9858-7e507d8715d6)
+
+**Result (finished 02:08 JST, started 01:21 on :1234, about 47 minutes): delivered, hidden 8 of 8, quality 6 of 6, handoff 1.0, mutation 0.67.** One KPI regression: mutation score 0.67 (5-run mean 0.86).
+
+- **What happened.** Three suite-authoring rounds and four reviews, then a first test round with two failing unit tests and a second round in which the acceptance suite passed; two locked tests were reclassified under dispute (`test_ac12_ordering`, `test_ac8_apostrophes_and_digits`) and four unit tests that failed twice beside a passing locked suite were set aside (`test_basic_counts`, `test_plain_counts`, `test_json_counts`, `test_missing_file`); the sprint ended at 02:08 with only unit tests failing and the release delivered.
+- **Against container 4** (55 minutes, mutation 1.0): about the same time; the dispute and set-aside rules did the settling in both. The four set-aside tests here are the counting tests, which means the unit tests and the locked suite disagree about what counts as a word, the same specification area that made container 4's two dispute reclassifications.
+- **Open:** whether the four set-aside counting tests were right and the product wrong (the locked suite passing says the product follows the specification; the set-aside rule hides the disagreement); mutation below mean. LF.1210 (the time-limit reason) did not fire: no unit run hung.
+- **Other harnesses:** a unit test written by the product's author that contradicts the locked acceptance suite is usually deleted when the suite is authoritative; ours quarantines it and records the name.

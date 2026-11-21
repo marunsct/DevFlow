@@ -159,6 +159,15 @@ SPRING_KNOWN_ERRORS = {
         "`spring.jpa.database-platform=org.hibernate.community.dialect.SQLiteDialect`. Or skip JPA and keep a plain "
         "JSON file, as the golden example does."
     ),
+    # Measured on two Java runs (Java 7 and Java 9): the service answered 500 to every request with `path to
+    # '<folder>/notes.db': '<folder>' does not exist`; SQLite's driver creates the file and never its folder, and the
+    # acceptance suite hands the service a fresh data folder that is not there yet.
+    "path to '": (
+        "SQLite's JDBC driver creates the database file but not the folder it sits in, and the suite gives the "
+        "service a fresh data folder (`DATA_DIR`) that does not exist yet: create it before the first connection "
+        "(`Files.createDirectories(Path.of(dataDir))` in the bean that builds the `DataSource`, or at start-up before "
+        "`SpringApplication.run`) and create the table there too."
+    ),
     "package org.springframework.boot.test.mock.bean does not exist": (
         "`@MockBean` is `org.springframework.boot.test.mock.mockito.MockBean` (deprecated since Spring Boot 3.4); "
         "its replacement is `@MockitoBean` from `org.springframework.test.context.bean.override.mockito`."

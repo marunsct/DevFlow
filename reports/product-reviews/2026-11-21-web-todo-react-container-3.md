@@ -1,0 +1,8 @@
+# Product review: web-todo-react container 3 (run-a7d8696f-c1ba-4f60-9ea4-12299330ac33)
+
+**Result (finished 17:50 JST, started 16:48 on :8888, about 62 minutes): delivered, hidden 10 of 10, quality 6 of 6, handoff 1.0.** KPI regressions: mutation score 0.33 (5-run mean 0.51) and identical calls 8.8% (mean 2.8%).
+
+- **What happened.** The first test round failed three acceptance lines about editing a task's title (AC-3, AC-10, AC-13) and a test importing a hook module that did not exist; six parallel fixers ran; the fix at 17:43 found the cause by reading the page's own handlers (the save control's press fires the outside-click handler first and closes the editor before the click lands) and closed the edit defects; a second test round had two failing unit tests, rewritten in one attempt; the milestone passed the security and UI reviews and the release delivered. Against web-todo-react 1 (9/10, not deliverable, 364 minutes on :1234, four criteria deferred) and 2 (10/10, 73 minutes), this is the fastest.
+- **What cost time.** About 50 minutes in the first round with six fixers and no defect closed until the cause was found; identical calls were 8.8%, three times the mean.
+- **Open:** a design review finding settled by DR-6: eight lines of the interface contract (the page's actions) follow none of the forms the checker reads, so nothing could check them; this is the same finding as PHP 8 (DR-4), Go 5 and bookmarks 3. Counted across four runs now: the interface section of a UI brief names actions in a form no check reads.
+- **Other harnesses:** most UI harnesses drive the page through test ids or roles from a spec; ours reads lines it cannot always parse, and the finding says so every time.

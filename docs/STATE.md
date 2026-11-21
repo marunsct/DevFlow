@@ -5,9 +5,9 @@ the block below is written by `loop.sh state`. The map of all documents is `docs
 `docs/improvement-plan.md`; how the product works is `docs/PRODUCT.md`; how to run and test it is `docs/HANDOVER.md`;
 decisions in force are `docs/owner-decisions.md`; old information is found through `docs/ARCHIVE.md`.
 <!-- state:generated -->
-**As of:** 11-21 23:13 JST (written by `loop.sh state`). Harness 9afa411b committed; 9afa411b deployed.
-**Live, and stopped in the last day:** run-b77bf995 running at advice_review_backend; run-f60ad0cf failed at failed; run-bf96efa0 failed at failed
-**Last scored:** run-dbe47922 notes-api-go 9/9 (completed, handoff 1.0; scored 11-21 23:13 JST); run-3f3a422f tasks-api 10/10 (completed, mixed, 210 active min, handoff 1.0; scored 11-21 21:43 JST); run-f60ad0cf notes-api-go 0/9 (failed, mixed, 56 active min, handoff 0.429; scored 11-21 21:24 JST).
+**As of:** 11-21 23:33 JST (written by `loop.sh state`). Harness aaa1c46e committed; 9afa411b deployed (not the same).
+**Live, and stopped in the last day:** run-65f06423 running at acceptance_author_0; run-f60ad0cf failed at failed; run-bf96efa0 failed at failed
+**Last scored:** run-b77bf995 tasks-api 10/10 (completed, handoff 1.0; scored 11-21 23:33 JST); run-dbe47922 notes-api-go 9/9 (completed, mixed, 30 active min, handoff 1.0; scored 11-21 23:13 JST); run-3f3a422f tasks-api 10/10 (completed, mixed, 210 active min, handoff 1.0; scored 11-21 21:43 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -26,8 +26,9 @@ runs only when the owner starts them. Everything under measurement: `docs/improv
 
 ## The last three runs (11-20, hidden / quality; local model)
 Earlier runs: `reports/status-board/`, git history of this file.
-- **Live:** tasks-api container 12 (:1234, from 21:48). LF.1205-LF.1218 and LF.1206 deployed (10:25 JST, b97d9f2).
-- Scored today: **notes-api-go 8 (9/9, 7/8; not deliverable: DR-7 left open; 33 min; LF.1217 chose the Go pack)**, **tasks-api 11 (10/10, 7/7; not deliverable: AC-18/AC-21 deferred on a suite test counting shared rows; 214 min; LF.1213, LF.1214, LF.1216)**, **notes-api-go 6 (0/9, 0/8; failed, 58 min: service split into packages the brief did not ask for; LF.1215)**, **notes-api-csharp 12 (9/9, 8/8; delivered, 59 min, mutation 1.0; one unit test shipped failing)**, **notes-api-ruby 4 (9/9, 8/8; delivered, 52 min, mutation 0.46)**, **textkit-lib 4 (8/8, 7/7; delivered, 21 min; mutation 0.67)**, **web-todo-react 3 (10/10, 6/6; delivered, 62 min; mutation 0.33)**, **wordstats-cli 4 (8/8, 6/6; delivered, 55 min, mutation 1.0; eight parallel fixers 45 min)**, **fullstack-bookmarks 3 (8/8, 6/7; delivered, 147 min; a unit run that never finished read as no output for 100 min, LF.1210)**,
+- **Live:** notes-api-go container 9 (:8888, from 23:18), notes-api-php container 10 (:1234). LF.1205-LF.1218 and LF.1206 deployed (10:25 JST, b97d9f2).
+- Scored today: **tasks-api 12 (10/10, 7/7; delivered, 104 min, mutation 0.83)**, **notes-api-go 8 (9/9, 7/8; not deliverable: DR-7 left open; 33 min; LF.1217 chose the Go pack)**, **tasks-api 11 (10/10, 7/7; not deliverable: AC-18/AC-21 deferred on a suite test counting shared rows; 214 min; LF.1213, LF.1214, LF.1216)**, **notes-api-go 6 (0/9, 0/8; failed, 58 min: service split into packages the brief did not ask for; LF.1215)**, **notes-api-csharp 12 (9/9, 8/8; delivered, 59 min, mutation 1.0; one unit test shipped failing)**, **notes-api-ruby 4 (9/9, 8/8; delivered, 52 min, mutation 0.46)**, **textkit-lib 4 (8/8, 7/7; delivered, 21 min; mutation 0.67)**, **web-todo-react 3 (10/10, 6/6; delivered, 62 min; mutation 0.33)**, **wordstats-cli 4 (8/8, 6/6; delivered, 55 min, mutation 1.0; eight parallel fixers 45 min)**, **fullstack-bookmarks 3 (8/8, 6/7; delivered,
+  147 min; a unit run that never finished read as no output for 100 min, LF.1210)**,
   **notes-api-php 9 (9/9, 8/8; delivered, 103 min; namespace/autoload start failure, LF.1209)**,
   **notes-api-go 5 (9/9, 8/8; delivered, 77 min; redundant reads 30%)**, **tasks-api 10 (10/10, 6/7; delivered,
   98 min; LF.1208 closed a 45-minute concurrent-write defect in one attempt)**, **notes-api-java 8 (9/9, 8/8; delivered,

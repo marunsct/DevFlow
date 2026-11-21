@@ -59,7 +59,12 @@ GUIDE = _python.UNIT_GUIDE + """
 The application is built by `create_app()` in `{{package}}/app.py`; add routes there or
 in blueprints it registers. A service that stores data keeps it under the directory in
 the `DATA_DIR` environment variable (default `data/`), never in memory only. A unit
-test calls routes through `create_app().test_client()`."""
+test calls routes through `create_app().test_client()`.
+
+A catch-all `@app.errorhandler(Exception)` also receives Flask's own `HTTPException`s - the 404 for a path no route
+matches (a non-number where an `<int:...>` is declared) and the 405 for a wrong method - and answers them 500. Return
+the `HTTPException` itself (`if isinstance(error, HTTPException): return error`) or register the handler for the
+statuses the specification gives."""
 
 DOCKERFILE = """# {{title}}: build with `docker build -t {{project}} .`, run with
 # `docker run -p 8000:8000 -v {{project}}-data:/app/data {{project}}`.

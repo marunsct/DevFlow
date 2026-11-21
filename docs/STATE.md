@@ -5,9 +5,9 @@ the block below is written by `loop.sh state`. The map of all documents is `docs
 `docs/improvement-plan.md`; how the product works is `docs/PRODUCT.md`; how to run and test it is `docs/HANDOVER.md`;
 decisions in force are `docs/owner-decisions.md`; old information is found through `docs/ARCHIVE.md`.
 <!-- state:generated -->
-**As of:** 11-22 00:03 JST (written by `loop.sh state`). Harness 1e754da8 committed; 9afa411b deployed (not the same).
-**Live, and stopped in the last day:** run-2cca573e running at acceptance_author_0; run-f60ad0cf failed at failed; run-bf96efa0 failed at failed
-**Last scored:** run-65f06423 notes-api-go 9/9 (completed, handoff 1.0; scored 11-22 00:03 JST); run-b77bf995 tasks-api 10/10 (completed, mixed, 99 active min, handoff 1.0; scored 11-21 23:33 JST); run-dbe47922 notes-api-go 9/9 (completed, mixed, 30 active min, handoff 1.0; scored 11-21 23:13 JST).
+**As of:** 11-22 01:17 JST (written by `loop.sh state`). Harness fb1b409a committed; fb1b409a deployed.
+**Live, and stopped in the last day:** run-f60ad0cf failed at failed; run-bf96efa0 failed at failed
+**Last scored:** run-2cca573e notes-api-php 9/9 (completed, handoff 1.0; scored 11-22 01:17 JST); run-c4649ed6 notes-api-go 9/9 (completed, mixed, 54 active min, handoff 1.0; scored 11-22 01:13 JST); run-65f06423 notes-api-go 9/9 (completed, 32 active min, handoff 1.0; scored 11-22 00:03 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -26,8 +26,9 @@ runs only when the owner starts them. Everything under measurement: `docs/improv
 
 ## The last three runs (11-20, hidden / quality; local model)
 Earlier runs: `reports/status-board/`, git history of this file.
-- **Live:** notes-api-php container 10 (:1234, from 23:38). LF.1205-LF.1218 and LF.1206 deployed (10:25 JST, b97d9f2).
-- Scored today: **notes-api-go 9 (9/9, 8/8; delivered, 37 min; LF.1217 + LF.1218 live: flat package layout)**, **tasks-api 12 (10/10, 7/7; delivered, 104 min, mutation 0.83)**, **notes-api-go 8 (9/9, 7/8; not deliverable: DR-7 left open; 33 min; LF.1217 chose the Go pack)**, **tasks-api 11 (10/10, 7/7; not deliverable: AC-18/AC-21 deferred on a suite test counting shared rows; 214 min; LF.1213, LF.1214, LF.1216)**, **notes-api-go 6 (0/9, 0/8; failed, 58 min: service split into packages the brief did not ask for; LF.1215)**, **notes-api-csharp 12 (9/9, 8/8; delivered, 59 min, mutation 1.0; one unit test shipped failing)**, **notes-api-ruby 4 (9/9, 8/8; delivered, 52 min, mutation 0.46)**, **textkit-lib 4 (8/8, 7/7; delivered, 21 min; mutation 0.67)**, **web-todo-react 3 (10/10, 6/6; delivered, 62 min; mutation 0.33)**, **wordstats-cli 4 (8/8, 6/6; delivered, 55 min,
+- **Live:** (none until the next start). LF.1205-LF.1219 and LF.1206 deployed (10:25 JST, b97d9f2).
+- Scored 2026-11-22: **notes-api-go 10 (9/9, 8/8; delivered, 60 min; flat layout again), notes-api-php 10 (9/9, 8/8; delivered, 91 min, mutation 0.70; Slim not-found loop again)**. Scored 11-21: **notes-api-go 9 (9/9, 8/8; delivered, 37 min; LF.1217 + LF.1218 live: flat package layout)**, **tasks-api 12 (10/10, 7/7; delivered, 104 min, mutation 0.83)**, **notes-api-go 8 (9/9, 7/8; not deliverable: DR-7 left open; 33 min; LF.1217 chose the Go pack)**, **tasks-api 11 (10/10, 7/7; not deliverable: AC-18/AC-21 deferred on a suite test counting shared rows; 214 min; LF.1213, LF.1214, LF.1216)**, **notes-api-go 6 (0/9, 0/8; failed, 58 min: service split into packages the brief did not ask for; LF.1215)**, **notes-api-csharp 12 (9/9, 8/8; delivered, 59 min, mutation 1.0; one unit test shipped failing)**, **notes-api-ruby 4 (9/9, 8/8; delivered, 52 min, mutation 0.46)**, **textkit-lib 4 (8/8,
+  7/7; delivered, 21 min; mutation 0.67)**, **web-todo-react 3 (10/10, 6/6; delivered, 62 min; mutation 0.33)**, **wordstats-cli 4 (8/8, 6/6; delivered, 55 min,
   mutation 1.0; eight parallel fixers 45 min)**, **fullstack-bookmarks 3 (8/8, 6/7; delivered,
   147 min; a unit run that never finished read as no output for 100 min, LF.1210)**,
   **notes-api-php 9 (9/9, 8/8; delivered, 103 min; namespace/autoload start failure, LF.1209)**,

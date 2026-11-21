@@ -486,7 +486,7 @@ def edge_description(found: list[tuple[dict[str, Any], dict[str, Any]]]) -> str:
     each = "; ".join(f"{_the_request(case)} {what_came_back(case, f)}" for case, f in found[:8])
     more = f"; and {len(found) - 8} more" if len(found) > 8 else ""
     return (
-        f"{EDGE_CASES_FAILED} {each}{more}.{_A_HUGE_NUMBER if any(IDS[-1] in str(c.get('shown')) for c, _ in found) else ''}"
+        f"{EDGE_CASES_FAILED} {each}{more}.{_A_HUGE_NUMBER if any(IDS[-1] in f"{c.get('shown')} {c.get('what')}" for c, _ in found) else ''}"
         " A request at the edge of what the contract describes - a field missing, "
         "null, empty, only spaces, of the wrong type, very long or in another script; an id that is not a number, "
         "negative, huge or already deleted - is answered with a status under 500, accepted or refused as the "

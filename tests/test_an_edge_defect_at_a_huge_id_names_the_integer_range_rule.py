@@ -11,8 +11,8 @@ import re
 from app.acceptance import edge_probe
 
 
-def _found(shown: str):
-    case = {"method": "DELETE", "shown": shown, "what": "at an id that is huge", "path": "/items/{id}"}
+def _found(shown: str, what: str = "at an id that is huge"):
+    case = {"method": "DELETE", "shown": shown, "what": what, "path": "/items/{id}"}
     return [(case, {"kind": "server_error", "status": 500})]
 
 
@@ -22,8 +22,15 @@ def test_a_huge_id_defect_names_the_range_rule():
     assert "integer type" in said and "fits the store's range" in said
 
 
+def test_a_defect_whose_path_is_a_template_and_whose_id_is_in_its_words_carries_it():
+    """The real shape: `DELETE /items/{id}` at id `99999999999999999999`."""
+    said = edge_probe.edge_description(_found("/items/{id}", "at id `99999999999999999999`"))
+
+    assert "integer type" in said
+
+
 def test_a_defect_at_another_id_does_not_carry_it():
-    said = edge_probe.edge_description(_found("/items/not-a-number"))
+    said = edge_probe.edge_description(_found("/items/not-a-number", "at an id that is not a number"))
 
     assert "integer type" not in said
 

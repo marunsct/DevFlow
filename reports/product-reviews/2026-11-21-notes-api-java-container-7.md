@@ -1,0 +1,9 @@
+# Product review: notes-api-java container 7 (run-bf96efa0-2ff2-4e8a-b6e7-5e69c3d11d66)
+
+**Result (2026-11-21 10:34 JST scored; :1234, started 09:08 JST): failed, hidden 2 of 9, quality 2 of 8, handoff 0.43.** The sprint was re-planned three times and still could not be accepted. Against a 5-run mean of 0.8, hidden score, quality and handoff all regressed; tool failures 6.6% (mean 2.8%); two fixes reverted.
+
+- **What happened.** The product did not start for the acceptance suite in the first rounds, and the fixers could not see why: Playwright ignores a `webServer`'s stdout, and Spring writes its startup errors there, so the failure read only "Exit code: 1". About an hour in, a look-up on the SQLite path error led to the real cause (`${DATA_DIR}` without a default in `application.properties`, the data folder missing). The product then started but answered 500 to every write (7 of 9 hidden tests failed with `{"error":"Internal server error"}`), so the run ended on the re-plan limit.
+- **Changed from this run:** LF.1206 pipes the product's stdout in the generated Playwright config (deployed 10:25 JST after this run's last start attempt; all 38 packs scaffold). LF.1205 (Slim) came from the sister PHP run.
+- **Experiments in this run:** `SUMMARISE_LATER_WITH_HEADROOM` and `REPLY_ROOM_SIZED_PER_ROLE` were on; neither prevented the failure; no cut-off replies. Cache served 0% in the last stretch (server reported none), so token measures are not comparable to Java 5 and 6.
+- **Still open:** the 500s on writes were never shown to a fixer with the server's own error text; the edge-probe and server-error evidence should carry the Spring stack trace now that stdout is piped. Re-run Java on :1234 to see whether LF.1206 turns this from a failure into a delivery.
+- **Other harnesses:** most agent harnesses show the process's combined output on a failed start; this was a gap of ours, not of the model.

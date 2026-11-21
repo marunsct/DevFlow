@@ -369,6 +369,11 @@ def _run_unit(root: str | Path, runner: Runner | None) -> tuple[dict[str, str], 
         # as none failing, and a release shipped unit tests that did not compile without a word (found on a language
         # sweep). One stable name, so an escalation's acceptance and the release compare it like any test.
         unit = {UNIT_TESTS_DID_NOT_RUN: "failed"}
+    if isinstance(outcome, dict) and outcome.get("error"):
+        # What the sandbox said when the command ended without a code of its own (a run held to its time limit): the
+        # test round reads the kept record, and kept without this a unit run that never finished said "(no output)"
+        # to three rounds of fixers (measured on a browser-and-service run: a test that blocked its own thread).
+        said = (said.rstrip() + "\n" + str(outcome["error"])).strip()
     if not passed:
         # Read as the test round's own run reads, so the record says the same whichever ran it.
         said = (said.rstrip() + "\n" + what_the_failing_unit_tests_say(parsed.tests)).strip()

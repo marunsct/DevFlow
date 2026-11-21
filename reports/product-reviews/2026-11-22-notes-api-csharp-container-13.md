@@ -1,0 +1,8 @@
+# Product review: notes-api-csharp container 13 (run-8e3b5e4e-40ea-4126-b235-5026bf1216d4)
+
+**Result (finished 04:19 JST, started 02:54 on :8888, about 85 minutes): hidden 9 of 9, quality 8 of 8, handoff 1.0, mutation 0.90, verdict delivered with cuts: AC-10 and AC-11 shipped deferred.** No KPI past 1.5x its 5-run mean.
+
+- **What happened.** The first sprint's product failed to compile in the entry file (`a static local function cannot contain a reference to 'connectionString'`, fixed after two rounds), then every write answered 400 because a shared body reader (`ReadJsonBodyAsync`) failed to deserialize the request: eleven acceptance tests across eleven criteria, fixed once and reopened. The suite was disputed and re-authored twice (about 45 minutes), two unit tests stayed failing, and the release delivered with two criteria deferred.
+- **Why the cuts.** The locked tests for AC-3/AC-10 and AC-11 cannot pass for any product that does what the criterion says (the test creates a note and then reads it back expecting the created note, which the contract line does not guarantee), and the suite may not be repaired again in this run once its budget is spent. The product is right; the deferral is the suite's.
+- **Open:** the suite-repair budget again (tasks-api 11 was the first case: a test counting every row of a shared store); a suite test that asserts on state its own earlier steps create. Two cases now of locked tests that cannot pass: counted, with a deterministic check for "creates a record then expects exactly it back through a different route" the next to build if a third appears.
+- **Other harnesses:** a flaky or impossible test is quarantined and the release goes ahead with a note; ours defers the criterion, which also lowers the verdict.

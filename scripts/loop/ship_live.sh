@@ -62,8 +62,9 @@ echo "$deployed" | grep -E "image matches|error|ERROR" || true
 landed=1
 echo "$deployed" | grep -q "image matches" || landed=0
 
+not_resumed=0
 for run in "${paused[@]}"; do
-  timeout 120 "$L" resume "$run" | tail -1 | cut -c1-120
+  scripts/loop/resume_with_retry.sh "$run" || not_resumed=1
 done
 
 sleep 45
@@ -85,4 +86,5 @@ if [ "$landed" = 0 ]; then
   echo "ship-live: THE DEPLOY DID NOT LAND - the containers were not replaced; the runs carry on on the old code" >&2
   exit 2
 fi
+[ "$not_resumed" = 0 ] || exit 3
 exit $missing

@@ -15,4 +15,4 @@ def test_a_deploy_without_an_image_check_ends_non_zero():
     assert 'grep -q "image matches" || landed=0' in text
     tail = text[text.index('if [ "$landed" = 0 ]'):]
     assert "DID NOT LAND" in tail and "exit 2" in tail
-    assert text.index('deployed=$(') < text.index('for run in "${paused[@]}"; do\n  timeout 120 "$L" resume')
+    assert text.index('deployed=$(') < text.index('scripts/loop/resume_with_retry.sh "$run"')

@@ -329,6 +329,14 @@ SLIM_KNOWN_ERRORS = {
         "set that the server's URL does not have (`php -S ... public/index.php` serves from the web root); and add "
         "`$app->addErrorMiddleware(true, true, true)` after the routes, so an unmatched request answers 404."
     ),
+    # Measured on one PHP run (39 repeats): `AppFactory::create()` died with this error on every request and the product
+    # never started, although `slim/psr7` was in `composer.json` and in `vendor/`; the fixers rewrote tests and routes.
+    "Could not detect any PSR-17 ResponseFactory": (
+        "Slim builds its responses from a PSR-17 implementation it finds through the Composer autoloader: "
+        "`slim/psr7` must be in `composer.json`'s `require` (the scaffold has it - do not remove it), installed into "
+        "`vendor/`, and known to the autoloader: run `composer install` and then `composer dump-autoload`, and require "
+        "`vendor/autoload.php` before anything else in `public/index.php`. Do not write a factory of your own."
+    ),
     "AppFactory::create(): Argument #1 ($responsefactory)": (
         "`Slim\\Factory\\AppFactory::create()` takes a response factory first, not a container: call "
         "`AppFactory::setContainer($container)` before `AppFactory::create()`, or pass the container as the "

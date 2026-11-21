@@ -1,0 +1,8 @@
+# Product review: notes-api-php container 11 (run-98fd2ab6-e4bb-4cc2-9f64-b4eef728e022)
+
+**Result (finished 08:38 JST, started 07:28 on :1234, about 70 minutes): delivered, hidden 9 of 9, quality 8 of 8, handoff 1.0, mutation 0.50.** KPI regressions: one reply lost to length (5-run mean 0) and a lost-reply output share of 12% (mean 0).
+
+- **What happened.** The first test round failed everything: 17 unit tests and every CRUD acceptance test, because `AppFactory::create()` died on every request with `Could not detect any PSR-17 ResponseFactory implementations` (about 39 repeats, with `HttpNotFoundException` on the readiness route behind it) - though `slim/psr7` was in `composer.json` and in `vendor/`. The fixers cleared it in about 50 minutes (round 2 had only a mutation defect); LF.1224 (the Slim pack names the autoload rule for that message) was committed while they worked and live at 08:27, after it had cleared, so it is unmeasured. The mutation defect at `Service.php` line 32 was left open and the milestone passed the reviews and delivered.
+- **Cost.** About 50 minutes on the start failure; a fourth PHP run in a row where the first test round failed to start on a different cause (PHP 8 container passed to the factory, PHP 9 namespace, PHP 10 route not found, PHP 11 PSR-17 factory).
+- **Open:** DR-4 settled (the specification's product scope and its decision list disagree about graceful shutdown); mutation 0.50 on a service brief, the usual low value.
+- **Other harnesses:** a start check run right after the first draft, before any suite, would find all four PHP causes in minutes; ours finds them in the first test round.

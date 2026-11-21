@@ -5,9 +5,9 @@ the block below is written by `loop.sh state`. The map of all documents is `docs
 `docs/improvement-plan.md`; how the product works is `docs/PRODUCT.md`; how to run and test it is `docs/HANDOVER.md`;
 decisions in force are `docs/owner-decisions.md`; old information is found through `docs/ARCHIVE.md`.
 <!-- state:generated -->
-**As of:** 11-22 08:03 JST (written by `loop.sh state`). Harness d11025cd committed; e1fb9a66 deployed (not the same).
-**Live, and stopped in the last day:** run-98fd2ab6 running at scrum_master; run-f60ad0cf failed at failed; run-bf96efa0 failed at failed
-**Last scored:** run-8c79997c fullstack-bookmarks 8/8 (completed, handoff 1.0; scored 11-22 08:03 JST); run-957bf3d3 tasks-api 10/10 (completed, mixed, 142 active min, handoff 1.0; scored 11-22 07:23 JST); run-2eb4a3a0 notes-api-ruby 9/9 (completed, 57 active min, handoff 1.0; scored 11-22 04:53 JST).
+**As of:** 11-22 08:43 JST (written by `loop.sh state`). Harness 1f625700 committed; 1f625700 deployed.
+**Live, and stopped in the last day:** run-908fa27d running at defect_fix_1_0; run-f60ad0cf failed at failed; run-bf96efa0 failed at failed
+**Last scored:** run-98fd2ab6 notes-api-php 9/9 (completed, handoff 1.0; scored 11-22 08:43 JST); run-8c79997c fullstack-bookmarks 8/8 (completed, mixed, 208 active min, handoff 1.0; scored 11-22 08:03 JST); run-957bf3d3 tasks-api 10/10 (completed, mixed, 142 active min, handoff 1.0; scored 11-22 07:23 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -26,8 +26,9 @@ runs only when the owner starts them. Everything under measurement: `docs/improv
 
 ## The last three runs (11-20, hidden / quality; local model)
 Earlier runs: `reports/status-board/`, git history of this file.
-- **Live:** notes-api-php container 11 (:1234, from 07:28). LF.1205-LF.1223 (the library finding follow-up verified on textkit-lib 7) and LF.1206 deployed (10:25 JST, b97d9f2).
-- Scored 2026-11-22: **fullstack-bookmarks 4 (8/8, 5/7; delivered with cuts: AC-14, AC-3 deferred; 210 min; page double-escaped titles, LF.1223)**, **tasks-api 13 (10/10, 7/7; delivered with cuts: AC-1 deferred on a shared-store test; 143 min; LF.1208 and LF.1216 closed two defects)**, **notes-api-ruby 5 (9/9, 8/8; delivered, 60 min, mutation 1.0)**, **notes-api-csharp 13 (9/9, 8/8; delivered with cuts: AC-10/AC-11 deferred on suite tests that cannot pass; 85 min, mutation 0.90)**, **textkit-lib 7 (8/8, 7/7; delivered, 16 min, mutation 1.0; no unread-lines finding: LF.1221 verified)**, **textkit-lib 6 (8/8, 7/7; delivered, 20 min, mutation 1.0)**, **notes-api-java 9 (9/9, 8/8; delivered, 76 min, mutation 1.0), textkit-lib 5 (8/8, 7/7; delivered, 24 min, mutation 1.0)**, **wordstats-cli 5 (8/8, 6/6; delivered, 47 min, mutation 0.67)**, **notes-api-go 10 (9/9, 8/8; delivered,
+- **Live:** fullstack-bookmarks container 5 (:8888, from 08:18). LF.1205-LF.1224 (the library finding follow-up verified on textkit-lib 7) and LF.1206 deployed (10:25 JST, b97d9f2).
+- Scored 2026-11-22: **notes-api-php 11 (9/9, 8/8; delivered, 70 min, mutation 0.50; PSR-17 factory start failure, LF.1224)**, **fullstack-bookmarks 4 (8/8, 5/7; delivered with cuts: AC-14, AC-3 deferred; 210 min; page double-escaped titles, LF.1223)**, **tasks-api 13 (10/10, 7/7; delivered with cuts: AC-1 deferred on a shared-store test; 143 min; LF.1208 and LF.1216 closed two defects)**, **notes-api-ruby 5 (9/9, 8/8; delivered, 60 min, mutation 1.0)**, **notes-api-csharp 13 (9/9, 8/8; delivered with cuts: AC-10/AC-11 deferred on suite tests that cannot pass; 85 min, mutation 0.90)**, **textkit-lib 7 (8/8, 7/7; delivered, 16 min, mutation 1.0; no unread-lines finding: LF.1221 verified)**, **textkit-lib 6 (8/8, 7/7; delivered, 20 min, mutation 1.0)**, **notes-api-java 9 (9/9, 8/8; delivered, 76 min, mutation 1.0), textkit-lib 5 (8/8, 7/7; delivered, 24 min, mutation 1.0)**,
+  **wordstats-cli 5 (8/8, 6/6; delivered, 47 min, mutation 0.67)**, **notes-api-go 10 (9/9, 8/8; delivered,
   60 min; flat layout again), notes-api-php 10 (9/9, 8/8; delivered, 91 min,
   mutation 0.70; Slim not-found loop again)**. Scored 11-21: **notes-api-go 9 (9/9, 8/8; delivered, 37 min; LF.1217 + LF.1218 live: flat package layout)**, **tasks-api 12 (10/10, 7/7; delivered, 104 min, mutation 0.83)**, **notes-api-go 8 (9/9,
   7/8; not deliverable: DR-7 left open; 33 min; LF.1217 chose the Go pack)**, **tasks-api 11 (10/10,

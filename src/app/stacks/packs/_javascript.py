@@ -360,6 +360,10 @@ export default defineConfig({
     // A fresh, empty data directory for every run of the suite.
     env: { PORT: String(port), DATA_DIR: `test-results/acceptance-data-${port}-${process.env.ACCEPTANCE_RUN}` },
     reuseExistingServer: false,
+    // Playwright prints a server's stderr and ignores its stdout unless told otherwise; Spring and .NET write their
+    // startup errors to stdout, so a product that did not start said nothing (measured on a Java run: three attempts).
+    stdout: 'pipe',
+    stderr: 'pipe',
     timeout: %(server_timeout)s,
   },
 });

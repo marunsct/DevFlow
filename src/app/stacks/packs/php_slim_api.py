@@ -321,6 +321,14 @@ SLIM_KNOWN_ERRORS = {
         "(`src/Name.php` for `App\\Name`). Use the mapped namespace (`namespace App;`) in every file under `src/`, "
         "or map the namespace you use and run `composer dump-autoload`."
     ),
+    # Measured on two PHP runs (64 and 81 repeats): every request, the readiness route first, died with this fatal error
+    # and the product never started; the fixers rewrote the tests and the container set-up, not the route or its middleware.
+    "HttpNotFoundException: Not found": (
+        "Slim found no route for the request, and with no error middleware that is an uncaught fatal error, not a 404. "
+        "Check that the route is registered (`$app->get('/health', ...)`) before the app runs, and that no base path is "
+        "set that the server's URL does not have (`php -S ... public/index.php` serves from the web root); and add "
+        "`$app->addErrorMiddleware(true, true, true)` after the routes, so an unmatched request answers 404."
+    ),
     "AppFactory::create(): Argument #1 ($responsefactory)": (
         "`Slim\\Factory\\AppFactory::create()` takes a response factory first, not a container: call "
         "`AppFactory::setContainer($container)` before `AppFactory::create()`, or pass the container as the "

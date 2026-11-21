@@ -322,6 +322,16 @@ GO_KNOWN_ERRORS = {
     ),
     # Measured on one Go run: `server_test.go` said `package server` and `store.go` said `package store` beside
     # `main.go`'s `package main`; the product did not start, and the first fix left the package lines as they were.
+    # Measured on one Go run (174 repeats of three names): `undefined: json`, `undefined: strings`, `undefined: strconv` in
+    # files that used a standard package they never imported; the product did not build and each fix round left the
+    # import block as it was.
+    "undefined: ": (
+        "Go reports a name it cannot find. If it is a standard package used as `json.Marshal`, `strings.Split` or "
+        "`strconv.Atoi`, the file's import block lacks it (`encoding/json`, `strings`, `strconv`, `os`, `errors`, "
+        "`net/http`): add it to the file that uses it - every file imports what it uses, and an import is per file. "
+        "Otherwise the name is a function or variable no file of this package declares: declare it, or call the one "
+        "that exists."
+    ),
     "found packages": (
         "A Go folder holds one package: every `.go` file in it declares the same `package` line (a test file may add "
         "`_test` to it). A file declaring another name belongs in its own subfolder, imported as the `module` path plus "

@@ -5,9 +5,9 @@ the block below is written by `loop.sh state`. The map of all documents is `docs
 `docs/improvement-plan.md`; how the product works is `docs/PRODUCT.md`; how to run and test it is `docs/HANDOVER.md`;
 decisions in force are `docs/owner-decisions.md`; old information is found through `docs/ARCHIVE.md`.
 <!-- state:generated -->
-**As of:** 11-21 12:14 JST (written by `loop.sh state`). Harness 9926aacd committed; 9926aacd deployed.
-**Live, and stopped in the last day:** run-23b06eeb running at specialist_testing_2; run-bf96efa0 failed at failed
-**Last scored:** run-9119a2a4 notes-api-csharp 9/9 (completed, handoff 1.0; scored 11-21 12:14 JST); run-ae213a76 notes-api-php 9/9 (completed, mixed, 88 active min, handoff 1.0; scored 11-21 11:13 JST); run-bf96efa0 notes-api-java 2/9 (failed, mixed, 80 active min, handoff 0.429; scored 11-21 10:34 JST).
+**As of:** 11-21 12:44 JST (written by `loop.sh state`). Harness 4bcff497 committed; 9926aacd deployed (not the same).
+**Live, and stopped in the last day:** run-5ccf7bff running at scrum_master; run-bf96efa0 failed at failed
+**Last scored:** run-23b06eeb notes-api-java 9/9 (completed, handoff 1.0; scored 11-21 12:44 JST); run-9119a2a4 notes-api-csharp 9/9 (completed, mixed, 48 active min, handoff 1.0; scored 11-21 12:14 JST); run-ae213a76 notes-api-php 9/9 (completed, mixed, 88 active min, handoff 1.0; scored 11-21 11:13 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -26,8 +26,8 @@ runs only when the owner starts them. Everything under measurement: `docs/improv
 
 ## The last three runs (11-20, hidden / quality; local model)
 Earlier runs: `reports/status-board/`, git history of this file.
-- **Live:** notes-api-java container 8 (:1234, from 10:44; LF.1206 and LF.1207 deployed into it). LF.1205 and LF.1206 deployed (10:25 JST, b97d9f2).
-- Scored today: **notes-api-csharp 11 (9/9, 8/8; delivered, 48 min; one vacuous AC-18 test)**, **notes-api-php 8 (9/9, 8/8; delivered, 94 min, mutation 0.25; LF.1205)**, **notes-api-java 7 (2/9, 2/8; failed: start error hidden by Playwright ignoring stdout, then 500s; LF.1206)**, web-todo 3 and 4 (10/10, 6/6), Ruby 2 and 3 (9/9, 8/8; 64 and 56 min against 267 before), Java 3 (9/9, 8/8),
+- **Live:** tasks-api container 10 (:8888, from 12:18). LF.1205, LF.1206 and LF.1207 and LF.1206 deployed (10:25 JST, b97d9f2).
+- Scored today: **notes-api-java 8 (9/9, 8/8; delivered, 117 min; LF.1206+LF.1207 turned Java 7's failure into a delivery)**, **notes-api-csharp 11 (9/9, 8/8; delivered, 48 min; one vacuous AC-18 test)**, **notes-api-php 8 (9/9, 8/8; delivered, 94 min, mutation 0.25; LF.1205)**, **notes-api-java 7 (2/9, 2/8; failed: start error hidden by Playwright ignoring stdout, then 500s; LF.1206)**, web-todo 3 and 4 (10/10, 6/6), Ruby 2 and 3 (9/9, 8/8; 64 and 56 min against 267 before), Java 3 (9/9, 8/8),
   PHP 6 and 7 (9/9, 8/8; 42 and 78 min), C# 7 and 8 (9/9, 8/8), Java 4 (9/9, 8/8; 244 min, a start defect for three rounds), tasks-api 6 (10/10, 7/7; 110 min;
 not deliverable: one edge-probe 500 left), **textkit-lib 3 (8/8, 7/7; delivered, 14 min), notes-api-java 6 (9/9, 8/8; delivered, 94 min), wordstats-cli 3 (8/8, 6/6; delivered, 23 min, mutation score 1.0), notes-api-csharp 10 (9/9, 8/8; delivered, 92 min, 4 fixes reverted), notes-api-java 5 (9/9, 8/8; delivered, 178 min, identical calls 36%), fullstack-bookmarks-py 1 (8/8, 7/7; delivered, 90 min; fix-order arm 3), web-todo 5 (10/10, 6/6; not deliverable on a 347px sideways overflow at 360px; 82 min; fix-order arm 2), notes-api 2 (9/9, 8/8; delivered, 119 min, mutation score 0), ,
   fullstack-bookmarks 2 (8/8, 6/7; delivered, 107 min; fix-order arm 1), **web-todo-react 1 (9/10, 6/6; not deliverable, false acceptance: four criteria deferred, 364 min on :1234)**, web-todo-react 2 (10/10, 5/6; delivered, 73 min), ,

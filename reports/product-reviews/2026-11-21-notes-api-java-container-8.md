@@ -1,0 +1,8 @@
+# Product review: notes-api-java container 8 (run-23b06eeb-8f34-4944-99bd-0b241230f709)
+
+**Result (finished 12:41 JST, started 10:44 on :1234, about 117 minutes): delivered, hidden 9 of 9, quality 8 of 8, handoff 1.0.** Against Java 7 (2 of 9, failed) on the same brief and model, the difference is what the fixers could see. KPI regressions: redundant reads 0.22 (mean 0.13), one reply lost to length (mean 0.4), 14 defects left open (mean 6.4).
+
+- **What changed the outcome.** LF.1206 piped the product's stdout, so the Hibernate line "Unable to determine Dialect without JDBC metadata" reached the fixers (42 times). They still rewrote `pom.xml` and the controller for three rounds, until LF.1207 (deployed 12:04 into the run) named the two causes. The next fix, at 12:32, rewrote `Application.java` (the data-folder set-up) and the product started; every acceptance test then passed. A fix to the folder-creation code was reverted at 12:34 for breaking one unit test (`DataDirectoryInitializerTest`), and the sprint ended at 12:36 with only unit tests failing, "escalated to a person"; the final release was delivered.
+- **Cost.** About 110 minutes of the 117 went on the start failure: five sprint attempts, 8 failing `NoteController` unit tests that went with it.
+- **Open:** the Maven drafting look-up found 0 of 4 (bare names it cannot ask; harmless, filed). The suite locked with open review findings (AC-13/AC-18 checks only POST, not PUT; AC-16). The cache is not reported on :1234, so token measures cannot be compared with :8888.
+- **How others do it:** harnesses that show the failed process's full output and a short list of known framework errors reach the cause in one round; the table is the cheap form, and it grows only with measured cases.

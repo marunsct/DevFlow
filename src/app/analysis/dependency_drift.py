@@ -91,11 +91,17 @@ def _the_package_in(specifier: str) -> str | None:
     return None if name in _NODE_BUILTIN else name
 
 
+#: The harness's own scratch files for a command's inline code (`tmp-inline-<hash>.py`): never the product's. Measured on
+#: two lessons' evidence: the check reported `textkit` (the product's own package) and `glob` as imports no manifest
+#: declares, from those files, and a lesson was proposed from the finding.
+_THE_HARNESS_S_SCRATCH = re.compile(r"^tmp-inline-[0-9a-f]{8}\.\w+$")
+
+
 def _javascript_imports(project: Path) -> dict[str, str]:
     """package -> an importing file, relative to the project."""
     imported: dict[str, str] = {}
     for script in files_under(project, _not_the_product()):
-        if script.suffix not in _A_SCRIPT or "node_modules" in script.parts:
+        if script.suffix not in _A_SCRIPT or "node_modules" in script.parts or _THE_HARNESS_S_SCRATCH.match(script.name):
             continue
         try:
             source = script.read_text(encoding="utf-8", errors="replace")
@@ -128,7 +134,7 @@ def _python_imports(project: Path) -> dict[str, str]:
     """top-level module -> an importing file, relative to the project."""
     imported: dict[str, str] = {}
     for script in files_under(project, _not_the_product()):
-        if script.suffix != ".py":
+        if script.suffix != ".py" or _THE_HARNESS_S_SCRATCH.match(script.name):
             continue
         try:
             source = script.read_text(encoding="utf-8", errors="replace")

@@ -220,8 +220,23 @@ public class ItemsTests : IClassFixture<WebApplicationFactory<Program>>
 }
 """
 
+#: Errors a C# service is known to raise, by a phrase of the compiler's message, and their cause
+#: (`app.stacks.known_errors`). Measured on two runs (C# 13 and 14): the entry file's top-level statements failed to
+#: compile on a rule of local functions, and the fixers rewrote the file for rounds without naming it.
+CSHARP_KNOWN_ERRORS = {
+    "The modifier 'public' is not valid for this item": (
+        "In `Program.cs`'s top-level statements a local function or variable takes no access modifier (`public`, "
+        "`private`, `internal`): write it plain, or move it into a `static class` declared after the statements."
+    ),
+    "A static local function cannot contain a reference to": (
+        "A `static` local function cannot read the enclosing code's local variables: pass the value in as a parameter, "
+        "or drop `static` from the function."
+    ),
+}
+
 PACK = service_pack(
     golden_example={"src/App/Program.cs": GOLDEN_PROGRAM, "tests/UnitTests/ItemsTests.cs": GOLDEN_TEST},
+    known_errors=CSHARP_KNOWN_ERRORS,
     sandbox_image=sandbox.DOTNET,
     required_signatures=APP_SDK,
     name="csharp-aspnet-api",

@@ -5,9 +5,9 @@ the block below is written by `loop.sh state`. The map of all documents is `docs
 `docs/improvement-plan.md`; how the product works is `docs/PRODUCT.md`; how to run and test it is `docs/HANDOVER.md`;
 decisions in force are `docs/owner-decisions.md`; old information is found through `docs/ARCHIVE.md`.
 <!-- state:generated -->
-**As of:** 11-22 10:53 JST (written by `loop.sh state`). Harness 38f48fc1 committed; 38f48fc1 deployed.
-**Live, and stopped in the last day:** run-3c67ea98 running at technical_lead; run-f60ad0cf failed at failed
-**Last scored:** run-908fa27d fullstack-bookmarks 8/8 (completed, handoff 1.0; scored 11-22 10:53 JST); run-74682e78 notes-api-go 9/9 (completed, 75 active min, handoff 1.0; scored 11-22 10:03 JST); run-98fd2ab6 notes-api-php 9/9 (completed, mixed, 66 active min, handoff 1.0; scored 11-22 08:43 JST).
+**As of:** 11-22 12:03 JST (written by `loop.sh state`). Harness d397f831 committed; 38f48fc1 deployed (not the same).
+**Live, and stopped in the last day:** run-3c67ea98 running at milestone_review; run-f60ad0cf failed at failed
+**Last scored:** run-dcad5c17 web-todo-react 10/10 (completed, handoff 1.0; scored 11-22 12:03 JST); run-908fa27d fullstack-bookmarks 8/8 (completed, mixed, 146 active min, handoff 1.0; scored 11-22 10:53 JST); run-74682e78 notes-api-go 9/9 (completed, 75 active min, handoff 1.0; scored 11-22 10:03 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -27,7 +27,8 @@ runs only when the owner starts them. Everything under measurement: `docs/improv
 ## The last three runs (11-20, hidden / quality; local model)
 Earlier runs: `reports/status-board/`, git history of this file.
 - **Live:** notes-api-java container 10 (:1234, from 10:05). LF.1205-LF.1225 (Go flat layout held 3 runs: Go 9, 10, 11; LF.1223 verified on bookmarks 5) (the library finding follow-up verified on textkit-lib 7) and LF.1206 deployed (10:25 JST, b97d9f2).
-- Scored 2026-11-22: **fullstack-bookmarks 5 (8/8, 6/7; delivered, 147 min; LF.1223 fixed the typed-markup quality test)**, **notes-api-go 11 (9/9, 6/8; delivered with cuts: AC-16 an aggregate criterion deferred; 73 min, mutation 0.80)**, **notes-api-php 11 (9/9, 8/8; delivered, 70 min, mutation 0.50; PSR-17 factory start failure, LF.1224)**, **fullstack-bookmarks 4 (8/8, 5/7; delivered with cuts: AC-14, AC-3 deferred; 210 min; page double-escaped titles, LF.1223)**, **tasks-api 13 (10/10, 7/7; delivered with cuts: AC-1 deferred on a shared-store test; 143 min; LF.1208 and LF.1216 closed two defects)**, **notes-api-ruby 5 (9/9, 8/8; delivered, 60 min, mutation 1.0)**, **notes-api-csharp 13 (9/9, 8/8; delivered with cuts: AC-10/AC-11 deferred on suite tests that cannot pass; 85 min, mutation 0.90)**, **textkit-lib 7 (8/8, 7/7; delivered, 16 min,
+- Scored 2026-11-22: **web-todo-react 4 (10/10, 6/6; delivered, 63 min, mutation 0.33; one own unit test shipped failing)**, **fullstack-bookmarks 5 (8/8, 6/7; delivered, 147 min; LF.1223 fixed the typed-markup quality test)**, **notes-api-go 11 (9/9, 6/8; delivered with cuts: AC-16 an aggregate criterion deferred; 73 min, mutation 0.80)**, **notes-api-php 11 (9/9, 8/8; delivered, 70 min, mutation 0.50; PSR-17 factory start failure, LF.1224)**, **fullstack-bookmarks 4 (8/8, 5/7; delivered with cuts: AC-14, AC-3 deferred; 210 min; page double-escaped titles, LF.1223)**, **tasks-api 13 (10/10, 7/7; delivered with cuts: AC-1 deferred on a shared-store test; 143 min; LF.1208 and LF.1216 closed two defects)**, **notes-api-ruby 5 (9/9, 8/8; delivered, 60 min, mutation 1.0)**, **notes-api-csharp 13 (9/9, 8/8; delivered with cuts: AC-10/AC-11 deferred on suite tests that cannot pass; 85 min,
+  mutation 0.90)**, **textkit-lib 7 (8/8, 7/7; delivered, 16 min,
   mutation 1.0; no unread-lines finding: LF.1221 verified)**, **textkit-lib 6 (8/8, 7/7; delivered, 20 min, mutation 1.0)**,
   **notes-api-java 9 (9/9, 8/8; delivered, 76 min, mutation 1.0), textkit-lib 5 (8/8, 7/7; delivered, 24 min, mutation 1.0)**,
   **wordstats-cli 5 (8/8, 6/6; delivered, 47 min, mutation 0.67)**, **notes-api-go 10 (9/9, 8/8; delivered,

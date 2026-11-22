@@ -5,9 +5,9 @@ the block below is written by `loop.sh state`. The map of all documents is `docs
 `docs/improvement-plan.md`; how the product works is `docs/PRODUCT.md`; how to run and test it is `docs/HANDOVER.md`;
 decisions in force are `docs/owner-decisions.md`; old information is found through `docs/ARCHIVE.md`.
 <!-- state:generated -->
-**As of:** 11-22 12:13 JST (written by `loop.sh state`). Harness e36323f5 committed; 38f48fc1 deployed (not the same).
-**Live, and stopped in the last day:** run-edf4a423 running at principal_architect; run-f60ad0cf failed at failed
-**Last scored:** run-3c67ea98 notes-api-java 9/9 (completed, handoff 1.0; scored 11-22 12:13 JST); run-dcad5c17 web-todo-react 10/10 (completed, 62 active min, handoff 1.0; scored 11-22 12:03 JST); run-908fa27d fullstack-bookmarks 8/8 (completed, mixed, 146 active min, handoff 1.0; scored 11-22 10:53 JST).
+**As of:** 11-23 08:07 JST (written by `loop.sh state`). Harness ccb5520f committed; fff67dd6 deployed (not the same).
+**Live, and stopped in the last day:** run-418ca472 running at defect_fix_1_3; run-8f0be29e running at defect_fix_2_1
+**Last scored:** run-2a421e80 wordstats-cli 8/8 (completed, handoff 1.0; scored 11-23 08:07 JST); run-edf4a423 notes-api-csharp 9/9 (completed, mixed, 89 active min, handoff 1.0; scored 11-23 08:04 JST); run-3c67ea98 notes-api-java 9/9 (completed, mixed, 111 active min, handoff 1.0; scored 11-22 12:13 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -26,8 +26,9 @@ runs only when the owner starts them. Everything under measurement: `docs/improv
 
 ## The last three runs (11-20, hidden / quality; local model)
 Earlier runs: `reports/status-board/`, git history of this file.
-- **Live:** notes-api-csharp container 14 (:8888, from 12:08). LF.1205-LF.1225 (Go flat layout held 3 runs: Go 9, 10, 11; LF.1223 verified on bookmarks 5) (the library finding follow-up verified on textkit-lib 7) and LF.1206 deployed (10:25 JST, b97d9f2).
-- Scored 2026-11-22: **notes-api-java 10 (9/9, 8/8; delivered, 123 min, mutation 0.63; file-store data-folder start cause cleared by the fixers with LF.1206)**, **web-todo-react 4 (10/10, 6/6; delivered, 63 min, mutation 0.33; one own unit test shipped failing)**, **fullstack-bookmarks 5 (8/8, 6/7; delivered, 147 min; LF.1223 fixed the typed-markup quality test)**, **notes-api-go 11 (9/9, 6/8; delivered with cuts: AC-16 an aggregate criterion deferred; 73 min, mutation 0.80)**, **notes-api-php 11 (9/9, 8/8; delivered, 70 min, mutation 0.50; PSR-17 factory start failure, LF.1224)**, **fullstack-bookmarks 4 (8/8, 5/7; delivered with cuts: AC-14, AC-3 deferred; 210 min; page double-escaped titles, LF.1223)**, **tasks-api 13 (10/10, 7/7; delivered with cuts: AC-1 deferred on a shared-store test; 143 min; LF.1208 and LF.1216 closed two defects)**, **notes-api-ruby 5 (9/9, 8/8; delivered,
+- **Live (11-23 08:03 JST):** two runs I did not start (run-418ca472, run-8f0be29e; diagnostics began 11-22 23:51 and 11-23 00:20 JST), left alone as the owner's. LF.1205-LF.1226 deployed; LF.1227 (aggregate criteria) committed, held for a gap between live runs (Go flat layout held 3 runs: Go 9, 10, 11; LF.1223 verified on bookmarks 5) (the library finding follow-up verified on textkit-lib 7) and LF.1206 deployed (10:25 JST, b97d9f2).
+- Scored 2026-11-22: **notes-api-csharp 14 (9/9, 8/8; delivered, mutation 0.42, redundant reads 55%), wordstats-cli 6 (8/8, 6/6; delivered, mutation 0.80, tool failures 14.5%)**, **notes-api-java 10 (9/9, 8/8; delivered, 123 min, mutation 0.63; file-store data-folder start cause cleared by the fixers with LF.1206)**, **web-todo-react 4 (10/10, 6/6; delivered, 63 min, mutation 0.33; one own unit test shipped failing)**, **fullstack-bookmarks 5 (8/8, 6/7; delivered, 147 min; LF.1223 fixed the typed-markup quality test)**, **notes-api-go 11 (9/9, 6/8; delivered with cuts: AC-16 an aggregate criterion deferred; 73 min, mutation 0.80)**, **notes-api-php 11 (9/9, 8/8; delivered, 70 min, mutation 0.50; PSR-17 factory start failure, LF.1224)**, **fullstack-bookmarks 4 (8/8, 5/7; delivered with cuts: AC-14, AC-3 deferred; 210 min; page double-escaped titles, LF.1223)**, **tasks-api 13 (10/10,
+  7/7; delivered with cuts: AC-1 deferred on a shared-store test; 143 min; LF.1208 and LF.1216 closed two defects)**, **notes-api-ruby 5 (9/9, 8/8; delivered,
   60 min, mutation 1.0)**, **notes-api-csharp 13 (9/9, 8/8; delivered with cuts: AC-10/AC-11 deferred on suite tests that cannot pass; 85 min,
   mutation 0.90)**, **textkit-lib 7 (8/8, 7/7; delivered, 16 min,
   mutation 1.0; no unread-lines finding: LF.1221 verified)**, **textkit-lib 6 (8/8, 7/7; delivered, 20 min, mutation 1.0)**,

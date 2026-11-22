@@ -58,6 +58,20 @@ class Criterion:
     source: str  # "brief" | "intake"
 
 
+#: A criterion that only restates the others: "Every operation works as the interface says", "all above criteria pass".
+#: No test can carry it, so it is neither raised as failing nor deferred (measured on three runs: PHP 8, Go 11 and
+#: C# 14 had one, and it lowered the verdict to "delivered with cuts" for nothing). It names every or all of the others
+#: (operations, the above, the criteria, the requirements) and says they work or pass.
+_AN_AGGREGATE = re.compile(
+    r"\b(?:every|each|all)\b[^.]*\b(?:operations?|above|criteria|criterion|requirements?)\b[^.]*"
+    r"\b(?:works?|pass(?:es)?|satisf(?:y|ies)|met|correct(?:ly)?)\b", re.I)
+
+
+def is_an_aggregate(text: str) -> bool:
+    """Whether a criterion only says that all the others hold."""
+    return bool(_AN_AGGREGATE.search(str(text or "")))
+
+
 def _plain(text: str) -> str:
     text = _ANNOTATION.sub("", text)
     text = re.sub(r"\*\*|__|`", "", text)

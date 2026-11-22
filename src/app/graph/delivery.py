@@ -402,7 +402,13 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         gaps.append("No acceptance suite was locked; the milestone reviews were the only gate.")
     from app.acceptance.interface_contract import _its_criterion_passed
 
+    from app.acceptance import criteria as _criteria
+
+    texts = {c.id: c.text for c in suite.criteria(root)}
     for cid in sorted(deferred):
+        # A criterion that only says the others hold is no cut: nothing could have proven it on its own.
+        if _criteria.is_an_aggregate(texts.get(cid, "")):
+            continue
         # Deferred during the run, but its own locked tests ran and passed at release: proven after all. Measured: 29
         # runs shipped "deferred, unproven" criteria on a green locked suite, and 28 of them passed every hidden test.
         if _its_criterion_passed(root, cid):

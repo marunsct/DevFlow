@@ -1463,9 +1463,13 @@ def _failing_due(state: Any) -> tuple[list[dict[str, Any]], str]:
         return [], ""
     due = criteria_due(state) or []
     entries = {**(saved.get("criteria") or {}), **(saved.get("change_requests") or {})}
+    from app.acceptance import criteria as _criteria
+
     failing = [
         entries[item] for item in due
         if item in entries and entries[item].get("status") in {"failed", "untested"}
+        # A criterion that only says the others hold has no test to run: untested is its normal state.
+        and not (entries[item].get("status") == "untested" and _criteria.is_an_aggregate(entries[item].get("text") or ""))
     ]
     if not saved.get("ran") and due:
         failing = [entries[item] for item in due if item in entries] or failing

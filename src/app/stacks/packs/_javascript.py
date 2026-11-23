@@ -1836,6 +1836,171 @@ TEST_BUGS = (
 )
 
 
+#: A field read off nothing, in the runner's words, and the field: `Cannot read properties of null (reading 'token')`.
+_READ_OFF_NOTHING = re.compile(r"Cannot read propert(?:y|ies) of (?:null|undefined) \(reading '([^'\n]*)'\)")
+#: The line the runner points at in its code frame: `> 43 |     expect(typeof body.refresh_token).toBe('string');`.
+_THE_FAILING_LINE = re.compile(r"^\s*>\s*\d+\s*\|(.*)$", re.M)
+#: Where a test begins in a spec file, and its title.
+_A_SPEC_TEST = re.compile(r"""^[ \t]*(?:test|it)(?:\.\w+)?\(\s*(['"`])(.+?)\1""", re.M)
+#: The product's answer read as JSON.
+_AN_ANSWER = re.compile(r"""\.json\s*\(\s*\)""")
+#: The product's answer, or nothing when it is not OK: `res.ok() ? await res.json() : null`,
+#: `!res.ok() ? null : await res.json()`, `res.status() === 200 ? ... : undefined`, `res.json().catch(() => null)`.
+_AN_ANSWER_OR_NOTHING = re.compile(
+    r"""\b(?:ok|status)\b(?:\s*\(\s*\))?[^?;\n]{0,40}\?[^:;\n]{0,200}\.json\s*\(\s*\)[^:;\n]{0,40}:\s*(?:null|undefined)\b"""
+    r"""|\b(?:ok|status)\b(?:\s*\(\s*\))?[^?;\n]{0,40}\?\s*(?:null|undefined)\s*:[^;\n]{0,200}\.json\s*\(\s*\)"""
+    r"""|\.json\s*\(\s*\)\s*\.catch\s*\(\s*\(?\s*[\w$]*\s*\)?\s*=>\s*(?:null|undefined)\s*\)""")
+#: A helper that gives nothing when the product's answer is not OK: `if (!res.ok()) return null;`.
+_NOTHING_WHEN_NOT_OK = re.compile(
+    r"""\bif\s*\(\s*!\s*[\w$.]+\.ok\b(?:\s*\(\s*\))?\s*\)\s*\{?\s*return\b(?:\s*(?:null|undefined))?\s*[;}\n]"""
+    r"""|\bif\s*\(\s*[\w$.]+\.status\b(?:\s*\(\s*\))?\s*(?:!==?|<|>=?)\s*\d+\s*\)\s*\{?\s*return\b"""
+    r"""(?:\s*(?:null|undefined))?\s*[;}\n]""")
+#: An expression up to its statement's end; a ternary carried on to lines that begin with `?` or `:` stays whole.
+_AN_EXPRESSION = r"""([^;\n]{1,400}(?:\n[ \t]*[?:][^;\n]{0,400})*)"""
+_A_DESTRUCTURING = re.compile(r"""\b(?:const|let|var)\s*\{([^{}]*)\}\s*=\s*""" + _AN_EXPRESSION)
+_A_CALL_OF = re.compile(r"""^\s*(?:await\s+)?([A-Za-z_$][\w$]*)\s*\(""")
+_A_DECLARED_NAME = re.compile(r"""\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=|\b(?:const|let|var)\s*\{([^{}]*)\}\s*=""")
+#: An assertion on a response's status: `expect(res.status()).toBe(200)`, `expect(res.ok()).toBeTruthy()`,
+#: `await expect(res).toBeOK()`.
+_A_STATUS_ASSERTED = re.compile(
+    r"""\bexpect\s*\(\s*([A-Za-z_$][\w$]*)\s*\.\s*(?:status|ok|statusCode)\b|\bexpect\s*\([^;\n]*\)\s*\.\s*toBeOK\s*\(""")
+_NOT_A_VALUE = frozenset({"await", "typeof", "return", "new", "this", "expect", "JSON", "Object", "Array", "String"})
+
+
+def _the_function(text: str, name: str) -> str:
+    """The text of the function `name` the file defines, from its name to its closing brace; "" when none."""
+    start = re.search(
+        rf"""\bfunction\s+{re.escape(name)}\s*\(|\b(?:const|let|var)\s+{re.escape(name)}\s*=\s*(?:async\s*)?"""
+        r"""(?:function\b|\([^()]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)""", text)
+    if start is None:
+        return ""
+    opened = text.find("{", start.end())
+    if opened < 0:
+        return ""
+    depth = 0
+    for at in range(opened, min(len(text), opened + 6000)):
+        depth += {"{": 1, "}": -1}.get(text[at], 0)
+        if depth == 0:
+            return text[start.start():at + 1]
+    return ""
+
+
+def _the_key_for(name: str, pattern: str) -> str | None:
+    """The key a destructuring pattern's `{...}` takes `name` from (`body`, `body: name`); None when it binds none."""
+    for part in pattern.split(","):
+        key, _, alias = part.split("=", 1)[0].partition(":")
+        if (alias or key).strip() == name:
+            return key.strip()
+    return None
+
+
+def _an_answer_in(expression: str, text: str, key: str | None, depth: int) -> bool:
+    """Whether `expression` (or its field `key`) is the product's answer, or nothing when that answer is not OK."""
+    if _AN_ANSWER_OR_NOTHING.search(expression) or (key is None and _AN_ANSWER.search(expression)):
+        return True
+    called = _A_CALL_OF.match(expression)
+    helper = _the_function(text, called.group(1)) if called and depth < 2 else ""
+    if not helper or not _AN_ANSWER.search(helper):
+        return key is not None and _AN_ANSWER.search(expression) is not None
+    if key is not None:
+        given = re.search(rf"""(?<![\w$.]){re.escape(key)}\s*:\s*([^,{{}}\n]{{1,300}})""", helper)
+        if given is not None and _an_answer_in(given.group(1), text, None, depth + 1):
+            return True
+        return _given_by_the_product(key, helper, text, depth + 1)
+    if _NOTHING_WHEN_NOT_OK.search(helper):
+        return True
+    returned = [m.group(1) for m in re.finditer(r"""\breturn\s+""" + _AN_EXPRESSION, helper)]
+    return bool(returned) and all(
+        _an_answer_in(value, text, None, depth + 1) or (
+            re.fullmatch(r"\s*([A-Za-z_$][\w$]*)\s*", value) is not None
+            and _given_by_the_product(value.strip(), helper, text, depth + 1))
+        for value in returned)
+
+
+def _given_by_the_product(name: str, scope: str, text: str, depth: int = 0) -> bool:
+    """Whether `scope` gives `name` a value, and every value it gives it is the product's answer or nothing when that
+    answer is not OK - read off `.json()`, or from a function of the file (`text`) that gives that."""
+    given = False
+    for found in re.finditer(rf"""(?<![\w$.]){re.escape(name)}\s*=(?![=>])\s*""" + _AN_EXPRESSION, scope):
+        given = True
+        if not _an_answer_in(found.group(1), text, None, depth):
+            return False
+    for found in _A_DESTRUCTURING.finditer(scope):
+        key = _the_key_for(name, found.group(1))
+        if key is None:
+            continue
+        given = True
+        if not _an_answer_in(found.group(2), text, key, depth):
+            return False
+    return given
+
+
+def _the_spec_tests(text: str) -> list[tuple[int, str, str]]:
+    """(line, title, body) of each test of a spec file's code."""
+    starts = list(_A_SPEC_TEST.finditer(text))
+    return [(text.count("\n", 0, match.start()) + 1, match.group(2).strip(),
+             text[match.start():starts[index + 1].start() if index + 1 < len(starts) else len(text)])
+            for index, match in enumerate(starts)]
+
+
+def null_from_the_product(text: str, test_name: str, message: str) -> bool:
+    """Whether a test's "Cannot read properties of null (reading 'x')" read a field off the product's own answer.
+
+    `text` is the test's spec file, `message` what the runner said. A field read off a value the test took from the
+    product - `await res.json()`, or a helper of the file that gives null when the answer is not OK - fails so when
+    the product answers wrongly, which is the product's to fix, not the test's. Only when the line the runner points
+    at (else the test's whole body) reads the field off one value, and every value the test gives it is such an answer.
+    Measured on one run: a sign-in helper gave `body: response.ok() ? await response.json() : null`, the product's
+    sign-in answered not OK, and four passes of the suite's writers each fixed one test's TypeError while the product
+    was never sent to its fixers.
+    """
+    read = _READ_OFF_NOTHING.search(message or "")
+    if read is None:
+        return False
+    code = code_only(text)
+    body = next((b for _, title, b in _the_spec_tests(code) if title == str(test_name or "").strip()), "")
+    if not body:
+        return False
+    field = re.escape(read.group(1))
+    reads = re.compile(
+        r"""(?<![\w$.])([A-Za-z_$][\w$]*)(?:\s*\??\.\s*[A-Za-z_$][\w$]*|\s*\[[^\]\n]*\])*?\s*"""
+        rf"""(?:\.\s*{field}\b|\[\s*['"`]?{field}['"`]?\s*\])""")
+    frame = _THE_FAILING_LINE.search(message)
+    where = frame.group(1) if frame is not None else body
+    if frame is not None and where.strip() not in body:
+        return False  # The line it threw on is not the test's own: a helper's.
+    roots = {m.group(1) for m in reads.finditer(where)} - _NOT_A_VALUE
+    return len(roots) == 1 and _given_by_the_product(roots.pop(), body, code)
+
+
+def answers_read_unchecked(text: str) -> list[tuple[int, str]]:
+    """(line, title) of each test of a spec file that reads a field of the product's answer - off `.json()` or a
+    helper of the file that gives it, or nothing when it is not OK - without first asserting that answer's status.
+
+    Such a test hides a product that refused its request behind "Cannot read properties of null", so a repair of one
+    test only moves the same failure on to the next: measured on one run, four passes of the suite's writers.
+    """
+    code = code_only(text)
+    found = []
+    for line, title, body in _the_spec_tests(code):
+        names = set()
+        for declared in _A_DECLARED_NAME.finditer(body):
+            parts = [declared.group(1)] if declared.group(1) else declared.group(2).split(",")
+            for part in parts:
+                key, _, alias = part.split("=", 1)[0].partition(":")
+                if (alias or key).strip():
+                    names.add((alias or key).strip())
+        given = {name for name in names - _NOT_A_VALUE if _given_by_the_product(name, body, code)}
+        first = min((m.start() for name in given
+                     for m in re.finditer(rf"""(?<![\w$.]){re.escape(name)}\s*(?:\??\.\s*[A-Za-z_$]|\[)""", body)),
+                    default=None)
+        if first is None:
+            continue
+        if not any(m.start() < first and m.group(1) not in given for m in _A_STATUS_ASSERTED.finditer(body)):
+            found.append((line, title))
+    return found
+
+
 #: Errors a unit test run by `node --test` is known to raise, by a phrase of the message, and their cause
 #: (`app.stacks.known_errors`). Measured on two runs: unit tests written for Vitest's globals failed "describe is not
 #: defined" on the pack's `node:test` runner, and both fixers rewrote the manifest and a Vitest config - the test

@@ -1846,6 +1846,19 @@ def _source_bugs_by_suffix() -> dict[str, tuple[str, ...]]:
 
 
 _SOURCE_BUGS = _source_bugs_by_suffix()
+
+
+def _nothing_from_the_product_by_suffix() -> dict[str, tuple[Callable[[str, str, str], bool],
+                                                              Callable[[str], Sequence[tuple[int, str]]]]]:
+    """Per test-file suffix, (whether a field read off nothing was read off the product's answer, the tests of a file
+    that read the product's answer without asserting its status) - by the language's own reading of its tests."""
+    from app.stacks.packs import _javascript
+
+    readers = (_javascript.null_from_the_product, _javascript.answers_read_unchecked)
+    return {suffix: readers for suffix in (".js", ".mjs", ".cjs", ".ts", ".mts", ".tsx", ".jsx")}
+
+
+_NOTHING_FROM_THE_PRODUCT = _nothing_from_the_product_by_suffix()
 #: Where a test's body begins in a spec file: `test('name'`, `it("name"`.
 _A_TEST_STARTS = re.compile(r"""^\s*(?:test|it)(?:\.\w+)?\(\s*(['"`])(.+?)\1""", re.M)
 
@@ -1863,6 +1876,30 @@ def _the_tests_sources(repo_root: str | Path) -> dict[str, tuple[str, str]]:
     except Exception:  # noqa: BLE001 - the failure messages alone, as before
         return {}
     return found
+
+
+def _the_tests_files(repo_root: str | Path) -> dict[str, Path]:
+    """The file each acceptance test is written in, by its name; {} when it cannot be read."""
+    found: dict[str, Path] = {}
+    try:
+        for path in suite_files(repo_root):
+            for match in _A_TEST_STARTS.finditer(path.read_text(encoding="utf-8", errors="replace")):
+                found.setdefault(match.group(2).strip(), path)
+    except Exception:  # noqa: BLE001 - the failure messages alone, as before
+        return {}
+    return found
+
+
+def _a_null_from_the_product(path: Path | None, name: str, said: str) -> bool:
+    """Whether test `name` in `path` failed reading a field off nothing the product's answer gave it; never raises."""
+    readers = _NOTHING_FROM_THE_PRODUCT.get(path.suffix.lower()) if path is not None else None
+    if readers is None:
+        return False
+    try:
+        return readers[0](path.read_text(encoding="utf-8", errors="replace"), name, said)
+    except Exception:  # noqa: BLE001 - not read, not excused: the patterns judge it as before
+        logger.debug("Could not read where %s took what it read", name, exc_info=True)
+        return False
 
 
 #: A matcher handed a promise turned to text: the test compared the promise, not its value, and no product changes
@@ -1890,12 +1927,14 @@ def tests_that_broke_themselves(repo_root: str | Path, result: AcceptanceResult)
         return []
     patterns = [re.compile(pattern, re.I | re.M) for pattern in found[0].test_bugs]
     sources = _the_tests_sources(repo_root)
+    files = _the_tests_files(repo_root)
     broken = []
     for test in result.report.tests:
         if test.outcome != "failed":
             continue
         message = test.message or ""
-        body, suffix = sources.get(str(test.name or "").strip(), ("", ""))
+        name = str(test.name or "").strip()
+        body, suffix = sources.get(name, ("", ""))
         written = next((p for p in _SOURCE_BUGS.get(suffix, ()) if re.search(p, body)), None)
         if written is not None:
             line = next((l.strip() for l in body.splitlines() if re.search(written, l)), "")
@@ -1924,6 +1963,11 @@ def tests_that_broke_themselves(repo_root: str | Path, result: AcceptanceResult)
             )
             continue
         if _A_MATCHER_MET_NOTHING.search(said) or _THE_PRODUCT_ANSWERED_NOT_JSON.search(said):
+            continue
+        # A field read off nothing the product's answer gave - a helper's `ok() ? json() : null` on a refused request:
+        # the product's. Measured on one run: a refused sign-in read as four tests' own code took four passes of the
+        # suite's writers, one test each, and the product's sign-in never reached a fixer.
+        if _a_null_from_the_product(files.get(name), name, said):
             continue
         if any(pattern.search(said) for pattern in patterns):
             first = next((line.strip() for line in said.splitlines() if line.strip()), "")
@@ -3326,6 +3370,50 @@ def items_found_again_after_an_action(repo_root: str | Path) -> list[str]:
                 "text - and the locator then matches nothing. Find the item again by a stable role and name, by a "
                 f"test id or by its position, or hold it by something the action leaves in place. {ADVICE_ONLY}"
             )
+    return advice[:6]
+
+
+def answers_read_without_their_status(repo_root: str | Path) -> list[str]:
+    """For each suite file where the last measurement's failure was a field read off nothing the product's answer gave
+    (see `tests_that_broke_themselves`), one piece of advice naming every test of the file that reads the product's
+    answer without first asserting its status. Advice for the QA lead and a dispute; never one of
+    `tests_that_cannot_pass`.
+
+    The failure is the product's, so it reopens nothing; but those tests hide a refused request behind "Cannot read
+    properties of null", and repaired one at a time each repair moves the same failure on to the next test - measured
+    on one run, four passes of the suite's writers, one test each. Named together, one repair of the file covers all.
+    """
+    saved = last_result(repo_root)
+    failed = [(str(test.get("name") or "").strip(), str(test.get("message") or ""))
+              for group in ("criteria", "change_requests") for entry in (saved.get(group) or {}).values()
+              for test in (entry.get("tests") or []) if test.get("outcome") == "failed"]
+    if not failed:
+        return []
+    files = _the_tests_files(repo_root)
+    root = Path(repo_root)
+    advice = []
+    for path in sorted({files[name] for name, _ in failed if name in files}):
+        readers = _NOTHING_FROM_THE_PRODUCT.get(path.suffix.lower())
+        if readers is None:
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        here = [(name, message.split(_PAGE_MARK, 1)[0].split(_SERVICE_ERRORS_MARK, 1)[0])
+                for name, message in failed if files.get(name) == path]
+        if not any(readers[0](text, name, said) for name, said in here):
+            continue
+        unchecked = list(readers[1](text))
+        if not unchecked:
+            continue
+        advice.append(
+            f"`{path.relative_to(root).as_posix()}` line(s) {', '.join(str(line) for line, _ in unchecked)} "
+            f"({', '.join(f'`{title}`' for _, title in unchecked[:12])}) read fields of the product's answer - through "
+            "`.json()` or a helper of the file that gives null when the answer is not OK - without first asserting "
+            "the answer's status. A test of this file failed that way because the product refused its request: that "
+            "is the product's to fix, not the test's. But each of these hides such a refusal behind \"Cannot read "
+            "properties of null\" instead of naming the status the product gave; if the suite is repaired for any "
+            "reason, assert the status (for example `expect(response.status()).toBe(200)`) before reading the body "
+            f"in every one of them, in one repair of the file. {ADVICE_ONLY}"
+        )
     return advice[:6]
 
 
@@ -6261,7 +6349,7 @@ def what_the_code_shows_of(repo_root: str | Path, names: Sequence[str]) -> list[
 
 #: The checks whose finding is advice: what each reads in a test may explain its failure, and a product can still pass
 #: it. The QA lead and a dispute are told it; nothing is reopened for it alone.
-_ADVICE = (items_found_again_after_an_action,)
+_ADVICE = (items_found_again_after_an_action, answers_read_without_their_status)
 
 
 def advice_about_the_suite(repo_root: str | Path) -> list[str]:

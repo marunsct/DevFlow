@@ -115,6 +115,7 @@ SWITCHES: dict[str, str] = {
     "FIX_ORDER_CRITERIA_FIRST": "app.graph.order_of_fixes",
     "SUMMARISE_LATER_WITH_HEADROOM": "app.agents.summarise_later",
     "REPLY_ROOM_SIZED_PER_ROLE": "app.agents.reply_room",
+    "LONG_REASONING_BEFORE_A_READ": "app.agents.deliberated_reads:long_reasoning_switch",
     "EQUIVALENT_MUTANTS_REMEMBERED": "app.acceptance.mutation_equivalents",
     "REVIEWS_WITHOUT_REASONING": "app.agents.reviews_without_reasoning",
     "DISPUTE_QUOTES_THE_CRITERION": "app.agents.suite_dispute:criterion_quoted_switch",

@@ -1620,10 +1620,18 @@ def _thinking_is_off_here(
     the count never reached two. Measured on one run: a lead lost five
     20,000-token replies to reasoning in 23 minutes of one visit, thinking
     coming back on after each.
+
+    Also the reply right after one that reasoned at length and then only read, behind
+    `LONG_REASONING_BEFORE_A_READ` (`app.agents.deliberated_reads`): such a reply is not lost, so no rule above
+    reaches it.
     """
+    from app.agents.deliberated_reads import the_last_reply_deliberated_over_a_read
+
     return _the_last_reply_was_all_reasoning(messages) or (
         max(lost_before, _replies_that_were_all_reasoning(messages)) >= LOST_REPLIES_BEFORE_THINKING_STAYS_OFF
-    ) or _a_fix_stage_s_salvaged_replies_turn_thinking_off(messages, lost_before, salvaged_before, last_salvaged)
+    ) or _a_fix_stage_s_salvaged_replies_turn_thinking_off(
+        messages, lost_before, salvaged_before, last_salvaged
+    ) or the_last_reply_deliberated_over_a_read(messages) > 0
 
 
 def _the_transcript_stage() -> str:
@@ -2013,13 +2021,15 @@ def _without_reasoning_after_a_lost_reply(
     try:
         from app.agents.thinking import answering_without_reasoning
 
-        if not _thinking_is_off_here(
-            list(getattr(request, "messages", None) or []), stage_name, lost_before, salvaged_before, last_salvaged
-        ):
+        messages = list(getattr(request, "messages", None) or [])
+        if not _thinking_is_off_here(messages, stage_name, lost_before, salvaged_before, last_salvaged):
             return request
         quiet = answering_without_reasoning(getattr(request, "model", None))
         if not quiet:
             return request
+        from app.agents import deliberated_reads
+
+        deliberated_reads.note(messages, _the_transcript_stage() or stage_name)
         return request.override(
             model_settings={**(getattr(request, "model_settings", None) or {}), **quiet}
         )

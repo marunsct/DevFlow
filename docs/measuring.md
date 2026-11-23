@@ -55,6 +55,7 @@ Written by `loop.sh measuring` from 505 scored runs in the ledger. On and off co
 | `FIX_ORDER_CRITERIA_FIRST` | Efficiency | off | 2 | 2 | 45 | measured: hidden 1.00 on / 0.96 off; minutes 81.35 / 86.66 |
 | `FIX_STAGES_THAT_CLOSE_NOTHING` | Efficiency | on | 112 | 16 | 1 | not measured: needs 0 more on and 1 more off |
 | `HARNESS_FINDINGS_RECHECKED` | Efficiency | on | 112 | no signal | 1 | not measured: needs 0 more on and 1 more off |
+| `LONG_REASONING_BEFORE_A_READ` | Efficiency | on | 0 | 0 | 0 | not measured: needs 2 more on and 2 more off |
 | `MUTANT_CHECK_IN_THE_FIX_STAGE` | Efficiency | on | 112 | 28 | 1 | not measured: needs 0 more on and 1 more off |
 | `MUTATION_GAPS_BUNDLED` | Efficiency | off | 1 | 0 | 53 | not measured: needs 1 more on and 0 more off |
 | `NEAR_GREEN_REPAIR_TO_ROUND` | Efficiency | on | 112 | 0 | 1 | not measured: needs 0 more on and 1 more off |

@@ -181,7 +181,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
                    "HARNESS_FINDINGS_RECHECKED", "NEAR_GREEN_REPLANNED_ONCE", "STABLE_MEMORY_ORDER",
                    "NEAR_GREEN_REPAIR_TO_ROUND", "FIX_STAGES_THAT_CLOSE_NOTHING", "ONE_DESIGN_REVIEW",
                    "SPRINT_TIME_BUDGET", "MUTATION_GAPS_BUNDLED", "FIX_ORDER_CRITERIA_FIRST",
-                   "SUMMARISE_LATER_WITH_HEADROOM", "REPLY_ROOM_SIZED_PER_ROLE"),
+                   "SUMMARISE_LATER_WITH_HEADROOM", "REPLY_ROOM_SIZED_PER_ROLE", "LONG_REASONING_BEFORE_A_READ"),
     # What a stack's setup stage may write (docs/measuring.md M6): measured off and on before it is kept.
     "Setup scope": ("SETUP_SCOPE_GUARD",),
     # Which review findings may send a sprint back (docs/measuring.md M7).
@@ -240,6 +240,7 @@ EXPERIMENTS_ON: dict[str, str] = {
     "EDGE_PROBE": "deep review 11-18 (B1): built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
     "ONE_DESIGN_REVIEW": "owner 11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
     "SPRINT_TIME_BUDGET": "owner 11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
+    "LONG_REASONING_BEFORE_A_READ": "owner 11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
     "LEAN_TOOL_LISTS": "deep review 2026-11-18 (C5): five tools never or almost never called in about 3,500 offers each over 30 runs; on, and off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
     "SLICED_MEMORY": "deep review 2026-11-18 (C3): fixers averaged 164k characters a request and builders 269k, most of it project memory; on, and off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
     "LEAN_PROMPTS_FOR_STRONG_MODELS": "deep review 2026-11-18 (C7): acts only for a model the diagnosis measured strong, which the local models are not; on, and off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",

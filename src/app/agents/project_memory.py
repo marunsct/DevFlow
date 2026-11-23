@@ -364,6 +364,10 @@ FIXER_DOCUMENTS = ("docs/technical_specification.md", "docs/acceptance_criteria.
 #: it the request points at. The other plans - the milestones, the acceptance tests, the stack, the intake, reviews -
 #: are records of work done before it, named.
 BUILDER_ON_CODE_DOCUMENTS = (*FIXER_DOCUMENTS, "docs/sprint_plan.md")
+#: The stages that open on the product's code (`builds_on_code`): a builder, and a review of what the builders wrote.
+#: Measured on one run: the sprint's code review, after the testing stage's loop, opened on the plans whole and of the
+#: code only an `__init__` and the manifest; it read the four files under review seven times each over four summaries.
+_ON_CODE_STAGES = ("specialist_", "code_review_")
 #: The stages that set the project up: what they write is the scaffold, not the product's code.
 _SETUP_STAGES = ("stack_setup",)
 
@@ -425,7 +429,7 @@ def builds_on_code(repo_root: str | Path, stage: str) -> bool:
     the product only an empty `__init__`; the files its tests were for were named as left out. It read them, the
     conversation was summarised, it read them again: eleven summaries in fifty minutes. Never raises.
     """
-    if not str(stage or "").startswith("specialist_"):
+    if not str(stage or "").startswith(_ON_CODE_STAGES):
         return False
     try:
         from app.analysis.file_kinds import classify_file

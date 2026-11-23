@@ -55,7 +55,7 @@ def _sprint_plan() -> str:
     return "# Sprint Plan\n\n## Sprints\n\n" + body
 
 
-def _project(root, written: bool):
+def _project(root, written: bool, size: int = 5_000):
     """A product's workspace as the harness leaves it: the workflow's documents, and `written` the sprints' code."""
     (root / ".harness").mkdir()
     docs = root / "docs"
@@ -74,8 +74,8 @@ def _project(root, written: bool):
         file = root / path
         file.parent.mkdir(parents=True, exist_ok=True)
         # Each file a few kilobytes, as a product's modules are.
-        file.write_text(text + ("\n# " + WORDS) * (5_000 // len(WORDS)) if path.endswith(".py")
-                        else text + ("\n// " + WORDS) * (5_000 // len(WORDS)))
+        file.write_text(text + ("\n# " + WORDS) * (size // len(WORDS)) if path.endswith(".py")
+                        else text + ("\n// " + WORDS) * (size // len(WORDS)))
         authorship.record(root, path, author)
     return root
 
@@ -154,3 +154,13 @@ def test_a_builder_with_no_code_written_yet_keeps_the_documents(tmp_path, monkey
     memory = _opening_memory(root, "specialist_backend_1", monkeypatch)
 
     assert {"docs/sprint_plan.md", "docs/acceptance_tests.md"} <= _held_whole(memory)
+
+
+def test_a_review_of_the_sprint_s_code_holds_that_code_too(tmp_path, monkeypatch):
+    # Its modules larger, as a third sprint's are: beside the plans held whole, they no longer fit.
+    root = _project(tmp_path, written=True, size=6_500)
+
+    memory = _opening_memory(root, "code_review_0_0", monkeypatch)
+
+    assert set(WRITTEN_BY_THE_SPRINTS) <= _held_whole(memory)
+    assert not {"docs/milestone_plan.md", "docs/acceptance_tests.md"} & _held_whole(memory)

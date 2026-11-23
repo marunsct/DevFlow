@@ -74,6 +74,9 @@ class Service:
     check_families: frozenset[str] = frozenset()
     #: The service's app module the scaffold writes as a stub (`StackPack.entrypoints`).
     entry: str = ""
+    #: The service language's known errors and their causes (`app.stacks.known_errors`): a full-stack pack is its
+    #: service's language too. Measured on one run: the composed pack carried none, so no Python cause reached a fixer.
+    known_errors: dict[str, str] = field(default_factory=dict)
 
 
 # --- the page -------------------------------------------------------------------
@@ -573,6 +576,7 @@ CMD ["sh", "-c", "exec python -m uvicorn {{package}}.main:app --host \\"$HOST\\"
 """ % {"node": js.NODE_MAJOR, "python": _python.PYTHON_VERSION},
         ".dockerignore": _python.DOCKERIGNORE + "node_modules/\ndist/\n",
     },
+    known_errors=_python.PYTHON_KNOWN_ERRORS,
 )
 
 
@@ -752,6 +756,7 @@ def fullstack_pack(frontend: Frontend, service: Service) -> StackPack:
         guide=f"{frontend.guide}\n{service.guide}\nRun every unit test with `npm test`. {DATA_GUIDE}",
         data_store=DATA_GUIDE,
         entrypoints=tuple(e for e in (frontend.entry, service.entry) if e),
+        known_errors=dict(service.known_errors),
         wired_by_imports=True,
         acceptance_guide=ACCEPTANCE_GUIDE,
         stack={

@@ -183,3 +183,12 @@ PYTHON_KNOWN_ERRORS["python int too large to convert to sqlite integer"] = (
     "9223372036854775807 before it reaches the database, and answer the status the specification gives for a record "
     "that does not exist (usually 404) or for an invalid value."
 )
+
+#: Measured on one run: every fix of a full-stack product was reverted because the service no longer started -
+#: `(sqlite3.OperationalError) index ix_... already exists` on `CREATE INDEX` - for three rounds.
+PYTHON_KNOWN_ERRORS["operationalerror) index "] = (
+    "the same index is created twice: a column declared with `index=True` and an `Index(...)` of the same name in "
+    "`__table_args__` (or two models naming one index), or an index created by hand on a database file an earlier start "
+    "already made. Declare each index once - `index=True` or an `Index(...)`, not both - and create the tables with "
+    "`Base.metadata.create_all(engine)`, which skips what already exists."
+)

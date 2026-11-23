@@ -48,7 +48,9 @@ CEILINGS = {
     # acceptances of one brief, each a test that looked only for the mode's own part.
     # 5,750 since a read-only role is told where a needed change goes and what is worth reading (LF.967): it was told to
     # delegate with no tool for it, and that reading widely was its whole job.
-    "acceptance_reviewer": 5_750,
+    # 6,000 since a test picks out its own records by a marker each one carries whole (LF.1235): a locked test kept the
+    # records whose title held "Work <id>", one of its two never did, and it failed a right product for a sprint.
+    "acceptance_reviewer": 6_000,
 }
 # 4,300 for the same read-only wording (LF.967).
 OTHERWISE = 4_300

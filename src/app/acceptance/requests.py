@@ -61,6 +61,10 @@ TESTS_ASSUME_ONLY_WHAT_THEY_MADE = (
     # after the build, each cost a suite reopen and a repair.
     "And a test never reads the text of a file the harness keeps - its start script, its configuration: that "
     "text is not the product's to change. What such a file must do, the test shows on the running product.\n"
+    # Measured on one run: a test made "Work <id>" and "Work Two <id>", kept those whose title held "Work <id>", and
+    # expected two; the second never held it, and the test failed a right product through every round of fixes.
+    "- A test picks out its own records by one marker every one of them carries whole - the same unique value in each "
+    "of them, matched as it is - never by a piece of one record's name that its other records may not hold.\n"
     # Measured on two runs in a row, both arms of a measurement: a locked test expected 24 characters for a string of
     # 23 (or 25), counted by hand; each cost two fix rounds on a product that counted right.
     "- A count or length of text the test writes itself - its characters, lines or bytes - is worked out in the test "

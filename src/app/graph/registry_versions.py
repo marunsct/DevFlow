@@ -130,7 +130,21 @@ def named_packages(specification: Any, registry: str | None = None) -> list[str]
                 or name.lower() in {k.lower() for k in kept}):
             continue
         kept.append(name)
+    if registry in _A_NAME_THE_REGISTRY_KNOWS:
+        kept = [name for name in kept if _A_NAME_THE_REGISTRY_KNOWS[registry].fullmatch(name)]
     return kept[:MOST_PACKAGES]
+
+
+#: The only names some registries can answer for, by registry. Measured over three days of runs: Go was asked 80 names
+#: and found 6 (it was asked `net/http`, `database/sql`, `sqlite`: standard-library packages and bare words, where the
+#: proxy knows only module paths), and Maven 52 and found 19 (it was asked `spring-boot-starter-web` without its
+#: group). A name that cannot be a module path or `group:artifact` is not asked.
+_A_NAME_THE_REGISTRY_KNOWS = {
+    # A module path: a host with a dot first (`github.com/x/y`, `modernc.org/sqlite`, `gopkg.in/yaml.v3`).
+    "go": re.compile(r"[a-z0-9][a-z0-9.-]*\.[a-z]{2,}(?:/[A-Za-z0-9_.~-]+)+"),
+    # `group:artifact`, the group dotted (`org.xerial:sqlite-jdbc`).
+    "maven": re.compile(r"[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+:[A-Za-z0-9_.-]+"),
+}
 
 
 def section(root: str | Path, path: str, specification: Any, stack: Any = None) -> str:

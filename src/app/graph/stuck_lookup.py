@@ -103,8 +103,21 @@ def _the_error_line(defect: Any) -> str:
     text = f"{getattr(defect, 'actual_behavior', '') or ''}\n{getattr(defect, 'description', '')}"
     if printed := _what_the_server_printed(text):
         return printed
-    stated = the_errors_stated(text)
-    return _from_the_error_on(stated[-1]) if stated else ""
+    # The product's own error, never the harness's wording or the test runner's: measured over three days of runs, a
+    # third of the searches were "Requests at the edges of the interface contract ...", "A fix was tried and
+    # reverted ..." or Playwright's "Process from config.webServer was not able to start", which no one else wrote
+    # about. The last such line the defect states, cut to where its error begins; "" when it states none.
+    stated = [_from_the_error_on(line) for line in the_errors_stated(text)]
+    own = [line for line in stated if not _NOT_THE_PRODUCT_S_WORDS.search(line)]
+    return own[-1] if own else ""
+
+
+#: Wording that is the harness's or the test runner's, not an error the product raised: a search for it finds nothing.
+_NOT_THE_PRODUCT_S_WORDS = re.compile(
+    r"config\.webServer|Requests at the edges of the interface contract|A fix was tried and reverted"
+    r"|The product does not start|The product did not start|the acceptance suite says|Distinct causes, most failing first"
+    r"|The unit tests fail\b|The server fails on a request it should|^\s*-\s*\[|^\s*Expected\b|^\s*assert\b",
+    re.I)
 
 
 #: Where an error proper begins in a stated line: a dotted exception or error name and its colon

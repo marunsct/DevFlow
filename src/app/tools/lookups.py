@@ -100,7 +100,17 @@ def cleaned(error_line: str, private_words: list[str] | tuple[str, ...] = ()) ->
         text = pattern.sub(" ", text)
     for word in sorted({w for w in private_words if w and len(w) >= 3}, key=len, reverse=True):
         text = re.sub(re.escape(word), " ", text, flags=re.I)
+    # What the removals left: an emptied quote (`' '`) and the punctuation that stood beside it. Measured: queries went
+    # out as "path to : ' ' does not exist" and "at id ` ` answered 500", which match nothing anyone wrote.
+    text = _AN_EMPTIED_QUOTE.sub(" ", text)
+    text = _A_LONE_MARK.sub(" ", text)
     return " ".join(text.split())[:MOST_QUERY].strip()
+
+
+#: A pair of quotes with nothing left between them.
+_AN_EMPTIED_QUOTE = re.compile(r"(['\"`])\s*\1")
+#: A comma, colon or semicolon standing alone between spaces, or two of them in a row.
+_A_LONE_MARK = re.compile(r"(?<=\s)[,:;](?=\s|$)|(?<=[,:;])\s*[,:;]")
 
 
 # --- the sources ----------------------------------------------------------------------------------------------------

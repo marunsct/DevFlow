@@ -394,7 +394,7 @@ def edge_errors(repo_root: str | Path, *, runner: Any = None) -> list[tuple[dict
         from app.stacks import contract
 
         root = Path(repo_root)
-        bodies = list(suite._state(root).get("interface_contract_bodies") or [])  # noqa: SLF001
+        bodies = ic.bodies_for_the_probes(root)
         lines = ic.the_locked_contract(root)[:ic.MOST_CHECKS]
         cases = edge_cases(lines, bodies)
         found = contract.the_pack(root)

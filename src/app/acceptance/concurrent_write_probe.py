@@ -331,8 +331,7 @@ def concurrent_write_errors(repo_root: str | Path, *, runner: Any = None) -> lis
         from app.stacks import contract
 
         root = Path(repo_root)
-        state = suite._state(root)  # noqa: SLF001 - one state file for the suite and its contract
-        bodies = list(state.get("interface_contract_bodies") or [])
+        bodies = ic.bodies_for_the_probes(root)
         lines = ic.the_locked_contract(root)[:ic.MOST_CHECKS]
         asked, unchecked = concurrent_write_checks(lines)
         found = contract.the_pack(root)

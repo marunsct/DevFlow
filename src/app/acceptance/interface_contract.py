@@ -32,6 +32,7 @@ import logging
 import re
 import shutil
 from dataclasses import asdict, dataclass
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -293,24 +294,31 @@ NOT_THIS_WRITE_S_BODY = "the write refused the example body as it is, so it does
 MADE_NO_RECORD = "the contract's write line made no record to probe with"
 
 
-def example_bodies(specification: Any) -> list[dict[str, Any]]:
-    """The literal JSON examples the specification's request and data shapes give, those about a request first; [] if none."""
+def example_bodies(specification: Any, criteria: Any = ()) -> list[dict[str, Any]]:
+    """The literal JSON examples the specification's request and data shapes give, those about a request first, then
+    the request bodies the product's criteria (`criteria`, their texts) write after a write; [] if none.
+
+    Measured on one run: the brief's criteria wrote `POST /signup and POST /signin with {"username": ...,
+    "password": ...}` and `POST /items with {"title": ...}`, the specification did not repeat them, and every body
+    probe signed in as no one and was answered 401 at the writes behind the sign-in.
+    """
     decoder = json.JSONDecoder()
     # A body written right after the write that sends it - `PUT /notes/{id} with {"title": ...}` - is a request body
     # whatever section holds it. Measured on one run: the contracts held only error bodies (`{"detail": ...}`), the
     # request bodies stood in the test cases, and the emptied-field probe found no title to empty; the product
     # accepted an update that emptied it and a hidden test failed.
     sent: list[dict[str, Any]] = []
-    for field in ("api_and_event_contracts", "data_contracts", "test_cases", "function_contracts", "acceptance_criteria"):
-        for entry in getattr(specification, field, None) or ():
-            text = str(entry)
-            for match in _A_WRITE_WITH_ITS_BODY.finditer(text):
-                try:
-                    value, _ = decoder.raw_decode(text[match.end():])
-                except ValueError:
-                    value = _the_fields_written(text[match.end():])
-                if isinstance(value, dict) and value and value not in sent:
-                    sent.append(value)
+    texts = [str(entry) for field in ("api_and_event_contracts", "data_contracts", "test_cases", "function_contracts",
+                                      "acceptance_criteria")
+             for entry in getattr(specification, field, None) or ()]
+    for text in [*texts, *(str(text) for text in criteria or ())]:
+        for match in _A_WRITE_WITH_ITS_BODY.finditer(text):
+            try:
+                value, _ = decoder.raw_decode(text[match.end():])
+            except ValueError:
+                value = _the_fields_written(text[match.end():])
+            if isinstance(value, dict) and value and value not in sent:
+                sent.append(value)
     about_a_request: list[dict[str, Any]] = list(sent)
     others: list[dict[str, Any]] = []
     for field in ("data_contracts", "api_and_event_contracts"):
@@ -327,11 +335,41 @@ def example_bodies(specification: Any) -> list[dict[str, Any]]:
                     kept = about_a_request if re.search(r"request|body|input|create", text, re.I) else others
                     if value not in kept:
                         kept.append(value)
-    return [*about_a_request, *others][:MOST_EXAMPLE_BODIES]
+    return _within_the_cap([*about_a_request, *others])
 
 
 #: Tried in turn for one record: each refused try is one more request at a check that takes seconds.
 MOST_EXAMPLE_BODIES = 4
+
+
+def _carries_a_secret(body: Any) -> bool:
+    return isinstance(body, dict) and any(key in body for key in _SECRETS)
+
+
+def _within_the_cap(bodies: list[Any]) -> list[Any]:
+    """`bodies` in their order, at most `MOST_EXAMPLE_BODIES` of them that carry no secret and the first that carries
+    one wherever it stands: the probes sign in with it, so the cap never drops it, and it takes no record body's place."""
+    secret = next((body for body in bodies if _carries_a_secret(body)), None)
+    plain = [body for body in bodies if not _carries_a_secret(body)][:MOST_EXAMPLE_BODIES]
+    return [body for body in bodies if body is secret or any(body is kept for kept in plain)]
+
+
+def bodies_for_the_probes(repo_root: str | Path) -> list[Any]:
+    """The example bodies the body probes send and sign in with: those kept at the lock, and those the product's
+    criteria write now (a lock recorded before the criteria were read, or from a specification that did not repeat
+    them, still signs the probes in). Never raises."""
+    from app.acceptance import suite
+
+    try:
+        kept = list(suite._state(repo_root).get("interface_contract_bodies") or [])  # noqa: SLF001
+    except Exception:  # noqa: BLE001 - a probe with no bodies still runs
+        kept = []
+    try:
+        written = example_bodies(None, [c.text for c in suite.criteria(repo_root)])
+    except Exception:  # noqa: BLE001
+        logger.debug("Could not read the criteria's example bodies", exc_info=True)
+        written = []
+    return _within_the_cap([*kept, *(body for body in written if body not in kept)])
 
 #: One field of a body as prose writes it: `"title": ...`, `"title": "<string>"`, `"title": <string>`, `"done": true`.
 _A_WRITTEN_FIELD = re.compile(
@@ -483,7 +521,7 @@ def record_at_lock(repo_root: str | Path, lines: list[str] | tuple[str, ...], *,
     checks, unreadable = parse(lines)
     state = suite._state(repo_root)  # noqa: SLF001 - one state file for the suite and its contract
     state["interface_contract"] = [asdict(check) for check in checks]
-    state["interface_contract_bodies"] = example_bodies(specification)
+    state["interface_contract_bodies"] = example_bodies(specification, [c.text for c in suite.criteria(repo_root)])
     # Kept too, so the release names them rather than losing them at the lock.
     state["interface_contract_unreadable"] = list(unreadable)
     suite._save_state(repo_root, state)  # noqa: SLF001
@@ -620,13 +658,14 @@ def _a_bad_body_test(title: str, check: Check) -> str:
     )
 
 
-def playwright_bad_body_checks(checks: list[Check]) -> str:
+def playwright_bad_body_checks(checks: list[Check], bodies: list[Any] | None = None) -> str:
     """A Playwright spec with one bad-body test per check; numbered as `playwright_checks` numbers its own."""
     tests = [
         _a_bad_body_test(_js(f"{f'[{c.criterion}] ' if c.criterion else ''}contract {number}: {c.line}"), c)
         for number, c in enumerate(checks, start=1)
     ]
-    return _with_sign_in_js("import { test, expect } from '@playwright/test';\n\n" + "\n".join(tests), sign_in_plan(checks))
+    return _with_sign_in_js("import { test, expect } from '@playwright/test';\n\n" + "\n".join(tests),
+                            sign_in_plan(checks, bodies))
 
 
 #: A rule refusing a field when it is empty, as briefs and criteria say it: "A title that is missing or empty is
@@ -970,10 +1009,10 @@ def pytest_checks(checks: list[Check], bodies: list[Any] | None = None) -> str:
     return _pytest_module([_pytest_case(n, c) for n, c in enumerate(checks, start=1)], sign_in_plan(checks, bodies))
 
 
-def pytest_bad_body_checks(checks: list[Check]) -> str:
+def pytest_bad_body_checks(checks: list[Check], bodies: list[Any] | None = None) -> str:
     """A pytest module sending each check's call a body nothing can parse; any answer under 500 passes."""
     return _pytest_module([_pytest_case(n, c, rule="under_500", send=A_BODY_NOTHING_CAN_PARSE)
-                           for n, c in enumerate(checks, start=1)], sign_in_plan(checks))
+                           for n, c in enumerate(checks, start=1)], sign_in_plan(checks, bodies))
 
 
 def pytest_emptied_field_checks(checks: list[Check], bodies: list[Any] | None = None) -> str:
@@ -1240,7 +1279,7 @@ def server_errors(repo_root: str | Path, *, runner: Any = None) -> list[tuple[Ch
         # and asked last, so the coverage of the lines reads as it did.
         asked = [*web, *with_an_id_that_is_not_a_number(lines)]
         report = _the_probe_s_report(root / project_name, project_name, probe, asked, run,
-                                     bodies=list(suite._state(root).get("interface_contract_bodies") or []))  # noqa: SLF001
+                                     bodies=bodies_for_the_probes(root))
         # The lines' coverage only: the variants are not lines (measured: "asked 12, probed 18" once they were counted).
         of_the_lines = None if report is None or not report.found else SimpleNamespace(
             found=True, tests=[t for t in report.tests if _the_check_of(t, web) is not None])
@@ -1281,9 +1320,8 @@ def bad_body_errors(repo_root: str | Path, *, runner: Any = None) -> list[tuple[
         from app.stacks import contract
 
         root = Path(repo_root)
-        state = suite._state(root)  # noqa: SLF001 - one state file for the suite and its contract
-        asked, unchecked = bad_body_checks(the_locked_contract(root)[:MOST_CHECKS],
-                                           list(state.get("interface_contract_bodies") or []))
+        bodies = bodies_for_the_probes(root)
+        asked, unchecked = bad_body_checks(the_locked_contract(root)[:MOST_CHECKS], bodies)
         found = contract.the_pack(root)
         probe = PROBE_RUNNERS.get(found[0].probe_runner) if found else None
         if probe is None:
@@ -1293,7 +1331,10 @@ def bad_body_errors(repo_root: str | Path, *, runner: Any = None) -> list[tuple[
         if asked:
             project_name = str((found[1] or {}).get("project") or "")
             run = runner or suite._sandbox_runner(root)  # noqa: SLF001 - the suite's own runner
-            report = _the_probe_s_report(root / project_name, project_name, probe, asked, run, "bad_body_checks")
+            # Signed in with every example body, not only those a record-making write carries: a create on a contract
+            # with no update carries none, and was answered 401 before its body was read.
+            compiled = {**probe, "bad_body_checks": partial(probe["bad_body_checks"], bodies=bodies)}
+            report = _the_probe_s_report(root / project_name, project_name, compiled, asked, run, "bad_body_checks")
             if report is None or not report.found:
                 errors = None
                 unchecked += [f"{c.line} (the probe's runner wrote no report)" for c in asked]
@@ -1364,8 +1405,7 @@ def emptied_field_errors(repo_root: str | Path, *, runner: Any = None) -> list[t
 
         root = Path(repo_root)
         fields = fields_refused_when_empty([c.text for c in suite.criteria(root)])
-        state = suite._state(root)  # noqa: SLF001 - one state file for the suite and its contract
-        bodies = list(state.get("interface_contract_bodies") or [])
+        bodies = bodies_for_the_probes(root)
         from app.acceptance import probe_coverage
 
         lines = the_locked_contract(root)[:MOST_CHECKS]
@@ -1596,8 +1636,7 @@ def what_the_contract_checks_find(repo_root: str | Path, *, runner: Any = None) 
         probe = PROBE_RUNNERS.get(found[0].probe_runner) if found else None
         web = checkable(locked)
         if record_first_switch.enabled():
-            state = suite._state(root)  # noqa: SLF001 - one state file for the suite and its contract
-            web += with_a_record_made_first(locked, list(state.get("interface_contract_bodies") or []))
+            web += with_a_record_made_first(locked, bodies_for_the_probes(root))
         settled = {c.line for c in web}
         # A page line naming no role a probe can find, or a message shown only after an action: never failed at a
         # bare visit, named unchecked with its reason.
@@ -1617,7 +1656,7 @@ def what_the_contract_checks_find(repo_root: str | Path, *, runner: Any = None) 
             web = []
         report = _the_probe_s_report(
             project, project_name, probe, web, run,
-            bodies=list(suite._state(Path(repo_root)).get("interface_contract_bodies") or []),  # noqa: SLF001
+            bodies=bodies_for_the_probes(repo_root),
         ) if web else None
         failures, not_run = _the_commands_kept([c for c in locked if c.kind == "command"], root, project_name, run)
         unchecked += not_run

@@ -4553,7 +4553,32 @@ def _refuse_if_it_adds_errors(target: Path, relative_path: str, content: str, pr
         raise RepositoryToolError(
             f"Refusing to {'change' if editing else 'write'} '{relative_path}': it would add errors the "
             f"language service is sure of - {found}. Nothing was written. Send it again with those fixed."
+            f"{_how_to_name_what_is_not_defined(new) if editing else ''}"
         )
+
+
+_A_NAME_NOT_DEFINED = re.compile(
+    r"is not defined|cannot find name|undefined:\s|cannot find symbol|is not declared|undeclared name|"
+    r"uninitialized constant|undefined (?:variable|constant|name)",
+    re.IGNORECASE,
+)
+
+
+def _how_to_name_what_is_not_defined(new: list[dict[str, Any]]) -> str:
+    """Say how an edit that uses a name the file never brings in is fixed, since one edit cannot reach both places.
+
+    One run's database stage sent the same edit three times, each refused for
+    `"JSONB" is not defined`: the edit replaced a block in the middle of the
+    file, the import belongs at its top, and the refusal only said to send it
+    again fixed.
+    """
+    if not any(_A_NAME_NOT_DEFINED.search(str(f.get("message") or "")) for f in new):
+        return ""
+    return (
+        " A name this change uses is not imported or defined in the file. An edit changes one place, so first add "
+        "its import (or definition) beside the file's other imports in an edit of its own, then send this change "
+        "again unchanged."
+    )
 
 
 def _refuse_if_node_cannot_parse(

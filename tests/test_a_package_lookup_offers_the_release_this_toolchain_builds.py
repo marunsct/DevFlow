@@ -76,3 +76,34 @@ def test_a_newest_release_this_environment_builds_is_offered_as_it_was():
     found = pr.look_up("nuget", "serde", fetch=fetch)
 
     assert found["version"] == "1.0.200" and "newest_release" not in found
+
+
+def test_a_nuget_package_whose_newest_releases_all_need_a_newer_framework_is_offered_its_older_line():
+    """Measured on one run: EF Core Sqlite's six newest releases were 11.x and 10.x; 11.0.0 was offered and every
+    restore failed NU1202."""
+    versions = ["8.0.10", "8.0.11", "9.0.0", "9.0.1", "10.0.0", "10.0.1", "10.0.2", "10.0.3", "10.0.4", "11.0.0"]
+    pages = {"/microsoft.entityframeworkcore.sqlite/index.json": {"versions": versions}}
+    for v in versions:
+        major = v.split(".")[0]
+        pages[f"/{v}/microsoft.entityframeworkcore.sqlite.nuspec"] = _nuspec(f"net{major}.0")
+
+    found = pr.look_up("nuget", "Microsoft.EntityFrameworkCore.Sqlite", fetch=_fetch_from(pages))
+
+    assert found["version"] == "8.0.11"
+    assert found["newest_release"] == "11.0.0"
+
+
+
+def test_a_restore_that_fails_nu1202_reaches_the_fixer_with_its_cause(tmp_path):
+    from app.agents.specialists import ReportedDefect
+    from app.stacks import contract, pack_named
+    from app.stacks.known_errors import KNOWN_CAUSE, with_known_causes
+
+    contract.write(tmp_path, pack_named("csharp-aspnet-api"), "notes-api", "Notes")
+    said = ("error NU1202: Package Microsoft.EntityFrameworkCore.Sqlite 11.0.0 is not compatible with net8.0 "
+            "(.NETCoreApp,Version=v8.0).")
+    (defect,) = with_known_causes(tmp_path, [ReportedDefect(
+        description="The project's dependencies do not install", severity="blocking", reproduction_steps="dotnet build",
+        expected_behavior="it restores", actual_behavior=said, affected_files=[], owner="backend")])
+
+    assert KNOWN_CAUSE in defect.actual_behavior and "newest `8.x` release" in defect.actual_behavior

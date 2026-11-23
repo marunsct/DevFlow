@@ -281,6 +281,27 @@ def _a_framework_this_sdk_runs(framework: str, here: tuple[int, ...]) -> bool:
     return bool(major) and major[0] <= here[0]
 
 
+def _nuget_releases_to_read(stable: list[str]) -> list[str]:
+    """The releases whose frameworks are read, in turn: the newest few, then the newest of each older major line.
+
+    Measured on one run: `Microsoft.EntityFrameworkCore.Sqlite`'s six newest releases were 11.x and 10.x, all for a
+    newer .NET than the SDK's 8; none fitted, the newest (11.0.0) was offered, and every restore failed NU1202 while a
+    web lookup and two rewrites left it so. A platform package's major follows .NET's, so the release that fits is
+    the newest of an older line, which reading only the newest few never reaches.
+    """
+    newest_first = list(reversed(stable))
+    read = newest_first[:MOST_NUGET_RELEASES_READ]
+    seen = {(_numbers(v) or (0,))[0] for v in read}
+    for version in newest_first[MOST_NUGET_RELEASES_READ:]:
+        major = (_numbers(version) or (0,))[0]
+        if major not in seen:
+            seen.add(major)
+            read.append(version)
+        if len(read) >= 2 * MOST_NUGET_RELEASES_READ:
+            break
+    return read
+
+
 def _nuget(name: str, fetch: Fetch) -> dict[str, Any]:
     base = f"https://api.nuget.org/v3-flatcontainer/{quote(name.lower())}"
     status, body = fetch(f"{base}/index.json")
@@ -293,7 +314,7 @@ def _nuget(name: str, fetch: Fetch) -> dict[str, Any]:
     # only, the image has .NET 8, and every restore failed NU1202). A release whose frameworks cannot be read, or
     # that names none, is taken as it is.
     here = _numbers(runtime_here("nuget"))
-    for version in list(reversed(stable))[:MOST_NUGET_RELEASES_READ] if here else []:
+    for version in _nuget_releases_to_read(stable) if here else []:
         got, spec = fetch(f"{base}/{quote(version.lower())}/{quote(name.lower())}.nuspec")
         frameworks = _A_FRAMEWORK.findall(spec.decode("utf-8", "replace")) if got == 200 else []
         if not frameworks or any(_a_framework_this_sdk_runs(f, here) for f in frameworks):

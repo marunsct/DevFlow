@@ -228,6 +228,12 @@ CSHARP_KNOWN_ERRORS = {
         "In `Program.cs`'s top-level statements a local function or variable takes no access modifier (`public`, "
         "`private`, `internal`): write it plain, or move it into a `static class` declared after the statements."
     ),
+    # Measured on one run: `Microsoft.EntityFrameworkCore.Sqlite` 11.0.0 in a net8.0 project failed every restore.
+    "error NU1202": (
+        "A package release targets a newer .NET than this project's `net%s`: Microsoft's platform packages "
+        "(`Microsoft.AspNetCore.*`, `Microsoft.EntityFrameworkCore.*`, `Microsoft.Extensions.*`, `Microsoft.Data.Sqlite`) "
+        "take the major version of the .NET they run on - pin each to the newest `%s.x` release in every `.csproj`."
+    ) % (DOTNET, DOTNET.split(".")[0]),
     "A static local function cannot contain a reference to": (
         "A `static` local function cannot read the enclosing code's local variables: pass the value in as a parameter, "
         "or drop `static` from the function."

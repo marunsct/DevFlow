@@ -2508,3 +2508,234 @@ def _a_pick_that_misses(code: str, body: str, blank_body: str, pick: re.Match[st
         return None
     shown = f"{item}.{field}" + (f".{how}({by.strip()})" if how != "===" else f" === {by.strip()}")
     return pick.start(), shown, field, expected, kept, missed, sorted(marks)[0]
+
+
+#: A string written out whole: no `${...}` in it.
+_A_WHOLE_STRING = r"""(?:'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`[^`$\\]*`)"""
+#: One step of a locator: `.getByRole(...)`, `.locator(...)`.
+_A_LOCATOR_STEP = re.compile(r"""\s*\.\s*([A-Za-z_$][\w$]*)\s*\(""")
+#: A CSS selector with no text, position or state in it: tags, ids, classes, combinators and a few attributes.
+_A_PLAIN_SELECTOR = re.compile(
+    r"""(?:[\w#.\-\s>+~*]|\[(?:data-testid|data-test|id|class|role|aria-label)"""
+    r"""(?:[~|^$*]?=\s*(?:"[^"\]]*"|'[^'\]]*'|[\w-]+))?\])+""")
+#: The last part of a selector for every item of a list: `li`, with classes at most.
+_EVERY_ITEM = re.compile(r"""(?:^|[\s>+~])li(?:\.[\w-]+)*\s*$""")
+#: The role a list's items are found by.
+_AN_ITEM_ROLE = re.compile(r"""\s*(['"`])listitem\1\s*""")
+#: Options of a `getByRole` that find the one element they name, not narrow what it holds.
+_NAME_OPTIONS_ONLY = re.compile(r"""\s*\{\s*(?:(?:name|exact)\s*:\s*(?:""" + _A_WHOLE_STRING
+                                + r"""|true|false|/(?:\\.|[^/\\\n])+/[a-z]*)\s*,?\s*)+\}\s*""")
+#: An exact number of items asserted: `toHaveCount(2)`; of a number read with `.count()`, `toBe(0)` and its kin.
+_AN_EXACT_COUNT_OF_A_LOCATOR = re.compile(r"""\s*\.\s*toHaveCount\s*\(\s*(\d+)\s*(?:,\s*\{[^{}()]*\}\s*)?\)""")
+_AN_EXACT_NUMBER = re.compile(r"""\s*\.\s*(?:toBe|toEqual|toStrictEqual)\s*\(\s*(\d+)\s*\)""")
+#: What may empty the list, or repeat what changes it, before a count; in a hook, what may empty the store.
+_MAY_EMPTY_THE_LIST = re.compile(
+    r"""\b\w*(?:clear|clean|reset|wipe|empty|purge|truncate|removeall|deleteall)\w*\s*\(|"""
+    r"""\b(?:for|while|do)\b|\.\s*(?:forEach|map)\s*\(|\.\s*selectOption\s*\(|\brequest\s*\.\s*delete\s*\(""", re.I)
+#: A filter or a search on the page.
+_A_FILTER = re.compile(r"""filter|search|query|find""", re.I)
+#: Where the list is a file's alone: a signed-in user's, a context of its own, a service it starts or answers for.
+_A_LIST_OF_ITS_OWN = re.compile(
+    r"""\bauthorization\b|\bbearer\b|\bcookie|\btoken\b|storageState|extraHTTPHeaders|\bnewContext\b|\broute\s*\(|"""
+    r"""\bstartService\s*\(|sign_?-?in|log_?-?in|sign_?-?up|\bregister""", re.I)
+#: A list shown in parts of a set size, whatever the service holds.
+_A_PART_OF_A_LIST = re.compile(r"""paginat|per[_\s-]?page|page[_\s-]?size|\blimit\b|load more|show more|next page""",
+                               re.I)
+#: A test that makes a record: sent to the service, or typed into the page and sent.
+_SENDS_A_RECORD = re.compile(r"""\brequest\s*\.\s*(?:post|put|patch)\s*\(|\bfetch\s*\(""")
+#: Typing into a field of the page.
+_TYPING = frozenset({"fill", "type", "pressSequentially"})
+#: What reads, waits on or points at what a locator finds, changing nothing the page holds.
+_READS = frozenset({"count", "all", "isVisible", "isHidden", "isChecked", "isEnabled", "isDisabled", "isEditable",
+                    "textContent", "innerText", "innerHTML", "getAttribute", "inputValue", "waitFor", "boundingBox",
+                    "screenshot", "evaluate", "allTextContents", "allInnerTexts", "hover", "focus", "blur",
+                    "scrollIntoViewIfNeeded", "highlight"})
+#: An awaited step's last call: `<what it acts on>.<method>(<arguments>)`.
+_ITS_LAST_CALL = re.compile(r"""(?P<target>.+)\.\s*(?P<method>[A-Za-z_$][\w$]*)\s*\((?P<args>[^()]*)\)\s*;?\s*""")
+#: What an awaited step acts on that is not a locator: an assertion, the service, the page or the browser itself.
+_NOT_A_LOCATOR = re.compile(r"""(?:page|context|browser)\s*$|(?:expect|request|test|Promise)\b""")
+_A_SETUP_HOOK = re.compile(r"""\btest\s*\.\s*(?:beforeEach|beforeAll)\s*\(""")
+#: The last locator step of a statement: what an action acts on.
+_ITS_LAST_STEP = re.compile(
+    r"""\.\s*(?:getBy\w+|locator)\s*\(([^;\n()]*)\)(?:\s*\.\s*(?:first|last|nth)\s*\([^()]*\))*\s*$""")
+#: Words of a locator's options, not values.
+_OPTION_WORDS = frozenset({"name", "exact", "true", "false", "level", "checked", "pressed", "selected", "expanded",
+                           "disabled", "includeHidden"})
+
+
+def _named_by_the_test(given: str, typed: set[str]) -> bool:
+    """Whether a locator's arguments `given` name something by a value of the test's own: a name, a template filled
+    at run time, or a string the test typed into the page."""
+    literal = re.sub(r"""/(?:\\.|[^/\\\n])+/[a-z]*""", "''", re.sub(_A_WHOLE_STRING, "''", given))
+    words = set(re.findall(r"""[A-Za-z_$][\w$]*""", literal)) - _OPTION_WORDS
+    return bool("${" in given or words
+                or any(_the_string(m.group(0)) in typed for m in re.finditer(_A_WHOLE_STRING, given)))
+
+
+def _a_whole_list(expression: str) -> bool:
+    """Whether `expression` finds every item of a list on the page: from `page`, through parts found with no text of a
+    record, to `getByRole('listitem')` or a selector ending in `li`, with nothing that narrows or picks after it."""
+    head = re.match(r"""\s*(?:await\s+)?page\b""", expression)
+    if head is None:
+        return False
+    at, last = head.end(), ""
+    while expression[at:].strip():
+        step = _A_LOCATOR_STEP.match(expression, at)
+        if step is None:
+            return False
+        closes = _the_closing_paren(expression, step.end())
+        if closes < 0:
+            return False
+        method, given = step.group(1), _the_arguments(expression[step.end():closes])
+        if not given or not re.fullmatch(_A_WHOLE_STRING, given[0]):
+            return False
+        if method == "getByRole" and _AN_ITEM_ROLE.fullmatch(given[0]):
+            if len(given) > 1:
+                return False
+            last = "item"
+        elif method == "getByRole" and (len(given) == 1 or (len(given) == 2 and _NAME_OPTIONS_ONLY.fullmatch(given[1]))):
+            last = "part"
+        elif method == "locator" and len(given) == 1:
+            selector = _the_string(given[0])
+            if "," in selector or not _A_PLAIN_SELECTOR.fullmatch(selector):
+                return False
+            last = "item" if _EVERY_ITEM.search(selector) else "part"
+        elif method == "getByTestId" and len(given) == 1:
+            last = "part"
+        else:
+            return False
+        at = closes + 1
+    return last == "item"
+
+
+def _what_the_test_typed(body: str) -> set[str]:
+    return {_the_string(m.group(1)) for m in re.finditer(
+        r"""\.\s*(?:fill|type|pressSequentially)\s*\(\s*(""" + _A_WHOLE_STRING + r""")""", body)}
+
+
+def _actions(code: str) -> list[tuple[str, str, str]]:
+    """(what it acts on, the method, its arguments) of each awaited step of `code` whose last call acts on what a
+    locator finds; a name bound to a locator is written out where it can be."""
+    found = []
+    for step in re.finditer(r"""\bawait\s+""", code):
+        end = code.find("\n", step.end())
+        last = _ITS_LAST_CALL.fullmatch(code[step.end():len(code) if end < 0 else end])
+        if last is None or last.group("method") in _READS:
+            continue
+        target = last.group("target").strip()
+        if _NOT_A_LOCATOR.match(target):
+            continue
+        if re.fullmatch(r"""[A-Za-z_$][\w$]*""", target):
+            target = _the_locator_named(code, target, step.start()) or target
+        found.append((target, last.group("method"), last.group("args").strip()))
+    return found
+
+
+def _narrowed_before(body: str, blank: str, at: int) -> bool:
+    """Whether what a test does before `at` may leave the list showing less than every record, or empty it: a filter
+    or a search typed into or acted on and last left with a value, a page address with a query, a link followed, a
+    control named by a value of the test's own acted on, or anything that empties the list or repeats an action."""
+    before, blank_before = body[:at], blank[:at]
+    if _MAY_EMPTY_THE_LIST.search(blank_before):
+        return True
+    for goto in re.finditer(r"""\bgoto\s*\(""", before):
+        closes = _the_closing_paren(before, goto.end())
+        if closes < 0 or re.search(r"""[?#]""", before[goto.end():closes]):
+            return True
+    typed = _what_the_test_typed(body)
+    left_with_a_value = False
+    for target, method, given in _actions(before):
+        if method not in _TYPING and method != "clear":
+            if re.search(r"""getByRole\(\s*(['"`])link\1""", target):
+                return True
+            # Acting on what a value of the test's own names - a tag it gave, shown as a control - may narrow the
+            # list to its records; a control named by a word of the page does not.
+            last = _ITS_LAST_STEP.search(target)
+            if last and _named_by_the_test(last.group(1), typed):
+                return True
+        if not _A_FILTER.search(" ".join(m.group(0) for m in re.finditer(_A_PLAIN_STRING, target))):
+            continue
+        if method == "clear" or re.fullmatch(r"""(['"`])\1""", given):
+            left_with_a_value = False
+        elif method in _TYPING:
+            left_with_a_value = True
+        else:
+            left_with_a_value = not re.search(r"""clear|reset|\ball\b""", target, re.I)
+    return left_with_a_value
+
+
+def _makes_a_record(body: str) -> bool:
+    """Whether a test sends a record to the service, or types into the page and then acts on it."""
+    if _SENDS_A_RECORD.search(body):
+        return True
+    methods = [method for _, method, _ in _actions(body)]
+    return any(method in _TYPING for method in methods) and any(
+        method not in _TYPING and method != "clear" for method in methods)
+
+
+def _the_counted_locator(body: str, read: str, before: int) -> str | None:
+    """The locator whose `.count()` `read` is - `await items.count()`, or a name bound once to one - or None."""
+    direct = re.fullmatch(r"""\(?\s*await\s+([\s\S]+?)\s*\.\s*count\s*\(\s*\)\s*\)?""", read)
+    if direct:
+        return direct.group(1)
+    if not re.fullmatch(r"""[A-Za-z_$][\w$]*""", read):
+        return None
+    bound = [m for m in _A_BOUND_EXPRESSION.finditer(body, 0, before) if m.group(1) == read]
+    if len(bound) != 1 or re.search(rf"""(?<![\w$.]){re.escape(read)}\s*(?:[-+*/]?=(?![=>])|\+\+|--)""",
+                                    body[bound[0].end():before]):
+        return None
+    counted = re.match(r"""await\s+([^;\n]+?)\s*\.\s*count\s*\(\s*\)\s*;?[ \t]*(?:\n|$)""", body[bound[0].end():])
+    return counted.group(1) if counted else None
+
+
+def counts_of_every_listed_record(text: str, others: str = "") -> list[tuple[int, str, str, int]]:
+    """(line, the test's title, the assertion, the number) where a page test asserts an exact number of every item of
+    a list on the page - `expect(page.getByRole('listitem')).toHaveCount(0)`, or a `.count()` of one compared with
+    `toBe(0)` - while another test of the suite, in `text` or in `others` (the suite's other files), makes records.
+
+    For a suite that runs against one service started once and never emptied between tests: the list then shows the
+    other tests' records as well, and no product can make the number come out. Measured on four full-stack runs:
+    tests that counted the whole list as 0 after saving one record and deleting it, or after a refused save, were
+    locked, and their criteria shipped deferred. Left alone: a list narrowed by a text, a test id of a record, or a
+    position; a number worked out at run time (`before + 1`); a count after anything that empties the list, repeats an
+    action, filters or searches it, follows a link, acts on a control named by the test's own value, or opens an
+    address with a query; a file whose hooks may empty the store, or that answers for the service (`route`), signs
+    in, makes a context of its own or starts a service of its own; and a list shown in parts of a set size, counted at
+    anything but 0.
+    """
+    code = code_only(text)
+    blank = _blanked(code)
+    hooks = "\n".join(blank[m.start():_the_closing_paren(blank, m.end()) + 1] for m in _A_SETUP_HOOK.finditer(blank))
+    if _A_LIST_OF_ITS_OWN.search(blank) or _MAY_EMPTY_THE_LIST.search(hooks):
+        return []
+    starts = [m.start() for m in _A_TEST.finditer(code)] + [len(code)]
+    bodies = [(begin, code[begin:end], blank[begin:end]) for begin, end in zip(starts, starts[1:])]
+    made_in_others = _makes_a_record(code_only(others))
+    found: list[tuple[int, str, str, int]] = []
+    for index, (begin, body, blank_body) in enumerate(bodies):
+        if not made_in_others and not any(_makes_a_record(other) for n, (_, other, _) in enumerate(bodies) if n != index):
+            continue
+        titled = re.match(r"""test\s*\(\s*(""" + _A_PLAIN_STRING + r""")""", body)
+        title = _the_string(titled.group(1)) if titled else ""
+        for expect in _AN_EXPECT.finditer(blank_body):
+            closes = _the_closing_paren(body, expect.end())
+            if closes < 0:
+                continue
+            read = body[expect.end():closes].strip()
+            counted = _AN_EXACT_COUNT_OF_A_LOCATOR.match(body, closes + 1)
+            locator: str | None = read
+            if counted is None:
+                counted = _AN_EXACT_NUMBER.match(body, closes + 1)
+                locator = _the_counted_locator(body, read, expect.start()) if counted else None
+            if counted is None or locator is None:
+                continue
+            if re.fullmatch(r"""[A-Za-z_$][\w$]*""", locator):
+                locator = _the_locator_named(body, locator, expect.start())
+            number = int(counted.group(1))
+            if not _a_whole_list(locator) or _narrowed_before(body, blank_body, expect.start()):
+                continue
+            if number and _A_PART_OF_A_LIST.search(body):
+                continue
+            line = code.count("\n", 0, begin + expect.start()) + 1
+            found.append((line, title, " ".join(body[expect.start():counted.end()].split()), number))
+    return found

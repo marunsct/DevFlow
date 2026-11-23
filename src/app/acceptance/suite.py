@@ -3345,6 +3345,37 @@ def picks_of_their_own_records_that_miss_one(repo_root: str | Path) -> list[str]
     return problems[:6]
 
 
+def counts_of_every_record_on_a_shared_page(repo_root: str | Path) -> list[str]:
+    """Where a page test asserts an exact number of every item listed on the page, on a suite whose tests share one
+    service and other tests make records. See the pack's `counts_of_every_listed_record`."""
+    from app.acceptance.requests import shares_one_service  # noqa: PLC0415 - requests imports this module
+
+    found = contract.the_pack(repo_root)
+    if found is None or found[0].counts_of_every_listed_record is None or not shares_one_service(repo_root):
+        return []
+    root = Path(repo_root)
+    texts: dict[Path, str] = {}
+    for path in suite_files(repo_root):
+        try:
+            texts[path] = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+    problems = []
+    for path, text in texts.items():
+        others = "\n".join(other for elsewhere, other in texts.items() if elsewhere != path)
+        for line, title, assertion, number in list(found[0].counts_of_every_listed_record(text, others))[:3]:
+            problems.append(
+                f"`{path.relative_to(root).as_posix()}` line {line}: `{title}` asserts that the page lists exactly "
+                f"{number} item(s) in all (`{assertion}`), counting every record on the list. The suite runs against "
+                "one service, started once and never emptied between tests, and other tests save records to it, so "
+                f"their records are listed too and the number can never be {number}, whatever the product does. "
+                "Count only the test's own records - filter the list by a marker only they carry "
+                "(`.filter({ hasText: marker })`, the marker made at run time), or compare with a count taken before "
+                "the test's own action (`before + 1`). This is about the test, not the product."
+            )
+    return problems[:6]
+
+
 #: How a finding of `items_found_again_after_an_action` ends: what it is, and what it is not.
 ADVICE_ONLY = "This is advice about the test: it does not show that the test cannot pass."
 
@@ -6222,6 +6253,9 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
         *_by(checks, "locators_that_contradict_their_assertions", locators_that_contradict_their_assertions(repo_root)),
         *_by(checks, "absences_a_longer_text_also_meets", absences_a_longer_text_also_meets(repo_root)),
         *_by(checks, "picks_of_their_own_records_that_miss_one", picks_of_their_own_records_that_miss_one(repo_root)),
+        # A line the measured page check above already names is named once.
+        *_by(checks, "counts_of_every_record_on_a_shared_page",
+             _not_named_in(counts_of_every_record_on_a_shared_page(repo_root), measured)),
         *_by(checks, "tests_with_module_system_mismatch", tests_with_module_system_mismatch(repo_root)),
         *_by(checks, "tests_with_unawaited_async_helpers", tests_with_unawaited_async_helpers(repo_root)),
         *_by(checks, "tests_whose_value_and_length_disagree", tests_whose_value_and_length_disagree(repo_root)),
@@ -6237,6 +6271,17 @@ class _CannotPass(list):
         self.read_from_text = list(read_from_text)
         #: Each finding's text -> the name of the check that raised it.
         self.checks = dict(checks or {})
+
+
+#: Where a finding points: its file and line, "`a.spec.js` line 12".
+_A_FILE_AND_LINE = re.compile(r"^`([^`]+)` line (\d+)\b")
+
+
+def _not_named_in(findings: Sequence[str], named: Sequence[str]) -> list[str]:
+    """Of `findings`, those whose file and line no finding of `named` points at."""
+    taken = {found.groups() for item in named if (found := _A_FILE_AND_LINE.match(str(item)))}
+    return [item for item in findings
+            if (found := _A_FILE_AND_LINE.match(str(item))) is None or found.groups() not in taken]
 
 
 def _by(checks: dict, name: str, findings: Sequence[str]) -> list[str]:
@@ -6332,8 +6377,10 @@ def findings_that_reopen(repo_root: str | Path, result: Any, found: Sequence[str
 #: The checks whose finding settles a dispute: what each reads in a test cannot hold for any product, by the runner's
 #: own documented matching, whatever the test asserts. The dispute is told it, and a test it names is never kept as
 #: sound. Measured on one run: a dispute called a test right whose absence its own other assertion ruled out; on
-#: another, one ruled a test right twice whose pick of its own records missed one it made.
-_SETTLE_A_DISPUTE = (absences_a_longer_text_also_meets, picks_of_their_own_records_that_miss_one)
+#: another, one ruled a test right twice whose pick of its own records missed one it made. A count of every record a
+#: page lists, on a service every test shares, holds for no product either.
+_SETTLE_A_DISPUTE = (absences_a_longer_text_also_meets, picks_of_their_own_records_that_miss_one,
+                     counts_of_every_record_on_a_shared_page)
 
 
 def what_the_code_shows_of(repo_root: str | Path, names: Sequence[str]) -> list[tuple[str, str]]:

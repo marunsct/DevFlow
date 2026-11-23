@@ -198,6 +198,10 @@ class StackPack:
     own_records_a_pick_misses: (
         Callable[[str], Sequence[tuple[int, str, str, int, int, Sequence[str], str]]] | None
     ) = None
+    #: (a suite file's text, the suite's other files' text) -> (line, the test's title, the assertion, the number) where
+    #: a page test asserts an exact number of every item of a list on the page while other tests make records. Read
+    #: only for a suite that runs against one service shared by every test.
+    counts_of_every_listed_record: Callable[[str, str], Sequence[tuple[int, str, str, int]]] | None = None
     #: A suite file's text -> (line, text) where a test acts inside an item it found by a text, then looks inside that
     #: item again by the same text, which the action may have taken off it. Advice, never a reason to reopen.
     found_again_after_an_action: Callable[[str], Sequence[tuple[int, str]]] | None = None

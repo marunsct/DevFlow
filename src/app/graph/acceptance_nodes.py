@@ -2108,7 +2108,7 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
     if refused is not None:
         code, count = refused
         cause = ("the product refuses the credentials its own sign-in issues, or asks for some no client is given"
-                 if code in ("401", "403") else
+                 if code in ("401", "403") else A_LIMIT_THE_SUITE_MEETS if code == RATE_LIMITED else
                  "one thing the routes share answers it for every request - the way a body is read or checked, a field "
                  "every write needs, a lookup every route makes")
         defects.append(ReportedDefect(
@@ -2389,6 +2389,17 @@ def _what_one_of_them_said(state: Any, code: str) -> str:
         return ""
 
 
+#: The status a rate limit answers.
+RATE_LIMITED = "429"
+#: What a rate limit refusing the suite is, said to the fixer.
+A_LIMIT_THE_SUITE_MEETS = (
+    "the product limits how often one client may call it (a sign-up or sign-in limit), and the acceptance suite, like "
+    "any client, makes many calls from one address: once the limit is reached every later request is refused. Keep "
+    "the limit, but size it for the use the brief describes - a suite that signs up an account per test is such use - "
+    "or read it from the environment with a default that use passes"
+)
+
+
 def one_refusal_for_all(failing: list[dict]) -> tuple[str, int] | None:
     """(the status, how many tests) when nearly every failing test was refused the same way; None otherwise.
 
@@ -2413,6 +2424,12 @@ def one_refusal_for_all(failing: list[dict]) -> tuple[str, int] | None:
         # Half the failed tests for a client error; a third for a server error, which breaks what every later step
         # reads (measured: every write answered 500 and the page tests, finding nothing saved, outnumbered them).
         share = 3 if code.startswith("5") else 2
+        # A rate limit's 429 is no criterion's own answer: once it refuses, every later step of every test is refused,
+        # so other answers beside it do not make it one cause among many. Measured on one run: 66 of 92 failing tests
+        # were answered 429 by a sign-up limit of ten an hour, 26 others answered otherwise, so no one defect was raised;
+        # each criterion got its own fixer for eight hours and the suite never moved past 17 of 97.
+        if code == RATE_LIMITED and codes.count(code) >= 3 and codes.count(code) * 2 >= len(tests):
+            return code, codes.count(code)
         if others or codes.count(code) < 3 or codes.count(code) * share < len(tests):
             return None
         return code, len(tests)

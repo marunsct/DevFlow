@@ -467,6 +467,15 @@ def who_created(root: str | Path, relative_path: str) -> str:
         return ""
 
 
+def creators(root: str | Path) -> dict[str, str]:
+    """Each recorded file and the stage that first wrote it, in one read; {} when none or unknown. Never raises."""
+    try:
+        return {path: str(entry.get("created_by") or "") for path, entry in _load(Path(root)).items()
+                if isinstance(entry, dict)}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
 def note_for(root: str | Path, relative_path: str, text: str) -> FileNote:
     """Everything the index knows about one file. Never raises."""
     root = Path(root)
@@ -482,6 +491,7 @@ def note_for(root: str | Path, relative_path: str, text: str) -> FileNote:
 
 
 __all__ = [
+    "creators",
     "who_created",
     "MAX_PURPOSE_CHARS",
     "MAX_SIGNATURES",

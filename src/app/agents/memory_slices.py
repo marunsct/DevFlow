@@ -12,6 +12,8 @@ Two parts:
 - Behind `SLICED_MEMORY`: a fixer's or a builder's memory holds whole only the product files its own request names,
   and the files those import where the harness's code graph knows it; the rest are named with what they define.
   The whole memory as before when the request names none. An efficiency change, so a switch, off in code.
+  A builder on code earlier stages wrote has the slice first and the rest of the code after it, none left out
+  (`project_memory.builds_on_code`): a file it is to write does not exist yet to import what it builds on.
 
 "Its own request" leaves out the sections every request of the sprint shares and that list every file the sprint
 wrote - where things stand, and the project's setup - so a file is named only by what this request is about.

@@ -360,6 +360,12 @@ def where_things_stand(repo_root: str | Path, files: dict[str, str]) -> str:
 FIXER_SPECIFICATION_CHARACTERS = 8_000
 #: The documents a fixer is given; the plans that led to the code are named, not held.
 FIXER_DOCUMENTS = ("docs/technical_specification.md", "docs/acceptance_criteria.md")
+#: The documents a builder on written code is given (`builds_on_code`): a fixer's, and the sprint plan for the part of
+#: it the request points at. The other plans - the milestones, the acceptance tests, the stack, the intake, reviews -
+#: are records of work done before it, named.
+BUILDER_ON_CODE_DOCUMENTS = (*FIXER_DOCUMENTS, "docs/sprint_plan.md")
+#: The stages that set the project up: what they write is the scaffold, not the product's code.
+_SETUP_STAGES = ("stack_setup",)
 
 
 #: How a request quotes sections of the specification (`technical_lead._the_contracts`), and each quoted section.
@@ -411,6 +417,31 @@ def _kept_out_for(stage: str, repo_root: str | Path) -> tuple[str, ...]:
     return ()
 
 
+def builds_on_code(repo_root: str | Path, stage: str) -> bool:
+    """Whether a builder opens on the product's code an earlier stage wrote: not the setup's scaffold, not its own.
+
+    Measured on one run: a later sprint's testing stage, writing unit tests for the code two sprints had written,
+    opened on the workflow's documents whole - every sprint's long sections of the sprint plan among them - and of
+    the product only an empty `__init__`; the files its tests were for were named as left out. It read them, the
+    conversation was summarised, it read them again: eleven summaries in fifty minutes. Never raises.
+    """
+    if not str(stage or "").startswith("specialist_"):
+        return False
+    try:
+        from app.analysis.file_kinds import classify_file
+        from app.analysis.project_memory import creators
+
+        written = creators(repo_root)
+        for path in current(repo_root):
+            author = written.get(path, "")
+            if (author and author != stage and not author.startswith(_SETUP_STAGES)
+                    and not path.startswith(("docs/", ".")) and classify_file(path) == "application"):
+                return True
+    except Exception:  # noqa: BLE001 - the memory as before
+        logger.debug("Could not tell whether the product has code", exc_info=True)
+    return False
+
+
 def planning_stage(stage: str) -> bool:
     return str(stage or "").startswith(_PLANNING_STAGES)
 
@@ -431,7 +462,7 @@ def kept_by_the_harness(repo_root: str | Path) -> tuple[str, ...]:
 
 def render(repo_root: str | Path, budget_characters: int, focus: str = "",
            for_a_fixer: bool = False, kept_out: tuple[str, ...] = (), sliced: bool = False,
-           sprint_files: tuple[str, ...] = ()) -> tuple[str, dict[str, str]]:
+           sprint_files: tuple[str, ...] = (), on_code: bool = False) -> tuple[str, dict[str, str]]:
     """The memory as text within `budget_characters`, and the files it holds by path.
 
     `for_a_fixer`: the product's code first, the acceptance criteria, and the specification as its outline and the
@@ -445,6 +476,12 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
     `sprint_files`: a re-plan's sprint's own files (`LEAD_REPLAN_REQUEST_SMALLER`): only the product files among them,
     and what they import, held whole, and every document longer than `memory_slices.MOST_CHARACTERS_WHOLE` held as
     its digest. The whole memory as before when none of them is in the project.
+
+    `on_code`: a builder on code earlier stages wrote (`builds_on_code`) is given what a fixer is, as far as a builder
+    needs it: the documents of `BUILDER_ON_CODE_DOCUMENTS`, each longer than `memory_slices.MOST_CHARACTERS_WHOLE` as
+    its digest, and the other plans named, so the rest of the budget holds the product's code. A slice orders that
+    code, the files the request names and what they import first; it leaves none out, since a file the builder is to
+    write does not exist yet to import what it builds on.
     """
     files = current(repo_root)
     if not files or budget_characters <= 0:
@@ -457,6 +494,9 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
     replan = _the_sprint_s_slice(repo_root, sprint_files, files) if sprint_files else None
     if replan is not None:
         the_slice = replan
+    first: set[str] = set()
+    if on_code and the_slice is not None:
+        first, the_slice = the_slice, None
     held: dict[str, str] = {}
     parts: list[str] = []
     from app.agents.canonical_memory import enabled as canonical_order
@@ -492,6 +532,10 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
     ranked = _ranked(files, focus, unserved)
     if for_a_fixer:
         ranked = [p for p in ranked if not p.startswith("docs/")] + [p for p in ranked if p.startswith("docs/")]
+    elif on_code:
+        # The documents first, each held to a digest's size, then the code with the rest of the budget.
+        ranked = ([p for p in ranked if p.startswith("docs/")] + [p for p in ranked if p in first]
+                  + [p for p in ranked if not p.startswith("docs/") and p not in first])
     for path in ranked:
         text = files[path]
         if for_a_fixer and path.startswith("docs/"):
@@ -505,7 +549,7 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
                     (chosen_documents if stable else parts).append(block)
                     used += len(block)
                 continue
-        if _RECORDS.match(path):
+        if _RECORDS.match(path) or (on_code and path.startswith("docs/") and path not in BUILDER_ON_CODE_DOCUMENTS):
             left_out.append(path)
             continue
         if path in kept_out:
@@ -540,7 +584,7 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
         block = f"=== {path} ===\n{text.rstrip()}\n"
         # A small product's documents are held as a digest sooner (`STABLE_STAGE_PREFIX`, off until measured).
         largest = (shorter_documents or LARGEST_FILE_CHARACTERS) if path.startswith("docs/") else LARGEST_FILE_CHARACTERS
-        if replan is not None and path.startswith("docs/"):
+        if (replan is not None or on_code) and path.startswith("docs/"):
             largest = min(largest, memory_slices.MOST_CHARACTERS_WHOLE)
         if len(text) > largest and path.endswith(".md"):
             # Too large to hold whole: its outline and the sections this
@@ -911,7 +955,8 @@ def build_project_memory_middleware(repo_root: str) -> Any:
                                                                   for_a_fixer=stage.startswith("defect_fix"),
                                                                   kept_out=_kept_out_for(stage, repo_root),
                                                                   sliced=memory_slices.enabled() and stage.startswith(
-                                                                      ("defect_fix", "specialist_")))
+                                                                      ("defect_fix", "specialist_")),
+                                                                  on_code=builds_on_code(repo_root, stage))
                     visit["files"] = dict(current(repo_root))
                 if visit.get("request") is not None:
                     messages = _without_the_list(messages, visit["opening"], visit["request"])

@@ -135,6 +135,12 @@ AXUM_KNOWN_ERRORS = {
         "rusqlite has no `JournalMode` type: set a pragma with `conn.pragma_update(None, \"journal_mode\", \"WAL\")?` "
         "(or `conn.execute_batch(\"PRAGMA journal_mode=WAL;\")?`), or leave the default journal mode."
     ),
+    "couldn't convert the error to `": (
+        "`?` turns an error into the function's own error type only where `From` connects them: a function returning "
+        "one library's `Result` (`rusqlite::Result`) cannot `?` another's error (`std::io::Error` from creating the "
+        "data folder). Return a type both convert into (`Result<T, Box<dyn std::error::Error + Send + Sync>>`), or "
+        "do the other work - creating the folder - in a function of its own before this one."
+    ),
     "struct import `": (
         "the struct is reached through a module that only imports it with a private `use`: name it from the module "
         "that defines it (and make that `pub`), or re-export it there with `pub use`."

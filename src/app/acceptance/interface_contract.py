@@ -514,10 +514,44 @@ def parse(lines: list[str] | tuple[str, ...]) -> tuple[list[Check], list[str]]:
     return checks, unreadable
 
 
+#: A criterion stating a route and its answer: `POST /items with {"title": ...} answers 201 with the item`.
+_A_ROUTE_AND_ITS_ANSWER = re.compile(
+    r"\b(GET|POST|PUT|PATCH|DELETE)\s+(/[^\s,;]*)[^\n]{0,200}?\b(?:answers?|returns?|responds?)\s+(?:with\s+)?(\d{3})\b"
+)
+
+
+def lines_from_the_criteria(criteria: Any) -> list[str]:
+    """Contract lines (`AC-12 POST /items -> 201`) read from criteria that state a route and the status it answers.
+
+    Measured on one run: the specification's interface contract was left "Not specified", the criteria said each
+    route and its answer ("AC-12 POST /items with {"title": ...} answers 201"), and every release probe considered
+    nothing - the writes behind sign-in, the concurrent create, the emptied title went unprobed. Never raises.
+    """
+    lines: list[str] = []
+    try:
+        for criterion in criteria or ():
+            ident = str(getattr(criterion, "id", "") or "").strip()
+            text = str(getattr(criterion, "text", "") or "")
+            if not ident:
+                continue
+            for method, path, status in _A_ROUTE_AND_ITS_ANSWER.findall(text):
+                line = f"{ident} {method} {path.rstrip('.')} -> {status}"
+                if line not in lines:
+                    lines.append(line)
+    except Exception:  # noqa: BLE001 - no lines read, as before
+        logger.debug("Could not read contract lines from the criteria", exc_info=True)
+    return lines
+
+
 def record_at_lock(repo_root: str | Path, lines: list[str] | tuple[str, ...], *, specification: Any = None) -> list[Check]:
-    """Keep the contract beside the locked suite, with the example bodies its write lines can make a record from; what was kept."""
+    """Keep the contract beside the locked suite, with the example bodies its write lines can make a record from; what was kept.
+
+    A specification that gives no contract lines has them read from the criteria (`lines_from_the_criteria`).
+    """
     from app.acceptance import suite
 
+    if not lines:
+        lines = lines_from_the_criteria(suite.criteria(repo_root))
     checks, unreadable = parse(lines)
     state = suite._state(repo_root)  # noqa: SLF001 - one state file for the suite and its contract
     state["interface_contract"] = [asdict(check) for check in checks]
@@ -540,6 +574,10 @@ def the_locked_contract(repo_root: str | Path) -> list[Check]:
     from app.acceptance import suite
 
     kept = suite._state(repo_root).get("interface_contract") or []  # noqa: SLF001
+    if not kept:
+        # A lock that kept no lines (the specification gave none) reads them from the criteria now, so a run locked
+        # before `lines_from_the_criteria` existed is probed too.
+        return parse(lines_from_the_criteria(suite.criteria(repo_root)))[0]
     return [Check(**item) for item in kept if isinstance(item, dict)]
 
 

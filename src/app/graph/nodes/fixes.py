@@ -536,40 +536,29 @@ def defect_remediation_node(state: WorkflowGraphState, config: RunnableConfig, c
 
     waiting = start_first.held_back(cycle.defects)
 
-    # Scan forward by absolute index rather than indexing into a list of
-    # open defects: marking one fixed changes which defects are open, so a
-    # position in that list would shift under us and skip a defect.
-    from app.graph import order_of_fixes
-
-    if order_of_fixes.enabled():
-        return _the_next_in_the_fix_order(state, config, ctx, cycle, cursor, waiting)
-    defect_index = cursor
-    while defect_index < len(cycle.defects) and (
-        cycle.defects[defect_index].status != "open" or defect_index in waiting
-    ):
-        defect_index += 1
-
-    if defect_index >= len(cycle.defects):
-        # Every defect has been worked this round; go back and re-run tests.
-        return {"stage": "test_and_triage", "defect_cursor": 0}
-    return _fix_one(state, config, defect_index, ctx)
+    # The latest test round's defects first, then those carried over (`order_of_fixes`).
+    return _the_next_in_the_fix_order(state, config, ctx, cycle, cursor, waiting)
 
 
 def _the_next_in_the_fix_order(
     state: Any, config: RunnableConfig, ctx: GraphContext, cycle: Any, cursor: int, waiting: set[int],
 ) -> dict[str, Any]:
-    """One at a time with `FIX_ORDER_CRITERIA_FIRST` on: the next open defect after the last one worked, in the order
-    `order_of_fixes.ordered` gives every defect of the round.
+    """One at a time: the next open defect after the last one worked, in the order `order_of_fixes.ordered` gives
+    every defect of the round.
 
     The cursor still names the defect after the last one worked (`_fix_one` sets it), so a pause resumes where it
-    was. The order is over every defect, open or not, and a defect's group does not change within a round, so it is
-    the same at each visit and each open defect is reached once.
+    was. The order is over every defect, open or not, by absolute index - marking one fixed changes which are open,
+    so a position among the open ones would shift and skip one - and a defect's group does not change within a
+    round, so the order is the same at each visit and each open defect is reached once.
     """
     from app.graph import order_of_fixes
 
     order = order_of_fixes.ordered(cycle.defects, range(len(cycle.defects)))
     last = cursor - 1
-    start = order.index(last) + 1 if 0 <= last < len(cycle.defects) else 0
+    if last >= len(cycle.defects):
+        # Past the last defect: every one has been worked this round.
+        return {"stage": "test_and_triage", "defect_cursor": 0}
+    start = order.index(last) + 1 if last >= 0 else 0
     upcoming = [index for index in order[start:] if cycle.defects[index].status == "open" and index not in waiting]
     if not upcoming:
         return {"stage": "test_and_triage", "defect_cursor": 0}
@@ -641,7 +630,8 @@ def _the_next_fix_batch(state: Any, config: RunnableConfig, ctx: GraphContext) -
         closed = _closed_if_an_earlier_fix_resolved_it(state, cycle, index)
         if closed is not None:
             return _with_tried(state, closed, name(index))
-    # With `FIX_ORDER_CRITERIA_FIRST` on, failing criteria and release findings go first; none is left out.
+    # The latest test round's defects first, then those carried over; with `FIX_ORDER_CRITERIA_FIRST` on, failing
+    # criteria and release findings first within each. None is left out.
     from app.graph import order_of_fixes
 
     raised = candidates

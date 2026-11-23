@@ -19,7 +19,7 @@ from pathlib import Path
 
 #: (label, where the signal lives, the text that marks it).
 #: "request" - a model request's messages; "result" - a tool result;
-#: "decision" - the decision log; "ledger" - a defect record's detail.
+#: "decision" - the decision log; "ledger" - a defect record's detail; "fix order" - a fix round's order record.
 SIGNALS: list[tuple[str, str, str]] = [
     ("LF.191 approved lessons shown", "request", "LESSONS FROM EARLIER RUNS"),
     ("LF.188 a file given twice (should stay 0)", "request", "as they stood when this stage started"),
@@ -36,6 +36,8 @@ SIGNALS: list[tuple[str, str, str]] = [
     ("LF.202 a criterion moved to where its test can pass", "decision", "where a test of it can first pass"),
     ("AY.4 a defect left open at its call cap", "ledger", "model calls across its attempts"),
     ("LF.185 unstable criterion held as a dispute", "ledger", "pass when they run alone"),
+    ("LF.1244 the latest round's defects fixed ahead of those carried over", "fix order",
+     "Defects the latest test round raised fixed ahead of those carried over"),
 ]
 
 
@@ -84,6 +86,11 @@ def effects(records: list[dict], decisions: str = "") -> list[str]:
                 salvaged[str(record["salvaged"])] += 1
             elif _lost(record, usage):
                 lost += 1
+        elif kind == "fix_order":
+            text = _text(record.get("message"))
+            for label, where, needle in SIGNALS:
+                if where == "fix order" and needle in text:
+                    counts[label] += 1
         elif kind == "defect":
             defects[str(record.get("event") or "")] += 1
             detail = _text(record.get("detail"))

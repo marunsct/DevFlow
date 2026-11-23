@@ -1616,6 +1616,10 @@ def still_raised(repo_root: str | Path, description: str, *, runner: Any = None)
         return concurrent_write_probe.still_raised(repo_root, text, runner=runner)
     if text.startswith(edge_probe.EDGE_CASES_FAILED):
         return edge_probe.still_raised(repo_root, text, runner=runner)
+    from app.acceptance import round_trip_probe
+
+    if text.startswith(round_trip_probe.ROUND_TRIPS_FAILED):
+        return round_trip_probe.still_raised(repo_root, text, runner=runner)
     from app.acceptance import page_probe
 
     if text.startswith(page_probe.PAGE_CHECK_FAILED):

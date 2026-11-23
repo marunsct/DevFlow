@@ -6,8 +6,9 @@ probes it named only what they had not asked. A probe's finding at a round is a 
 no fixer closed is still the product's at release, so each probe that applies is asked once more and what it still
 finds is carried into `completion_gaps` in the very words the round's defect gave a fixer.
 
-The probes are the round's own (`interface_contract`, `wrong_shape_body_probe`, `concurrent_write_probe`), each on
-its own switch as at a round; a probe that cannot run says nothing.
+The probes are the round's own (`interface_contract`, `wrong_shape_body_probe`, `concurrent_write_probe`, `edge_probe`,
+`round_trip_probe`, `page_probe`), each on its own switch as at a round (the round-trip probe has none); a probe that
+cannot run says nothing.
 """
 from __future__ import annotations
 
@@ -23,10 +24,11 @@ STILL_FINDS = "At release a harness probe still finds: "
 
 def _the_openings() -> tuple[str, ...]:
     """How the defect of each probe asked here opens, as the round raises it."""
-    from app.acceptance import concurrent_write_probe, edge_probe, interface_contract, page_probe
+    from app.acceptance import concurrent_write_probe, edge_probe, interface_contract, page_probe, round_trip_probe
 
     return (interface_contract.SERVER_FAILED, interface_contract.EMPTIED_FIELD_ACCEPTED,
-            concurrent_write_probe.CONCURRENT_WRITES_LOST, edge_probe.EDGE_CASES_FAILED, page_probe.PAGE_CHECK_FAILED)
+            concurrent_write_probe.CONCURRENT_WRITES_LOST, edge_probe.EDGE_CASES_FAILED, page_probe.PAGE_CHECK_FAILED,
+            round_trip_probe.ROUND_TRIPS_FAILED)
 
 
 def carries_a_finding(defect: Any) -> bool:
@@ -81,6 +83,14 @@ def what_the_probes_still_find(repo_root: str | Path, *, runner: Any = None) -> 
             gaps.append(STILL_FINDS + edge_probe.edge_description(edges))
     except Exception:  # noqa: BLE001
         logger.debug("Could not ask the edge probe again at release", exc_info=True)
+    try:
+        from app.acceptance import round_trip_probe
+
+        trips = round_trip_probe.round_trip_errors(repo_root, runner=runner) or []
+        if trips:
+            gaps.append(STILL_FINDS + round_trip_probe.round_trip_description(trips))
+    except Exception:  # noqa: BLE001
+        logger.debug("Could not ask the round-trip probe again at release", exc_info=True)
     try:
         from app.acceptance import page_probe
 

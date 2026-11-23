@@ -3166,8 +3166,8 @@ def _with_the_contract_s_server_errors(state: Any, test_result: Any, milestone: 
             return test_result
         if any(str(d.description or "").startswith(interface_contract.SERVER_FAILED) for d in test_result.defects):
             # Writes made at once, and requests at the edges, are other probes' findings: asked whatever it says.
-            return _with_an_edge_case_defect(state, _with_a_concurrent_write_defect(state, test_result, milestone),
-                                             milestone)
+            return _with_a_round_trip_defect(state, _with_an_edge_case_defect(
+                state, _with_a_concurrent_write_defect(state, test_result, milestone), milestone), milestone)
         from app.acceptance import wrong_shape_body_probe
 
         errors = interface_contract.server_errors(root) or []
@@ -3179,6 +3179,7 @@ def _with_the_contract_s_server_errors(state: Any, test_result: Any, milestone: 
             test_result = _with_a_server_error_defect(state, test_result, milestone, errors, bad_body, wrong_shape)
         test_result = _with_a_concurrent_write_defect(state, test_result, milestone)
         test_result = _with_an_edge_case_defect(state, test_result, milestone)
+        test_result = _with_a_round_trip_defect(state, test_result, milestone)
         return _with_an_emptied_field_defect(state, test_result, milestone)
     except Exception as error:  # noqa: BLE001 - the round as measured stands
         degraded("round_check.contract_server_errors", error)
@@ -3263,6 +3264,29 @@ def _with_an_edge_case_defect(state: Any, test_result: Any, milestone: Any) -> A
         return test_result.model_copy(update={"defects": [*test_result.defects, defect]})
     except Exception as error:  # noqa: BLE001 - the round as measured stands
         degraded("round_check.edge_case", error)
+        return test_result
+
+
+def _with_a_round_trip_defect(state: Any, test_result: Any, milestone: Any) -> Any:
+    """`test_result` with one defect for the round trips the product failed: a record deleted twice, or a long text
+    not read back whole (`app.acceptance.round_trip_probe`). A quality check, so on with no switch. Never raises.
+
+    Measured: a service passed every hidden acceptance test and lost the hidden quality tests of a second delete
+    answered 204 where the contract gives 404, and of a long body not read back as written; no probe asked either.
+    """
+    try:
+        from app.acceptance import round_trip_probe
+
+        if any(str(d.description or "").startswith(round_trip_probe.ROUND_TRIPS_FAILED) for d in test_result.defects):
+            return test_result
+        found = round_trip_probe.round_trip_errors(state["repository"].root_path) or []
+        if not found:
+            return test_result
+        logger.warning("A green round's round-trip probe: %d round trip(s) did not read back as written", len(found))
+        defect = round_trip_probe.a_defect(found, _the_unit_tests_fail(milestone, "").owner)
+        return test_result.model_copy(update={"defects": [*test_result.defects, defect]})
+    except Exception as error:  # noqa: BLE001 - the round as measured stands
+        degraded("round_check.round_trip", error)
         return test_result
 
 

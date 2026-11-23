@@ -126,3 +126,28 @@ def test_each_time_thinking_goes_off_for_it_the_run_s_transcript_says_so_as_the_
     noted = [r for r in records if r["kind"] != "model_request" and r["kind"] != "model_response"]
     assert [(r["stage"], r["reasoning_tokens"]) for r in noted] == [("specialist_testing_3", 20_000)]
     assert switch_firing.fired(noted) == ["LONG_REASONING_BEFORE_A_READ"]
+
+
+def _in_one_run_and_stage(monkeypatch, stage="test_round_2"):
+    monkeypatch.setattr("app.models.model_pin.current_run_id", lambda: "run-r")
+    monkeypatch.setattr("app.observability.transcript._run_id_from_config", lambda: "run-r")
+    monkeypatch.setattr("app.observability.transcript._stage_from_config", lambda fallback: stage)
+
+
+def test_after_two_long_deliberations_over_a_read_in_one_stage_thinking_stays_off_for_it(monkeypatch):
+    """Measured on one run: a test round reasoned 35,000 tokens before a read twice, thinking back on after each."""
+    _in_one_run_and_stage(monkeypatch)
+    _sent(*_reply(35_000, "read_file"))
+    assert not _thinking_is_off(_sent(*_reply(20_000, "read_file"), *_reply(40, "read_file")))
+    _sent(*_reply(35_000, "read_file"))
+
+    assert _thinking_is_off(_sent(*_reply(35_000, "read_file"), *_reply(40, "read_file"), *_reply(60, "edit_file")))
+
+
+def test_another_stage_does_not_inherit_it(monkeypatch):
+    _in_one_run_and_stage(monkeypatch)
+    _sent(*_reply(35_000, "read_file"))
+    _sent(*_reply(35_000, "read_file"))
+    _in_one_run_and_stage(monkeypatch, stage="defect_fix_3_0")
+
+    assert not _thinking_is_off(_sent(*_reply(60, "edit_file")))

@@ -1625,9 +1625,9 @@ def _thinking_is_off_here(
     `LONG_REASONING_BEFORE_A_READ` (`app.agents.deliberated_reads`): such a reply is not lost, so no rule above
     reaches it.
     """
-    from app.agents.deliberated_reads import the_last_reply_deliberated_over_a_read
+    from app.agents.deliberated_reads import stays_off_in, the_last_reply_deliberated_over_a_read
 
-    return _the_last_reply_was_all_reasoning(messages) or (
+    return _the_last_reply_was_all_reasoning(messages) or stays_off_in(_the_transcript_stage() or stage_name) or (
         max(lost_before, _replies_that_were_all_reasoning(messages)) >= LOST_REPLIES_BEFORE_THINKING_STAYS_OFF
     ) or _a_fix_stage_s_salvaged_replies_turn_thinking_off(
         messages, lost_before, salvaged_before, last_salvaged

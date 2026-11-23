@@ -119,5 +119,32 @@ def note(messages: list[Any], stage: str) -> None:
         logger.debug("Could not record the thinking switched off after a read", exc_info=True)
 
 
-__all__ = ["NAME", "ON_BY_DEFAULT", "REASONING_TOKENS", "RECORD_KIND", "SAID", "long_reasoning_switch", "note",
+#: How many replies in one stage may deliberate at length over a read before thinking stays off for the rest of it.
+TIMES_BEFORE_IT_STAYS_OFF = 2
+
+
+def stays_off_in(stage: str) -> bool:
+    """With the switch on, whether this stage has already turned thinking off `TIMES_BEFORE_IT_STAYS_OFF` times, so it
+    stays off. Never raises.
+
+    Measured on one run: a test round's replies reasoned 35,000 tokens (six minutes) before a read twice, thinking
+    coming back on after each - the one-reply shape left the next deliberation free. As for replies lost to reasoning
+    (`settled_answer.LOST_REPLIES_BEFORE_THINKING_STAYS_OFF`), a second time keeps it off; the transcript holds the
+    count, so a restart or a compaction keeps it.
+    """
+    try:
+        if not stage or not long_reasoning_switch.enabled():
+            return False
+        from app.observability.transcript import _run_id_from_config, read_transcript
+
+        run = _run_id_from_config()
+        if not run:
+            return False
+        times = sum(1 for entry in read_transcript(run, {RECORD_KIND}) if entry.get("stage") == stage)
+        return times >= TIMES_BEFORE_IT_STAYS_OFF
+    except Exception:  # noqa: BLE001 - then thinking is decided as before
+        return False
+
+
+__all__ = ["NAME", "TIMES_BEFORE_IT_STAYS_OFF", "stays_off_in", "ON_BY_DEFAULT", "REASONING_TOKENS", "RECORD_KIND", "SAID", "long_reasoning_switch", "note",
            "reasoning_tokens", "the_last_reply_deliberated_over_a_read"]

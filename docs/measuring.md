@@ -28,7 +28,7 @@ Rules (owner 2026-11-05 and 2026-11-07):
 ## Every switch (generated)
 
 <!-- switches:generated -->
-Written by `loop.sh measuring` from 466 scored runs in the ledger. On and off counts are over every run, across commits: a verdict here says where to look, not that a pair on one commit was run.
+Written by `loop.sh measuring` from 505 scored runs in the ledger. On and off counts are over every run, across commits: a verdict here says where to look, not that a pair on one commit was run.
 
 | Switch | Group | Default | Runs on | Fired | Runs off | Verdict |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -36,81 +36,81 @@ Written by `loop.sh measuring` from 466 scored runs in the ledger. On and off co
 | `PREMIUM_DEEP_VERIFICATION` | Bundles | on | 0 | no signal | 0 | not measured: needs 2 more on and 2 more off |
 | `PREMIUM_MODEL_TUNING` | Bundles | on | 0 | no signal | 0 | not measured: needs 2 more on and 2 more off |
 | `PREMIUM_PROJECT_INTELLIGENCE` | Bundles | on | 0 | no signal | 0 | not measured: needs 2 more on and 2 more off |
-| `BATCH_ACCEPTANCE_AUTHOR` | Context and cost | off | 1 | no signal | 73 | not measured: needs 1 more on and 0 more off |
-| `LEAD_REPLAN_REQUEST_SMALLER` | Context and cost | off | 3 | 3 | 11 | measured: hidden 1.00 on / 0.99 off; minutes 118.60 / 137.84 |
-| `LEAN_PROMPTS_FOR_STRONG_MODELS` | Context and cost | on | 52 | no signal | 0 | not measured: needs 0 more on and 2 more off |
-| `LEAN_TOOL_LISTS` | Context and cost | on | 52 | 52 | 0 | not measured: needs 0 more on and 2 more off |
-| `OBSERVATION_FOLDING` | Context and cost | on | 73 | no signal | 1 | not measured: needs 0 more on and 1 more off |
-| `QA_PROMPT_TRIMMED` | Context and cost | off | 3 | 2 | 11 | measured: hidden 1.00 on / 0.99 off; minutes 118.60 / 137.84 |
-| `REASONING_KEPT_AFTER_AN_ANSWER` | Context and cost | on | 73 | no signal | 1 | not measured: needs 0 more on and 1 more off |
-| `REVIEWER_SHAPED_PLUGIN_CONTENT` | Context and cost | off | 3 | 3 | 11 | measured: hidden 1.00 on / 0.99 off; minutes 118.60 / 137.84 |
-| `SLICED_MEMORY` | Context and cost | on | 52 | 52 | 0 | not measured: needs 0 more on and 2 more off |
-| `STABLE_STAGE_PREFIX` | Context and cost | on | 73 | no signal | 1 | not measured: needs 0 more on and 1 more off |
-| `CONCURRENT_WRITE_PROBE` | Contract probes | on | 73 | 6 | 1 | not measured: needs 0 more on and 1 more off |
-| `EDGE_PROBE` | Contract probes | on | 52 | 14 | 0 | not measured: needs 0 more on and 2 more off |
-| `PAGE_PROBE` | Contract probes | on | 52 | 2 | 0 | not measured: needs 0 more on and 2 more off |
-| `WRONG_SHAPE_BODY_PROBE` | Contract probes | on | 73 | 16 | 1 | not measured: needs 0 more on and 1 more off |
-| `DRAFTING_IN_WAVES` | Drafting order | on | 52 | 45 | 0 | not measured: needs 0 more on and 2 more off |
-| `EQUIVALENT_MUTANTS_REMEMBERED` | Efficiency | on | 73 | no signal | 1 | not measured: needs 0 more on and 1 more off |
-| `FIX_ORDER_CRITERIA_FIRST` | Efficiency | off | 2 | 2 | 6 | measured: hidden 1.00 on / 0.98 off; minutes 81.35 / 157.23 |
-| `FIX_STAGES_THAT_CLOSE_NOTHING` | Efficiency | on | 73 | 11 | 1 | not measured: needs 0 more on and 1 more off |
-| `HARNESS_FINDINGS_RECHECKED` | Efficiency | on | 73 | no signal | 1 | not measured: needs 0 more on and 1 more off |
-| `MUTANT_CHECK_IN_THE_FIX_STAGE` | Efficiency | on | 73 | 19 | 1 | not measured: needs 0 more on and 1 more off |
-| `MUTATION_GAPS_BUNDLED` | Efficiency | off | 1 | 0 | 14 | not measured: needs 1 more on and 0 more off |
-| `NEAR_GREEN_REPAIR_TO_ROUND` | Efficiency | on | 73 | 0 | 1 | not measured: needs 0 more on and 1 more off |
-| `NEAR_GREEN_REPLANNED_ONCE` | Efficiency | on | 38 | 2 | 43 | measured: hidden 0.89 on / 0.84 off; minutes 106.65 / 125.55 |
-| `ONE_DESIGN_REVIEW` | Efficiency | on | 73 | 0 | 1 | not measured: needs 0 more on and 1 more off |
-| `REPLY_ROOM_SIZED_PER_ROLE` | Efficiency | off | 0 | 0 | 0 | not measured: needs 2 more on and 2 more off |
-| `REVIEWS_WITHOUT_REASONING` | Efficiency | on | 78 | no signal | 146 | measured: hidden 0.85 on / 0.98 off; minutes 109.11 / 87.95 |
-| `SPRINT_TIME_BUDGET` | Efficiency | on | 73 | 0 | 1 | not measured: needs 0 more on and 1 more off |
-| `STABLE_MEMORY_ORDER` | Efficiency | on | 73 | 71 | 1 | not measured: needs 0 more on and 1 more off |
-| `SUMMARISE_LATER_WITH_HEADROOM` | Efficiency | off | 1 | 0 | 0 | not measured: needs 1 more on and 2 more off |
+| `BATCH_ACCEPTANCE_AUTHOR` | Context and cost | off | 1 | no signal | 112 | not measured: needs 1 more on and 0 more off |
+| `LEAD_REPLAN_REQUEST_SMALLER` | Context and cost | off | 3 | 3 | 50 | measured: hidden 1.00 on / 0.96 off; minutes 118.60 / 89.45 |
+| `LEAN_PROMPTS_FOR_STRONG_MODELS` | Context and cost | on | 91 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `LEAN_TOOL_LISTS` | Context and cost | on | 91 | 91 | 0 | not measured: needs 0 more on and 2 more off |
+| `OBSERVATION_FOLDING` | Context and cost | on | 112 | no signal | 1 | not measured: needs 0 more on and 1 more off |
+| `QA_PROMPT_TRIMMED` | Context and cost | off | 3 | 2 | 50 | measured: hidden 1.00 on / 0.96 off; minutes 118.60 / 89.45 |
+| `REASONING_KEPT_AFTER_AN_ANSWER` | Context and cost | on | 112 | no signal | 1 | not measured: needs 0 more on and 1 more off |
+| `REVIEWER_SHAPED_PLUGIN_CONTENT` | Context and cost | off | 3 | 3 | 50 | measured: hidden 1.00 on / 0.96 off; minutes 118.60 / 89.45 |
+| `SLICED_MEMORY` | Context and cost | on | 91 | 85 | 0 | not measured: needs 0 more on and 2 more off |
+| `STABLE_STAGE_PREFIX` | Context and cost | on | 112 | no signal | 1 | not measured: needs 0 more on and 1 more off |
+| `CONCURRENT_WRITE_PROBE` | Contract probes | on | 112 | 10 | 1 | not measured: needs 0 more on and 1 more off |
+| `EDGE_PROBE` | Contract probes | on | 91 | 22 | 0 | not measured: needs 0 more on and 2 more off |
+| `PAGE_PROBE` | Contract probes | on | 91 | 2 | 0 | not measured: needs 0 more on and 2 more off |
+| `WRONG_SHAPE_BODY_PROBE` | Contract probes | on | 112 | 21 | 1 | not measured: needs 0 more on and 1 more off |
+| `DRAFTING_IN_WAVES` | Drafting order | on | 91 | 72 | 0 | not measured: needs 0 more on and 2 more off |
+| `EQUIVALENT_MUTANTS_REMEMBERED` | Efficiency | on | 112 | no signal | 1 | not measured: needs 0 more on and 1 more off |
+| `FIX_ORDER_CRITERIA_FIRST` | Efficiency | off | 2 | 2 | 45 | measured: hidden 1.00 on / 0.96 off; minutes 81.35 / 86.66 |
+| `FIX_STAGES_THAT_CLOSE_NOTHING` | Efficiency | on | 112 | 16 | 1 | not measured: needs 0 more on and 1 more off |
+| `HARNESS_FINDINGS_RECHECKED` | Efficiency | on | 112 | no signal | 1 | not measured: needs 0 more on and 1 more off |
+| `MUTANT_CHECK_IN_THE_FIX_STAGE` | Efficiency | on | 112 | 28 | 1 | not measured: needs 0 more on and 1 more off |
+| `MUTATION_GAPS_BUNDLED` | Efficiency | off | 1 | 0 | 53 | not measured: needs 1 more on and 0 more off |
+| `NEAR_GREEN_REPAIR_TO_ROUND` | Efficiency | on | 112 | 0 | 1 | not measured: needs 0 more on and 1 more off |
+| `NEAR_GREEN_REPLANNED_ONCE` | Efficiency | on | 48 | 2 | 72 | measured: hidden 0.91 on / 0.88 off; minutes 101.86 / 104.42 |
+| `ONE_DESIGN_REVIEW` | Efficiency | on | 112 | 0 | 1 | not measured: needs 0 more on and 1 more off |
+| `REPLY_ROOM_SIZED_PER_ROLE` | Efficiency | off | 1 | 1 | 35 | not measured: needs 1 more on and 0 more off |
+| `REVIEWS_WITHOUT_REASONING` | Efficiency | on | 117 | no signal | 146 | measured: hidden 0.89 on / 0.98 off; minutes 98.01 / 87.95 |
+| `SPRINT_TIME_BUDGET` | Efficiency | on | 112 | 0 | 1 | not measured: needs 0 more on and 1 more off |
+| `STABLE_MEMORY_ORDER` | Efficiency | on | 112 | 108 | 1 | not measured: needs 0 more on and 1 more off |
+| `SUMMARISE_LATER_WITH_HEADROOM` | Efficiency | off | 3 | 1 | 37 | measured: hidden 0.74 on / 0.97 off; minutes 88.47 / 75.21 |
 | `PULL_REQUEST_DELIVERY` | Existing projects | off | 0 | 0 | 0 | not measured: needs 2 more on and 2 more off |
-| `WEB_LOOKUP_WHEN_STUCK` | Internet lookups | off | 15 | no signal | 1 | not measured: needs 0 more on and 1 more off |
-| `WEB_TOOLS_AFTER_TWO_FAILED_FIXES` | Internet lookups | off | 14 | 5 | 1 | not measured: needs 0 more on and 1 more off |
-| `WEB_TOOLS_OFFERED` | Internet lookups | off | 13 | no signal | 0 | not measured: needs 0 more on and 2 more off |
-| `PRODUCT_PREVIEW` | Product preview | off | 14 | no signal | 0 | not measured: needs 0 more on and 2 more off |
-| `DIAGNOSE_A_RECURRING_CAUSE` | Recurring causes | on | 52 | 2 | 0 | not measured: needs 0 more on and 2 more off |
-| `DESIGN_REVISION_CROSS_CHECKED` | Review gates | on | 73 | 67 | 1 | not measured: needs 0 more on and 1 more off |
-| `INTAKE_ASKS_FIRST` | Review gates | on | 52 | 52 | 0 | not measured: needs 0 more on and 2 more off |
-| `MILESTONE_EVIDENCE_GATE` | Review gates | on | 73 | no signal | 1 | not measured: needs 0 more on and 1 more off |
-| `SETUP_SCOPE_GUARD` | Setup scope | on | 73 | no signal | 1 | not measured: needs 0 more on and 1 more off |
-| `CONTESTED_TESTS_CONFIRMED` | Suite disputes | off | 2 | 0 | 14 | measured: hidden 1.00 on / 0.99 off; minutes 123.35 / 129.18 |
-| `UNIT_TEST_QUARANTINE` | Unit test signal | on | 52 | no signal | 0 | not measured: needs 0 more on and 2 more off |
-| `CHANGE_REQUEST_RUNS` | bundle PREMIUM_CHANGE_REQUESTS | on | 457 | no signal | 1 | not measured: needs 0 more on and 1 more off |
-| `ASK_SPECIFICATION` | bundle PREMIUM_DEEP_VERIFICATION | on | 456 | no signal | 2 | measured: hidden 0.92 on / 0.70 off; minutes 91.66 / 206.75 |
-| `ASSUMPTIONS_GATE` | bundle PREMIUM_DEEP_VERIFICATION | on | 456 | 352 | 2 | measured: hidden 0.92 on / 0.70 off; minutes 91.66 / 206.75 |
-| `MUTATION_GUIDED_TESTS` | bundle PREMIUM_DEEP_VERIFICATION | on | 450 | no signal | 0 | not measured: needs 0 more on and 2 more off |
-| `RELEASE_AUDITS` | bundle PREMIUM_DEEP_VERIFICATION | on | 456 | no signal | 2 | measured: hidden 0.92 on / 0.70 off; minutes 91.66 / 206.75 |
-| `RELEASE_DOCS_REQUIRED` | bundle PREMIUM_DEEP_VERIFICATION | on | 456 | no signal | 2 | measured: hidden 0.92 on / 0.70 off; minutes 91.66 / 206.75 |
-| `SCREENSHOT_RUBRIC` | bundle PREMIUM_DEEP_VERIFICATION | on | 456 | no signal | 2 | measured: hidden 0.92 on / 0.70 off; minutes 91.66 / 206.75 |
-| `FIX_STAGE_REPLY_CAP` | bundle PREMIUM_MODEL_TUNING | on | 375 | no signal | 0 | not measured: needs 0 more on and 2 more off |
-| `GUIDE_ANSWER_IN_SCHEMA` | bundle PREMIUM_MODEL_TUNING | on | 449 | no signal | 0 | not measured: needs 0 more on and 2 more off |
-| `GUIDE_EXACT_ARGUMENTS` | bundle PREMIUM_MODEL_TUNING | on | 449 | no signal | 0 | not measured: needs 0 more on and 2 more off |
-| `GUIDE_HEED_REFUSALS` | bundle PREMIUM_MODEL_TUNING | on | 449 | no signal | 0 | not measured: needs 0 more on and 2 more off |
-| `GUIDE_KEEP_TO_ROLE` | bundle PREMIUM_MODEL_TUNING | on | 449 | no signal | 0 | not measured: needs 0 more on and 2 more off |
-| `GUIDE_NO_REPETITION` | bundle PREMIUM_MODEL_TUNING | on | 449 | no signal | 0 | not measured: needs 0 more on and 2 more off |
-| `GUIDE_ONE_PROGRAM_A_COMMAND` | bundle PREMIUM_MODEL_TUNING | on | 449 | no signal | 0 | not measured: needs 0 more on and 2 more off |
-| `GUIDE_PATHS_AS_GIVEN` | bundle PREMIUM_MODEL_TUNING | on | 449 | no signal | 0 | not measured: needs 0 more on and 2 more off |
-| `GUIDE_STOP_WHEN_DONE` | bundle PREMIUM_MODEL_TUNING | on | 449 | no signal | 0 | not measured: needs 0 more on and 2 more off |
-| `MODEL_GUIDANCE` | bundle PREMIUM_MODEL_TUNING | on | 449 | no signal | 0 | not measured: needs 0 more on and 2 more off |
-| `PLAN_REVIEW_REPLY_CAP` | bundle PREMIUM_MODEL_TUNING | on | 368 | no signal | 0 | not measured: needs 0 more on and 2 more off |
-| `SALVAGED_PLANNING_THINKING_OFF` | bundle PREMIUM_MODEL_TUNING | on | 192 | no signal | 0 | not measured: needs 0 more on and 2 more off |
-| `SALVAGED_REPLIES_TURN_THINKING_OFF` | bundle PREMIUM_MODEL_TUNING | on | 368 | no signal | 0 | not measured: needs 0 more on and 2 more off |
-| `STEERING_AT_THE_TAIL` | bundle PREMIUM_MODEL_TUNING | on | 456 | no signal | 2 | measured: hidden 0.92 on / 0.70 off; minutes 91.66 / 206.75 |
-| `STRUCTURED_EXTRACTION` | bundle PREMIUM_MODEL_TUNING | on | 449 | no signal | 0 | not measured: needs 0 more on and 2 more off |
-| `THINKING_OFF_REPLY_CAP` | bundle PREMIUM_MODEL_TUNING | on | 192 | no signal | 0 | not measured: needs 0 more on and 2 more off |
-| `BUILDER_FACTS` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 412 | no signal | 0 | not measured: needs 0 more on and 2 more off |
-| `CANONICAL_MEMORY` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 456 | no signal | 2 | measured: hidden 0.92 on / 0.70 off; minutes 91.66 / 206.75 |
-| `CODE_GRAPH_TOOL` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 456 | no signal | 2 | measured: hidden 0.92 on / 0.70 off; minutes 91.66 / 206.75 |
-| `DECISION_LEDGER` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 456 | no signal | 2 | measured: hidden 0.92 on / 0.70 off; minutes 91.66 / 206.75 |
-| `LESSON_DISTILLER` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 457 | 257 | 1 | not measured: needs 0 more on and 1 more off |
-| `NAMING_STANDARD` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 432 | no signal | 0 | not measured: needs 0 more on and 2 more off |
-| `PROJECT_GRAPH_BUILDERS` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 456 | no signal | 2 | measured: hidden 0.92 on / 0.70 off; minutes 91.66 / 206.75 |
-| `PROJECT_GRAPH_FIXES` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 456 | no signal | 2 | measured: hidden 0.92 on / 0.70 off; minutes 91.66 / 206.75 |
-| `SHARED_FACTS` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 456 | 338 | 2 | measured: hidden 0.92 on / 0.70 off; minutes 91.66 / 206.75 |
-| `STATE_AT_DISPATCH` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 456 | no signal | 2 | measured: hidden 0.92 on / 0.70 off; minutes 91.66 / 206.75 |
-| `WHERE_THINGS_STAND` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 456 | 329 | 2 | measured: hidden 0.92 on / 0.70 off; minutes 91.66 / 206.75 |
+| `WEB_LOOKUP_WHEN_STUCK` | Internet lookups | on | 54 | no signal | 1 | not measured: needs 0 more on and 1 more off |
+| `WEB_TOOLS_AFTER_TWO_FAILED_FIXES` | Internet lookups | on | 53 | 11 | 1 | not measured: needs 0 more on and 1 more off |
+| `WEB_TOOLS_OFFERED` | Internet lookups | on | 52 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `PRODUCT_PREVIEW` | Product preview | off | 53 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `DIAGNOSE_A_RECURRING_CAUSE` | Recurring causes | on | 91 | 2 | 0 | not measured: needs 0 more on and 2 more off |
+| `DESIGN_REVISION_CROSS_CHECKED` | Review gates | on | 112 | 103 | 1 | not measured: needs 0 more on and 1 more off |
+| `INTAKE_ASKS_FIRST` | Review gates | on | 91 | 91 | 0 | not measured: needs 0 more on and 2 more off |
+| `MILESTONE_EVIDENCE_GATE` | Review gates | on | 112 | no signal | 1 | not measured: needs 0 more on and 1 more off |
+| `SETUP_SCOPE_GUARD` | Setup scope | on | 112 | no signal | 1 | not measured: needs 0 more on and 1 more off |
+| `CONTESTED_TESTS_CONFIRMED` | Suite disputes | off | 2 | 0 | 53 | measured: hidden 1.00 on / 0.96 off; minutes 123.35 / 89.90 |
+| `UNIT_TEST_QUARANTINE` | Unit test signal | on | 91 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `CHANGE_REQUEST_RUNS` | bundle PREMIUM_CHANGE_REQUESTS | on | 496 | no signal | 1 | not measured: needs 0 more on and 1 more off |
+| `ASK_SPECIFICATION` | bundle PREMIUM_DEEP_VERIFICATION | on | 495 | no signal | 2 | measured: hidden 0.92 on / 0.70 off; minutes 90.41 / 206.75 |
+| `ASSUMPTIONS_GATE` | bundle PREMIUM_DEEP_VERIFICATION | on | 495 | 390 | 2 | measured: hidden 0.92 on / 0.70 off; minutes 90.41 / 206.75 |
+| `MUTATION_GUIDED_TESTS` | bundle PREMIUM_DEEP_VERIFICATION | on | 489 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `RELEASE_AUDITS` | bundle PREMIUM_DEEP_VERIFICATION | on | 495 | no signal | 2 | measured: hidden 0.92 on / 0.70 off; minutes 90.41 / 206.75 |
+| `RELEASE_DOCS_REQUIRED` | bundle PREMIUM_DEEP_VERIFICATION | on | 495 | no signal | 2 | measured: hidden 0.92 on / 0.70 off; minutes 90.41 / 206.75 |
+| `SCREENSHOT_RUBRIC` | bundle PREMIUM_DEEP_VERIFICATION | on | 495 | no signal | 2 | measured: hidden 0.92 on / 0.70 off; minutes 90.41 / 206.75 |
+| `FIX_STAGE_REPLY_CAP` | bundle PREMIUM_MODEL_TUNING | on | 414 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `GUIDE_ANSWER_IN_SCHEMA` | bundle PREMIUM_MODEL_TUNING | on | 488 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `GUIDE_EXACT_ARGUMENTS` | bundle PREMIUM_MODEL_TUNING | on | 488 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `GUIDE_HEED_REFUSALS` | bundle PREMIUM_MODEL_TUNING | on | 488 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `GUIDE_KEEP_TO_ROLE` | bundle PREMIUM_MODEL_TUNING | on | 488 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `GUIDE_NO_REPETITION` | bundle PREMIUM_MODEL_TUNING | on | 488 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `GUIDE_ONE_PROGRAM_A_COMMAND` | bundle PREMIUM_MODEL_TUNING | on | 488 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `GUIDE_PATHS_AS_GIVEN` | bundle PREMIUM_MODEL_TUNING | on | 488 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `GUIDE_STOP_WHEN_DONE` | bundle PREMIUM_MODEL_TUNING | on | 488 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `MODEL_GUIDANCE` | bundle PREMIUM_MODEL_TUNING | on | 488 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `PLAN_REVIEW_REPLY_CAP` | bundle PREMIUM_MODEL_TUNING | on | 407 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `SALVAGED_PLANNING_THINKING_OFF` | bundle PREMIUM_MODEL_TUNING | on | 231 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `SALVAGED_REPLIES_TURN_THINKING_OFF` | bundle PREMIUM_MODEL_TUNING | on | 407 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `STEERING_AT_THE_TAIL` | bundle PREMIUM_MODEL_TUNING | on | 495 | no signal | 2 | measured: hidden 0.92 on / 0.70 off; minutes 90.41 / 206.75 |
+| `STRUCTURED_EXTRACTION` | bundle PREMIUM_MODEL_TUNING | on | 488 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `THINKING_OFF_REPLY_CAP` | bundle PREMIUM_MODEL_TUNING | on | 231 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `BUILDER_FACTS` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 451 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `CANONICAL_MEMORY` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 495 | no signal | 2 | measured: hidden 0.92 on / 0.70 off; minutes 90.41 / 206.75 |
+| `CODE_GRAPH_TOOL` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 495 | no signal | 2 | measured: hidden 0.92 on / 0.70 off; minutes 90.41 / 206.75 |
+| `DECISION_LEDGER` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 495 | no signal | 2 | measured: hidden 0.92 on / 0.70 off; minutes 90.41 / 206.75 |
+| `LESSON_DISTILLER` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 496 | 277 | 1 | not measured: needs 0 more on and 1 more off |
+| `NAMING_STANDARD` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 471 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `PROJECT_GRAPH_BUILDERS` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 495 | no signal | 2 | measured: hidden 0.92 on / 0.70 off; minutes 90.41 / 206.75 |
+| `PROJECT_GRAPH_FIXES` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 495 | no signal | 2 | measured: hidden 0.92 on / 0.70 off; minutes 90.41 / 206.75 |
+| `SHARED_FACTS` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 495 | 377 | 2 | measured: hidden 0.92 on / 0.70 off; minutes 90.41 / 206.75 |
+| `STATE_AT_DISPATCH` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 495 | no signal | 2 | measured: hidden 0.92 on / 0.70 off; minutes 90.41 / 206.75 |
+| `WHERE_THINGS_STAND` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 495 | 362 | 2 | measured: hidden 0.92 on / 0.70 off; minutes 90.41 / 206.75 |
 <!-- /switches:generated -->
 
 ## Measurement schedule

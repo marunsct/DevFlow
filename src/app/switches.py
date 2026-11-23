@@ -246,6 +246,9 @@ EXPERIMENTS_ON: dict[str, str] = {
     "DRAFTING_IN_WAVES": "deep review 2026-11-18 (1.6): files drafted side by side, blind to each other, disagreed on shared state and declared one interface twice; on, and off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
     "DIAGNOSE_A_RECURRING_CAUSE": "deep review 2026-11-18 (1.4): the fix rate fell from 29% at a first attempt to 22% and 11%, and one run was planned again three times with the same change; on, and off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
     "INTAKE_ASKS_FIRST": "deep review 2026-11-18 (C8): an earlier audit traced all four false acceptances it found to an intake or a specification that overrode the brief; on, and off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
+    "WEB_LOOKUP_WHEN_STUCK": "owner 2026-11-23: web tools on for every run and measured from here, the medium and high briefs not counted (docs/measuring.md)",
+    "WEB_TOOLS_OFFERED": "owner 2026-11-23: web tools on for every run and measured from here, the medium and high briefs not counted (docs/measuring.md)",
+    "WEB_TOOLS_AFTER_TWO_FAILED_FIXES": "owner 2026-11-23: web tools on for every run and measured from here, the medium and high briefs not counted (docs/measuring.md)",
 }
 _GROUP_OF = {name: group for group, members in GROUPS.items() for name in members}
 

@@ -52,11 +52,11 @@ describe('starting a build', () => {
     expect(JSON.stringify(mocks.startRun.mock.calls.at(-1))).toContain('"name":"second try"');
   });
 
-  // Plan WL.3: the user decides per run what the agents may look up on the internet; "when stuck" unless changed.
-  it('starts the run with the internet lookups chosen for it, when stuck unless changed', async () => {
+  // Plan WL.3: the user decides per run what the agents may look up on the internet; "always" unless changed (owner 2026-11-23).
+  it('starts the run with the internet lookups chosen for it, always unless changed', async () => {
     show();
     await userEvent.type(screen.getByLabelText(/Write the brief/), '## Features\n- Add a note');
-    expect((screen.getByLabelText(/Internet lookups/) as HTMLSelectElement).value).toBe('when_stuck');
+    expect((screen.getByLabelText(/Internet lookups/) as HTMLSelectElement).value).toBe('always');
     await userEvent.selectOptions(screen.getByLabelText(/Internet lookups/), 'off');
     expect(screen.getByTestId('internet-lookups-help').textContent).toMatch(/registries and official\s+documentation/);
     await userEvent.click(screen.getByRole('button', { name: /Start Workflow Run/ }));

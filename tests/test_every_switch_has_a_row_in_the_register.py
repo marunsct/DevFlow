@@ -47,3 +47,18 @@ def test_a_switch_with_a_signal_counts_its_firings(monkeypatch):
     monkeypatch.setattr(register, "_signalled", lambda: {"A"})
     runs = [_run(["A"], ["A"]), _run(["A"])]
     assert register.rows({"A": ("Efficiency", True)}, runs)[0].startswith("| `A` | Efficiency | on | 2 | 1 | 0 |")
+
+
+def test_only_benchmark_family_runs_are_counted_not_a_brief_started_by_hand(tmp_path):
+    """Owner 2026-11-23: the medium and high briefs run by hand are not counted in the measuring."""
+    register = _module()
+    ledger = tmp_path / "ledger.csv"
+    ledger.write_text("run,benchmark,switches_on,switches_fired,active_minutes\n"
+                      "run-a,notes-api,A,,30\nrun-b,,A,,300\nrun-c,a-medium-brief,A,,200\n")
+    bench = tmp_path / "bench"
+    bench.mkdir()
+    for run in ("run-a", "run-b", "run-c"):
+        (bench / f"{run}.json").write_text('{"score": 1.0}')
+    runs = register._runs(ledger, bench, families={"notes-api", "tasks-api"})
+    assert [r["minutes"] for r in runs] == [30.0]
+    assert "notes-api" in register._families() and "tasks-api" in register._families()

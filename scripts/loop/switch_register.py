@@ -19,13 +19,25 @@ START, END = "<!-- switches:generated -->", "<!-- /switches:generated -->"
 LEAST_RUNS = 2
 
 
-def _runs(ledger: Path, bench: Path) -> list[dict]:
+def _families(benchmarks: Path = ROOT / "benchmarks") -> set[str]:
+    """The benchmark families: a run of any other brief - a medium or high brief started by hand - is not measured."""
+    try:
+        return {folder.name for folder in benchmarks.iterdir() if (folder / "brief.md").is_file()}
+    except OSError:
+        return set()
+
+
+def _runs(ledger: Path, bench: Path, families: set[str] | None = None) -> list[dict]:
+    """The scored runs of the benchmark families (owner 2026-11-23: the medium and high briefs are not counted)."""
     out = []
+    families = _families() if families is None else families
     try:
         rows = list(csv.DictReader(ledger.open(encoding="utf-8")))
     except OSError:
         return out
     for row in rows:
+        if (row.get("benchmark") or "") not in families:
+            continue
         try:
             result = json.loads((bench / f"{row['run']}.json").read_text(encoding="utf-8"))
         except (OSError, ValueError, KeyError):

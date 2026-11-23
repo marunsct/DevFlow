@@ -20,8 +20,8 @@ from typing import Literal, Mapping
 
 Choice = Literal["off", "when_stuck", "always"]
 CHOICES: tuple[str, ...] = ("off", "when_stuck", "always")
-#: What the new-run form opens with.
-DEFAULT: Choice = "when_stuck"
+#: What the new-run form opens with: the web tools always (owner 2026-11-23).
+DEFAULT: Choice = "always"
 
 #: The switches each choice sets for the run.
 _SWITCHES_OF: dict[str, dict[str, bool]] = {

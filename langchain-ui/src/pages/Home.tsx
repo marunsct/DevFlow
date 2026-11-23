@@ -94,7 +94,7 @@ export const Home: React.FC = () => {
   // stage runs on the local build model.
   const [useFrontierModel, setUseFrontierModel] = useState<boolean>(true);
   // What the agents may look up on the internet in this run (plan WL.3); kept with the run.
-  const [internetLookups, setInternetLookups] = useState<InternetLookups>('when_stuck');
+  const [internetLookups, setInternetLookups] = useState<InternetLookups>('always');
   // Set once the server says no frontier model is configured. See the check below.
   const noFrontierModel = useRef(false);
   // Minutes a review gate waits for a person before approving itself; blank

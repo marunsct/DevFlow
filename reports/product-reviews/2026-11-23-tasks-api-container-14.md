@@ -1,0 +1,9 @@
+# Product review: tasks-api container 14 (run-8c35f01e-20df-43bb-ad2e-6ba5595fabba)
+
+**Result (started 17:54 JST 11-23 on :8888, finished 18:57, about 63 minutes; mixed: 7384e2a7, 2c7f6e84): delivered with cuts, hidden 10 of 10, quality 5 of 7, handoff 1.0, mutation 0.75.** KPI regressions: quality 0.71 (5-run mean 0.97), tool failures 10.2% (mean 4.1%), redundant reads 26% (mean 13%).
+
+- **Lost quality tests:** a title of only spaces is accepted (201), and items created at the same moment are not all kept (the request timed out). AC-21 (invalid input refused) shipped deferred.
+- **Why the harness did not catch them: its release probes never signed in.** The concurrent-write probe asked 1 write and probed 0 ("sign-in answered first"; the sign-up and sign-in writes counted as writes that make no record); the wrong-shape probe skipped `POST /items` for the same reason; the emptied-field probe asked nothing; and the bad-body probe's sign-in plan found no password body ("no example body carries a password"). LF.1242 is being built.
+- **What worked.** LF.1232/1236 fired: the second attempt's testing stage opened on the product's code (auth, db, main, models, tests) with the finished plans named, and wrote its tests with no summary (9 reads, 6 writes); the bookmarks testing stage this morning took 11 summaries and wrote none. A fixer found the one cause of every 500 (the `done` column).
+- **Waste:** the testing stage tried to edit `main.py` four times (refused) and re-ran a passing command four times after being told not to - the second run today with a testing stage writing product code (Rust 1: `db.rs` three times).
+- **Other harnesses:** release probes that sign in as a fresh user before checking each write are the norm in API fuzzers (Schemathesis' auth hooks, RESTler's token refresh); a probe that cannot sign in should say so loudly rather than count as passed.

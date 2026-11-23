@@ -679,3 +679,11 @@ These are things I got wrong or have not resolved.
 - **Deployed since 15:50:** LF.1237 (15:55, own-record pick check), LF.1238 (16:29, `LONG_REASONING_BEFORE_A_READ` on, measured), LF.1239 (16:39/16:54, axum known causes), LF.1240 (17:10, borrow cause).
 - **Fired and helped:** LF.1238 fired 4 times on run-8f0be29e: the acceptance author went from 13-28k reasoning tokens a read to under 4k and finished in 7 minutes; LF.1239's struct-import cause shown to two stages, that defect closed; web lookups fired 3 times on Rust, closed nothing on their own.
 - **Live:** run-b6dce69e textkit-lib 8 on :8888 (17:35); run-8f0be29e on :1234 (owner's).
+
+## 2026-11-23 19:15 JST
+
+- **Scored:** textkit-lib 8 (run-b6dce69e): 8/8, 7/7, delivered from the first draft in 10 min, mutation 1.0. tasks-api 14 (run-8c35f01e): 10/10, 5/7, delivered with cuts (AC-21), 63 min.
+- **Deployed:** LF.1241 (18:03, a TypeError on null the product's answer gave is the product's failure; the owner's run had spent four suite passes on it).
+- **Fired and helped:** LF.1232/1236 on tasks-api 14 (testing stage held the code, no summaries, wrote its tests); LF.1238 again on the owner's run; LF.1241: the owner's run's next suite review named a different, real weakness instead of the login TypeError.
+- **Found:** the release probes never signed in on tasks-api 14 (concurrent write 0 probed, wrong shape skipped, emptied field none) - the two lost quality tests are exactly theirs; LF.1242 being built.
+- **Live:** run-1a210682 notes-api-go 12 on :8888 (19:06); run-8f0be29e on :1234 (owner's).

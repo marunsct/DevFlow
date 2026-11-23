@@ -5,9 +5,9 @@ the block below is written by `loop.sh state`. The map of all documents is `docs
 `docs/improvement-plan.md`; how the product works is `docs/PRODUCT.md`; how to run and test it is `docs/HANDOVER.md`;
 decisions in force are `docs/owner-decisions.md`; old information is found through `docs/ARCHIVE.md`.
 <!-- state:generated -->
-**As of:** 11-23 08:07 JST (written by `loop.sh state`). Harness ccb5520f committed; fff67dd6 deployed (not the same).
-**Live, and stopped in the last day:** run-418ca472 running at defect_fix_1_3; run-8f0be29e running at defect_fix_2_1
-**Last scored:** run-2a421e80 wordstats-cli 8/8 (completed, handoff 1.0; scored 11-23 08:07 JST); run-edf4a423 notes-api-csharp 9/9 (completed, mixed, 89 active min, handoff 1.0; scored 11-23 08:04 JST); run-3c67ea98 notes-api-java 9/9 (completed, mixed, 111 active min, handoff 1.0; scored 11-22 12:13 JST).
+**As of:** 11-23 15:43 JST (written by `loop.sh state`). Harness 23479ae5 committed; f8d3815c deployed (not the same).
+**Live, and stopped in the last day:** run-8f0be29e running at acceptance_dispute; run-418ca472 failed at awaiting_approval:defect_fix_1_11
+**Last scored:** run-eebf5e67 fullstack-bookmarks 8/8 (completed, handoff 1.0; scored 11-23 15:43 JST); run-2a421e80 wordstats-cli 8/8 (completed, mixed, 66 active min, handoff 1.0; scored 11-23 08:07 JST); run-edf4a423 notes-api-csharp 9/9 (completed, mixed, 89 active min, handoff 1.0; scored 11-23 08:04 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -26,7 +26,8 @@ runs only when the owner starts them. Everything under measurement: `docs/improv
 
 ## The last three runs (11-20, hidden / quality; local model)
 Earlier runs: `reports/status-board/`, git history of this file.
-- **Live (11-23 14:58 JST):** run-eebf5e67 `L fullstack-bookmarks container 6` on :8888 (started 13:48 on c3423c45; mixed after the 14:57 deploy). run-8f0be29e on :1234 (not mine). LF.1227-LF.1234 deployed 13:47 JST (c3423c45); LF.1235 deployed 14:57 JST (f71fef7e, md5 verified): a test picks out its own records by a marker each carries whole, and the dispute names one whose pick misses a record (bookmarks 6's AC-4 test kept titles holding "Work <id>" from "Work <id>" and "Work Two <id>", expected two, and the dispute ruled it right). LF.1236 deployed 15:07 JST (f8d3815c): drafted files recorded as the drafting pass's, so LF.1232 sees them (it had not fired on bookmarks 6).
+- **Live (11-23 15:48 JST):** run-e625936e `L notes-api-rust container 1` on :8888 (started 15:47 on f8d3815c). run-8f0be29e on :1234 (not mine). LF.1227-LF.1234 deployed 13:47 JST (c3423c45); LF.1235 deployed 14:57 JST (f71fef7e, md5 verified): a test picks out its own records by a marker each carries whole, and the dispute names one whose pick misses a record (bookmarks 6's AC-4 test kept titles holding "Work <id>" from "Work <id>" and "Work Two <id>", expected two, and the dispute ruled it right). LF.1236 deployed 15:07 JST (f8d3815c): drafted files recorded as the drafting pass's, so LF.1232 sees them (it had not fired on bookmarks 6).
+- Scored 2026-11-23: **fullstack-bookmarks 6 (8/8, 7/7; delivered with cuts: AC-4 deferred on a locked test that could not pass, AC-14; 114 min, mixed, mutation 0.50)**.
 - Scored 2026-11-22: **notes-api-csharp 14 (9/9, 8/8; delivered, mutation 0.42, redundant reads 55%), wordstats-cli 6 (8/8, 6/6; delivered, mutation 0.80, tool failures 14.5%)**, **notes-api-java 10 (9/9, 8/8; delivered, 123 min, mutation 0.63; file-store data-folder start cause cleared by the fixers with LF.1206)**, **web-todo-react 4 (10/10, 6/6; delivered, 63 min, mutation 0.33; one own unit test shipped failing)**, **fullstack-bookmarks 5 (8/8, 6/7; delivered, 147 min; LF.1223 fixed the typed-markup quality test)**, **notes-api-go 11 (9/9, 6/8; delivered with cuts: AC-16 an aggregate criterion deferred; 73 min, mutation 0.80)**, **notes-api-php 11 (9/9, 8/8; delivered, 70 min, mutation 0.50; PSR-17 factory start failure, LF.1224)**, **fullstack-bookmarks 4 (8/8, 5/7; delivered with cuts: AC-14, AC-3 deferred; 210 min; page double-escaped titles, LF.1223)**, **tasks-api 13 (10/10,
   7/7; delivered with cuts: AC-1 deferred on a shared-store test; 143 min; LF.1208 and LF.1216 closed two defects)**, **notes-api-ruby 5 (9/9, 8/8; delivered,
   60 min, mutation 1.0)**, **notes-api-csharp 13 (9/9, 8/8; delivered with cuts: AC-10/AC-11 deferred on suite tests that cannot pass; 85 min,

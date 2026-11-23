@@ -664,3 +664,11 @@ These are things I got wrong or have not resolved.
 - **`loop.sh ready` fails while :1234 is busy,** and has failed repeatedly today for that reason. It only matters when starting a run.
 - **Weak proof** is listed in the Live table (LF.503, LF.507) and on the two rows with no flip test (LF.498, LF.505).
 - **Plan rows needing an edit** in the improvement plan: LF.501 sits out of order, and the LF.508 row still says no ruling had been accepted.
+
+## 2026-11-23 15:50 JST
+
+- **Scored:** fullstack-bookmarks 6 (run-eebf5e67): hidden 8/8, quality 7/7, delivered with cuts (AC-4 deferred on a locked test that could not pass; AC-14), 114 min, mutation 0.50.
+- **Deployed today:** LF.1227-LF.1234 (13:47, c3423c45: aggregate criteria, stuck lookups on the product's own error, Go/Maven registry names, build output skipped, missing-import refusal, builders and code reviews on written code hold that code, web tools on for every run); LF.1235 (14:57, own-record pick rule); LF.1236 (15:07, drafted files recorded).
+- **Fired and helped:** LF.1230 (stopped a flood of build-output problems; verified by test only so far); LF.1231 (no case since deploy); LF.1232/1233 (did not fire on bookmarks 6: drafted files had no author, fixed by LF.1236); LF.1235 (deployed, did not move the dispute's ruling); web tools (no stuck fixer yet since deploy).
+- **Building:** LF.1237, a deterministic own-record pick check handed to the dispute.
+- **Live:** run-e625936e notes-api-rust 1 on :8888 (15:47); run-8f0be29e on :1234 (owner's).

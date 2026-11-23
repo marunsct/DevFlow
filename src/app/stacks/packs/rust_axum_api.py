@@ -135,6 +135,12 @@ AXUM_KNOWN_ERRORS = {
         "rusqlite has no `JournalMode` type: set a pragma with `conn.pragma_update(None, \"journal_mode\", \"WAL\")?` "
         "(or `conn.execute_batch(\"PRAGMA journal_mode=WAL;\")?`), or leave the default journal mode."
     ),
+    "as mutable, as it is behind a `&` reference": (
+        "a method that needs the value mutable (`Connection::transaction`, a `Vec`'s `push`) is called through a shared "
+        "`&` reference: take `&mut` in the function's parameter and hold the value mutable where it comes from (`let "
+        "mut conn = state.db.lock()`), or, for a rusqlite transaction on a shared connection, use "
+        "`conn.unchecked_transaction()?`."
+    ),
     "couldn't convert the error to `": (
         "`?` turns an error into the function's own error type only where `From` connects them: a function returning "
         "one library's `Result` (`rusqlite::Result`) cannot `?` another's error (`std::io::Error` from creating the "

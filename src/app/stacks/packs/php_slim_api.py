@@ -323,6 +323,15 @@ SLIM_KNOWN_ERRORS = {
     ),
     # Measured on two PHP runs (64 and 81 repeats): every request, the readiness route first, died with this fatal error
     # and the product never started; the fixers rewrote the tests and the container set-up, not the route or its middleware.
+    # Measured on one PHP run: a write with a blank or non-string title answered 500 with Slim's HTML error page - the
+    # store threw `InvalidArgumentException` and the route never caught it - through two attempts of one sprint.
+    "Slim Application Error": (
+        "an exception escaped a route handler and Slim answered its HTML error page with 500: a request the handler "
+        "did not expect (a field missing, of another type, or blank once trimmed) reached code that throws. Validate "
+        "the body in the route before using it - each field present, of its type (`is_string`), and not blank after "
+        "`trim()` - and answer 400 or 422 with a JSON error; catch what the store throws (`InvalidArgumentException`) "
+        "and answer it the same way."
+    ),
     "HttpNotFoundException: Not found": (
         "Slim found no route for the request, and with no error middleware that is an uncaught fatal error, not a 404. "
         "Check that the route is registered (`$app->get('/health', ...)`) before the app runs, and that no base path is "

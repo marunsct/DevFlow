@@ -6,6 +6,8 @@ Measured on two PHP runs: the readiness route died with `Uncaught Slim\\Exceptio
 """
 from __future__ import annotations
 
+import re
+
 from app.agents.specialists import ReportedDefect
 from app.stacks import contract, pack_named
 from app.stacks.known_errors import KNOWN_CAUSE, with_known_causes
@@ -35,3 +37,14 @@ def test_a_go_undefined_name_is_given_the_import_rule(tmp_path):
     behaviour = _defect(tmp_path, "go-http-api", said)
 
     assert KNOWN_CAUSE in behaviour and "import block" in behaviour and "encoding/json" in behaviour
+
+
+def test_a_slim_error_page_from_an_unvalidated_body_is_given_the_validation_rule(tmp_path):
+    """Measured on one PHP run: a blank or numeric title answered 500 with Slim's HTML error page for two attempts."""
+    behaviour = _defect(tmp_path, "php-slim-api", "Requests at the edges of the interface contract are not handled: "
+                     "`POST /notes` with `title` only spaces answered 500 (it said: an HTML page, \"Slim Application "
+                     "Error\")")
+
+    assert KNOWN_CAUSE in behaviour
+    assert "not blank after `trim()`" in behaviour and "`InvalidArgumentException`" in behaviour
+    assert not re.search(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", behaviour, re.I)

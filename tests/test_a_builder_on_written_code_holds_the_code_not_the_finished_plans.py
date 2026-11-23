@@ -164,3 +164,39 @@ def test_a_review_of_the_sprint_s_code_holds_that_code_too(tmp_path, monkeypatch
 
     assert set(WRITTEN_BY_THE_SPRINTS) <= _held_whole(memory)
     assert not {"docs/milestone_plan.md", "docs/acceptance_tests.md"} & _held_whole(memory)
+
+
+def test_code_the_drafting_pass_wrote_counts_as_written_though_no_stage_was_recorded(tmp_path, monkeypatch):
+    """Measured on one run: the drafting pass's writes recorded no author, and the next builder held the plans whole."""
+    from app.graph.drafting import remember_drafted
+
+    root = _project(tmp_path, written=True)
+    # As the run left it: each product file recorded with no creator, as a write outside a stage's config is.
+    memory_file = root / ".project-memory.json"
+    import json
+
+    held = json.loads(memory_file.read_text())
+    for path in held:
+        held[path] = {**held[path], "created_by": "", "changed_by": ""}
+    memory_file.write_text(json.dumps(held))
+    assert not project_memory.builds_on_code(str(root), "specialist_testing_1")
+
+    remember_drafted(str(root), WRITTEN_BY_THE_SPRINTS)
+
+    memory = _opening_memory(root, "specialist_testing_1", monkeypatch)
+    assert set(WRITTEN_BY_THE_SPRINTS) <= _held_whole(memory)
+    assert "docs/milestone_plan.md" not in _held_whole(memory)
+
+
+def test_a_file_a_fixer_changed_counts_as_written_by_it(tmp_path):
+    root = _project(tmp_path, written=True)
+    import json
+
+    memory_file = root / ".project-memory.json"
+    held = json.loads(memory_file.read_text())
+    for path in held:
+        held[path] = {**held[path], "created_by": "", "changed_by": ""}
+    held["service/app/main.py"]["changed_by"] = "defect_fix_1_0"
+    memory_file.write_text(json.dumps(held))
+
+    assert project_memory.builds_on_code(str(root), "specialist_testing_1")

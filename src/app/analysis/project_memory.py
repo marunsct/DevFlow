@@ -468,10 +468,15 @@ def who_created(root: str | Path, relative_path: str) -> str:
 
 
 def creators(root: str | Path) -> dict[str, str]:
-    """Each recorded file and the stage that first wrote it, in one read; {} when none or unknown. Never raises."""
+    """Each recorded file and the stage that first wrote it - else the last that changed it - in one read. Never raises.
+
+    A file the harness first wrote, or one drafted outside a stage's config, has no creator; the stage that changed it
+    since is then its author. Measured on one run: every product file drafted for a sprint read as unwritten, and a
+    later builder opened on the plans whole (`project_memory.builds_on_code`).
+    """
     try:
-        return {path: str(entry.get("created_by") or "") for path, entry in _load(Path(root)).items()
-                if isinstance(entry, dict)}
+        return {path: str(entry.get("created_by") or entry.get("changed_by") or "")
+                for path, entry in _load(Path(root)).items() if isinstance(entry, dict)}
     except Exception:  # noqa: BLE001
         return {}
 

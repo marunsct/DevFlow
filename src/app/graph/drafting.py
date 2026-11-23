@@ -605,6 +605,26 @@ def _in_waves(code_jobs: list[Job], tasks: list[Any], specification: Any,
     return [wave for wave in waves if wave], planned.needs
 
 
+#: The author the project memory records for a file the drafting pass wrote.
+DRAFTING_STAGE = "drafting"
+
+
+def remember_drafted(repo_root: str | Path, paths: list[str]) -> None:
+    """Record the drafting pass as the stage that changed each file it wrote. Never raises.
+
+    Its writes run outside a stage's config, so the write tools recorded no author: measured on one run, every
+    product file a sprint drafted read as unwritten, and the next builder opened on the plans whole
+    (`project_memory.builds_on_code`).
+    """
+    try:
+        from app.analysis import project_memory
+
+        for path in paths:
+            project_memory.record(repo_root, path, DRAFTING_STAGE)
+    except Exception:  # noqa: BLE001 - bookkeeping never fails a draft
+        logger.debug("Could not record the drafted files", exc_info=True)
+
+
 def draft_work_orders(
     tasks: list[Any],
     specification: Any,
@@ -725,6 +745,7 @@ def draft_work_orders(
     if diagnose is not None:
         _repaired_where_the_compiler_says(results, jobs, diagnose, model, root, repo_root, specification, stack, write,
                                           needs=needs)
+    remember_drafted(repo_root, [path for _, path, ok in results if ok])
     drafted: dict[int, Any] = {}
     for index, task in enumerate(tasks):
         mine = [(path, ok) for i, path, ok in results if i == index]

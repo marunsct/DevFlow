@@ -129,6 +129,16 @@ AXUM_KNOWN_ERRORS = {
         "a handler takes `Extension<AppState>` while `app()` applies the state with `.with_state(state)`: those are two "
         "mechanisms. Take `State(state): State<AppState>` in every handler (or add `.layer(Extension(state))`, not both)."
     ),
+    # Measured on a Rust run: a store set SQLite's journal mode through a `rusqlite::JournalMode` that does not exist;
+    # the fixer and two stuck lookups left it open, and a test then named a struct its module only imports.
+    "could not find `JournalMode` in `rusqlite`": (
+        "rusqlite has no `JournalMode` type: set a pragma with `conn.pragma_update(None, \"journal_mode\", \"WAL\")?` "
+        "(or `conn.execute_batch(\"PRAGMA journal_mode=WAL;\")?`), or leave the default journal mode."
+    ),
+    "struct import `": (
+        "the struct is reached through a module that only imports it with a private `use`: name it from the module "
+        "that defines it (and make that `pub`), or re-export it there with `pub use`."
+    ),
     "is private: private module": (
         "a test under `tests/` sees only what the crate makes public: declare the module in `src/lib.rs` with "
         "`pub mod <name>;`, not `mod <name>;`."

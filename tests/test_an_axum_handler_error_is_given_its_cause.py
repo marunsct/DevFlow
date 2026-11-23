@@ -34,11 +34,14 @@ def _defect(text):
     ("error[E0382]: use of moved value: `app`: value used here after move", "`oneshot` takes the router by value"),
     ("unresolved import `crate::models`: could not find `models` in the crate root", "`pub mod <name>;`"),
     ("module `models` is private: private module", "`pub mod <name>;`, not `mod <name>;`"),
+    ("failed to resolve: could not find `JournalMode` in `rusqlite`: could not find `JournalMode`",
+     "`conn.pragma_update(None, \"journal_mode\", \"WAL\")?`"),
+    ("error[E0603]: struct import `AppState` is private", "re-export it there with `pub use`"),
     ("answered 500: Missing request extension: Extension of type `AppState` was not found", "`State(state): State<AppState>`"),
     ("The default runtime flavor is `multi_thread`, but the `rt-multi-thread` feature is disabled", "\"rt-multi-thread\", \"net\"]"),
 ], ids=["body-extractor-first", "router-without-its-state", "app-returns-a-router-still-waiting", "no-axum-test",
         "a-test-given-a-router-still-waiting", "a-router-sent-two-requests", "a-module-not-declared",
-        "a-private-module", "tokio-without-its-runtime", "extension-and-state-mixed"])
+        "a-private-module", "no-journal-mode-type", "a-struct-only-imported", "tokio-without-its-runtime", "extension-and-state-mixed"])
 def test_the_error_is_given_its_cause(tmp_path, error, cause):
     contract.write(tmp_path, pack_named("rust-axum-api"), "notes-api", "Notes")
 

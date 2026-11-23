@@ -3272,6 +3272,35 @@ def absences_a_longer_text_also_meets(repo_root: str | Path) -> list[str]:
     return problems[:6]
 
 
+def picks_of_their_own_records_that_miss_one(repo_root: str | Path) -> list[str]:
+    """Where a test picks its own records out of a list by a piece of text fewer of the values it made hold than the
+    count it asserts. See the pack's `own_records_a_pick_misses`."""
+    found = contract.the_pack(repo_root)
+    if found is None or found[0].own_records_a_pick_misses is None:
+        return []
+    root = Path(repo_root)
+    problems = []
+    for path in suite_files(repo_root):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for line, pick, field, expected, kept, missed, marker in list(found[0].own_records_a_pick_misses(text))[:3]:
+            shown = ", ".join(f'"{value}"' for value in list(missed)[:4])
+            how = next((said for word, said in (("startsWith", "starts with"), ("endsWith", "ends with"),
+                                                (" === ", "equals")) if word in pick), "holds")
+            problems.append(
+                f"`{path.relative_to(root).as_posix()}` line {line} keeps the records it made whose `{field}` passes "
+                f'"{pick}" and expects {expected} of them, but of the values it gave `{field}` only {kept} can pass: '
+                f"{shown} never {how} what it picks by, with \"{marker}\" the same value throughout. The count can "
+                f"never be {expected}, whatever the product does. Pick the test's own "
+                f"records by a marker every one of them carries whole, such as \"{marker}\" itself "
+                f'("{pick.split(".", 1)[0]}.{field}.includes({marker})"), not by a piece of one record\'s name. '
+                "This is about the test, not the product."
+            )
+    return problems[:6]
+
+
 #: How a finding of `items_found_again_after_an_action` ends: what it is, and what it is not.
 ADVICE_ONLY = "This is advice about the test: it does not show that the test cannot pass."
 
@@ -6104,6 +6133,7 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
         *_by(checks, "tests_that_assert_an_unstated_order", tests_that_assert_an_unstated_order(repo_root)),
         *_by(checks, "locators_that_contradict_their_assertions", locators_that_contradict_their_assertions(repo_root)),
         *_by(checks, "absences_a_longer_text_also_meets", absences_a_longer_text_also_meets(repo_root)),
+        *_by(checks, "picks_of_their_own_records_that_miss_one", picks_of_their_own_records_that_miss_one(repo_root)),
         *_by(checks, "tests_with_module_system_mismatch", tests_with_module_system_mismatch(repo_root)),
         *_by(checks, "tests_with_unawaited_async_helpers", tests_with_unawaited_async_helpers(repo_root)),
         *_by(checks, "tests_whose_value_and_length_disagree", tests_whose_value_and_length_disagree(repo_root)),
@@ -6213,8 +6243,9 @@ def findings_that_reopen(repo_root: str | Path, result: Any, found: Sequence[str
 
 #: The checks whose finding settles a dispute: what each reads in a test cannot hold for any product, by the runner's
 #: own documented matching, whatever the test asserts. The dispute is told it, and a test it names is never kept as
-#: sound. Measured on one run: a dispute called a test right whose absence its own other assertion ruled out.
-_SETTLE_A_DISPUTE = (absences_a_longer_text_also_meets,)
+#: sound. Measured on one run: a dispute called a test right whose absence its own other assertion ruled out; on
+#: another, one ruled a test right twice whose pick of its own records missed one it made.
+_SETTLE_A_DISPUTE = (absences_a_longer_text_also_meets, picks_of_their_own_records_that_miss_one)
 
 
 def what_the_code_shows_of(repo_root: str | Path, names: Sequence[str]) -> list[tuple[str, str]]:

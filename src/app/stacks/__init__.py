@@ -192,6 +192,12 @@ class StackPack:
     #: A suite file's text -> (line, text, longer text) where a test expects a locator found by a text that is not
     #: matched exactly to be absent while it expects one found by a longer text holding it, in any case, present.
     absences_a_longer_text_meets: Callable[[str], Sequence[tuple[int, str, str]]] | None = None
+    #: A suite file's text -> (line, the pick, its field, the count asserted, how many it can keep, the values it
+    #: misses, the test's own marker) where a test picks its own records out of a list by a piece of text that fewer of
+    #: the values it made hold than the number it asserts.
+    own_records_a_pick_misses: (
+        Callable[[str], Sequence[tuple[int, str, str, int, int, Sequence[str], str]]] | None
+    ) = None
     #: A suite file's text -> (line, text) where a test acts inside an item it found by a text, then looks inside that
     #: item again by the same text, which the action may have taken off it. Advice, never a reason to reopen.
     found_again_after_an_action: Callable[[str], Sequence[tuple[int, str]]] | None = None

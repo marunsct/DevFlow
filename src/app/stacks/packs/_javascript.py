@@ -1870,3 +1870,476 @@ TSCONFIG_BUILD_SHIPPED_ONLY = """{
   "include": ["src"]
 }
 """
+
+
+#: The words an expression of a value made up at run time may use: no two runs, and no two tests, make the same one.
+_RUN_TIME_WORDS = frozenset({
+    "crypto", "randomUUID", "Date", "now", "getTime", "new", "Math", "random", "floor", "round", "ceil", "toString",
+    "slice", "substring", "substr", "padStart", "toFixed", "String", "Number", "performance", "process", "hrtime",
+    "bigint",
+})
+#: A template literal whose every interpolation is a name: `` `Work ${id}` ``.
+_A_TEMPLATE_OF_NAMES = re.compile(r"""`(?:[^`\\$]|\\.|\$(?!\{)|\$\{\s*[A-Za-z_$][\w$]*\s*\})*`""")
+_A_NAME = re.compile(r"""[A-Za-z_$][\w$]*""")
+_A_CONST = re.compile(r"""\bconst\s+([A-Za-z_$][\w$]*)\s*=(?![=>])\s*""")
+#: What may run a write more often than it is written; a `for` or `while` loop only when a write is inside it.
+_REPEATS = re.compile(r"""\bdo\b|\.\s*(?:map|forEach|flatMap|reduce)\s*\(|\bArray\s*\.\s*from\b|\.\.\.""")
+_A_LOOP = re.compile(r"""\b(?:for|while)\s*\(""")
+#: A use of the test's `request` that writes nothing: a read, or a removal, which can only keep fewer.
+_NO_WRITE = re.compile(r"""\s*\.\s*(?:get|head|delete)\s*\(""")
+#: A write through something other than the test's `request`.
+_A_WRITE_BY = re.compile(r"""([A-Za-z_$][\w$]*)\s*\.\s*(?:post|put|patch|fetch)\s*\(""")
+#: A function of the file: `function name(`, `const name = async (`.
+_A_FUNCTION_OF_THE_FILE = re.compile(
+    r"""\bfunction\s+([A-Za-z_$][\w$]*)\s*\(|"""
+    r"""\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\([^()]*\)|[A-Za-z_$][\w$]*)\s*=>""")
+_OTHER_WAYS_IN = re.compile(r"""\bfetch\s*\(|\bnewContext\s*\(|\bfunction\b""")
+#: A callback that only picks from a list: the one kind of function of its own a test read here may have.
+_A_PICKING_CALLBACK = re.compile(
+    r"""\.\s*(?:filter|find|findIndex|some|every)\s*\(\s*(?:\(\s*[A-Za-z_$][\w$]*\s*\)|[A-Za-z_$][\w$]*)\s*=>""")
+_TAKES_ONLY_THE_REQUEST = re.compile(
+    r"""test\s*\(\s*""" + _A_PLAIN_STRING + r"""\s*,\s*async\s*\(\s*\{\s*request\s*\}\s*\)\s*=>\s*\{""")
+_A_PICK = re.compile(r"""\.\s*filter\s*\(\s*(?:\(\s*([A-Za-z_$][\w$]*)\s*\)|([A-Za-z_$][\w$]*))\s*=>\s*""")
+#: What a pick compares with: a string, a template literal, or a name.
+_A_VALUE = r"""(""" + _A_PLAIN_STRING + r"""|`(?:[^`\\$]|\\.|\$(?!\{)|\$\{[^{}`]*\})*`|[A-Za-z_$][\w$]*)"""
+_A_COUNT_OF = (
+    r"""expect\(\s*{name}\s*\.\s*length\s*\)\s*\.\s*(?:toBe|toEqual|toStrictEqual)\(\s*(\d+)\s*\)""",
+    r"""expect\(\s*{name}\s*\)\s*\.\s*toHaveLength\(\s*(\d+)\s*\)""",
+)
+#: The names a test's code may use, each with whether it is bound in the test itself and the file's makers of a value
+#: made up at run time (see `_makers`).
+_Scopes = Sequence[tuple[dict[str, list[str]], bool, frozenset[str]]]
+
+
+class _Unread(Exception):
+    """Something in a test this check does not read with confidence: it then says nothing of that test."""
+
+
+def _blanked(code: str) -> str:
+    """`code` with what is inside each string and template literal blanked, its quotes and every position kept."""
+    out = list(code)
+    quote = ""
+    for at, char in enumerate(code):
+        if quote:
+            if char == quote and code[at - 1] != "\\":
+                quote = ""
+            elif char != "\n":
+                out[at] = " "
+        elif char in "'\"`":
+            quote = char
+    return "".join(out)
+
+
+def _the_expression_at(code: str, start: int) -> str:
+    """The expression that starts at `start`: up to a `;`, a `,` or a line end outside brackets, or a bracket it never
+    opened."""
+    depth, quote, at = 0, "", start
+    while at < len(code):
+        char = code[at]
+        if quote:
+            if char == "\\":
+                at += 1
+            elif char == quote:
+                quote = ""
+        elif char in "'\"`":
+            quote = char
+        elif char in "([{":
+            depth += 1
+        elif char in ")]}":
+            depth -= 1
+            if depth < 0:
+                break
+        elif not depth and (char in ";," or (char == "\n" and code[at + 1:].lstrip()[:1] not in (".", "?", ":"))):
+            break
+        at += 1
+    return code[start:at].strip()
+
+
+def _consts(code: str, blank: str, top_only: bool) -> dict[str, list[str]]:
+    """Each name a `const` of `code` binds -> what it is bound to, each time; only those outside any block, if asked."""
+    bound: dict[str, list[str]] = {}
+    for match in _A_CONST.finditer(blank):
+        if top_only and blank.count("{", 0, match.start()) != blank.count("}", 0, match.start()):
+            continue
+        bound.setdefault(match.group(1), []).append(_the_expression_at(code, match.end()))
+    return bound
+
+
+def _made_at_run_time(expression: str, makers: frozenset[str] = frozenset()) -> bool:
+    """Whether `expression` makes up a value at run time from nothing the test holds: `crypto.randomUUID()`,
+    `` `ac-${Date.now()}` ``, or a call of one of `makers`, functions of the file that take nothing and do that."""
+    parts = [expression]
+    if expression.startswith("`") and expression.endswith("`"):
+        parts = re.findall(r"\$\{([^{}`]*)\}", expression)
+        if not parts or re.sub(r"\$\{[^{}`]*\}", "", expression).count("`") != 2:
+            return False
+    return all("(" in part and re.fullmatch(r"""[\w$.()\s,*+\-/%]+""", part)
+               and set(_A_NAME.findall(part)) <= _RUN_TIME_WORDS | makers for part in parts)
+
+
+#: A function of the file that takes nothing and returns one expression: `const uid = () => ...`, `function uid() {
+#: return ...; }`.
+_A_MAKER = re.compile(r"""\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*\(\s*\)\s*=>\s*(?!\{)|"""
+                      r"""\bfunction\s+([A-Za-z_$][\w$]*)\s*\(\s*\)\s*\{\s*return\s+""")
+
+
+def _makers(code: str) -> frozenset[str]:
+    """The functions of the file that take nothing and make up a value at run time, each defined once."""
+    made: dict[str, list[bool]] = {}
+    for match in _A_MAKER.finditer(code):
+        returned = _the_expression_at(code, match.end())
+        ends = (";", "\n", "") if match.group(1) else (";", "}")
+        whole = code[match.end() + len(returned):].lstrip(" \t")[:1] in ends
+        made.setdefault(match.group(1) or match.group(2), []).append(whole and _made_at_run_time(returned))
+    return frozenset(name for name, each in made.items() if each == [True])
+
+
+def _the_value(expression: str, scopes: _Scopes, marks: set[str], depth: int = 0) -> str:
+    """The text `expression` - a string, a template of names or a name - stands for, each value made up at run time
+    one opaque mark (`marks` gets the names of those the test itself makes). Raises `_Unread` for anything else."""
+    expression = expression.strip()
+    if depth > 4:
+        raise _Unread
+    if re.fullmatch(_A_PLAIN_STRING, expression):
+        return _the_string(expression)
+    if _A_TEMPLATE_OF_NAMES.fullmatch(expression):
+        pieces = re.split(r"\$\{\s*([A-Za-z_$][\w$]*)\s*\}", expression[1:-1])
+        return "".join(re.sub(r"\\(.)", r"\1", piece) if index % 2 == 0 else _the_named(piece, scopes, marks, depth)
+                       for index, piece in enumerate(pieces))
+    if _A_NAME.fullmatch(expression):
+        return _the_named(expression, scopes, marks, depth)
+    raise _Unread
+
+
+def _the_named(name: str, scopes: _Scopes, marks: set[str], depth: int) -> str:
+    for index, (scope, in_the_test, makers) in enumerate(scopes):
+        if name not in scope:
+            continue
+        if len(scope[name]) != 1:
+            raise _Unread
+        bound = scope[name][0]
+        if _made_at_run_time(bound, makers):
+            if in_the_test:
+                marks.add(name)
+            # One mark per way of making it: two values made alike are taken as possibly the same.
+            return "\x00" + " ".join(bound.split()) + "\x00"
+        return _the_value(bound, scopes[index:], marks, depth + 1)
+    raise _Unread
+
+
+def _entries(literal: str) -> dict[str, str]:
+    """An object literal's entries, key -> the expression of its value (a shorthand's is its name). Raises `_Unread`
+    for a spread, a computed key, a method or a key given twice."""
+    literal = literal.strip()
+    if not (literal.startswith("{") and literal.endswith("}")):
+        raise _Unread
+    found: dict[str, str] = {}
+    for entry in _the_arguments(literal[1:-1]):
+        keyed = re.match(r"""(?:([A-Za-z_$][\w$]*)|'([^'\\]*)'|"([^"\\]*)")\s*:\s*""", entry)
+        if keyed:
+            key, value = keyed.group(1) or keyed.group(2) or keyed.group(3), entry[keyed.end():]
+        elif _A_NAME.fullmatch(entry):
+            key, value = entry, entry
+        else:
+            raise _Unread
+        if key in found:
+            raise _Unread
+        found[key] = value
+    return found
+
+
+def _the_call_at(code: str, opened: int) -> list[str]:
+    """The arguments of the call whose `(` is just before `opened`."""
+    closes = _the_closing_paren(code, opened)
+    if closes < 0:
+        raise _Unread
+    return _the_arguments(code[opened:closes])
+
+
+def _what_a_write_sends(arguments: list[str], field: str) -> str:
+    """The expression `request.post|put|patch(url, { data: { ... } })` sends as `field`. Raises `_Unread` when its data
+    is not written out, sends `field` other than once at its top, or sends no `field`."""
+    if len(arguments) < 2:
+        raise _Unread
+    data = _entries(arguments[1]).get("data")
+    if data is None:
+        raise _Unread
+    sent = _entries(data)
+    if field not in sent or len(re.findall(rf"\b{re.escape(field)}\b", _blanked(data))) != 1:
+        raise _Unread
+    return sent[field]
+
+
+def _how_a_helper_sends(code: str, name: str, field: str) -> tuple[int, str]:
+    """How the one function of the file called `name`, given the test's `request` first, sends `field` in its one write:
+    (the index of the argument it takes it from, and "" for that argument whole or the key of that object argument).
+    Raises `_Unread` for anything else: a function defined elsewhere, a loop, a second write, a value it changes."""
+    blank = _blanked(code)
+    defined = list(re.finditer(rf"""\b(?:async\s+)?function\s+{re.escape(name)}\s*\(|"""
+                               rf"""\bconst\s+{re.escape(name)}\s*=\s*(?:async\s*)?\(""", blank))
+    if len(defined) != 1:
+        raise _Unread
+    opened = defined[0].end()
+    closes = _the_closing_paren(blank, opened)
+    if closes < 0:
+        raise _Unread
+    params = _the_arguments(code[opened:closes])
+    rest = re.match(r"""\s*(?:=>\s*)?\{""", blank[closes + 1:])
+    if not params or not _A_NAME.fullmatch(params[0]) or rest is None:
+        raise _Unread
+    start = closes + 1 + rest.end()
+    body = _the_block(code[start:])
+    blank_body = blank[start:start + len(body)]
+    if _repeats_a_write(blank_body) or "=>" in blank_body:
+        raise _Unread
+    writes = []
+    for use in re.finditer(rf"\b{re.escape(params[0])}\b", blank_body):
+        how = re.match(r"""\s*\.\s*(get|head|delete|post|put|patch)\s*\(""", blank_body[use.end():])
+        if how is None:
+            raise _Unread
+        if how.group(1) in ("post", "put", "patch"):
+            writes.append(use.end() + how.end())
+    if len(writes) != 1:
+        raise _Unread
+    arguments = _the_call_at(body, writes[0])
+    data = _entries(arguments[1]).get("data") if len(arguments) > 1 else None
+    if data is None:
+        raise _Unread
+    data = data.strip()
+
+    def kept_as_given(given: str) -> None:
+        if re.search(rf"""\b{re.escape(given)}\s*(?:\.\s*[\w$]+\s*)?(?:=(?![=>])|\+=)|\b{re.escape(given)}\s*\[""",
+                     blank_body):
+            raise _Unread
+
+    plain = [(index, param) for index, param in enumerate(params) if index and _A_NAME.fullmatch(param)]
+    for index, param in plain:
+        if param == data:
+            kept_as_given(param)
+            return index, field
+    sent = _entries(data)
+    if field not in sent or len(re.findall(rf"\b{re.escape(field)}\b", _blanked(data))) != 1:
+        raise _Unread
+    value = sent[field].strip()
+    read_off = re.fullmatch(r"""([A-Za-z_$][\w$]*)\s*\.\s*([A-Za-z_$][\w$]*)""", value)
+    for index, param in plain:
+        if param == value:
+            kept_as_given(param)
+            return index, ""
+        if read_off and param == read_off.group(1):
+            kept_as_given(param)
+            return index, read_off.group(2)
+    for index, param in enumerate(params):
+        if index and param.startswith("{") and param.endswith("}") and _A_NAME.fullmatch(value):
+            names = {(entry.split(":", 1)[1] if ":" in entry else entry).strip(): entry.split(":", 1)[0].strip()
+                     for entry in _the_arguments(param[1:-1])}
+            if value in names:
+                kept_as_given(value)
+                return index, names[value]
+    raise _Unread
+
+
+def _repeats_a_write(blank: str) -> bool:
+    """Whether `blank`, a test's or a function's code with its strings blanked, may run a write more often than it is
+    written, or write through something other than `request`."""
+    if _REPEATS.search(blank) or _OTHER_WAYS_IN.search(blank):
+        return True
+    if any(by.group(1) != "request" for by in _A_WRITE_BY.finditer(blank)):
+        return True
+    for loop in _A_LOOP.finditer(blank):
+        closes = _the_closing_paren(blank, loop.end())
+        if closes < 0:
+            return True
+        rest = blank[closes + 1:]
+        opened = re.match(r"""\s*\{""", rest)
+        span = blank[loop.start():closes + 1] + (
+            _the_block(rest[opened.end():]) if opened else re.split(r"[;\n]", rest.lstrip(), maxsplit=1)[0])
+        if any(not _NO_WRITE.match(span, use.end()) for use in re.finditer(r"""\brequest\b""", span)):
+            return True
+    return False
+
+
+def _the_test_s_calls_are_read(blank: str, functions: frozenset[str], makers: frozenset[str]) -> bool:
+    """Whether every call `blank` makes of a function of the file gives it the test's `request` first, or is a maker."""
+    for call in re.finditer(r"""(?<![\w$.])([A-Za-z_$][\w$]*)\s*\(""", blank):
+        if call.group(1) in functions and call.group(1) not in makers and not re.match(
+                r"""\s*request\s*[,)]""", blank[call.end():]):
+            return False
+    return True
+
+
+#: What a file takes in from elsewhere: `import a, { b as c } from 'x'`, `import * as d from 'x'`, `const e = require('x')`.
+_AN_IMPORT = re.compile(r"""\bimport\s+([^'"`;]*?)\s+from\s*(['"])([^'"]+)\2|"""
+                        r"""\b(?:const|let|var)\s+([^=;]+?)\s*=\s*require\s*\(\s*(['"])([^'"]+)\5\s*\)""")
+#: Where what a file takes in writes nothing to the service: the runner itself and the runtime's own modules.
+_TAKEN_IN_HARMLESS = re.compile(r"""^(?:@playwright/test|node:[\w/]+|crypto)$""")
+
+
+def _names_taken_in(code: str) -> frozenset[str]:
+    """The names the file binds to what it takes in from anywhere but the runner and the runtime's own modules."""
+    names: set[str] = set()
+    for match in _AN_IMPORT.finditer(code):
+        bound, source = (match.group(1), match.group(3)) if match.group(3) else (match.group(4), match.group(6))
+        if _TAKEN_IN_HARMLESS.match(source):
+            continue
+        names.update(name for name in re.findall(r"""[A-Za-z_$][\w$]*""", re.sub(r"""\b\w+\s+as\b|[*]""", "", bound))
+                     if name not in ("as", "type"))
+    return frozenset(names)
+
+
+def _the_pick(arrow: str, item: str) -> tuple[str, str, str] | None:
+    """(field, how, what it is compared with) when `arrow`, a callback's body, keeps the items whose `field` includes,
+    starts with, ends with or is one value; None for anything else."""
+    item = re.escape(item)
+    called = re.fullmatch(item + r"""\s*\.\s*([A-Za-z_$][\w$]*)\s*\??\.\s*(includes|startsWith|endsWith)\s*\(\s*"""
+                          + _A_VALUE + r"""\s*\)""", arrow)
+    if called:
+        return called.group(1), called.group(2), called.group(3)
+    equal = re.fullmatch(item + r"""\s*\.\s*([A-Za-z_$][\w$]*)\s*===?\s*""" + _A_VALUE, arrow)
+    if equal:
+        return equal.group(1), "===", equal.group(2)
+    equal = re.fullmatch(_A_VALUE + r"""\s*===?\s*""" + item + r"""\s*\.\s*([A-Za-z_$][\w$]*)""", arrow)
+    if equal:
+        return equal.group(2), "===", equal.group(1)
+    return None
+
+
+def _read_from_the_service(source: str, scope: dict[str, list[str]]) -> bool:
+    """Whether `source`, the list a test picks from, is (a field of) the body of a response to a `request.get`."""
+    root = source.split(".", 1)[0].strip()
+    if len(scope.get(root, [])) != 1:
+        return False
+    parsed = re.fullmatch(r"""(?:await\s+)?(?:\(\s*await\s+request\s*\.\s*get\s*\(.*\)\s*\)|([A-Za-z_$][\w$]*))\s*"""
+                          r"""\.\s*json\s*\(\s*\)""", scope[root][0], re.S)
+    if parsed is None:
+        return False
+    if parsed.group(1) is None:
+        return True
+    response = scope.get(parsed.group(1), [])
+    return len(response) == 1 and bool(re.match(r"""await\s+request\s*\.\s*get\s*\(""", response[0]))
+
+
+def _the_count_asserted(body: str, blank: str, name: str, after: int) -> int | None:
+    """The number of items of `name` the test asserts exactly, when the first use of `name` after `after` is that
+    assertion; None otherwise."""
+    use = re.search(rf"(?<![\w$.]){re.escape(name)}\b", blank[after:])
+    if use is None:
+        return None
+    at = after + use.start()
+    opened = blank.rfind("expect", 0, at)
+    if opened < 0 or body[opened + len("expect"):at].replace("(", "").strip():
+        return None
+    for pattern in _A_COUNT_OF:
+        counted = re.compile(pattern.format(name=re.escape(name))).match(body, opened)
+        if counted:
+            return int(counted.group(1))
+    return None
+
+
+def _picked(value: str, how: str, wanted: str) -> bool:
+    return {"includes": wanted in value, "startsWith": value.startswith(wanted), "endsWith": value.endswith(wanted),
+            "===": value == wanted}[how]
+
+
+def own_records_a_pick_misses(text: str) -> list[tuple[int, str, str, int, int, tuple[str, ...], str]]:
+    """(line, the pick, its field, the count asserted, how many records it can keep, the values it misses, the test's
+    own marker) where a test makes records, picks its own out of what the service lists by a piece of text, and asserts
+    more of them than the values it made can give.
+
+    Measured on one run: a locked test made "Work <id>", "Personal <id>" and "Work Two <id>", kept the listed records
+    whose title included "Work <id>" and expected two. "Work Two <id>" never includes it: the test failed a right
+    product through two attempts of fixes, and a dispute ruled it right twice. Read only when every piece is plain: the
+    test takes nothing but `request`; every write it makes, written out or through one function of the file, sends the
+    field as a string, a template of names or a name bound to one; no loop, spread or function of its own repeats a
+    write; the list is a `request.get` response's body; and what it picks by holds a value the test itself makes up at
+    run time, so no record another test made can be kept. A value made up at run time is one opaque mark, the same
+    wherever it is used. Anything else in the test, and it is not read.
+    """
+    code = code_only(text)
+    blank = _blanked(code)
+    starts = [m.start() for m in _A_TEST.finditer(code)] + [len(code)]
+    top = _consts(code[:starts[0]], blank[:starts[0]], top_only=True)
+    makers = _makers(code[:starts[0]])
+    functions = frozenset(m.group(1) or m.group(2) for m in _A_FUNCTION_OF_THE_FILE.finditer(blank))
+    # Anything the file takes in may write to the service where this reads nothing: a test using it is not read.
+    taken_in = _names_taken_in(code)
+    found: list[tuple[int, str, str, int, int, tuple[str, ...], str]] = []
+    for begin, end in zip(starts, starts[1:]):
+        body, blank_body = code[begin:end], blank[begin:end]
+        signature = _TAKES_ONLY_THE_REQUEST.match(body)
+        if signature is None or _repeats_a_write(blank_body) or not _the_test_s_calls_are_read(
+                blank_body, functions, makers):
+            continue
+        if any(re.search(rf"(?<![\w$.]){re.escape(name)}\b", blank_body) for name in taken_in):
+            continue
+        if blank_body.count("=>") != 1 + len(_A_PICKING_CALLBACK.findall(blank_body)):
+            continue
+        scopes = [(_consts(body, blank_body, top_only=False), True, makers), (top, False, makers)]
+        for pick in _A_PICK.finditer(body):
+            try:
+                hit = _a_pick_that_misses(code, body, blank_body, pick, signature.end(), scopes)
+            except _Unread:
+                continue
+            if hit:
+                line, *rest = hit
+                found.append((code.count("\n", 0, begin + line) + 1, *rest))
+    return list(dict.fromkeys(found))
+
+
+def _a_pick_that_misses(code: str, body: str, blank_body: str, pick: re.Match[str], after_signature: int,
+                        scopes: _Scopes) -> tuple | None:
+    """`own_records_a_pick_misses` for one pick of one test, its line an offset in `body`."""
+    item = pick.group(1) or pick.group(2)
+    closes = _the_closing_paren(body, pick.start() + body[pick.start():].index("(") + 1)
+    if closes < 0:
+        return None
+    picked = _the_pick(body[pick.end():closes].strip(), item)
+    if picked is None:
+        return None
+    field, how, by = picked
+    statement = re.search(r"""(?:\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*(?:await\s+)?|\bexpect\(\s*)"""
+                          r"""([A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*)\s*$""", body[:pick.start()])
+    if statement is None or not _read_from_the_service(statement.group(2), scopes[0][0]):
+        return None
+    if statement.group(1):
+        if not re.match(r"""[ \t]*(?:;|\n)""", body[closes + 1:]):
+            return None
+        expected = _the_count_asserted(body, blank_body, statement.group(1), closes + 1)
+    else:
+        counted = (re.match(r"""\s*\.\s*length\s*\)\s*\.\s*(?:toBe|toEqual|toStrictEqual)\(\s*(\d+)\s*\)""",
+                            body[closes + 1:])
+                   or re.match(r"""\s*\)\s*\.\s*toHaveLength\(\s*(\d+)\s*\)""", body[closes + 1:]))
+        expected = int(counted.group(1)) if counted else None
+    if expected is None:
+        return None
+    marks: set[str] = set()
+    wanted = _the_value(by, scopes, marks)
+    if not marks:
+        return None
+    made: list[tuple[str, str]] = []
+    for use in re.finditer(r"\brequest\b", blank_body[after_signature:]):
+        at = after_signature + use.start()
+        after = at + len("request")
+        writes = re.match(r"""\s*\.\s*(get|head|delete|post|put|patch)\s*\(""", blank_body[after:])
+        if writes:
+            if writes.group(1) in ("post", "put", "patch"):
+                sent = _what_a_write_sends(_the_call_at(body, after + writes.end()), field)
+                made.append((" ".join(sent.split()), _the_value(sent, scopes, set())))
+            continue
+        helper = re.search(r"""(?<![\w$.])([A-Za-z_$][\w$]*)\s*\(\s*$""", blank_body[:at])
+        if helper is None or not re.match(r"""\s*[,)]""", blank_body[after:]):
+            raise _Unread
+        index, key = _how_a_helper_sends(code, helper.group(1), field)
+        arguments = _the_call_at(body, helper.end())
+        if index >= len(arguments):
+            raise _Unread
+        sent = arguments[index] if not key else _entries(arguments[index]).get(key)
+        if sent is None:
+            raise _Unread
+        made.append((" ".join(sent.split()), _the_value(sent, scopes, set())))
+    kept = sum(1 for _, value in made if _picked(value, how, wanted))
+    missed = tuple(shown for shown, value in made if not _picked(value, how, wanted))
+    if kept >= expected or not missed:
+        return None
+    shown = f"{item}.{field}" + (f".{how}({by.strip()})" if how != "===" else f" === {by.strip()}")
+    return pick.start(), shown, field, expected, kept, missed, sorted(marks)[0]

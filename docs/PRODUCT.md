@@ -459,7 +459,7 @@ Fullstack packs share one shape (`packs/_fullstack.py`): the interface built wit
 | Family | Examples |
 |---|---|
 | Cannot run or proves nothing | `result.ran`, `vacuous_green`, the test that never finishes, files the runner skips by name (renamed, not sent back) |
-| Cannot pass on any product | `tests_that_cannot_pass`, the dry run of a JS suite with the product stood in for (`spec_dry_run.cjs`, `SPEC_DRY_RUN`), a test that reads a literal id and creates nothing first (`IDS_READ_WITHOUT_A_CREATE`), `tests_that_want_json_from_a_204`, success statuses the contract does not give |
+| Cannot pass on any product | `tests_that_cannot_pass`, the dry run of a JS suite with the product stood in for (`spec_dry_run.cjs`, `SPEC_DRY_RUN`), a test that reads a literal id and creates nothing first (`IDS_READ_WITHOUT_A_CREATE`), `tests_that_want_json_from_a_204`, success statuses the contract does not give; a test whose pick of its own records misses one it made (`picks_of_their_own_records_that_miss_one`, the pack's `own_records_a_pick_misses`, JavaScript; also handed to a dispute as settling, LF.1237) |
 | Passes before the product exists | `tests_that_pass_before_the_product` (first writing only), assertions made only when the answer was good (`tests_guarded_by_the_answer`) |
 | Too lenient | locators nobody sees, locators that pick one of many, a control the brief names that no test finds by that name, records never found as the brief shows them, outputs held only in part, whitespace and word-break tests with spaces only, views never acted within |
 | Coverage | every criterion has a test; every contract line is exercised by some test (`contract_coverage`, `CONTRACT_LINE_COVERAGE`, a search not a parse) |

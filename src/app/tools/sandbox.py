@@ -45,7 +45,7 @@ from pathlib import Path
 from app.analysis.walk import files_under
 from app.tools.bounded_output import HeadAndTail, read_into
 from app.tools.repository import IGNORED_DIRECTORIES, NOT_SEARCHED_FOR_A_STAGE, pinned_project_directory
-from typing import Any, Dict, Iterable, Iterator, Sequence
+from typing import Any, Callable, Dict, Iterable, Iterator, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -5856,8 +5856,50 @@ class SandboxExecutor:
         return finished
 
 
+#: A command container older than this has outlived every command's timeout: nothing waits for it any more.
+STALE_AFTER_SECONDS = 2 * MAX_TIMEOUT_SECONDS
+
+
+def end_the_commands_nobody_waits_for(
+    run: Callable[..., Any] = subprocess.run, now: datetime | None = None,
+) -> list[str]:
+    """Stop every command container (`sandbox-*`) running longer than any command may: the ones a restarted worker left.
+
+    A command's timeout kills its container, but a worker restarted mid-command (a deploy) kills only the client that
+    waited: the container runs on. Measured: eight `dotnet test` containers from one family's runs ran for three days,
+    2.4 GB between them. Called when a worker starts; never raises; the names stopped.
+    """
+    stopped: list[str] = []
+    try:
+        docker = _docker_binary()
+        listed = run([docker, "ps", "--filter", "name=^sandbox-", "--format", "{{.Names}}"],
+                     capture_output=True, text=True, timeout=30, check=False)
+        names = [n.strip() for n in (listed.stdout or "").splitlines() if n.strip().startswith("sandbox-")]
+        if not names:
+            return []
+        inspected = run([docker, "inspect", "-f", "{{.Name}} {{.State.StartedAt}}", *names],
+                        capture_output=True, text=True, timeout=30, check=False)
+        moment = now or datetime.now(timezone.utc)
+        for line in (inspected.stdout or "").splitlines():
+            name, _, started = line.strip().lstrip("/").partition(" ")
+            try:
+                began = datetime.fromisoformat(started.strip()[:26].rstrip("Z").split(".")[0]).replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+            if (moment - began).total_seconds() > STALE_AFTER_SECONDS:
+                run([docker, "kill", name], capture_output=True, text=True, timeout=30, check=False)
+                stopped.append(name)
+        if stopped:
+            logger.warning("Stopped %d command container(s) no command waits for: %s", len(stopped), ", ".join(stopped))
+    except Exception:  # noqa: BLE001 - a sweep that cannot run stops nothing
+        logger.debug("Could not look for command containers nobody waits for", exc_info=True)
+    return stopped
+
+
 __all__ = [
     "COMMON_EXECUTABLES",
+    "STALE_AFTER_SECONDS",
+    "end_the_commands_nobody_waits_for",
     "read_execution_ledger",
     "summarise_executions",
     "CONTAINER_MODE",

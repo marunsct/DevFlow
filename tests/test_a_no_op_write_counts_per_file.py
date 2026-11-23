@@ -142,3 +142,22 @@ def test_repeated_failures_on_another_file_keep_their_own_count():
     result = middleware.wrap_tool_call(other, lambda _r: _Result(other_failure))
 
     assert "failed the same way" not in result.content
+
+
+
+ALREADY_APPLIED = (
+    '{"path": "public/main.js", "status": "already_applied", "summary": "x", "lines": 164, '
+    '"detail": "This edit is already in \'public/main.js\'."}'
+)
+
+
+def test_an_edit_already_in_the_file_counts_as_one_that_changed_nothing():
+    """Measured on one run: a fixer sent an edit already in the file six times in two minutes."""
+    stage_memory.forget_everything()
+    middleware = build_repeated_query_middleware()
+    request = _Request("edit_artifact", {"relative_path": "public/main.js", "find": "a", "replace": "b"})
+
+    results = [middleware.wrap_tool_call(request, lambda _r: _Result(ALREADY_APPLIED))
+               for _ in range(NO_OP_WRITES_BEFORE_REFUSING + 1)]
+
+    assert "Refusing this write" in results[-1].content

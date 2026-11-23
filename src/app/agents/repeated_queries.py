@@ -134,7 +134,9 @@ def _comparable(args: dict) -> dict:
 #: container, where the same dict came back without it - the kind of brittleness
 #: this codebase has been bitten by before in an "Error"-anywhere match and a
 #: ">"-anywhere match.
-_UNCHANGED = re.compile(r'"status"\s*:\s*"unchanged"')
+#: A write or an edit that left the file as it was: `unchanged`, or an edit already in it (`already_applied`). Measured
+#: on one run: a fixer sent an edit already in the file six times in two minutes, each answered `already_applied`.
+_UNCHANGED = re.compile(r'"status"\s*:\s*"(?:unchanged|already_applied)"')
 
 
 def _changed_nothing(content: str) -> bool:

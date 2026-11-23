@@ -39,7 +39,7 @@ import re
 from pathlib import Path, PurePosixPath
 from typing import Any
 from app.analysis.walk import files_under
-from app.stacks.languages import NOT_THE_PRODUCT
+from app.stacks.languages import BUILT_BY_NAME, NOT_THE_PRODUCT
 
 #: Directories that are never the project's own source.
 #: The harness's own files, never the product's. Read from one place.
@@ -49,7 +49,10 @@ _HARNESS_BOOKKEEPING = frozenset({
 
 #: Directories that are never the project's own source: the language table's shared set (`app.stacks.languages`),
 #: and what these checks never read besides.
-_SKIP = NOT_THE_PRODUCT | {
+#: Build output by every language's own folder name (`.next`, `.nuxt`, `target`, ...) as every other listing skips it:
+#: measured on one Next.js run, the check read `.next/server/`'s generated pages and route cache and raised 270
+#: "references a file that does not exist" problems, one fixer each, until the run hit the graph's step limit.
+_SKIP = NOT_THE_PRODUCT | BUILT_BY_NAME | {
     "dist", "build", "coverage", "large_tool_results", "vendor", ".harness", "test-results",
 }
 

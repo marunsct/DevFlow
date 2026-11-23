@@ -19,6 +19,22 @@ from app.graph.context import GraphContext
 from app.graph.workflow import WorkflowGraphState
 from app.sprint import cause
 
+#: Problems the cross-file check proved that one round raises as defects of their own; the rest ride on the last one.
+#: Measured on one run: 138 and 151 in a round, each its own fixer, and the run ended on the graph's step limit.
+MOST_PROVEN_PER_ROUND = 10
+
+
+def at_most(problems: list[Any], most: int) -> list[Any]:
+    """`problems` as at most `most` defects: the first `most - 1` as they are, and the last naming the rest, so none is
+    lost and no round queues more fixers than the graph can step through."""
+    if len(problems) <= most:
+        return list(problems)
+    kept, rest = list(problems[: most - 1]), list(problems[most - 1:])
+    named = "; ".join(str(getattr(p, "description", "") or "")[:160] for p in rest[:6])
+    last = rest[0]
+    more = f" (and {len(rest) - 1} more of the same check: {named}{'; ...' if len(rest) > 6 else ''})"
+    return kept + [last.model_copy(update={"description": f"{getattr(last, 'description', '')}{more}"})]
+
 #: The workflow's logger: the nodes log as they did inside the builder.
 logger = logging.getLogger("app.graph.workflow")
 
@@ -301,7 +317,7 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
             "test_round_%d left out %d problem(s) it was handed as proven; recording them as defects",
             test_round, len(left_out),
         )
-        reported = reported + raised_by("cross-file check", left_out)
+        reported = reported + raised_by("cross-file check", at_most(left_out, MOST_PROVEN_PER_ROUND))
     # How the page is presented, where a script can prove it: an interface
     # nothing styles, or a page that does not fit the phone the brief asks
     # for. Before the later-sprint filter, so a plan that styles later keeps

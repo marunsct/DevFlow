@@ -672,3 +672,10 @@ These are things I got wrong or have not resolved.
 - **Fired and helped:** LF.1230 (stopped a flood of build-output problems; verified by test only so far); LF.1231 (no case since deploy); LF.1232/1233 (did not fire on bookmarks 6: drafted files had no author, fixed by LF.1236); LF.1235 (deployed, did not move the dispute's ruling); web tools (no stuck fixer yet since deploy).
 - **Building:** LF.1237, a deterministic own-record pick check handed to the dispute.
 - **Live:** run-e625936e notes-api-rust 1 on :8888 (15:47); run-8f0be29e on :1234 (owner's).
+
+## 2026-11-23 17:37 JST
+
+- **Scored:** notes-api-rust 1 (run-e625936e): hidden 9/9, quality 8/8, delivered, 97 min, mutation 0.50.
+- **Deployed since 15:50:** LF.1237 (15:55, own-record pick check), LF.1238 (16:29, `LONG_REASONING_BEFORE_A_READ` on, measured), LF.1239 (16:39/16:54, axum known causes), LF.1240 (17:10, borrow cause).
+- **Fired and helped:** LF.1238 fired 4 times on run-8f0be29e: the acceptance author went from 13-28k reasoning tokens a read to under 4k and finished in 7 minutes; LF.1239's struct-import cause shown to two stages, that defect closed; web lookups fired 3 times on Rust, closed nothing on their own.
+- **Live:** run-b6dce69e textkit-lib 8 on :8888 (17:35); run-8f0be29e on :1234 (owner's).

@@ -272,7 +272,12 @@ def service_pack(
         acceptance_dir="acceptance",
         acceptance_pattern="*.spec.js",
         unit_pattern=unit_pattern,
-        kept_files=("playwright.config.js", "acceptance/service.cjs", *script, *kept_files),
+        # The runner's own manifest is the harness's in a language whose project brings none of its own. Measured on
+        # one Ruby run: the drafting pass rewrote it with a second Playwright (`playwright` 1.40 beside
+        # `@playwright/test` 1.64), the runner collected no test ("did not expect test() to be called here") and the
+        # suite went back to its writer.
+        kept_files=("playwright.config.js", "acceptance/service.cjs", *script,
+                    *(() if "package.json" in files else ("package.json",)), *kept_files),
         kept_scripts={"test:acceptance": "playwright test", **(kept_scripts or {})},
         entrypoint=entrypoint,
         required_exports=dict(required_exports or {}),

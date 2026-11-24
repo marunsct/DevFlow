@@ -56,6 +56,8 @@ Earlier runs (11-22 and before): `reports/product-reviews/`, `reports/status-boa
 - **LF.1282 deployed 19:25 JST** - a forward repair may rewrite the file the start's error names, not only the fix's own.
 - **LF.1283-1285 deployed 21:09 JST:** a message's body or a quoted answer no longer holds a field to a floor (the kept-when-empty
   probe asked nothing on Hono); a review holds the files it judges in its memory, in any language, and a summary names what was read.
+- **LF.1286 deployed 21:47 JST:** the same for the technical lead (code and the sprint's due tests), the QA lead's suite review and the
+  test rounds - sprint 2's lead had read 32 files 145+ times with 14 summaries in 40 calls. The suite author's loop is not yet addressed.
 - **`REQUEST_BUDGET_FOR_EVERY_STAGE` ON for the medium rerun only, from 19:16 JST** (`docs/measuring.md` M17): its code review re-read
   19 files 6-8 times each over 20 minutes; every other run keeps it off.
 - **`REPLY_ROOM_SIZED_PER_ROLE` ON for the medium rerun only, from 19:47 JST:** its security review was summarised after nearly every

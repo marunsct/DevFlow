@@ -20,6 +20,14 @@ edition = "2021"
 [dependencies]
 """
 
+#: Cargo picks the newest release of every crate unless told the toolchain's: measured on a Rust run, the sandbox's
+#: rustc 1.85 met `icu_collections 2.4` (rustc 1.88), pulled in through `url` by sqlx, and the product never built
+#: whatever its code said; with this, cargo 1.85 chose `icu_collections 2.1.1` and it built. Kept by the harness.
+CARGO_CONFIG = """# Kept by the harness: crate versions are chosen to build with this project's Rust toolchain.
+[resolver]
+incompatible-rust-versions = "fallback"
+"""
+
 NEXTEST = """# Kept by the harness: the two test runs report through these profiles.
 [profile.ci.junit]
 path = "junit.xml"
@@ -179,7 +187,7 @@ CI_SETUP = ("      - uses: dtolnay/rust-toolchain@stable\n      - uses: taiki-e/
 def _pack(kind: str) -> StackPack:
     if kind == "cli":
         files = {"Cargo.toml": CARGO_TOML, "src/lib.rs": CLI_LIB, "src/main.rs": CLI_MAIN, "tests/common/mod.rs": CLI_COMMON}
-        kept = (".config/nextest.toml", "tests/common/mod.rs")
+        kept = (".config/nextest.toml", ".cargo/config.toml", "tests/common/mod.rs")
         smoke = {"src/bin/scaffold_smoke.rs": CLI_SMOKE_UNIT, "tests/scaffold_smoke.rs": CLI_SMOKE_ACCEPTANCE}
         guide = (
             "The program is Rust on the standard library. `run(args, out, err)` in `src/lib.rs` "
@@ -199,7 +207,7 @@ def _pack(kind: str) -> StackPack:
         frameworks = ("clap", "rust", "standard library", "std")
     else:
         files = {"Cargo.toml": CARGO_TOML, "src/lib.rs": LIBRARY}
-        kept = (".config/nextest.toml",)
+        kept = (".config/nextest.toml", ".cargo/config.toml")
         smoke = {"src/bin/scaffold_smoke.rs": LIBRARY_SMOKE_UNIT, "tests/scaffold_smoke.rs": LIBRARY_SMOKE_ACCEPTANCE}
         guide = (
             "The library is Rust on the standard library: what `src/lib.rs` makes `pub` is its "
@@ -219,7 +227,7 @@ def _pack(kind: str) -> StackPack:
         kind=kind,
         language="rust",
         frameworks=frameworks,
-        files={**files, ".config/nextest.toml": NEXTEST, ".gitignore": "target/\ntest-results/\n"},
+        files={**files, ".config/nextest.toml": NEXTEST, ".cargo/config.toml": CARGO_CONFIG, ".gitignore": "target/\ntest-results/\n"},
         install=(("cargo", "build", "--all-targets"),),
         unit_test=UNIT_TEST,
         acceptance_test=ACCEPTANCE_TEST,

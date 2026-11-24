@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.stacks.packs._service import service_pack
 from app.stacks.packs import _sandbox as sandbox
+from app.stacks.packs.rust_programs import CARGO_CONFIG
 
 CARGO_TOML = """[package]
 name = "{{package}}"
@@ -110,6 +111,11 @@ THE_SIGNATURE_DECIDES = (
     "`src/lib.rs` to `pub fn app() -> Router`; the error shows where the router is used, not where it is typed."
 )
 AXUM_KNOWN_ERRORS = {
+    "is not supported by the following packages": (
+        "a crate's newest release needs a newer Rust than this project's toolchain. Do not pin crates by hand: "
+        "delete `Cargo.lock` (with `delete_artifact`) so cargo chooses again - `.cargo/config.toml` tells it to "
+        "choose the releases this toolchain builds."
+    ),
     "Handler<_, _>` is not satisfied": (
         "an axum handler's arguments are extractors, and the one that reads the request body (`Json<T>`, `Form<T>`, "
         "`String`, `Bytes`) must be its last argument, after `State`, `Path` and `Query`: a body extractor earlier in "
@@ -331,6 +337,7 @@ PACK = service_pack(
         "src/lib.rs": LIB,
         "src/main.rs": MAIN,
         ".config/nextest.toml": NEXTEST,
+        ".cargo/config.toml": CARGO_CONFIG,
     },
     install=(("cargo", "build", "--all-targets"),),
     unit_test=("cargo", "nextest", "run", "--profile", "ci", "--no-fail-fast", "--no-tests=pass"),
@@ -361,6 +368,6 @@ PACK = service_pack(
         "      - uses: taiki-e/install-action@nextest",
     ),
     release_files={"Dockerfile": DOCKERFILE, ".dockerignore": "node_modules/\ntest-results/\ntarget/\nacceptance/\ndata/\n"},
-    kept_files=(".config/nextest.toml",),
+    kept_files=(".config/nextest.toml", ".cargo/config.toml"),
     gitignore="target/\n",
 )

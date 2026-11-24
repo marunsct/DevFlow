@@ -266,6 +266,7 @@ def service_pack(
         install=(*install, *js.INSTALL),
         unit_test=unit_test,
         acceptance_test=js.ACCEPTANCE_TEST,
+        acceptance_selection=js.playwright_selection,
         unit_report=unit_report,
         acceptance_report="test-results/acceptance.xml",
         unit_dir=unit_dir,

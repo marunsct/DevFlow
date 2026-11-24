@@ -241,6 +241,11 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     from app.acceptance.mutation import restore_an_interrupted_probe
 
     restore_an_interrupted_probe(root)
+    # The release answers for every criterion, whatever sprint the run left from: every run of the suite from here
+    # takes the whole of it, and nothing reads "not yet due" (LF.1265).
+    from app.acceptance import sprint_scope
+
+    sprint_scope.record_everything_due(root)
     update: dict[str, Any] = {}
     failing: list[Any] = []
     summary = "There is no acceptance suite; the milestone reviews were the gate."

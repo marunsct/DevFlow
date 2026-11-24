@@ -59,6 +59,7 @@ const STATUS_STYLE: Record<string, string> = {
   failed: 'bg-danger-bg text-danger border-danger/30',
   untested: 'bg-warning-bg text-warning border-warning/30',
   deferred: 'bg-overlay text-text-muted border-border/50',
+  not_yet_due: 'bg-overlay text-text-muted border-border/50',
 };
 
 const Screenshot: React.FC<{ runId: string; path: string }> = ({ runId, path }) => {
@@ -92,7 +93,7 @@ const Screenshot: React.FC<{ runId: string; path: string }> = ({ runId, path }) 
   );
 };
 
-const SUMMARY_ORDER = ['passed', 'failed', 'untested', 'deferred'] as const;
+const SUMMARY_ORDER = ['passed', 'failed', 'untested', 'deferred', 'not_yet_due'] as const;
 
 /** How many criteria stand where, above the list: a bar and the count of each status. */
 const CriteriaSummary: React.FC<{ criteria: CriterionResult[] }> = ({ criteria }) => {
@@ -106,7 +107,7 @@ const CriteriaSummary: React.FC<{ criteria: CriterionResult[] }> = ({ criteria }
       </div>
       <p className="flex flex-wrap gap-x-3 text-xs text-text-secondary tabular-nums">
         {SUMMARY_ORDER.filter((status) => count(status) > 0).map((status) => (
-          <span key={status}>{count(status)} {status}</span>
+          <span key={status}>{count(status)} {status.replace(/_/g, ' ')}</span>
         ))}
       </p>
     </div>
@@ -212,7 +213,7 @@ export const DeliveryPanel: React.FC<{
                       <span className="mt-0.5 w-11 shrink-0 font-mono text-xs text-text-muted">{c.id}</span>
                       <span className="min-w-0 flex-1 break-words text-text-primary">{c.text}</span>
                       <span className={`shrink-0 rounded border px-1.5 py-0.5 text-xs font-semibold ${STATUS_STYLE[c.status] ?? STATUS_STYLE.untested}`}>
-                        {c.status}
+                        {c.status.replace(/_/g, ' ')}
                       </span>
                     </div>
                     <div className="mt-1 pl-[3.25rem] text-xs text-text-muted space-y-0.5">

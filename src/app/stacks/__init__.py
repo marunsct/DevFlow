@@ -198,6 +198,13 @@ class StackPack:
     own_records_a_pick_misses: (
         Callable[[str], Sequence[tuple[int, str, str, int, int, Sequence[str], str]]] | None
     ) = None
+    #: (the suite's command, the criterion ids whose tests run - () for all, the suite's files relative to the project
+    #: in the order to run them - () for the runner's own) -> the command that runs just those, or None when the runner
+    #: cannot be asked. A sprint's run of the suite takes only its due tests through it (`app.acceptance.due_tests`);
+    #: a pack without one runs the whole suite.
+    acceptance_selection: (
+        Callable[[Sequence[str], Sequence[str], Sequence[str]], "tuple[str, ...] | None"] | None
+    ) = None
     #: (a suite file's text, the suite's other files' text) -> (line, the test's title, the assertion, the number) where
     #: a page test asserts an exact number of every item of a list on the page while other tests make records. Read
     #: only for a suite that runs against one service shared by every test.

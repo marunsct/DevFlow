@@ -1430,6 +1430,45 @@ def _run_each(
     return {"returncode": str(code), "stdout": "\n".join(said)}, missing
 
 
+def _the_due_selection(repo_root: str | Path, argv: Sequence[str]) -> tuple[list[str], Any]:
+    """(the command a run takes, the `due_tests.Selection` it asks for); (argv, None) for the whole suite, as always.
+
+    The pack's runner is asked for the tests the recorded sprint scope makes due (`due_tests.choose`); a pack that
+    cannot ask, a suite without a pack, or anything unreadable runs the whole suite.
+    """
+    from app.acceptance import due_tests, sprint_scope
+
+    try:
+        found = contract.the_pack(repo_root)
+        select = getattr(found[0], "acceptance_selection", None) if found else None
+        where = location(repo_root)
+        if select is None or where is None:
+            return list(argv), None
+        project = (Path(repo_root) / where[0]).resolve()
+        tests: list[tuple[str, tuple[str, ...]]] = []
+        for file, name in declared_tests(repo_root):
+            path = (Path(repo_root) / file).resolve()
+            shown = path.relative_to(project).as_posix() if path.is_relative_to(project) else file
+            tests.append((shown, junit.tags_in(name)))
+        chosen = due_tests.choose(
+            not_yet_due=sprint_scope.not_yet_due(repo_root), sprints=sprint_scope.sprints(repo_root), tests=tests)
+        selected = select(tuple(argv), chosen.due, chosen.files) if chosen is not None else None
+    except Exception:  # noqa: BLE001 - the whole suite, as before
+        logger.debug("Could not choose the due tests", exc_info=True)
+        return list(argv), None
+    return (list(selected), chosen) if selected else (list(argv), None)
+
+
+def _the_selection_fell_short(repo_root: str | Path, report: junit.Report, chosen: Any, output: str) -> bool:
+    """Whether a run asked for the due tests left one out, so the whole suite must run; never for a product that did
+    not start, which the whole suite would only find again."""
+    from app.acceptance import due_tests
+
+    if not report.tests and the_product_did_not_start(output, repo_root):
+        return False
+    return not due_tests.held(report, chosen, coverage(repo_root))
+
+
 def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = True) -> AcceptanceResult:
     """Run the suite the way the harness always does, and read what it proved.
 
@@ -1461,6 +1500,8 @@ def _run_once(repo_root: str | Path, runner: Runner | None, save: bool) -> Accep
         result = AcceptanceResult(ran=False, repairs=repairs, problem=_why_no_command(repo_root))
         return _judged(repo_root, result, save)
     argv, report_path, project = command
+    # While a sprint is built, only its due tests run, earliest sprint's files first (LF.1265, `due_tests`).
+    whole, (argv, chosen) = list(argv), _the_due_selection(repo_root, argv)
     report_file = Path(repo_root) / project / report_path
     several = _declared_runs(repo_root)
     shown = " && ".join(" ".join(each) for each, _ in several) or " ".join(argv)
@@ -1496,6 +1537,20 @@ def _run_once(repo_root: str | Path, runner: Runner | None, save: bool) -> Accep
         code = 1
     output = "\n".join(str(outcome.get(k) or "") for k in ("error", "stdout", "stderr") if outcome.get(k))
     report = junit.read(report_file)
+    if chosen is not None and _the_selection_fell_short(repo_root, report, chosen, output):
+        logger.warning("The run of the due tests reported fewer than were due; the whole suite is run instead")
+        junit.clear(report_file)
+        outcome = run_one(whole, "test", project)
+        try:
+            code = int(str(outcome.get("returncode", "1")).strip() or 1)
+        except ValueError:
+            code = 1
+        output = "\n".join(str(outcome.get(k) or "") for k in ("error", "stdout", "stderr") if outcome.get(k))
+        report, shown = junit.read(report_file), " ".join(whole)
+    from app.acceptance import due_tests, sprint_scope
+
+    # A runner that cannot be asked for the due tests ran a later sprint's too: they are not counted, nor shown.
+    report = due_tests.without_the_not_yet_due(report, sprint_scope.not_yet_due(repo_root))
     result = AcceptanceResult(
         ran=report.found,
         exit_code=code,
@@ -1797,6 +1852,10 @@ def _read_accessibility(path: Path | None) -> list[dict[str, Any]]:
     return kept[:10]
 
 
+#: The status of a criterion a later sprint delivers: not run, not failing, not untested.
+NOT_YET_DUE = "not_yet_due"
+
+
 def _judged(repo_root: str | Path, result: AcceptanceResult, save: bool) -> AcceptanceResult:
     excused = deferred(repo_root)
     by_tag: dict[str, list[junit.TestResult]] = {}
@@ -1810,6 +1869,8 @@ def _judged(repo_root: str | Path, result: AcceptanceResult, save: bool) -> Acce
     from app.acceptance import sprint_scope
 
     waiting = sprint_scope.waiting_tests(repo_root)
+    # A criterion a later sprint delivers is neither failing nor untested: its tests are not run until then (LF.1265).
+    later = set(sprint_scope.not_yet_due(repo_root))
 
     def judge(item_id: str, text: str) -> CriterionResult:
         tests = by_tag.get(item_id, [])
@@ -1817,6 +1878,8 @@ def _judged(repo_root: str | Path, result: AcceptanceResult, save: bool) -> Acce
             tests = [t for t in tests if not sprint_scope.waits_on(t.name, waiting)] or tests
         if item_id in excused:
             status = "deferred"
+        elif item_id in later:
+            status = NOT_YET_DUE
         elif not tests:
             status = "untested"
         elif any(t.outcome == "failed" for t in tests) or all(t.outcome == "skipped" for t in tests):

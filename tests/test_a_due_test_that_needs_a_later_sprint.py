@@ -140,10 +140,14 @@ class TestTheJudgement:
 
         assert judged.criteria["AC-1"].status == "failed"
 
-    def test_a_later_criterion_is_still_reported(self, root):
+    def test_a_later_criterion_reads_not_yet_due_never_failing(self, root):
+        """A later sprint's criterion is not failing before its sprint: nothing is asked of it yet (LF.1265)."""
         _sprint_one(root)
 
-        assert suite._judged(root, _ran(*RUN), save=False).criteria["AC-2"].status == "failed"
+        judged = suite._judged(root, _ran(*RUN), save=False)
+
+        assert judged.criteria["AC-2"].status == "not_yet_due"
+        assert "AC-2" not in {item.id for item in judged.failing()}
 
 
 class TestWhatAStageIsTold:

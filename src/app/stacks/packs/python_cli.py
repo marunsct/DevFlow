@@ -135,6 +135,7 @@ PACK = StackPack(
     install=_python.INSTALL,
     unit_test=_python.UNIT_TEST,
     acceptance_test=_python.ACCEPTANCE_TEST,
+    acceptance_selection=_python.pytest_selection,
     unit_report="test-results/unit.xml",
     acceptance_report="test-results/acceptance.xml",
     unit_dir="tests",

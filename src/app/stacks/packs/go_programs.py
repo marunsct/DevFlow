@@ -9,6 +9,8 @@ it exports is reachable. gotestsum writes JUnit for both.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from app.stacks import StackPack
 from app.stacks.packs.go_http_api import GO_VERSION
 from app.stacks.packs import _sandbox as sandbox
@@ -23,6 +25,19 @@ ACCEPTANCE_TEST = (
     "gotestsum", "--junitfile", "test-results/acceptance.xml", "--format", "standard-quiet", "--",
     "-tags", "acceptance", "-count=1", "./acceptance/...",
 )
+
+
+def go_selection(argv: Sequence[str], due: Sequence[str], files: Sequence[str]) -> tuple[str, ...] | None:
+    """The suite's command asking `go test` for the test functions named after `due`, or None.
+
+    Go runs a package's tests in its own order, so `files` is not used.
+    """
+    from app.acceptance.junit import pattern_for  # noqa: PLC0415 - the id grammar is the suite's
+
+    pattern = pattern_for(due, "re2")
+    if not pattern or tuple(argv) != ACCEPTANCE_TEST:
+        return None
+    return (*argv, "-run", pattern)
 
 CLI_MAIN = """package main
 
@@ -264,6 +279,7 @@ def _pack(kind: str) -> StackPack:
         install=(("go", "mod", "tidy"), ("go", "build", "./...")),
         unit_test=UNIT_TEST,
         acceptance_test=ACCEPTANCE_TEST,
+        acceptance_selection=go_selection,
         unit_report="test-results/unit.xml",
         acceptance_report="test-results/acceptance.xml",
         unit_dir=".",

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 PYTEST_INI = """[pytest]
 pythonpath = .
 addopts = -p no:cacheprovider
@@ -84,6 +86,35 @@ ACCEPTANCE_TEST = (
     ".venv/bin/python", "-m", "pytest", "acceptance", "-q", "--confcutdir=acceptance",
     "--junitxml=test-results/acceptance.xml",
 )
+
+
+def pytest_selection(argv: Sequence[str], due: Sequence[str], files: Sequence[str]) -> tuple[str, ...] | None:
+    """The suite's command asking pytest for the tests named after `due`, its files in the order given; or None.
+
+    pytest runs the files it is given in that order, so they replace the suite's folder. A test name carries its id
+    as `test_ac3_...` (or `test_ac_3_...`); `-k` matches part of a name, ignoring case.
+    """
+    from app.acceptance.junit import TAG  # noqa: PLC0415 - the id grammar is the suite's
+
+    argv = list(argv)
+    if "-k" in argv or not (due or files):
+        return None
+    if files:
+        if "acceptance" not in argv:
+            return None
+        at = argv.index("acceptance")
+        argv[at:at + 1] = list(files)
+    if due:
+        words: list[str] = []
+        for item in due:
+            found = TAG.fullmatch(str(item).strip())
+            if found:
+                kind, number = found.group(1).lower(), int(found.group(2))
+                words += [f"{kind}{number}_", f"{kind}_{number}_"]
+        if not words:
+            return None
+        argv += ["-k", " or ".join(dict.fromkeys(words))]
+    return tuple(argv)
 
 UNIT_GUIDE = """Unit tests go in `tests/`, named `test_<module>.py`, as plain pytest functions
 that import the product's modules directly (`from {{package}}.<module> import ...`).

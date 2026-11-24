@@ -1448,12 +1448,42 @@ def criteria_brief(state: Any) -> str:
     )
 
 
+def record_the_sprint_scope(state: Any) -> list[str] | None:
+    """Record the sprint now built, the criteria it does not owe and the plan's criteria by sprint; the ids not yet
+    due, or None when there is no plan to record. Never raises.
+
+    Every run of the suite reads it (`app.acceptance.due_tests`): the due tests run, a later sprint's do not.
+    """
+    try:
+        from app.acceptance import sprint_scope
+
+        root = _root(state)
+        sprints = list(getattr(state.get("sprint_plan"), "sprints", None) or [])
+        index = int(state.get("current_sprint_index", 0) or 0)
+        if not sprints or index >= len(sprints):
+            return None
+        due = criteria_due(state)
+        later = [] if due is None else [c.id for c in suite.criteria(root) if c.id not in due]
+        sprint_scope.record(
+            root, sprint=index + 1, of=len(sprints), not_yet_due=later,
+            sprints=[list(getattr(sprint, "criteria", None) or []) for sprint in sprints],
+        )
+        return later
+    except Exception as error:  # noqa: BLE001 - the scope recorded before stands
+        degraded("acceptance.sprint_scope_recorded", error)
+        return None
+
+
 def run_for_sprint(state: Any) -> tuple[suite.AcceptanceResult | None, list[str]]:
-    """The harness's own run of the suite, and the ids due now. (None, []) when there is no suite."""
+    """The harness's own run of the suite, and the ids due now. (None, []) when there is no suite.
+
+    The sprint's scope is recorded from the state first, so the run takes the tests due now and no other.
+    """
     root = _root(state)
     if not suite.criteria(root) or not suite.is_locked(root):
         return None, []
     due = criteria_due(state) or []
+    record_the_sprint_scope(state)
     return suite.run(root), due
 
 
@@ -1667,6 +1697,8 @@ def sprint_already_done(state: Any) -> str:
     # A page that does not draw records the way the brief shows them has work left, whatever the suite says.
     if suite.records_the_page_never_makes(root, getattr(state.get("document"), "text", "") or ""):
         return ""
+    # Measured on this sprint's due tests, not the sprint before's (LF.1265).
+    record_the_sprint_scope(state)
     result = suite.run(root)
     if not result.ran or result.runtime_problems:
         return ""

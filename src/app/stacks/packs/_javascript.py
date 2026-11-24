@@ -40,6 +40,21 @@ INSTALL = (("npm", "install", "--no-audit", "--no-fund"),)
 UNIT_TEST = ("npm", "test")
 ACCEPTANCE_TEST = ("npm", "run", "test:acceptance")
 
+
+def playwright_selection(argv: Sequence[str], due: Sequence[str], files: Sequence[str]) -> tuple[str, ...] | None:
+    """The suite's command asking Playwright for the tests whose titles carry `due`, or None.
+
+    Playwright runs its files in its own order, so `files` is not used; a command other than the pack's own, or no id
+    to ask for, is left to run whole.
+    """
+    from app.acceptance.junit import pattern_for  # noqa: PLC0415 - the id grammar is the suite's
+
+    pattern = pattern_for(due, "js")
+    if not pattern or tuple(argv[:3]) != ACCEPTANCE_TEST:
+        return None
+    # `/.../i`: Playwright reads a slashed pattern with its own flags, ignoring case as the harness reads ids.
+    return (*argv, *(() if "--" in argv else ("--",)), "--grep", f"/{pattern}/i")
+
 #: The Node.js major version the harness's own image runs, so CI tests the
 #: product on the runtime it was built and tested on.
 NODE_MAJOR = "24"

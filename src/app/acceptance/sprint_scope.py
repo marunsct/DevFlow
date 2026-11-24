@@ -60,8 +60,15 @@ def _listed(items: Sequence[str]) -> str:
     return shown + (f" and {len(items) - MAX_NAMED} more" if len(items) > MAX_NAMED else "")
 
 
-def record(repo_root: str | Path, *, sprint: int, of: int, not_yet_due: Sequence[str]) -> None:
-    """Record the sprint now being built and the criteria it does not owe. Never raises."""
+def record(
+    repo_root: str | Path, *, sprint: int, of: int, not_yet_due: Sequence[str],
+    sprints: Sequence[Sequence[str]] = (),
+) -> None:
+    """Record the sprint now being built, the criteria it does not owe and each sprint's criteria. Never raises.
+
+    `sprints` is the plan's criteria by sprint, earliest first: the order a run of the suite takes its files in
+    (`due_tests`).
+    """
     try:
         path = Path(repo_root) / SCOPE_FILE
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -70,7 +77,10 @@ def record(repo_root: str | Path, *, sprint: int, of: int, not_yet_due: Sequence
         staged = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}")
         staged.write_text(
             json.dumps(
-                {"sprint": int(sprint), "of": int(of), "not_yet_due": _ordered([str(i) for i in not_yet_due])},
+                {
+                    "sprint": int(sprint), "of": int(of), "not_yet_due": _ordered([str(i) for i in not_yet_due]),
+                    "sprints": [[str(item) for item in group or ()] for group in sprints or ()],
+                },
                 indent=2,
             )
             + "\n",
@@ -79,6 +89,30 @@ def record(repo_root: str | Path, *, sprint: int, of: int, not_yet_due: Sequence
         os.replace(staged, path)
     except Exception:  # noqa: BLE001 - a missing record treats every test as due
         logger.debug("Could not record the sprint scope", exc_info=True)
+
+
+def record_everything_due(repo_root: str | Path) -> None:
+    """Record that every criterion is due now - the release - keeping the plan's sprints. Never raises.
+
+    Whatever sprint the run left from, a release answers for the whole product: its run of the suite is the whole
+    suite, and no criterion reads "not yet due".
+    """
+    scope = _read(repo_root)
+    if not scope:
+        return
+    try:
+        of = max(int(scope.get("of") or 1), 1)
+    except (TypeError, ValueError):
+        of = 1
+    record(repo_root, sprint=of, of=of, not_yet_due=(), sprints=sprints(repo_root))
+
+
+def sprints(repo_root: str | Path | None) -> list[list[str]]:
+    """The plan's criteria by sprint, earliest first, as last recorded; [] when none was."""
+    groups = _read(repo_root).get("sprints")
+    if not isinstance(groups, list):
+        return []
+    return [[str(item) for item in group] for group in groups if isinstance(group, list)]
 
 
 def _read(repo_root: str | Path | None) -> dict:
@@ -335,4 +369,6 @@ __all__ = [
     "note_on_failures",
     "only_later_sprints_fail",
     "record",
+    "record_everything_due",
+    "sprints",
 ]

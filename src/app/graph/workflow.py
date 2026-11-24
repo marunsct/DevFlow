@@ -8192,7 +8192,7 @@ def _the_later_sprints_brief(state: Any) -> str:
     sprint's. See `app.acceptance.sprint_scope`.
     """
     try:
-        from app.acceptance import sprint_scope, suite
+        from app.acceptance import sprint_scope
         from app.graph import acceptance_nodes
 
         root = state["repository"].root_path
@@ -8200,9 +8200,8 @@ def _the_later_sprints_brief(state: Any) -> str:
         index = int(state.get("current_sprint_index", 0) or 0)
         if not sprints or index >= len(sprints):
             return ""
-        due = acceptance_nodes.criteria_due(state)
-        later = [] if due is None else [c.id for c in suite.criteria(root) if c.id not in due]
-        sprint_scope.record(root, sprint=index + 1, of=len(sprints), not_yet_due=later)
+        if acceptance_nodes.record_the_sprint_scope(state) is None:
+            return ""
         return sprint_scope.brief(root, deferred=getattr(sprints[index], "out_of_scope", None) or ())
     except Exception:  # noqa: BLE001 - see docstring
         logger.debug("Could not record the sprint scope", exc_info=True)

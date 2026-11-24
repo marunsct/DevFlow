@@ -289,6 +289,7 @@ PACK = StackPack(
     install=(*js.INSTALL, *_python.INSTALL),
     unit_test=_python.UNIT_TEST,
     acceptance_test=js.ACCEPTANCE_TEST,
+    acceptance_selection=js.playwright_selection,
     unit_report="test-results/unit.xml",
     acceptance_report="test-results/acceptance.xml",
     unit_dir="tests",

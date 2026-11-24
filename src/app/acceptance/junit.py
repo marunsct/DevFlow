@@ -16,6 +16,7 @@ import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Sequence
 
 #: A criterion or change-request id inside a test's name. A runner whose test
 #: names are free text writes `[AC-3]`; one whose names are identifiers writes
@@ -36,6 +37,35 @@ def tags_in(text: str) -> tuple[str, ...]:
     """The criterion and change-request ids `text` names, as `AC-3`, in order."""
     found = (f"{kind.upper()}-{int(number)}" for kind, number in TAG.findall(text))
     return tuple(dict.fromkeys(found))
+
+
+#: The dashes `TAG` reads between a kind and its number, as escapes each regex flavour reads.
+_DASHES = {
+    "js": r"[-_‐-―−﹘﹣－]",
+    "re2": r"[-_\x{2010}-\x{2015}\x{2212}\x{fe58}\x{fe63}\x{ff0d}]",
+}
+
+
+def pattern_for(ids: Sequence[str], flavour: str = "js") -> str:
+    """A regular expression a runner can filter test names with: a name carrying any of `ids`, as `TAG` reads it.
+
+    "js" is a JavaScript (and Python) expression to apply ignoring case; "re2" (Go, Rust) has no look-around, so it
+    takes the character either side of the id instead, and carries its own case flag. "" when `ids` holds no id.
+    """
+    numbers: dict[str, list[str]] = {}
+    for item in ids:
+        found = TAG.fullmatch(str(item).strip())
+        if found:
+            numbers.setdefault(found.group(1).upper(), []).append(str(int(found.group(2))))
+    if not numbers:
+        return ""
+    dash = _DASHES["re2" if flavour == "re2" else "js"]
+    either = "|".join(
+        f"{kind}{dash}?0*(?:{'|'.join(dict.fromkeys(listed))})" for kind, listed in sorted(numbers.items())
+    )
+    if flavour == "re2":
+        return f"(?i)(?:^|[^A-Za-z0-9])(?:{either})(?:[^0-9]|$)"
+    return f"(?<![A-Za-z0-9])(?:{either})(?![0-9])"
 
 
 #: How much of a failure message is kept per test. A stack trace past this is

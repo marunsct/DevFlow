@@ -96,6 +96,9 @@ Plan: `reports/research/2026-11-24-agents-that-work-like-a-team.md`. The harness
 | HK.4 outcome records and a replay set of 15-25 past stuck defects | measures HK.3 without model runs | S-M | none | note names the known fix in >=60% | not built |
 Phases 2-3 (HK.6-HK.12: advisories and end-of-life, version-pinned API cards, stack-selection evidence, current security/testing guidance, product research, tools by measured tier, a production lookup service with shared public cache, single-flight, atomic per-tenant limits) are in the report.
 
+### 3.1b Search without paid keys, as open-source harnesses do (KS, research 2026-11-25; owner: implement)
+Plan: `reports/research/2026-11-25-open-source-web-search.md`. Building with HK.3/HK.4: KS.1 official channels per site (Stack Exchange API by id, GitHub REST/raw, registry documents), KS.2 code kept as fenced blocks, KS.3 "refused" told from "nothing found" with stated waits and a breaker per source, KS.4 blocked and duplicate SearXNG engines dropped (LF.1294-1295); KS.6 a probe per engine and source in `loop.sh ready`, KS.7 robots.txt with wildcards (LF.1296-1297). Next: KS.5 shared cache, single-flight, atomic counters (the first slice of HK.12). After numbers: KS.8 browser fallback (switch), KS.9 local documentation tier (switch).
+
 ### 3.2 Watch, try and steer a run (Appendix 11, WS). Nothing below is built except the pieces named.
 | Item | Value | Size | Needs | Proof | Verified |
 |---|---|---|---|---|---|
@@ -143,6 +146,7 @@ Checked: none of these has a module in src. Each is a candidate only if a measur
 ## 4. Waiting on the owner
 | Decision or action | What starts it |
 |---|---|
+| KS.10: a free Stack Exchange key and a no-scope GitHub token on /admin (300 a day to 10,000; 10 searches a minute to 30) | the owner |
 | HK research decisions: a stale-knowledge trap benchmark family; whether "Always" stops offering web tool schemas to a model measured never to call them (HK.11); product research for the product manager (HK.10) at all; a paid search key for production's general-web fallback (HK.12) | the owner |
 | Set `NEAR_GREEN_REPLANNED_ONCE` off by default (it is on through `EXPERIMENTS_ON`; every measuring run is started with it off per run) | the owner's go-ahead |
 | Hosted-model test (owner approved Claude Haiku 5.5, $30, $8 per-run ceiling): enter the Anthropic key and judgement model on the admin Settings page | owner enters the key; then hybrid runs (judgement on Haiku, build local), then full-Haiku, until about $25 is spent. Also decides Rust routing and the strong-model arm of LEAN_PROMPTS_FOR_STRONG_MODELS |

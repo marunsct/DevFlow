@@ -562,6 +562,9 @@ def technical_lead_node(state: WorkflowGraphState, config: RunnableConfig, ctx: 
     update["specialist_outputs"] = {}
     update["drafted_for_plan"] = False
     update["revision_comments"] = []
+    # A plan's builders are sent back for unfinished work at most once each way (`unfinished_build`).
+    update["unfinished_orders"] = {}
+    update["builders_sent_back"] = []
     return update
 
 
@@ -630,9 +633,21 @@ def _drafted_from_the_specification(state: Any, config: RunnableConfig, ctx: Gra
     return update
 
 
+def _on_to_the_ci_gate(state: Any, **fields: Any) -> dict[str, Any]:
+    """Every builder has finished: on to CI, unless a work order is not finished - then back to its builder, once
+    an attempt, before any test runs (`app.graph.unfinished_build`, LF.1299)."""
+    from app.graph import unfinished_build
+    from app.graph.workflow import _handing_on
+
+    sent = unfinished_build.after_the_build(state)
+    if sent:
+        return _handing_on(**{**fields, **sent, "specialist_task_index": 0}, stage="specialist_dispatch")
+    return _handing_on(**fields, stage="ci_gate")
+
+
 def specialist_dispatch_node(state: WorkflowGraphState, config: RunnableConfig, ctx: GraphContext) -> dict[str, Any]:
     from app.graph.workflow import (
-        _handing_on, _missing_upstream, _record_the_owners, _run_gated_agent, _the_fixes_to_keep,
+        _missing_upstream, _record_the_owners, _run_gated_agent, _the_fixes_to_keep,
         _the_interface_design_for, _the_later_sprints_brief, build_specialist_task_request,
         create_specialist_agent, specification_for_the_work_order, with_the_facts,
     )
@@ -680,12 +695,16 @@ def specialist_dispatch_node(state: WorkflowGraphState, config: RunnableConfig, 
     milestone = state["milestone_plan"]
     tasks = milestone.delegated_tasks
     index = state.get("specialist_task_index", 0)
-    # A work order drafted from the specification is done already.
+    # A work order drafted from the specification is done already; one sent back unfinished is not.
+    from app.graph import unfinished_build
+
     done = state.get("specialist_outputs") or {}
-    while index < len(tasks) and f"specialist_{tasks[index].specialist_role}_{index}" in done:
+    sent_back = unfinished_build.pending(state)
+    while (index < len(tasks) and f"specialist_{tasks[index].specialist_role}_{index}" in done
+           and f"specialist_{tasks[index].specialist_role}_{index}" not in sent_back):
         index += 1
     if index >= len(tasks) and index != state.get("specialist_task_index", 0):
-        return _handing_on(stage="ci_gate", specialist_task_index=index)
+        return _on_to_the_ci_gate(state, specialist_task_index=index)
 
     if index < len(tasks):
         task = tasks[index]
@@ -722,6 +741,8 @@ def specialist_dispatch_node(state: WorkflowGraphState, config: RunnableConfig, 
         from app.analysis import project_graph
 
         request = project_graph.with_the_slice(request, state["repository"].root_path, getattr(task, "files", None) or [])
+        # What its work order still lacked when it was sent back (LF.1299).
+        request = unfinished_build.with_what_is_missing(request, state, stage_name)
         update = _run_gated_agent(
             state,
             config,
@@ -738,8 +759,9 @@ def specialist_dispatch_node(state: WorkflowGraphState, config: RunnableConfig, 
         # The interfaces it changed, read by the harness (plan PH.3, off until measured).
         from app.agents import interface_changes
 
-        outputs[stage_name] = interface_changes.with_them(
-            update.pop("__specialist_result__"), state["repository"].root_path)
+        outputs[stage_name], built = unfinished_build.built_again(state, stage_name, interface_changes.with_them(
+            update.pop("__specialist_result__"), state["repository"].root_path))
+        update.update(built)
         update["specialist_outputs"] = outputs
         update["specialist_task_index"] = index + 1
         return update
@@ -748,7 +770,7 @@ def specialist_dispatch_node(state: WorkflowGraphState, config: RunnableConfig, 
     # code review read it first (`app.graph.engineering`); verification is
     # then its own stage (Step 5.4): the Test Engineer runs the tests and
     # turns failures into tracked, owned defects.
-    return _handing_on(stage="ci_gate")
+    return _on_to_the_ci_gate(state)
 
 
 def specialist_worker_node(state: dict, config: RunnableConfig, ctx: GraphContext) -> dict[str, Any]:
@@ -812,6 +834,10 @@ def specialist_worker_node(state: dict, config: RunnableConfig, ctx: GraphContex
 
     request = where_things_stand.with_it(request, state, leave_out=stage_name)
     request = project_graph.with_the_slice(request, state["repository"].root_path, getattr(task, "files", None) or [])
+    # What its work order still lacked when it was sent back (LF.1299).
+    from app.graph import unfinished_build
+
+    request = unfinished_build.with_what_is_missing(request, state, stage_name)
 
     # A worker may only answer its *own* approval gate.
     #
@@ -867,8 +893,9 @@ def specialist_worker_node(state: dict, config: RunnableConfig, ctx: GraphContex
     # again on every pass until the recursion limit ended the run.
     from app.agents import interface_changes
 
-    finished: dict[str, Any] = {"specialist_outputs": {stage_name: interface_changes.with_them(
-        update["__specialist_result__"], state["repository"].root_path)}}
+    output, built = unfinished_build.built_again(state, stage_name, interface_changes.with_them(
+        update["__specialist_result__"], state["repository"].root_path))
+    finished: dict[str, Any] = {"specialist_outputs": {stage_name: output}, **built}
     if answered_in_a_batch:
         # Its pause was answered in a batch and never surfaced, so its queue
         # entry is still there; left, `specialist_gather` would surface a
@@ -891,7 +918,7 @@ def specialist_gather_node(state: WorkflowGraphState, config: RunnableConfig) ->
     after another rather than racing each other for one `stage` value.
     """
     from app.graph.workflow import (
-        _QUEUED_AT, _handing_on, _queued_pauses, _tasks_without_an_output, _the_pause_to_surface,
+        _QUEUED_AT, _queued_pauses, _tasks_without_an_output, _the_pause_to_surface,
     )
 
     pauses = _queued_pauses(state)
@@ -932,4 +959,4 @@ def specialist_gather_node(state: WorkflowGraphState, config: RunnableConfig) ->
             "pending_approval": None,
             "queued_decisions": {},
         }
-    return _handing_on(stage="ci_gate", specialist_pauses={}, queued_decisions={})
+    return _on_to_the_ci_gate(state, specialist_pauses={}, queued_decisions={})

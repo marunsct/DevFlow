@@ -581,6 +581,11 @@ class WorkflowGraphState(TypedDict, total=False):
     # specification (fast delivery; `app.graph.drafting`). Cleared with each plan.
     drafted_for_plan: bool
     specialist_outputs: Annotated[dict[str, SpecialistOutput], _merge_or_reset]
+    # A builder stage sent back with what its work order still lacks -> that note; "" once it has built again
+    # (`app.graph.unfinished_build`, LF.1299). Merged: parallel workers each clear their own.
+    unfinished_orders: Annotated[dict[str, str], _merge_or_reset]
+    # Which of `unfinished_build`'s two send-backs this attempt has used (each once an attempt). Cleared with each plan.
+    builders_sent_back: list[str]
     # A parallel worker that paused, keyed by its stage name. Written by the
     # workers, drained by `specialist_gather`. It exists because `stage` cannot
     # be written from a fan-out: every worker writes the same superstep and
@@ -1137,7 +1142,10 @@ def _tasks_without_an_output(state: Any) -> list[tuple[int, Any]]:
     the run down rather than routing it anywhere.
     """
     tasks = getattr(state.get("milestone_plan"), "delegated_tasks", None) or []
-    done = set(state.get("specialist_outputs") or {})
+    # A builder sent back with its work order unfinished has an output and is not done (`unfinished_build`).
+    from app.graph.unfinished_build import pending
+
+    done = set(state.get("specialist_outputs") or {}) - pending(state)
     return [
         (index, task)
         for index, task in enumerate(tasks)

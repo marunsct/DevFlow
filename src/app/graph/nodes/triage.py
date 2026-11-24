@@ -547,6 +547,11 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
     # Mutation findings the sprint has no round for are gaps, not a reason
     # to re-plan it (plan QM.2); a no-op for a cycle with none.
     cycle, mutation_gaps = _mutation_findings_set_aside(state, cycle, test_round)
+    # Half or more of the round says the work is not built: those defects are their work orders' builders', once an
+    # attempt, and the round charges nothing (`unfinished_build`, LF.1299). Thorough delivery only.
+    from app.graph import unfinished_build
+
+    to_builders = unfinished_build.at_a_round(state, measured)
     try:
         cycle = record_test_run(
             cycle,
@@ -559,8 +564,9 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
             # failed every criterion of a round and the sprint was planned again.
             charge_the_budget=_a_round_that_found_a_product_defect(measured) and not (
                 _only_mutation_findings_open(cycle, measured)
-            ) and not not_measured,
+            ) and not not_measured and not to_builders,
         )
+        cycle = unfinished_build.superseded(cycle, to_builders)
     except RemediationLimitExceeded as exc:
         # The same exit as every other exhausted sprint: planned again,
         # as often as the revision limit allows, with this round on its
@@ -608,6 +614,10 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
     }
     if mutation_gaps:
         base_update["mutation_gaps"] = mutation_gaps
+    if to_builders:
+        # Built by the builders of their work orders, then measured by the next round; the faults the round found
+        # stay open for the fix round after it.
+        return _handing_on(**base_update, **unfinished_build.sent_to_the_builders(state, to_builders, test_round))
 
     if cycle.escalated:
         return _replan_or_escalate(

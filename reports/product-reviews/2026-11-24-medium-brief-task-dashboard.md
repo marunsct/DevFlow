@@ -13,3 +13,7 @@ LF.1231, LF.1232, LF.1233, LF.1236, LF.1238, LF.1241, LF.1243, LF.1244, LF.1245,
 
 ## What a rerun would show
 The same brief on the current harness is the honest measure: the rate limit is named as one defect, the round's root cause goes first, the index cause reaches the fixer, and the suite's login loop does not happen. Whether to rerun it is the owner's call.
+
+
+## Correction (2026-11-24)
+The deep review (`reports/audits/2026-11-24-why-medium-briefs-fail.md`) supersedes the numbers above: the final 80 failures were 37 direct 429, 18 thrown by the suite's sign-in helper, 13 404, 8 "Login failed 401" and 4 other (the "66 of 92" was a mid-run reading); LF.1243 never fired on this run and LF.1244's mid-round deploy made the round skip the defects it was to put first; with the limiter off and three small code fixes the product passes 82 of 97.

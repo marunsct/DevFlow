@@ -69,6 +69,9 @@ def test_the_gather_reverts_only_the_culprit_and_settles_the_rest(tmp_path, monk
 
     base = _a_workspace(tmp_path)
     _the_product_s_tests(monkeypatch, tmp_path)
+    # The batch's own measurement is the latest: the kept fix's tests pass in it, which is what closes its defect.
+    monkeypatch.setattr(ci, "load", lambda root_, which="latest": ci.Snapshot(
+        label="after defect_fix_2_batch", unit=dict(PASSED_BEFORE), unit_ran=True))
     for stage, path, text in (("defect_fix_2_0", "app/notes.py", "NOTES = 2  # broken\n"),
                               ("defect_fix_2_1", "app/tags.py", "TAGS = 2\n")):
         with batch_file_claims.holding("", stage):

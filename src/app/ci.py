@@ -613,6 +613,23 @@ def changed_since(root: str | Path, commit_id: str) -> list[str]:
     return [line.strip() for line in result.stdout.splitlines() if line.strip() and (Path(root) / line.strip()).is_file()]
 
 
+def unchanged_since(root: str | Path, commit_id: str) -> bool | None:
+    """Whether the workspace is exactly as `commit_id` left it: no file changed since, committed or not; None when git
+    cannot say (no commit to compare with, git refused). Files git ignores - the harness's own records - are not
+    changes."""
+    if not commit_id:
+        return None
+    committed = _git(root, "diff", "--quiet", commit_id, "HEAD", "--")
+    if committed is None or committed.returncode not in (0, 1):
+        return None
+    if committed.returncode == 1:
+        return False
+    status = _git(root, "status", "--porcelain")
+    if status is None or status.returncode != 0:
+        return None
+    return not status.stdout.strip()
+
+
 def diff_since(root: str | Path, commit_id: str, max_chars: int = 30_000) -> str:
     """The product's committed changes since `commit_id`, for a reviewer. The
     workflow's own documents are left out; commit first to include new files."""

@@ -1122,10 +1122,8 @@ def after_a_fix(
     # since it was measured" and ran the unit tests and the acceptance suite again on the product just measured.
     after.commit = ci.commit(root, f"Fix: {description[:60]}") or after.commit
     ci.save(root, after)
-    if not after.problem:
-        from app.agents import start_breaks
-
-        start_breaks.clear(root)
+    # The start-break streak is ended at settlement, by a kept fix that changed the product and was measured
+    # (`workflow._settle_the_fix`): kept here, a fix that changed nothing ended it.
     return []
 
 

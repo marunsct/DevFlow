@@ -61,7 +61,12 @@ class TestWhatIsBundled:
         assert "backend" not in bundled
 
 
-def _the_fix_stage_runs(tmp_path, answer: SpecialistOutput) -> tuple[dict, list[str]]:
+def _the_fix_stage_runs(tmp_path, answer: SpecialistOutput, measured: dict | None = None) -> tuple[dict, list[str]]:
+    """`measured`: the acceptance outcomes the measurement after the fix recorded; none by default."""
+    if measured:
+        from app import ci
+
+        ci.save(tmp_path, ci.Snapshot(label="after defect_fix_2_0", acceptance=measured, acceptance_ran=True))
     cycle = RemediationCycle(sprint_goal="g", defects=ROUND[:2])
     state = {
         "repository": SimpleNamespace(root_path=str(tmp_path)),
@@ -106,7 +111,7 @@ class TestOneFixStage:
         assert "measures each one after your fix" in asked[0]
 
     def test_closes_only_the_defect_it_was_sent(self, tmp_path):
-        update, _ = _the_fix_stage_runs(tmp_path, self.ANSWER)
+        update, _ = _the_fix_stage_runs(tmp_path, self.ANSWER, measured={"tests/ac-3.spec.js::AC-3 updates": "passed"})
 
         statuses = [d.status for d in update["remediation"].defects]
         assert statuses == ["fixed", "open"]

@@ -451,6 +451,38 @@ def mark_defect_fixed(
     return cycle.model_copy(update={"defects": updated_defects})
 
 
+#: How a fix's attempt ends when it changed the product and nothing the harness measures shows what the defect described
+#: gone: the defect stays open, and the next test round decides (`closed_by_a_round_that_found_nothing`). Measured on
+#: one 24-hour run: all nine defects closed as "fixed" had no passing command, seven concerned routes that answered 404
+#: the whole time, and one closed with a change the fixer never made.
+UNVERIFIED = "unverified: nothing the harness measures shows it gone; the next test round decides"
+#: How a fix's attempt ends when its stage changed no file of the product.
+NOTHING_WAS_CHANGED = "left open: nothing was changed"
+
+
+def is_unverified(defect: Any) -> bool:
+    """Whether an open defect's last fix ended unverified (`UNVERIFIED`)."""
+    attempts = [a for a in getattr(defect, "attempts", None) or [] if isinstance(a, dict)]
+    return getattr(defect, "status", "") == "open" and bool(attempts) and str(
+        attempts[-1].get("outcome") or "").startswith("unverified")
+
+
+def closed_by_a_round_that_found_nothing(cycle: RemediationCycle, test_round: int) -> tuple[RemediationCycle, list[int]]:
+    """`cycle` with each unverified defect closed by a test round that measured the product and found nothing wrong;
+    and the positions closed. The caller calls it only for such a round: a round that raised anything leaves them open,
+    to be measured or fixed again."""
+    closed = [index for index, defect in enumerate(cycle.defects) if is_unverified(defect)]
+    for index in closed:
+        cycle = mark_defect_fixed(
+            cycle, index,
+            regression_test=cycle.defects[index].regression_test or f"test round {test_round}, which found nothing wrong",
+            verified_by=f"test round {test_round}, which found nothing wrong",
+            resolution=(cycle.defects[index].resolution or "")
+            + f"{'; ' if cycle.defects[index].resolution else ''}closed when test round {test_round} found nothing wrong",
+        )
+    return cycle, closed
+
+
 def accept_risk(cycle: RemediationCycle, defect_index: int, *, reason: str) -> RemediationCycle:
     """Explicitly record that a defect is being accepted as a risk instead of fixed.
 
@@ -516,6 +548,8 @@ def build_defect_report(cycle: RemediationCycle) -> str:
         # the specialist had named a test. Say which fixes anything actually
         # confirmed.
         state = defect.status
+        if is_unverified(defect):
+            state = "open, its fix unverified: nothing measured it gone"
         if defect.status == "fixed":
             state = (
                 f"fixed, verified by `{defect.verified_by}`"
@@ -535,8 +569,12 @@ __all__ = [
     "RemediationLimitExceeded",
     "TestRunRecord",
     "accept_risk",
+    "NOTHING_WAS_CHANGED",
+    "UNVERIFIED",
     "build_defect_report",
+    "closed_by_a_round_that_found_nothing",
     "is_sprint_acceptable",
+    "is_unverified",
     "recurrence_of",
     "recurring_defect_note",
     "mark_defect_fixed",

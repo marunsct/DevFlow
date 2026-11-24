@@ -515,6 +515,17 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
     for position, item in enumerate(new_defects, start=len(cycle.defects)):
         defect_ledger.note("raised", f"test_round_{test_round}", defect=item, round_=test_round, index=position,
                             sprint=state.get("current_sprint_index", 0))
+    if not measured and not not_measured:
+        # A fix nothing could measure was left open, unverified, for this round to decide: it measured the product and
+        # found nothing wrong. A round that raised anything leaves them open, to be measured or fixed again.
+        from app.sprint import closed_by_a_round_that_found_nothing
+
+        cycle, closed = closed_by_a_round_that_found_nothing(cycle, test_round)
+        for index in closed:
+            defect_ledger.note("closed by the round's measurement", f"test_round_{test_round}",
+                               defect=cycle.defects[index], round_=test_round, index=index,
+                               sprint=state.get("current_sprint_index", 0),
+                               detail="its fix was unverified; this round found nothing wrong")
     # Mutation findings the sprint has no round for are gaps, not a reason
     # to re-plan it (plan QM.2); a no-op for a cycle with none.
     cycle, mutation_gaps = _mutation_findings_set_aside(state, cycle, test_round)

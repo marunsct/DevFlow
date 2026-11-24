@@ -3732,21 +3732,72 @@ def _the_defect_s_tests_in(root: str, label: str, defect: Any) -> bool | None:
         return None
 
 
+def _what_measures_it_gone(state: Any, defect: Any) -> str:
+    """What harness measurement, taken now, shows the defect gone when its own tests cannot say; "" when none does.
+
+    The language service no longer reporting it, the using file no longer importing a removed name, or what
+    `_resolved_by_a_measurement` reads (a regressed test passing again, the product starting, a page check). Never
+    raises.
+    """
+    try:
+        root = state["repository"].root_path
+        source = str(getattr(defect, "source", "") or "")
+        if source == "language service":
+            from app.graph.engineering import no_longer_underlined
+
+            return "the language service" if no_longer_underlined(root, defect.description) else ""
+        if source == "interface clash":
+            return "the interface check" if interface_clashes.still_clashing(root, defect.description) is False else ""
+        proof, _ = _resolved_by_a_measurement(state, defect)
+        return proof
+    except Exception as swallowed:  # noqa: BLE001 - a measurement that cannot answer shows nothing gone
+        degraded("measure.settlement_fallback", swallowed)
+        return ""
+
+
+def _the_product_started_in(root: str, label: str) -> bool:
+    """Whether the snapshot `label` names is the latest and measured the product starting. Never raises."""
+    try:
+        from app import ci
+
+        snapshot = ci.load(root, "latest")
+        return bool(label) and snapshot is not None and snapshot.label == label and not snapshot.problem
+    except Exception:  # noqa: BLE001 - an unread snapshot shows nothing started
+        return False
+
+
+#: The key of `_settle_the_fix`'s update that says how the attempt ended, for the attempt record; popped by its caller.
+SETTLED_AS = "__settled_as__"
+
+
 def _settle_the_fix(
     state: Any, cycle: Any, defect_index: int, stage_name: str, fix_result: Any, *, measured: str = "",
+    changed_nothing: bool | None = None,
 ) -> tuple[dict[str, Any], bool]:
     """What one fix that broke nothing settles: (the update, whether it blames a locked test).
 
     The update carries `remediation` - the defect fixed, or left open with
-    the reason in the ledger - and the fix's output. `measured` is the label
-    of the snapshot `engineering.after_a_fix` just took of this fix: the
-    defect's own tests in it decide, not the test the fixer names
-    (`_the_defect_s_tests_in`).
+    the reason in the ledger - the fix's output, and under `SETTLED_AS` how the
+    attempt ended. `measured` is the label of the snapshot
+    `engineering.after_a_fix` just took of this fix: the defect's own tests in
+    it decide, not the test the fixer names (`_the_defect_s_tests_in`).
+
+    A defect is fixed only on a measurement: its own tests passing, or a
+    harness check showing what it described gone. With none it is
+    `UNVERIFIED` - still open, and the next test round decides. A fix whose
+    stage changed no file (`changed_nothing`, from git since the fix began;
+    None when that cannot be told) is never fixed. Measured on one 24-hour run:
+    all nine "fixed" defects had no passing command, and one was closed with
+    a change the fixer never made.
     """
     from app.observability import defect_ledger
+    from app.sprint import NOTHING_WAS_CHANGED, UNVERIFIED
 
     defect = cycle.defects[defect_index]
     update: dict[str, Any] = {}
+    settled_as = "left open: its tests still fail"
+    #: Whether a measurement settled this defect either way: only such a fix may end the start-break streak.
+    measured_either_way = True
     outputs = dict(state.get("specialist_outputs", {}))
     outputs[stage_name] = fix_result
 
@@ -3784,6 +3835,19 @@ def _settle_the_fix(
             detail="the fix stage changed nothing and reported: " + "; ".join(map(str, fix_result.blockers))[:300]
             + (f" - {loads}" if loads else ""),
         )
+        settled_as, measured_either_way = NOTHING_WAS_CHANGED, False
+    elif changed_nothing is True:
+        # No file of the product changed since the fix began, whatever the fixer says it changed: not a fix. Measured
+        # on one run: a defect was closed with "changed routers/users.py" from a fixer that made no write call.
+        update["remediation"] = cycle
+        defect_ledger.note(
+            "left open", stage_name, defect=defect, round_=state.get("test_round", 0), index=defect_index,
+            sprint=state.get("current_sprint_index", 0),
+            detail="nothing was changed: no file of the product differs from before the fix"
+            + (f" (the fixer said it changed {', '.join(map(str, fix_result.changed_files))[:200]})"
+               if fix_result.changed_files else ""),
+        )
+        settled_as, measured_either_way = NOTHING_WAS_CHANGED, False
     elif (measured_now := _the_defect_s_tests_in(state["repository"].root_path, measured, defect)) is False:
         # Its own tests still fail, measured after the fix. Closed, the next
         # round found it again and charged the attempt a round late. Ahead of
@@ -3807,6 +3871,7 @@ def _settle_the_fix(
             sprint=state.get("current_sprint_index", 0),
             detail="the language service still reports it, asked again after the fix",
         )
+        settled_as = "left open: the language service still reports it"
     elif str(getattr(defect, "source", "") or "") == "interface clash" and (
         still := interface_clashes.still_clashing(state["repository"].root_path, defect.description)
     ) is not None and still:
@@ -3818,6 +3883,7 @@ def _settle_the_fix(
             sprint=state.get("current_sprint_index", 0),
             detail="the using file still imports the removed name, asked again after the fix",
         )
+        settled_as = "left open: the using file still imports the removed name"
     elif defect.regression_test_required and not regression_test and measured_now is not True \
             and not _the_suite_already_guards_it(state, measured, defect) \
             and not (str(getattr(defect, "source", "") or "") == "interface clash"
@@ -3832,9 +3898,30 @@ def _settle_the_fix(
             sprint=state.get("current_sprint_index", 0),
             detail="the fix named no regression test",
         )
+        settled_as, measured_either_way = "left open: the fix named no regression test", measured_now is not None
+    elif measured_now is None and not (gone := _what_measures_it_gone(state, defect)):
+        # Nothing measures what it described, before or after the fix: the fixer's word is all there is. Closed on it,
+        # the ledger, the summary and the re-plan read a fix nobody saw; open, the next test round decides
+        # (`closed_by_a_round_that_found_nothing`) or a fixer is asked again.
+        logger.info("The fix for '%s' could not be measured at settlement: left open, unverified",
+                    defect.description[:80])
+        update["remediation"] = cycle
+        if regression_test:
+            # The test it named, kept for the round that closes it (`closed_by_a_round_that_found_nothing`).
+            defects = list(cycle.defects)
+            defects[defect_index] = defect.model_copy(update={"regression_test": regression_test})
+            update["remediation"] = cycle.model_copy(update={"defects": defects})
+        defect_ledger.note(
+            "unverified", stage_name, defect=defect, round_=state.get("test_round", 0), index=defect_index,
+            sprint=state.get("current_sprint_index", 0),
+            detail="nothing the harness measures shows it gone; left open for the next test round"
+            + (f"; the fixer said: changed {', '.join(map(str, fix_result.changed_files))[:200]}"
+               if fix_result.changed_files else ""),
+        )
+        settled_as, measured_either_way = UNVERIFIED, False
     else:
         if measured_now is None:
-            logger.info("The fix for '%s' could not be measured at settlement", defect.description[:80])
+            logger.info("The fix for '%s' was measured by %s at settlement", defect.description[:80], gone)
         if not verified_by:
             logger.info(
                 "Stage %s reported a fix for '%s' with no command the ledger "
@@ -3850,8 +3937,9 @@ def _settle_the_fix(
         # Closed by its measurement, the regression test the harness would like is a note, not a reason to keep it
         # open (A7): its own tests, just measured, are what guards it.
         unnamed = defect.regression_test_required and not regression_test
-        guarded_by = ("the locked acceptance suite, measured after the fix" if _the_suite_already_guards_it(
-            state, measured, defect) or measured_now is not True else "its own tests, measured passing after the fix")
+        guarded_by = (f"{gone}, measured after the fix" if measured_now is None
+                      else "the locked acceptance suite, measured after the fix" if _the_suite_already_guards_it(
+                          state, measured, defect) else "its own tests, measured passing after the fix")
         if unnamed and measured_now is True:
             resolution = (resolution + "; " if resolution else "") + "the fix named no regression test of its own"
         update["remediation"] = mark_defect_fixed(
@@ -3866,12 +3954,26 @@ def _settle_the_fix(
             sprint=state.get("current_sprint_index", 0),
             detail=(resolution or "") + (f" (verified by {verified_by})" if verified_by else " (no passing command recorded)"),
         )
+        settled_as = "fixed"
 
-    still_open = update["remediation"] is cycle
-    if still_open:
+    if mutation_guided.is_a_finding(defect):
+        settled_as = "left open: its tests still fail" if update["remediation"] is cycle else "fixed"
+    # A kept fix that changed the product, measured with the product starting, ends the start-break streak; one that
+    # changed nothing, or that nothing measured, does not (`start_breaks`). Measured: a "fixed" on the fixer's word
+    # cleared it, the next nine fixers were not told, and the tenth repeated the change that stops the start.
+    if measured_either_way and changed_nothing is not True and _the_product_started_in(
+            state["repository"].root_path, measured):
+        from app.agents import start_breaks
+
+        start_breaks.clear(state["repository"].root_path)
+    update[SETTLED_AS] = settled_as
+
+    still_open = settled_as != "fixed"
+    # Unverified is neither fixed nor failed: the next test round decides, and a defect it closes had no failed fix.
+    if still_open and settled_as != UNVERIFIED:
         # One more failed try: past `escalate_after()` its next fix runs on
         # the judgement model (`GraphContext.the_build_model`).
-        update["remediation"] = _one_more_failed_fix(cycle, defect_index)
+        update["remediation"] = _one_more_failed_fix(update["remediation"], defect_index)
     blames = still_open and not mutation_guided.is_a_finding(defect) and _blames_a_locked_test(
         state, [*fix_result.blockers, *fix_result.decisions], changed_nothing=not fix_result.changed_files
     )

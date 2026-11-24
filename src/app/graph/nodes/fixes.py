@@ -474,14 +474,20 @@ def _fix_one(state: Any, config: RunnableConfig, defect_index: int, ctx: GraphCo
             "defect_cursor": defect_index + 1,
             "fix_base_commit": "",
         })
+    from app import ci
+    from app.graph.workflow import SETTLED_AS
+
     settled, blames = _settle_the_fix(
         state, cycle, defect_index, stage_name, fix_result, measured=f"after {stage_name}",
+        # Whether any file of the product changed since the fix began, from the repository: not the fixer's own list.
+        changed_nothing=ci.unchanged_since(state["repository"].root_path, fix_base),
     )
+    settled_as = settled.pop(SETTLED_AS, "")
     if settled.get("remediation") is not None:
         after = settled["remediation"].defects[defect_index]
         settled["remediation"] = _with_the_attempt(
             settled["remediation"], defect_index, stage_name, fix_result,
-            "fixed" if str(getattr(after, "status", "")) == "fixed" else "left open: its tests still fail",
+            settled_as or ("fixed" if str(getattr(after, "status", "")) == "fixed" else "left open: its tests still fail"),
             defect_budget.calls_in(config["configurable"].get(APP_RUN_ID_KEY), stage_name, started),
             root=state["repository"].root_path, sprint=state.get("current_sprint_index", 0),
         )
@@ -835,6 +841,11 @@ def defect_fix_gather_node(state: WorkflowGraphState, config: RunnableConfig) ->
     update: dict[str, Any] = {}
     if broke:
         update["fixes_one_at_a_time"] = alone_next
+    from app import ci
+    from app.graph.workflow import SETTLED_AS
+
+    # The repository tells only whether the batch as a whole changed anything; one fixer's writes are not told apart.
+    batch_changed_nothing = ci.unchanged_since(state["repository"].root_path, str(state.get("fix_base_commit") or ""))
     for index, stage_name in zip(batch, names):
         if stage_name in put_back:
             continue
@@ -844,7 +855,9 @@ def defect_fix_gather_node(state: WorkflowGraphState, config: RunnableConfig) ->
         settled, blames = _settle_the_fix(
             {**state, "specialist_outputs": {**outputs, **update.get("specialist_outputs", {})}},
             settled_cycle, index, stage_name, result, measured=f"after defect_fix_{round_}_batch",
+            changed_nothing=True if batch_changed_nothing is True else None,
         )
+        settled_as = settled.pop(SETTLED_AS, "")
         if settled.get("remediation") is not None:
             # Recorded as a fix alone records it, so the call cap and the next
             # fixer's earlier attempts see a batched attempt too.
@@ -853,7 +866,7 @@ def defect_fix_gather_node(state: WorkflowGraphState, config: RunnableConfig) ->
             after = settled["remediation"].defects[index]
             settled["remediation"] = _with_the_attempt(
                 settled["remediation"], index, stage_name, result,
-                "fixed" if str(getattr(after, "status", "")) == "fixed" else "left open: its tests still fail",
+                settled_as or ("fixed" if str(getattr(after, "status", "")) == "fixed" else "left open: its tests still fail"),
                 defect_budget.calls_in(config["configurable"].get(APP_RUN_ID_KEY), stage_name,
                                        str(state.get("fix_batch_started") or "")),
                 root=state["repository"].root_path, sprint=state.get("current_sprint_index", 0),

@@ -100,7 +100,7 @@ def analyse(paths: list[str], since: str) -> dict:
                     event = record.get("event")
                     if event == "bundled":
                         bundled[stage] += 1
-                    elif event in ("fixed", "left open", "reverted"):
+                    elif event in ("fixed", "left open", "unverified", "reverted"):
                         match = re.match(r"defect_fix_\d+_(\d+)$", stage)
                         if match and str(record.get("index")) == match.group(1):
                             outcome[stage] = event

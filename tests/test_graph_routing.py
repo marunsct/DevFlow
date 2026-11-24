@@ -798,7 +798,8 @@ def test_a_fix_stage_whose_replies_are_all_cut_off_leaves_its_defect_open(
     assert state["stage"] == "complete", state.get("error")
     left = [fields for event, fields in events if event == "left open"]
     assert left and "changed nothing" in left[0]["detail"] and "output limit" in left[0]["detail"]
-    assert [event for event, _ in events].count("fixed") == 1
+    # Nothing measures the second fix: unverified, and the green round after it closes the defect.
+    assert [event for event, _ in events][-2:] == ["unverified", "closed by the round's measurement"]
 
 
 def test_a_defect_that_never_gets_fixed_escalates_instead_of_looping(

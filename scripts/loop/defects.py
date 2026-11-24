@@ -33,7 +33,7 @@ def stories_by_id(events):
         if len(rounds) < 2:
             continue
         outcomes = [e.get("event") for e in its if e.get("event") in
-                    ("fixed", "left open", "reverted", "closed", "closed without a fixer", "deferred")]
+                    ("fixed", "left open", "unverified", "reverted", "closed", "closed without a fixer", "deferred")]
         first = next((e for e in its if e.get("event") == "raised"), its[0])
         stories[defect_id] = {"description": first.get("description") or "", "rounds": rounds,
                               "outcomes": outcomes, "ending": outcomes[-1] if outcomes else "open"}

@@ -24,8 +24,9 @@ def test_the_streak_is_told_with_the_last_error_and_cleared_by_a_kept_fix(tmp_pa
     assert the_facts_section(tmp_path) == ""
 
 
-def test_the_revert_of_a_fix_that_stopped_the_start_records_it_and_a_kept_fix_clears_it(tmp_path, monkeypatch):
-    """Through `after_a_fix`, with the measurement (which runs the product) stood in for."""
+def test_the_revert_of_a_fix_that_stopped_the_start_records_it(tmp_path, monkeypatch):
+    """Through `after_a_fix`, with the measurement (which runs the product) stood in for. What ends the streak is
+    settled after it: `test_a_defect_is_not_closed_on_a_fixer_s_claim`."""
     from app import ci
     from app.graph import engineering
 
@@ -42,10 +43,3 @@ def test_the_revert_of_a_fix_that_stopped_the_start_records_it_and_a_kept_fix_cl
     engineering.after_a_fix(str(tmp_path), base, "defect_fix_1_0", "the defect")
 
     assert "TypeError: responder must be async" in the_facts_section(tmp_path)
-
-    monkeypatch.setattr(ci, "take", lambda root, label: ci.Snapshot(label=label, unit={"t": "passed"}, unit_ran=True))
-    (tmp_path / "app.py").write_text("ok = 3\n")
-
-    engineering.after_a_fix(str(tmp_path), ci.commit(tmp_path, "again") or base, "defect_fix_1_1", "the defect")
-
-    assert the_facts_section(tmp_path) == ""

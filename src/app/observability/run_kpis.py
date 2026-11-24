@@ -334,6 +334,8 @@ def kpis(records: list[dict]) -> dict:
         "defects_raised": defects["raised"],
         "defects_fixed": defects["fixed"],
         "defects_left_open": defects["left open"],
+        # A fix nothing measured: left open for the next test round, neither fixed nor failed (LF.1260).
+        "defects_unverified": defects["unverified"],
         "fixes_reverted": defects["reverted"],
         "closed_without_a_fixer": defects["closed without a fixer"],
         **{layer: count[layer] for layer in [*LAYERS, "layer_tool_withheld"]},

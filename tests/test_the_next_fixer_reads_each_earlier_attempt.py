@@ -79,7 +79,8 @@ def test_the_fix_loop_records_and_shows_them(tmp_path, monkeypatch):
     update, _ = a_fix_stage(tmp_path, round_, defect_index=1)
     assert shown == [("Deleting a note returns 500", ["Saving a note returns 500"])]
     (attempt,) = update["remediation"].defects[1].attempts
-    assert attempt["stage"] == "defect_fix_2_1" and attempt["outcome"] == "fixed"
+    # Nothing measured it: the attempt is recorded as unverified, not fixed.
+    assert attempt["stage"] == "defect_fix_2_1" and attempt["outcome"].startswith("unverified")
 
     update, _ = a_fix_stage(tmp_path, round_, patches={
         "app.graph.engineering.after_a_fix": lambda *args, **kwargs: ["[AC-2] lists notes"]})

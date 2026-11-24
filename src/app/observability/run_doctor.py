@@ -20,7 +20,7 @@ from typing import Any, Iterable
 _RESOURCE_REFUSAL = re.compile(
     r"Not enough memory is free|No space left on device|ENOSPC|disk is full|Cannot allocate memory", re.IGNORECASE)
 #: How the defect ledger's events end a defect's attempt.
-_OUTCOMES = ("fixed", "left open", "reverted", "closed", "closed without a fixer", "deferred")
+_OUTCOMES = ("fixed", "left open", "unverified", "reverted", "closed", "closed without a fixer", "deferred")
 #: A defect raised in at least this many rounds without being fixed is going round in circles.
 REPEATED_ROUNDS = 3
 #: Model errors past which the model server is the first thing to check.
@@ -73,6 +73,7 @@ def defects(records: Iterable[dict]) -> dict[str, Any]:
                              "first_stage": str(first.get("stage") or "")})
     repeated.sort(key=lambda d: -d["rounds"])
     return {"raised": counted["raised"], "fixed": counted["fixed"], "left_open": counted["left open"],
+            "unverified": counted["unverified"],
             "reverted": counted["reverted"], "closed": counted["closed"] + counted["closed without a fixer"],
             "deferred": counted["deferred"], "repeated": repeated}
 

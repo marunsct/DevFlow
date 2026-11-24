@@ -10,7 +10,8 @@ late.
 
 So settlement reads the defect's tests in the snapshot its fix just took: green
 closes it, red leaves it open and counts the failed attempt now, and a
-snapshot that cannot say keeps today's behaviour.
+snapshot that cannot say leaves it open, unverified, for the next test round
+to decide: a defect is not closed on the fixer's claim (LF.1260).
 """
 
 from __future__ import annotations
@@ -71,11 +72,11 @@ def test_a_fix_whose_own_tests_pass_is_fixed(tmp_path) -> None:
 
 
 def test_a_snapshot_from_another_moment_does_not_decide(tmp_path) -> None:
-    """A stale snapshot measured some other change; today's behaviour stands."""
+    """A stale snapshot measured some other change: it neither fails the fix nor closes it."""
     defect = _settle(
         tmp_path, {"tests/acceptance/ac-3.spec.ts::AC-3 lists a new note": "failed"}, label="before defect_fix_1_0",
     )
-    assert defect.status == "fixed"
+    assert defect.status == "open"
 
 
 def test_a_defect_naming_no_criterion_is_measured_by_the_unit_tests(tmp_path) -> None:
@@ -92,9 +93,9 @@ from app.ci import WHERE  # noqa: E402
 
 
 def test_a_skipped_test_is_neither_the_fixer_s_failure_nor_its_proof(tmp_path) -> None:
-    """Only skipped tests name the criterion: the snapshot cannot say, and today's behaviour stands."""
+    """Only skipped tests name the criterion: the snapshot cannot say, so the fix is not closed on it."""
     defect = _settle(tmp_path, {f"tests/acceptance/ac-3.spec.ts{WHERE}AC-3 lists a new note": "skipped"})
-    assert defect.status == "fixed"
+    assert defect.status == "open"
 
 
 def test_a_skipped_test_beside_a_passing_one_does_not_hold_the_fix_open(tmp_path) -> None:
@@ -139,7 +140,7 @@ def test_no_unit_test_about_its_files_means_the_snapshot_cannot_say(tmp_path) ->
         tmp_path, {}, defect=_about(["src/store.ts"]),
         unit={f"tests/render.test.ts{WHERE}draws the list": "failed"},
     )
-    assert defect.status == "fixed"
+    assert defect.status == "open"
 
 
 def test_a_defect_naming_no_file_is_still_measured_by_every_unit_test(tmp_path) -> None:

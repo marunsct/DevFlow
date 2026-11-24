@@ -3,7 +3,9 @@
 Measured over 37 stored runs: 128 fixes were reverted as "the product no longer builds or starts after it", and 11
 runs had three or more in a row - one ten long. Each fixer was given its own criterion's failure and none was told
 that the fixers before it had made a change that stopped the product, nor what the product raised; each made the
-same change again. The streak is recorded in the workspace and cleared by the first fix that is kept.
+same change again. The streak is recorded in the workspace and cleared by the first kept fix that changed the product
+and was measured with it starting (`workflow._settle_the_fix`); never by one that changed nothing or that nothing
+measured: measured on one run, a "fixed" on a fixer's word cleared it, and the tenth fixer after repeated the change.
 """
 from __future__ import annotations
 

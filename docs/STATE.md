@@ -26,10 +26,10 @@ runs only when the owner starts them. Everything under measurement: `docs/improv
 
 ## The last three runs (11-20, hidden / quality; local model)
 Earlier runs (11-22 and before): `reports/product-reviews/`, `reports/status-board/`, git history of this file.
-- **Live (11-24 09:10 JST):** run-127780fe `L notes-api-go container 13` on :1234 (started 09:04 JST). :8888's server has been down since 02:57 JST;
-  run-eded4941 `L notes-api-java container 11` failed on it and is to be resumed when it answers. The owner's medium-brief run-8f0be29e failed 00:06 JST
+- **Live (11-24 09:45 JST):** run-127780fe `L notes-api-go container 13` on :1234 (started 09:04 JST). run-eded4941 `L notes-api-java container 11`
+  on :8888, resumed 09:44 JST after the server was down 02:57-09:43 JST. The owner's medium-brief run-8f0be29e failed 00:06 JST
   at 17 of 97 (reports/product-reviews/2026-11-24-medium-brief-task-dashboard.md).
-- **Deployed 11-23/24:** LF.1227-LF.1255, each in `docs/archive/plans/fix-log.md`; the largest: builders and reviews on written code hold that code
+- **Deployed 11-23/24:** LF.1227-LF.1256, each in `docs/archive/plans/fix-log.md`; the largest: builders and reviews on written code hold that code
   (LF.1232/1233/1236), the release probes sign in and read the contract from the criteria (LF.1242/1249), a fix round starts with its round's defects
   (LF.1244), full-stack packs carry their service's known errors (LF.1245), cannot-pass checks for own-record picks and whole-list counts (LF.1237/1246),
   a round-trip probe (LF.1254), `LONG_REASONING_BEFORE_A_READ` on and measured (LF.1238/1247), stale command containers stopped at worker start (LF.1250).

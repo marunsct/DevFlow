@@ -36,3 +36,14 @@ def test_a_crate_that_needs_a_newer_rust_is_answered_with_letting_cargo_choose_a
 
     assert "Cargo.lock" in said and ".cargo/config.toml" in said
     assert not BANNED.search(said)
+
+
+def test_sqlx_s_compile_time_query_macros_are_answered_and_kept_out_of_the_design():
+    """Measured on the same run, once its crates resolved: `sqlx::query!` needed a live database at build time."""
+    from app.stacks.packs.rust_axum_api import PACK
+
+    said = next(text for phrase, text in AXUM_KNOWN_ERRORS.items() if "to use query macros online" in phrase)
+    assert "sqlx::query(" in said and ".bind(" in said
+    fact = next(f for f in PACK.design_facts if "query!" in f)
+    assert "never" in fact
+    assert not BANNED.search(said + fact)

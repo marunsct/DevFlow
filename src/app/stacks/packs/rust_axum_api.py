@@ -111,6 +111,14 @@ THE_SIGNATURE_DECIDES = (
     "`src/lib.rs` to `pub fn app() -> Router`; the error shows where the router is used, not where it is typed."
 )
 AXUM_KNOWN_ERRORS = {
+    # Measured on a Rust run, once its crates resolved: the store used sqlx's `query!` macros, which check each query
+    # against a live database when the crate compiles; the build has none, and the product could not start.
+    "to use query macros online": (
+        "sqlx's `query!`, `query_as!` and `query_scalar!` macros check each query against a live database while the "
+        "crate compiles, and this build has none. Write each query with sqlx's functions instead - "
+        "`sqlx::query(\"... WHERE id = ?\").bind(id)`, `sqlx::query_as::<_, Note>(...)` with `#[derive(sqlx::FromRow)]` "
+        "on the struct - in every file that uses a macro, in one rewrite."
+    ),
     "is not supported by the following packages": (
         "a crate's newest release needs a newer Rust than this project's toolchain. Do not pin crates by hand: "
         "delete `Cargo.lock` (with `delete_artifact`) so cargo chooses again - `.cargo/config.toml` tells it to "
@@ -356,6 +364,10 @@ PACK = service_pack(
         "the unit tests use `app()` as it is and never apply state themselves, the tests through "
         "`tower::ServiceExt::oneshot`. Never "
         "`Router<AppState>`: `axum::serve` cannot serve it. axum has no `axum::test` module and no `TestClient`.",
+        # Measured on a Rust run: the store's `sqlx::query!` macros needed a database at build time and it never built.
+        "Database queries use a library's plain functions, checked when they run: with sqlx, `sqlx::query(...)."
+        "bind(...)` and `sqlx::query_as::<_, T>(...)`, never the `query!` / `query_as!` macros, which need a live "
+        "database while the crate compiles.",
     ),
     stack={
         "language": "Rust",

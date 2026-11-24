@@ -81,16 +81,11 @@ Earlier runs (11-22 and before): `reports/product-reviews/`, `reports/status-boa
 - Each run's product review: `reports/product-reviews/`.
 
 ## Next actions
-0a. **HK plan, all phases (owner 23:45 JST 11-24):** `reports/research/2026-11-24-agents-that-work-like-a-team.md` + the keyless search
-   plan `reports/research/2026-11-25-open-source-web-search.md`. Phase 1 deployed by 01:11 JST 11-25: HK.5 gate (LF.1291), HK.1-HK.2 stack facts
-   and fit check (LF.1292-1293), HK.3 + KS.1-KS.4 stuck lookup and site readers (LF.1294-1295; `STUCK_LOOKUP_CONDENSED` off), HK.4 + KS.6-KS.7
-   replay set, probes, robots (LF.1296-1297); also LF.1298 (a long value refused is a finding) and LF.1299 (an unfinished build goes back to
-   its builders). Replay baseline 1-2 of 23 (needs workspace fixtures to score local truth). Next: KS.5, phase 2 (HK.6-HK.10), phase 3.
-   Owner action: a no-scope GitHub token on /admin (the Stack Exchange allowance is already keyed).
-0. **Scale review (owner 11-24): `reports/audits/2026-11-24-why-medium-briefs-fail.md`** - bundles 1 and 2 deployed; bundle 3 (input
-   budget per request, sprint sizing, shared fixtures, deploy at a stage boundary) next. **Medium rerun live: run-c53e7bd2 ("Medium",
-   `tests/brief_medium.md`, thorough, :1234, started 15:10 JST 11-24)** - the first thorough run on bundles 1-2. Owner to decide: a scored
-   medium benchmark.
+0a. **HK plan, all phases (owner 23:45 JST 11-24):** phases 1-2 and KS.1-KS.7 deployed by 01:53 JST 11-25 (LF.1291-LF.1305; HK.7,
+   HK.9, HK.10 and `STUCK_LOOKUP_CONDENSED` behind switches, off; HK.7 needs a model's `knowledge_cutoff` on the settings page). Next: phase 3,
+   HK.11 tools by measured tier and the rest of HK.12. Owner action: a no-scope GitHub token on /admin.
+0b. **Medium 3 live: run-bc3cbd00 (`tests/brief_medium.md`, thorough, :1234, started 01:53 JST 11-25)** with every fix from its first stage. Medium 2
+   (run-c53e7bd2) failed at sprint 2 on its time budget: `reports/product-reviews/2026-11-25-medium-brief-rerun.md`. Hold deploys into it.
 1. Score the live runs when they finish (full run id), update this file, write the end-of-run review to `reports/product-reviews/`,
    start the next family on each port through the gated start (`ready` must print ALL READY).
 2. Internet lookups: WL.3-WL.7 built (`WEB_LOOKUP_WHEN_STUCK`, `WEB_TOOLS_AFTER_TWO_FAILED_FIXES` off, measured per run)

@@ -19,3 +19,14 @@ def test_the_backend_role_is_told():
     assert rule in prompt
     assert "4xx" in rule and "no body" in rule and "not JSON" in rule and "never" in rule
     assert not BANNED.search(rule)
+
+
+def test_the_backend_role_is_told_a_field_the_brief_does_not_refuse_empty_is_kept_when_empty():
+    """LF.1273: on five runs of five stacks the brief refused only an empty title, the specification gave the body as
+    "string (required)", and every product refused an empty body too; a hidden test writing one failed."""
+    prompt = specialists._ROLE_DESCRIPTIONS["backend"]
+    rule = specialists.REFUSE_WHAT_IT_CANNOT_USE
+
+    assert rule in prompt
+    assert "kept when empty" in rule and "never refused" in rule and '"required" means the field is present' in rule
+    assert not BANNED.search(rule)

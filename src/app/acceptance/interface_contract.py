@@ -449,7 +449,8 @@ class Check:
     made_through: str = ""
     #: The bodies that write is tried with, as JSON.
     bodies: str = ""
-    #: The field the emptied-field probe sends empty; "" for every other check.
+    #: The field the emptied-field probe sends empty, or the kept-when-empty probe sends "" to be kept; "" for every
+    #: other check.
     emptied: str = ""
     #: With `emptied`: the value sent is only spaces, not "" (HR2.PR.8: 12 of 49 products took a title of "   ").
     blank: bool = False
@@ -760,8 +761,17 @@ _THE_EMPTIED_VALUE = {False: "", True: "   "}
 
 def _an_emptied_field_test(title: str, check: Check, bodies: list[Any]) -> str:
     """The test sending `check`'s call the example body with `check.emptied` set to "": it must be refused."""
+    return _sent_after_its_example(check, bodies, _THE_EMPTIED_VALUE[check.blank]).replace(
+        "  expect(answer.status(), said).toBeLessThan(500);\n",
+        "  expect(answer.status(), said).toBeGreaterThanOrEqual(400);\n  expect(answer.status(), said).toBeLessThan(500);\n",
+    )
+
+
+def _sent_after_its_example(check: Check, bodies: list[Any], value: str) -> str:
+    """A test sending `check`'s call its example body as it is (a refusal of it skips the test), then with
+    `check.emptied` set to `value`; it ends wanting an answer under 500, which each probe replaces with its own rule."""
     example = next(b for b in bodies if isinstance(b, dict) and check.emptied in b)
-    sent = {**example, check.emptied: _THE_EMPTIED_VALUE[check.blank]}
+    sent = {**example, check.emptied: value}
     plain = _with_the_bad_body(check)
     marker = f"data: Buffer.from({_js(A_BODY_NOTHING_CAN_PARSE)}), "
     assert marker in plain
@@ -770,10 +780,7 @@ def _an_emptied_field_test(title: str, check: Check, bodies: list[Any]) -> str:
     first = (line.replace("const answer", "const plain", 1).replace(f"data: {json.dumps(sent)}, ", f"data: {json.dumps(example)}, ")
              + f"  test.skip([401, 403].includes(plain.status()), {_js(SIGN_IN_ANSWERED_FIRST)});\n"
              + f"  test.skip(plain.status() >= 400, {_js(NOT_THIS_WRITE_S_BODY)});\n")
-    return asked.replace(line, first + line, 1).replace(
-        "  expect(answer.status(), said).toBeLessThan(500);\n",
-        "  expect(answer.status(), said).toBeGreaterThanOrEqual(400);\n  expect(answer.status(), said).toBeLessThan(500);\n",
-    )
+    return asked.replace(line, first + line, 1)
 
 
 def _with_the_bad_body(check: Check) -> str:
@@ -788,6 +795,112 @@ def playwright_emptied_field_checks(checks: list[Check], bodies: list[Any] | Non
         title = _js(f"{f'[{c.criterion}] ' if c.criterion else ''}contract {number}: {c.line} with "
                     f"{'a blank' if c.blank else 'an empty'} {c.emptied}")
         tests.append(_an_emptied_field_test("__TITLE__", c, given).replace("__TITLE__", title, 1))
+    return _with_sign_in_js("import { test, expect } from '@playwright/test';\n\n" + "\n".join(tests),
+                            sign_in_plan(checks, bodies))
+
+
+#: A field held to a floor where a rule names it - not empty, a least length - in the words of a brief, criterion or
+#: specification ("title must not be empty", "1-200 characters", "minLength: 1", "Field(min_length=1)", ".min(1)").
+#: "Required" alone is not one: it says the field is present, not that it is non-empty.
+_A_FLOOR = re.compile(
+    r"non[\s-]?(?:empty|blank)|\bnot\s+(?:be\s+)?(?:empty|blank)|\bcannot\s+be\s+(?:empty|blank)"
+    r"|\b(?:empty|blank)\b[^.;\n]*\b(?:refused|rejected|invalid|not\s+allowed)"
+    r"|\bmin(?:imum)?[\s_-]*length|\bat\s+least\s+(?:one|\d+)\s+(?:\w+\s+)?(?:char|letter)"
+    r"|\b[1-9]\d*\s*(?:-|–|to|\.\.)\s*\d+\s*(?:char|letter)|\bbetween\s+[1-9]\d*\s+and\s+\d+\s*(?:char|letter)"
+    r"|\bmin\s*[:=(]\s*[1-9]|\blength\s*(?:>=?|≥)\s*[1-9]|\.min\(\s*[1-9]|\.nonempty\(", re.I)
+#: One clause of a text: a rule is read within it, never across a sentence.
+_A_CLAUSE_END = re.compile(r"(?<=[.;!?])\s+|\n")
+#: What may stand between two fields one rule names together: "title or body", "`title`, `body` and `tags`".
+_JOINED = re.compile(r"^[\s`\"',]*(?:(?:or|and|/|&)\s+)?(?:(?:a|an|the)\s+)?[\s`\"']*$", re.I)
+
+
+def fields_held_to_a_floor(texts: Any, names: Any) -> list[str]:
+    """Those of `names` a rule in `texts` holds to a floor: refused empty, a least length, "must not be empty".
+
+    Read field by field: the words after a field's name, up to the next field named in the same clause, are its rule
+    - so "title must not be empty; body may be empty" holds only `title` - and fields named together ("a title or
+    body that is empty is refused") share the rule that follows them.
+    """
+    wanted = [str(n) for n in names or () if str(n)]
+    if not wanted:
+        return []
+    found = set(fields_refused_when_empty(texts)) & set(wanted)
+    named = re.compile(r"(?<![\w-])(" + "|".join(re.escape(n) for n in sorted(wanted, key=len, reverse=True)) + r")(?![\w-])")
+    for text in texts or ():
+        for clause in _A_CLAUSE_END.split(str(text)):
+            at = list(named.finditer(clause))
+            for i, match in enumerate(at):
+                j = i + 1
+                while j < len(at) and _JOINED.match(clause[at[j - 1].end():at[j].start()]):
+                    j += 1
+                end = len(clause) if j >= len(at) else at[j].start()
+                if _A_FLOOR.search(clause[at[j - 1].end():end]):
+                    found.add(match.group(1))
+    return [n for n in wanted if n in found]
+
+
+def kept_empty_checks(checks: list[Check], bodies: list[Any], brief_texts: Any,
+                      specification_text: str = "") -> tuple[list[Check], list[str]]:
+    """(what the kept-when-empty probe asks, why it asks nothing): each create and replace write of the contract, once
+    per text field of the example body the brief does not refuse empty, when that body carries one the brief does.
+
+    The twin of `emptied_field_checks`. Measured on five runs of five stacks: the brief refused only an empty title and
+    gave the note's body as a string, the specification said "body: string (required)", every product refused an empty
+    body with 400, and a hidden test that writes a note with an empty body failed on it. The brief - its own text and
+    the criteria taken from it - names the refused set: a field it refuses empty is the emptied-field probe's, one any
+    rule (the brief's, the criteria's or the specification's) holds to a floor is never asked, and so is one that is
+    not text a person writes - an id, a credential, an address, a date, a fixed value (`round_trip_probe`'s table).
+    """
+    from dataclasses import replace as _with
+
+    from app.acceptance import round_trip_probe
+
+    texts = [str(t) for t in brief_texts or () if str(t or "").strip()]
+    names = sorted({str(k) for b in bodies if isinstance(b, dict) for k in b})
+    refused = fields_held_to_a_floor(texts, names)
+    if not refused:
+        return [], ["no example body carries a field the brief refuses empty"]
+    held = set(refused) | set(fields_held_to_a_floor([*texts, specification_text], names))
+    fields: list[str] = []
+    for name in names:
+        example = next((b for b in bodies if isinstance(b, dict) and name in b), None)
+        if (example is not None and name not in held and name in round_trip_probe.free_text_fields(example)
+                and any(f in example for f in refused)):
+            fields.append(name)
+    if not fields:
+        return [], ["the example bodies carry no text field the brief leaves free to be empty"]
+    writes, _ = bad_body_checks(checks, bodies)
+    asked = [_with(check, emptied=field, bodies=json.dumps(bodies))
+             for check in writes if check.method in ("POST", "PUT") for field in fields]
+    return asked, ([] if asked else ["the contract has no create or replace write"])
+
+
+#: How a kept-when-empty test says the write took the empty value and answered it back otherwise.
+READ_BACK = "READ BACK"
+_READ_BACK = re.compile(READ_BACK + r" (\d{3})")
+
+
+def _a_kept_empty_test(title: str, check: Check, bodies: list[Any]) -> str:
+    """The test sending `check`'s call the example body with `check.emptied` set to "": it must be taken and answered back as ""."""
+    field = _js(check.emptied)
+    return _sent_after_its_example(check, bodies, "").replace(
+        "  expect(answer.status(), said).toBeLessThan(500);\n",
+        "  expect(answer.status(), said).toBeGreaterThanOrEqual(200);\n"
+        "  expect(answer.status(), said).toBeLessThan(300);\n"
+        "  const back = await answer.json().catch(() => null);\n"
+        "  const kept = back && typeof back.data === 'object' && back.data && !Array.isArray(back.data) ? back.data : back;\n"
+        f"  if (kept && typeof kept === 'object' && {field} in kept) expect(kept[{field}], "
+        f"{_js(READ_BACK + ' ')} + answer.status() + ': ' + JSON.stringify(kept[{field}]).slice(0, 200)).toBe('');\n",
+    )
+
+
+def playwright_kept_empty_checks(checks: list[Check], bodies: list[Any] | None = None) -> str:
+    """A Playwright spec with one kept-when-empty test per check; numbered as `playwright_checks` numbers its own."""
+    tests = []
+    for number, c in enumerate(checks, start=1):
+        given = bodies if bodies is not None else json.loads(c.bodies or "[]")
+        title = _js(f"{f'[{c.criterion}] ' if c.criterion else ''}contract {number}: {c.line} keeps an empty {c.emptied}")
+        tests.append(_a_kept_empty_test("__TITLE__", c, given).replace("__TITLE__", title, 1))
     return _with_sign_in_js("import { test, expect } from '@playwright/test';\n\n" + "\n".join(tests),
                             sign_in_plan(checks, bodies))
 
@@ -998,7 +1111,7 @@ def test_contract(case, base_url):
         if found is None:
             pytest.skip(%r)
         path = case["before"] + urllib.parse.quote(str(found), safe="") + case["after"]
-    if case["rule"] == "refused":
+    if case["rule"] in ("refused", "kept"):
         plain, _ = _call(base_url, case["method"], path, case["example"], extra)
         if plain in (401, 403):
             pytest.skip(%r)
@@ -1011,6 +1124,17 @@ def test_contract(case, base_url):
         return
     if status in (401, 403):
         pytest.skip(%r)
+    if case["rule"] == "kept":
+        assert 200 <= status < 300, f"Received: {status}." + said
+        try:
+            back = json.loads(raw or b"null")
+        except ValueError:
+            back = None
+        if isinstance(back, dict) and isinstance(back.get("data"), dict):
+            back = back["data"]
+        if isinstance(back, dict) and case["field"] in back:
+            assert back[case["field"]] == "", f"READ BACK {status}: " + json.dumps(back[case["field"]])[:200]
+        return
     assert status < 500, f"Received: {status}." + said
     if case["rule"] == "refused":
         assert status >= 400, f"Received: {status}"
@@ -1065,6 +1189,19 @@ def pytest_emptied_field_checks(checks: list[Check], bodies: list[Any] | None = 
     return _pytest_module(cases, sign_in_plan(checks, bodies))
 
 
+def pytest_kept_empty_checks(checks: list[Check], bodies: list[Any] | None = None) -> str:
+    """A pytest module sending each check's call its example body with `emptied` set to ""; it must be taken and
+    answered back as ""."""
+    cases = []
+    for number, check in enumerate(checks, start=1):
+        given = bodies if bodies is not None else json.loads(check.bodies or "[]")
+        example = next(b for b in given if isinstance(b, dict) and check.emptied in b)
+        case = _pytest_case(number, check, f" keeps an empty {check.emptied}", rule="kept",
+                            send={**example, check.emptied: ""})
+        cases.append({**case, "example": example, "field": check.emptied})
+    return _pytest_module(cases, sign_in_plan(checks, bodies))
+
+
 #: The probe runners a pack can declare (`StackPack.probe_runner`): what compiles
 #: the contract's lines into checks, and the command that runs them. Everything
 #: specific to one tool is here and in its two functions above.
@@ -1073,6 +1210,7 @@ PROBE_RUNNERS: dict[str, dict[str, Any]] = {
         "checks": playwright_checks,
         "bad_body_checks": playwright_bad_body_checks,
         "emptied_field_checks": playwright_emptied_field_checks,
+        "kept_empty_checks": playwright_kept_empty_checks,
         "config": playwright_config,
         "command": ("npx", "playwright", "test", "--config", CONFIG_FILE),
         "base_config": "playwright.config.js",
@@ -1083,6 +1221,7 @@ PROBE_RUNNERS: dict[str, dict[str, Any]] = {
         "checks": pytest_checks,
         "bad_body_checks": pytest_bad_body_checks,
         "emptied_field_checks": pytest_emptied_field_checks,
+        "kept_empty_checks": pytest_kept_empty_checks,
         "file": PYTEST_PROBE_FILE,
         "command": (".venv/bin/python", "-m", "pytest", PYTEST_PROBE_FILE, "-q", "-p", "no:cacheprovider",
                     f"--junitxml={REPORT_FILE}"),
@@ -1497,6 +1636,109 @@ def emptied_field_description(accepted: list[tuple[Check, int]]) -> str:
 EMPTIED_FIELD_ACCEPTED = "A write accepts a field the specification refuses empty:"
 
 
+#: Where the brief's text is kept for the kept-when-empty probe asked again without it (settling, release).
+KEPT_EMPTY_BRIEF = "interface_contract_kept_empty_brief"
+#: The brief is kept up to this many characters.
+_MOST_BRIEF_KEPT = 40_000
+
+
+def kept_empty_errors(repo_root: str | Path, brief: str | None = None, *,
+                      runner: Any = None) -> list[tuple[Check, int]] | None:
+    """Each create or replace write of the locked contract that refuses an empty value of a field the brief does not
+    refuse empty - or takes it and answers it back otherwise - with the status it gave.
+
+    `brief` is the brief's text; None reads what the last asking kept, as the emptied-field defect is settled and the
+    release asks again. None when the checks cannot run or nothing is asked. A 2xx in a finding is a write that took
+    the empty value and answered it back as something else.
+    """
+    try:
+        from app.acceptance import probe_coverage, suite
+        from app.stacks import contract
+
+        root = Path(repo_root)
+        state = suite._state(root)  # noqa: SLF001 - one state file for the suite and its probes
+        if brief is None:
+            brief = state.get(KEPT_EMPTY_BRIEF)
+            if brief is None:
+                return None
+        else:
+            state[KEPT_EMPTY_BRIEF] = str(brief)[:_MOST_BRIEF_KEPT]
+            suite._save_state(root, state)  # noqa: SLF001
+        try:
+            specification = (root / "docs" / "technical_specification.md").read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            specification = ""
+        lines = the_locked_contract(root)[:MOST_CHECKS]
+        asked, why_not = kept_empty_checks(lines, bodies_for_the_probes(root),
+                                           [str(brief), *(c.text for c in suite.criteria(root))], specification)
+        found = contract.the_pack(root)
+        probe = PROBE_RUNNERS.get(found[0].probe_runner) if found else None
+        if not asked or probe is None or "kept_empty_checks" not in probe:
+            if lines:
+                probe_coverage.write(root, "kept_empty", probe_coverage.coverage(
+                    considered=len(lines), asked=[],
+                    not_asked=[("(every write)", reason) for reason in why_not]
+                    + [(c.line, "no runner on this stack probes it") for c in asked],
+                ))
+            return None
+        project_name = str((found[1] or {}).get("project") or "")
+        run = runner or suite._sandbox_runner(root)  # noqa: SLF001 - the suite's own runner
+        report = _the_probe_s_report(root / project_name, project_name, probe, asked, run, "kept_empty_checks")
+        probe_coverage.write(root, "kept_empty", probe_coverage.coverage(
+            considered=len(lines), asked=asked, report=report if report is not None and report.found else None,
+            check_of=lambda test: _the_check_of(test, asked),
+        ))
+        if report is None or not report.found:
+            return None
+        refused: list[tuple[Check, int]] = []
+        for test in report.tests:
+            check = _the_check_of(test, asked)
+            if check is None or getattr(test, "outcome", "") != "failed":
+                continue
+            message = str(getattr(test, "message", "") or "")
+            status = _READ_BACK.search(message) or _RECEIVED_ANY.search(message)
+            if status:
+                refused.append((check, int(status.group(1))))
+        return refused
+    except Exception:  # noqa: BLE001 - a check that cannot run says nothing
+        logger.debug("Could not probe the contract with a field kept empty", exc_info=True)
+        return None
+
+
+def _a_kept_empty_call(check: Check) -> str:
+    return f"`{check.method} {check.path}` with an empty `{check.emptied}`"
+
+
+def kept_empty_description(refused: list[tuple[Check, int]], brief_refuses: list[str] | None = None) -> str:
+    """The defect's description for writes that refused, or did not answer back, a field the brief keeps when empty."""
+    calls = "; ".join(f"{_a_kept_empty_call(c)} answered {status}"
+                      + (f" but gave `{c.emptied}` back as something else" if 200 <= status < 300 else "")
+                      for c, status in refused[:6])
+    fields = ", ".join(f"`{f}`" for f in dict.fromkeys(c.emptied for c, _ in refused))
+    only = ", ".join(f"`{f}`" for f in brief_refuses or ()) or "other fields"
+    return (f"{KEPT_EMPTY_REFUSED} {calls}. The brief refuses only {only} empty, so an empty {fields} is a value to "
+            "keep: the write takes it and the record answers it back as \"\", as any other value. Refuse it only "
+            "where the brief or the specification says that field must not be empty.")
+
+
+#: How the kept-when-empty defect's text starts; the round reads it to raise it once, and `still_raised` to settle it.
+KEPT_EMPTY_REFUSED = "A write refuses a field the brief keeps when empty:"
+
+
+def what_the_brief_refuses_empty(repo_root: str | Path) -> list[str]:
+    """The fields of the example bodies the kept brief and the criteria refuse empty, for the defect to name; [] if unknown."""
+    try:
+        from app.acceptance import suite
+
+        bodies = bodies_for_the_probes(repo_root)
+        names = sorted({str(k) for b in bodies if isinstance(b, dict) for k in b})
+        texts = [str(suite._state(repo_root).get(KEPT_EMPTY_BRIEF) or ""), *(c.text for c in suite.criteria(repo_root))]  # noqa: SLF001
+        return fields_held_to_a_floor(texts, names)
+    except Exception:  # noqa: BLE001 - the defect is raised without the names
+        logger.debug("Could not read what the brief refuses empty", exc_info=True)
+        return []
+
+
 def what_the_bad_body_probe_did_not_ask(repo_root: str | Path) -> list[str]:
     """A completion gap naming the write lines the last bad-body probe could not ask; [] when none or it is off. Never raises."""
     try:
@@ -1628,6 +1870,9 @@ def still_raised(repo_root: str | Path, description: str, *, runner: Any = None)
 
     if text.startswith(foundation_smoke.FOUNDATION_FAILS):
         return foundation_smoke.still_raised(repo_root, text, runner=runner)
+    if text.startswith(KEPT_EMPTY_REFUSED):
+        refused = kept_empty_errors(repo_root, runner=runner)
+        return None if refused is None else any(_a_kept_empty_call(c) in text for c, _ in refused)
     if not text.startswith(SERVER_FAILED):
         return None
     # A call may be named for any request; each kind is settled by asking the same request again.

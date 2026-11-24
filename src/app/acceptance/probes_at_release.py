@@ -6,9 +6,9 @@ probes it named only what they had not asked. A probe's finding at a round is a 
 no fixer closed is still the product's at release, so each probe that applies is asked once more and what it still
 finds is carried into `completion_gaps` in the very words the round's defect gave a fixer.
 
-The probes are the round's own (`interface_contract`, `wrong_shape_body_probe`, `concurrent_write_probe`, `edge_probe`,
-`round_trip_probe`, `page_probe`), each on its own switch as at a round (the round-trip probe has none); a probe that
-cannot run says nothing.
+The probes are the round's own (`interface_contract`'s server-error, emptied-field and kept-when-empty probes,
+`wrong_shape_body_probe`, `concurrent_write_probe`, `edge_probe`, `round_trip_probe`, `page_probe`), each on its own
+switch as at a round (the round-trip and kept-when-empty probes have none); a probe that cannot run says nothing.
 """
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ def _the_openings() -> tuple[str, ...]:
     """How the defect of each probe asked here opens, as the round raises it."""
     from app.acceptance import concurrent_write_probe, edge_probe, interface_contract, page_probe, round_trip_probe
 
-    return (interface_contract.SERVER_FAILED, interface_contract.EMPTIED_FIELD_ACCEPTED,
+    return (interface_contract.SERVER_FAILED, interface_contract.EMPTIED_FIELD_ACCEPTED, interface_contract.KEPT_EMPTY_REFUSED,
             concurrent_write_probe.CONCURRENT_WRITES_LOST, edge_probe.EDGE_CASES_FAILED, page_probe.PAGE_CHECK_FAILED,
             round_trip_probe.ROUND_TRIPS_FAILED)
 
@@ -69,6 +69,13 @@ def what_the_probes_still_find(repo_root: str | Path, *, runner: Any = None) -> 
             gaps.append(STILL_FINDS + interface_contract.emptied_field_description(emptied))
     except Exception:  # noqa: BLE001
         logger.debug("Could not ask the emptied-field probe again at release", exc_info=True)
+    try:
+        refused = interface_contract.kept_empty_errors(repo_root, runner=runner) or []
+        if refused:
+            gaps.append(STILL_FINDS + interface_contract.kept_empty_description(
+                refused, interface_contract.what_the_brief_refuses_empty(repo_root)))
+    except Exception:  # noqa: BLE001
+        logger.debug("Could not ask the kept-when-empty probe again at release", exc_info=True)
     try:
         lost = concurrent_write_probe.concurrent_write_errors(repo_root, runner=runner) or []
         if lost:

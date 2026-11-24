@@ -3189,7 +3189,7 @@ def _with_the_contract_s_server_errors(state: Any, test_result: Any, milestone: 
         test_result = _with_a_concurrent_write_defect(state, test_result, milestone)
         test_result = _with_an_edge_case_defect(state, test_result, milestone)
         test_result = _with_a_round_trip_defect(state, test_result, milestone)
-        return _with_an_emptied_field_defect(state, test_result, milestone)
+        return _with_a_kept_empty_defect(state, _with_an_emptied_field_defect(state, test_result, milestone), milestone)
     except Exception as error:  # noqa: BLE001 - the round as measured stands
         degraded("round_check.contract_server_errors", error)
         return test_result
@@ -3369,6 +3369,44 @@ def _with_an_emptied_field_defect(state: Any, test_result: Any, milestone: Any) 
         return test_result.model_copy(update={"defects": [*test_result.defects, defect]})
     except Exception as error:  # noqa: BLE001 - the round as measured stands
         degraded("round_check.emptied_field", error)
+        return test_result
+
+
+def _with_a_kept_empty_defect(state: Any, test_result: Any, milestone: Any) -> Any:
+    """`test_result` with one defect for the writes that refuse an empty value of a field the brief does not refuse
+    empty (`interface_contract.kept_empty_errors`). Never raises.
+
+    Measured on five runs of five stacks: the brief refused only an empty title, every product also refused an empty
+    body, and a hidden test writing a note with an empty body failed on it.
+    """
+    try:
+        from app.acceptance import interface_contract
+        from app.agents.specialists import ReportedDefect
+        from app.graph import acceptance_nodes
+
+        root = state["repository"].root_path
+        if any(str(d.description or "").startswith(interface_contract.KEPT_EMPTY_REFUSED) for d in test_result.defects):
+            return test_result
+        brief = str(getattr(state.get("document"), "text", "") or "")
+        refused = interface_contract.kept_empty_errors(root, brief) or []
+        if not refused:
+            return test_result
+        logger.warning("A green round's kept-when-empty probe: %d write(s) refused an empty field the brief keeps", len(refused))
+        defect = ReportedDefect(
+            description=interface_contract.kept_empty_description(
+                refused, interface_contract.what_the_brief_refuses_empty(root)),
+            severity="major",
+            reproduction_steps="; ".join(
+                f"send `{c.method} {c.path}` a valid body with `{c.emptied}` set to an empty string" for c, _ in refused[:6]),
+            expected_behavior="; ".join(
+                f"`{c.method} {c.path}` takes it and answers `{c.emptied}` back as an empty string" for c, _ in refused[:6]),
+            actual_behavior="; ".join(f"`{c.method} {c.path}` answered {status}" for c, status in refused[:6]),
+            affected_files=sorted({f for f, _ in acceptance_nodes.where_errors_become_5xx(root)}),
+            owner=_the_unit_tests_fail(milestone, "").owner,
+        )
+        return test_result.model_copy(update={"defects": [*test_result.defects, defect]})
+    except Exception as error:  # noqa: BLE001 - the round as measured stands
+        degraded("round_check.kept_empty", error)
         return test_result
 
 

@@ -501,7 +501,7 @@ A finding of the suite's dry run carries the cause when the runner's error is a 
 
 A defect holding a release probe's finding leads any merge with failing unit tests and never counts as a unit-test failure, so a green sprint does not settle while a probe still finds what would block release (LF.1186). A 5xx from the edge or server-error probe reaches its fixer with what the server printed for that request (LF.1185; an HTML error page is cut to its title).
 
-A repair of a locked suite keeps one record (`.harness/suite-repair.json`, `acceptance/suite_repair.py`): the tests sent, their code at the start, every measured version and the best. A review that measures the suite worse than the better of its state before the repair and the best version, or a repair that reaches its round limit, puts back the best version; the lock never takes a worse one (LF.1189-1190).
+A repair of a locked suite keeps one record (`.harness/suite-repair.json`, `acceptance/suite_repair.py`): the tests sent, their code at the start, every measured version and the best. A review that measures the suite worse than the better of its state before the repair and the best version, or a repair that reaches its round limit, puts back the best version; the lock never takes a worse one (LF.1189-1190). The record also keeps what sent each test - the harness's checks or a judgement (a dispute, a reviewer): a test sent on the checks alone and left as it was is settled, not sent back, once no check that can reopen a suite names it on a measurement of the started product (LF.1267).
 
 ### 6.6 Brownfield: the regression contract
 

@@ -7,6 +7,8 @@ This module alone writes `.harness/suite-repair.json`, and the suite's repair ch
 
 - `opened`: when, and the lock version the repair began from;
 - `sent`: each test sent for repair with its code as the repair began (a sibling added later with its own);
+- `sent_on`: what sent each test, when its sender said - the harness's own checks (`ON_THE_CHECKS`), which can be run
+  again, or a judgement (`ON_A_JUDGEMENT`: a dispute's ruling, a reviewer's finding), which cannot;
 - `versions`: version 0 is the lock as measured before the repair; each later one is a measured version of the suite
   - who left it (`writers`, or `put back` by the harness), its digest, the tests run (a skipped test did not run),
   passed and failed, whether the product started, the failing names, and the sent tests it had changed;
@@ -37,6 +39,9 @@ VERSIONS_DIR = f"{contract.HARNESS_DIR}/suite-repair"
 #: Who left a measured version.
 BY_THE_WRITERS = "writers"
 BY_A_PUT_BACK = "put back"
+#: What sent a test for repair: a finding of the harness's own checks, or a judgement (a dispute, a reviewer).
+ON_THE_CHECKS = "the harness's checks"
+ON_A_JUDGEMENT = "a judgement"
 #: The stores this record replaced, read once from a workspace a repair was open in when the harness changed.
 _EARLIER_KEYS = ("repair_bodies", "before_repair", "repair_best")
 _EARLIER_BEST_DIR = f"{contract.HARNESS_DIR}/acceptance-repair-best"
@@ -85,9 +90,12 @@ def _from_the_earlier_stores(repo_root: str | Path) -> dict[str, Any]:
     return record
 
 
-def opened(repo_root: str | Path, tests: list[str], bodies: dict[str, str]) -> None:
+def opened(repo_root: str | Path, tests: list[str], bodies: dict[str, str], *, on: str | None = None) -> None:
     """Open the record, when no repair is open, with version 0 as the lock last measured; and add each of `tests` to
-    what was sent with its code in `bodies`, a test already sent keeping the code it had when first sent."""
+    what was sent with its code in `bodies`, a test already sent keeping the code it had when first sent.
+
+    `on` is what sent them (`ON_THE_CHECKS`, `ON_A_JUDGEMENT`), when the caller knows: a test first sent on the checks
+    and then by a judgement is held to the judgement's rule (`suite.tests_left_unrepaired`)."""
     from app.acceptance import suite
 
     record = read(repo_root)
@@ -101,15 +109,25 @@ def opened(repo_root: str | Path, tests: list[str], bodies: dict[str, str]) -> N
                              "lock_version": suite._state(repo_root).get("lock_version")},
                   "sent": {}, "versions": [lock], "best": 0}
     sent = record.setdefault("sent", {})
-    for name in tests:
-        if str(name) in bodies and str(name) not in sent:
-            sent[str(name)] = bodies[str(name)]
+    sent_on = record.setdefault("sent_on", {})
+    for name in map(str, tests):
+        if name in bodies and name not in sent:
+            sent[name] = bodies[name]
+            if on:
+                sent_on[name] = on
+        elif name in sent and on == ON_A_JUDGEMENT:
+            sent_on[name] = on
     _write(repo_root, record)
 
 
 def sent(repo_root: str | Path) -> dict[str, str]:
     """Each test sent for repair, with its code as the repair began; {} when no repair is open."""
     return dict(read(repo_root).get("sent") or {})
+
+
+def sent_on_the_checks(repo_root: str | Path) -> set[str]:
+    """The tests sent for repair on a finding of the harness's own checks alone; empty when no repair is open."""
+    return {str(name) for name, on in (read(repo_root).get("sent_on") or {}).items() if on == ON_THE_CHECKS}
 
 
 def before(repo_root: str | Path) -> dict[str, Any]:
@@ -132,7 +150,7 @@ def best(repo_root: str | Path) -> dict[str, Any]:
     return version
 
 
-def _did_not_start(result: Any) -> bool:
+def did_not_start(result: Any) -> bool:
     """Whether a measurement says the product never came up: its problem, or every failure, says so."""
     from app.acceptance import suite
 
@@ -161,7 +179,7 @@ def measured(repo_root: str | Path, result: Any, *, by: str = BY_THE_WRITERS) ->
                for path in suite.suite_files(repo_root)}
         bodies = suite._test_bodies(repo_root)
         tests, passed = suite._counted(result)
-        started = not _did_not_start(result)
+        started = not did_not_start(result)
         version: dict[str, Any] = {
             "by": by,
             "at": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()),
@@ -205,5 +223,5 @@ def closed(repo_root: str | Path) -> None:
     shutil.rmtree(root / _EARLIER_BEST_DIR, ignore_errors=True)
 
 
-__all__ = ["BY_A_PUT_BACK", "BY_THE_WRITERS", "FILE", "VERSIONS_DIR", "before", "best", "closed", "measured", "opened",
-           "read", "sent"]
+__all__ = ["BY_A_PUT_BACK", "BY_THE_WRITERS", "FILE", "ON_A_JUDGEMENT", "ON_THE_CHECKS", "VERSIONS_DIR", "before", "best",
+           "closed", "did_not_start", "measured", "opened", "read", "sent", "sent_on_the_checks"]

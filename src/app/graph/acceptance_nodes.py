@@ -1047,7 +1047,29 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     # A repair that left a test it was sent for exactly as it was goes back with the cannot-pass findings (and once
     # at the review's limit, `cannot_pass_to_lock`), recorded under the bucket's name. It says what the writers did,
     # not what a check suspects, so it is never held back as a repeat.
-    unrepaired = suite.tests_left_unrepaired(root, result, written)
+    # A test sent on a check's finding that no check that can reopen a suite raises now - corrected since, or its
+    # fault gone with a shared helper - needed no change: it is settled, not sent back (measured on one run: four
+    # rounds, 45 minutes, spent on a right test a corrected check no longer named). The repair it opened stays charged
+    # (`suite_repairs`): it was opened on a finding that held then, and the charge is what stops a check that comes and
+    # goes from reopening the suite without end (`may_repair` reopens only for a test never sent once it is spent).
+    vacuous = suite.vacuous_green(root, result)
+    still_found: list[str] | None = None
+    if result.ran:
+        try:
+            still_found = [
+                *cannot, *vacuous,
+                *suite.tests_left_behind_by_their_own_change(root, result),
+                *suite.tests_finding_a_per_record_control_on_the_whole_page(
+                    root, result, getattr(state.get("document"), "text", "") or ""),
+            ]
+        except Exception as error:  # noqa: BLE001 - every test left as it was is sent back, as before
+            degraded("repair.findings_that_still_hold", error)
+            still_found = None
+    settled = suite.tests_whose_finding_no_longer_holds(root, result, written, still_found)
+    if settled:
+        logger.warning("The finding %d test(s) were sent for repair on no longer holds; they stay as locked: %s",
+                       len(settled), "; ".join(name[:80] for name in settled))
+    unrepaired = suite.tests_left_unrepaired(root, result, written, still_found)
     check_findings.noted(root, rounds, "tests_that_cannot_pass", unrepaired)
     cannot = [*cannot, *unrepaired]
     problems.extend(cannot)
@@ -1057,7 +1079,6 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     problems.extend(_noted("tests_whose_success_status_the_contract_does_not_give",
                                          suite.tests_whose_success_status_the_contract_does_not_give(
         root, getattr(state.get("technical_specification"), "interface_contract", None) or ())))
-    vacuous = suite.vacuous_green(root, result)
     # A suite that proved nothing is evidence, not a check's suspicion: it is never held back as a repeat.
     problems.extend(check_findings.noted(root, rounds, "vacuous_green", vacuous))
     # Tests that pass a product that is not there (LR.23): assertions made only when the answer was good, and, at the
@@ -1162,6 +1183,10 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     targeted = not problems and suite.targeted_repair_switch.enabled() and suite.only_the_repaired_tests_changed(root)
     if targeted:
         logger.info("The reopened suite changed only the tests sent for repair; locked again on the harness's checks")
+    # A repair whose findings all stopped holding, with nothing changed, is the suite the QA lead approved at its lock.
+    if settled and not problems and suite.is_as_last_locked(root):
+        logger.info("The reopened suite is as it was locked and its findings no longer hold; locked again unread")
+        targeted = True
     from app.acceptance.api_reference import api_reference
     from app.graph import product_at_fault
 
@@ -1258,6 +1283,15 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         logger.info("Deferred criteria a test now carries are no longer deferred")
     suite.lock(root)
     update.update(product_at_fault.settled(root, no_fault_found))
+    if settled:
+        _decide(
+            state, update, point="acceptance_tests",
+            question="The harness's finding these locked tests were sent for repair on no longer holds: do they change?",
+            options=["they stay as they were locked", "QA repairs them"],
+            decision="they stay as they were locked",
+            rationale="No check that can reopen the suite names them now, on this measurement: "
+                      + "; ".join(settled),
+        )
     if no_fault_found:
         logger.warning("QA found no fault in the test(s) sent for repair, and the harness's checks agree; locked, nothing charged")
         _decide(
@@ -2709,8 +2743,11 @@ def reopen_the_suite_for(
     logger.warning("Reopening the locked suite: %d test(s) cannot pass", len(broken))
     try:
         from app.acceptance import suite as _suite
+        from app.acceptance import suite_repair
 
-        _suite.repairing(state["repository"].root_path, [name for item in broken for name in _which_tests(state, item)])
+        # What sent them: a check's finding can be run again when the repair comes back, a dispute's ruling cannot.
+        _suite.repairing(state["repository"].root_path, [name for item in broken for name in _which_tests(state, item)],
+                         on=suite_repair.ON_A_JUDGEMENT if reclassifying else suite_repair.ON_THE_CHECKS)
     except Exception as error:  # noqa: BLE001 - the repair goes on without its guard
         degraded("guard.tests_under_repair", error)
     before = state.get("suite_reclassified_causes")

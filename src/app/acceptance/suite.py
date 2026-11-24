@@ -430,7 +430,7 @@ def test_bodies(repo_root: str | Path) -> dict[str, str]:
 
 
 def tests_left_unrepaired(repo_root: str | Path, result: Any = None,
-                          written: dict[str, str] | None = None) -> list[str]:
+                          written: dict[str, str] | None = None, still_found: Sequence[str] | None = None) -> list[str]:
     """The tests a repair was sent for whose code it has not changed, as one problem; [] when none or no repair is open.
 
     `written` is each test's code as the writers left it (`test_bodies` before the harness put anything back): a test
@@ -442,13 +442,42 @@ def tests_left_unrepaired(repo_root: str | Path, result: Any = None,
 
     A test `result` shows passing is repaired whatever its own code: measured on one run, the fault was a shared
     fixture, the repair fixed the fixture, the three tests passed - and were sent back twice as "not changed".
+
+    `still_found` is what the harness's checks that can reopen a suite find now, on `result`. A test sent on those
+    checks' finding alone, which none of them names any more, needed no change and is not named here
+    (`tests_whose_finding_no_longer_holds`). Measured on one run: a check misread a right locked test, was corrected
+    while the repair was open and no longer named it - and the writers were sent back four times, over 45 minutes,
+    to change it. A test a judgement sent (a dispute's ruling, a reviewer's finding) cannot be judged again by a check,
+    and is named as before.
     """
+    left, _ = _unchanged_since_sent(repo_root, result, written, still_found)
+    if not left:
+        return []
+    return [
+        "This repair was sent for " + ", ".join(f"`{name}`" for name in left) + " and has not changed "
+        + ("it" if len(left) == 1 else "them") + ": each is exactly as it was locked. Repair each as its finding says - "
+        "the fault named is in that test's own code."
+    ]
+
+
+def tests_whose_finding_no_longer_holds(repo_root: str | Path, result: Any = None,
+                                        written: dict[str, str] | None = None,
+                                        still_found: Sequence[str] | None = None) -> list[str]:
+    """The tests sent for repair on the harness's checks, left as they were, that no check in `still_found` names
+    now: settled as needing no change; [] when none. As for `tests_left_unrepaired`, which leaves these out."""
+    return _unchanged_since_sent(repo_root, result, written, still_found)[1]
+
+
+def _unchanged_since_sent(repo_root: str | Path, result: Any, written: dict[str, str] | None,
+                          still_found: Sequence[str] | None) -> tuple[list[str], list[str]]:
+    """The tests sent for repair the writers left as they were: those still to repair, and those whose finding no
+    longer holds (only with `still_found`, on a measurement of the tests)."""
     from app.acceptance import suite_repair
 
     state = _state(repo_root)
     sent = suite_repair.sent(repo_root)
     if not sent:
-        return []
+        return [], []
     # A test QA examined and says is right - the product is at fault (`graph.product_at_fault`) - is left unchanged
     # on purpose, and is judged by that claim, not here.
     vouched = " ".join(str(claim) for claim in state.get(PRODUCT_AT_FAULT_CLAIMS) or ())
@@ -459,13 +488,32 @@ def tests_left_unrepaired(repo_root: str | Path, result: Any = None,
             if name in now and now[name].strip() == str(body).strip() and name not in vouched
             and name in by_the_writers and by_the_writers[name].strip() == str(body).strip()
             and not _is_among(name, passing)]
-    if not left:
-        return []
-    return [
-        "This repair was sent for " + ", ".join(f"`{name}`" for name in left) + " and has not changed "
-        + ("it" if len(left) == 1 else "them") + ": each is exactly as it was locked. Repair each as its finding says - "
-        "the fault named is in that test's own code."
-    ]
+    if not left or still_found is None or not _measured_the_tests(result):
+        return left, []
+    on_the_checks = suite_repair.sent_on_the_checks(repo_root)
+    settled = [name for name in left
+               if name in on_the_checks and not any(_a_finding_names(repo_root, str(f), name) for f in still_found)]
+    return [name for name in left if name not in settled], settled
+
+
+def _measured_the_tests(result: Any) -> bool:
+    """Whether `result` ran the tests on a product that started: what a check that measures a test needs."""
+    from app.acceptance import suite_repair
+
+    try:
+        return bool(result.ran) and not suite_repair.did_not_start(result)
+    except Exception:  # noqa: BLE001 - nothing known to be measured
+        return False
+
+
+def _a_finding_names(repo_root: str | Path, finding: str, name: str) -> bool:
+    """Whether a check's finding is about the test `name`: by its name, or by the file and lines it gives."""
+    if name in finding:
+        return True
+    try:
+        return name in _the_tests_at(repo_root, finding)
+    except Exception:  # noqa: BLE001 - a finding that cannot be placed may be about any test
+        return True
 
 
 def what_a_put_back_undid(repo_root: str | Path, written: dict[str, str]) -> str:
@@ -504,10 +552,12 @@ def _is_among(name: str, reported: list[str]) -> bool:
     return any(r == name or r.endswith((f"::{name}", f".{name}", f" › {name}", f" {name}")) for r in reported)
 
 
-def repairing(repo_root: str | Path, tests: list[str], *, began: dict[str, str] | None = None) -> None:
+def repairing(repo_root: str | Path, tests: list[str], *, began: dict[str, str] | None = None,
+              on: str | None = None) -> None:
     """Record the tests a reopened suite is being repaired for, until it is locked again.
 
     `began` is each test's code as the repair began (`test_bodies`), for a caller that has already changed them.
+    `on` is what sent them (`suite_repair.ON_THE_CHECKS` or `ON_A_JUDGEMENT`), when the caller knows.
     """
     from app.acceptance import suite_repair
 
@@ -517,7 +567,7 @@ def repairing(repo_root: str | Path, tests: list[str], *, began: dict[str, str] 
     # Each named test's code as the repair began, so the lock can tell one it never changed (`tests_left_unrepaired`),
     # and - at the first - what the locked suite measured before anything was changed (`a_repair_that_made_it_worse`).
     suite_repair.opened(repo_root, [str(name) for name in tests],
-                        began if began is not None else _test_bodies(repo_root))
+                        began if began is not None else _test_bodies(repo_root), on=on)
 
 
 def a_repair_that_made_it_worse(repo_root: str | Path, result: AcceptanceResult) -> str:
@@ -811,6 +861,18 @@ def put_back_tests_the_repair_was_not_sent_for(repo_root: str | Path) -> list[st
         return put_back
     except Exception:  # noqa: BLE001 - the review reads the suite as it is
         return []
+
+
+def is_as_last_locked(repo_root: str | Path) -> bool:
+    """Whether the suite's files are exactly those of its last lock; False with no lock kept. Never raises."""
+    try:
+        root = Path(repo_root)
+        locked = _the_files_of(root / SNAPSHOT_DIR)
+        now = {path.relative_to(root).as_posix(): path.read_text(encoding="utf-8", errors="replace")
+               for path in suite_files(repo_root)}
+        return bool(locked) and locked == now
+    except Exception:  # noqa: BLE001 - then it is read as changed
+        return False
 
 
 def only_the_repaired_tests_changed(repo_root: str | Path) -> bool:

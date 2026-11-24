@@ -234,3 +234,16 @@ def _stop_if_this_run_was_stopped() -> None:
         return
     if stopped_here(run_id):
         raise RunCancelled(f"Run {run_id} was stopped; this stage's call is not made.")
+
+
+def raise_if_the_run_stopped(error: BaseException) -> None:
+    """Raise `error` again when it is the run's stop (`RunCancelled`), so a catch-all around a model call ends its stage.
+
+    A stage that catches every failure of a direct call took the stop for a failed call: measured on one run, a pause
+    for a deploy as drafting began left all nine files to the loop and the stage ended as done; the builders then
+    wrote them with no draft. Raised again, the stage is drafted again on resume.
+    """
+    from app.graph.workflow import RunCancelled
+
+    if isinstance(error, RunCancelled):
+        raise error

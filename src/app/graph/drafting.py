@@ -425,6 +425,12 @@ def _draft_one(model: Any, root: Path, path: str, task: Any, specification: Any,
 Write = Callable[[str, str, str], Any]
 
 
+def _raise_if_the_run_stopped(error: BaseException) -> None:
+    from app.models.call_gate import raise_if_the_run_stopped
+
+    raise_if_the_run_stopped(error)
+
+
 def _noted(path: str, attempt: str, outcome: str) -> None:
     """One `draft` transcript record: the file, which pass (first, content-refusal, repair-n), and how it ended.
 
@@ -511,6 +517,7 @@ def _repaired_where_the_compiler_says(
                 else:
                     _noted(path, f"repair-{_pass + 1}", "empty; the earlier draft stays")
             except Exception as error:  # noqa: BLE001 - the next stage meets what is there
+                _raise_if_the_run_stopped(error)
                 logger.info("Repair of draft %s failed: %s", path, str(error)[:200])
                 _noted(path, f"repair-{_pass + 1}", f"refused; the earlier draft stays: {error}")
     for path in best.put_back(root, write):
@@ -641,7 +648,7 @@ def draft_work_orders(
 
     A file whose draft is empty or that the workspace refuses (a syntax
     error, a path outside the project) leaves its work order to the agent
-    loop. Never raises.
+    loop. Raises only `RunCancelled`: a run paused or stopped mid-way drafts again on resume.
     """
     from app.agents.specialists import SpecialistOutput
     from app.analysis.file_kinds import classify_file
@@ -705,6 +712,7 @@ def draft_work_orders(
             _noted(path, attempt, "accepted")
             return index, path, True
         except Exception as error:  # noqa: BLE001 - the agent loop takes this work order
+            _raise_if_the_run_stopped(error)
             logger.info("Draft of %s left to the agent loop: %s", path, str(error)[:200])
             _noted(path, attempt, f"left to the loop: {error}")
             return index, path, False

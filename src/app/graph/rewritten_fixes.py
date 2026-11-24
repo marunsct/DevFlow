@@ -727,6 +727,9 @@ def fix_by_rewriting(
                     # Made now: what an earlier pass was told of its edits is past.
                     diagnostics = [d for d in diagnostics if not (AN_EDIT_NOT_APPLIED in d and f"`{path}`" in d)]
             except Exception as error:  # noqa: BLE001 - the agent loop takes what this could not
+                from app.models.call_gate import raise_if_the_run_stopped
+
+                raise_if_the_run_stopped(error)  # a paused run fixes again on resume, not by the loop
                 logger.info("Rewrite of %s for a fix failed: %s", path, str(error)[:200])
                 if not changed:
                     return None

@@ -256,3 +256,18 @@ def test_a_failing_unit_run_may_rewrite_its_test_whatever_ids_the_test_names_car
 
     found = rewritten_fixes.files_to_fix(defect, failure, tmp_path, lambda name: True)
     assert "notes-api/test/app.test.ts" in found
+
+
+def test_a_run_stopped_during_a_rewrite_ends_the_stage_instead_of_handing_the_defect_to_the_agent_loop(tmp_path):
+    """A pause for a deploy refuses the rewrite's call; read as a failed rewrite, the defect went to the agent loop."""
+    import pytest
+
+    from app.graph.workflow import RunCancelled
+
+    class _Stopped:
+        def invoke(self, messages):
+            raise RunCancelled("Run run-r was stopped; this stage's call is not made.")
+
+    with pytest.raises(RunCancelled):
+        rewritten_fixes.fix_by_rewriting(DEFECT, _workspace(tmp_path), _Stopped(), may_write=lambda path: True,
+                                         write=lambda *a: None)

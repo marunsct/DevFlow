@@ -60,3 +60,24 @@ def test_the_effects_report_counts_the_drafts() -> None:
         "drafts: 3 file(s), 2 accepted at the first pass, 0 after a content refusal; "
         "1 repair pass(es), 1 kept; 1 left to the loop (1 the draft was empty)"
     ]
+
+
+def test_a_run_stopped_while_its_drafts_are_asked_ends_the_stage_instead_of_leaving_them_to_the_loop(tmp_path, monkeypatch):
+    """Measured on one run: a pause for a deploy refused each draft's call; all nine files were recorded as left to the
+    loop, drafting ended as done, and the builders wrote them all with no draft."""
+    import pytest
+
+    from app.graph.workflow import RunCancelled
+
+    notes = []
+    monkeypatch.setattr(drafting, "_noted", lambda path, attempt, outcome: notes.append((path, attempt, outcome)))
+
+    def stopped(*_a, **_k):
+        raise RunCancelled("Run run-r was stopped; this stage's call is not made.")
+
+    monkeypatch.setattr(drafting, "_draft_one", stopped)
+
+    with pytest.raises(RunCancelled):
+        drafting.draft_work_orders([_order("app/src/store.ts", "app/src/db.ts")], object(), None, str(tmp_path),
+                                   object(), write=lambda *a: None)
+    assert not [note for note in notes if note[2].startswith("left to the loop")]

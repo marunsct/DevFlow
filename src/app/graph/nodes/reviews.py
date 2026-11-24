@@ -44,7 +44,7 @@ def _the_security_review(state: Any, config: RunnableConfig, ctx: GraphContext) 
     permissions = ("Permissions: All tools have read/write access to the repository scope. Validation tools are "
                    "restricted to a safe list of commands.")
     # The facts the work is built and judged under (plan CM.1).
-    request = with_the_facts(build_security_review_request(changed_files, permissions, root), root)
+    request = with_the_facts(build_security_review_request(changed_files, permissions, root, held=()), root)
     # The files under review held in its memory when today's request and memory do not show them all (LF.1284).
     from app.agents.security_reviewer import source_coverage
 

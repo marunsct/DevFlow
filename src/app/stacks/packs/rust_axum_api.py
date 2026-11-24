@@ -114,6 +114,9 @@ AXUM_KNOWN_ERRORS = {
     # Measured on a Rust run, once its crates resolved: the store used sqlx's `query!` macros, which check each query
     # against a live database when the crate compiles; the build has none, and the product could not start.
     # Measured on the same Rust run, one after another once its queries built: three one-line faults, a round each.
+    "no `JsonRejection` in `extract`": (
+        "axum's body rejections live in `axum::extract::rejection`: `use axum::extract::rejection::JsonRejection;`."
+    ),
     "could not find `SqlitePoolOptions` in `sqlx`": (
         "sqlx's SQLite pool builder lives in its `sqlite` module: `use sqlx::sqlite::{SqlitePoolOptions, "
         "SqliteConnectOptions};` (with the `sqlite` feature in `Cargo.toml`)."

@@ -53,6 +53,7 @@ def test_sqlx_s_compile_time_query_macros_are_answered_and_kept_out_of_the_desig
     ("could not find `SqlitePoolOptions` in `sqlx`", "sqlx::sqlite::"),
     ("could not find `JournalMode` in `sqlite`", "SqliteJournalMode"),
     ("as it is not declared as mutable", "let mut"),
+    ("no `JsonRejection` in `extract`", "axum::extract::rejection::JsonRejection"),
 ])
 def test_the_one_line_faults_that_cost_a_round_each_are_answered(phrase, answer):
     """Measured on one Rust run: once its queries built, three one-line faults came one a round until its attempts ran

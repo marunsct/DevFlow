@@ -74,7 +74,9 @@ def test_a_lead_past_its_room_holds_the_code_and_the_sprint_s_tests_numbered(tmp
 
     assert HELD in opening and "`proj/acceptance/priority.spec.js`" in opening
     assert {*code, "proj/acceptance/priority.spec.js", "proj/acceptance/accounts.spec.js"} <= set(held)
-    assert memory.index("=== proj/acceptance/priority.spec.js") < memory.index("=== docs/technical_specification.md")
+    documents = memory.index("=== docs/technical_specification.md (outline")
+    assert documents < memory.index("=== proj/acceptance/priority.spec.js"), \
+        "the documents as digests, then the files held whole (LF.1288: what changes least first)"
     assert '     1\tPART_00 = "part 0"' in memory, "numbered, so a work order names a line without a read"
 
 
@@ -111,7 +113,7 @@ def test_a_lead_whose_files_fit_is_planned_as_before(tmp_path, monkeypatch):
     memory, held = project_memory.render_for_a_stage(tmp_path, None, opening, "technical_lead")
 
     assert "Held whole in the project memory" not in opening
-    assert "(numbered lines" not in memory
+    assert "(numbered lines" not in memory and "=== Outline" not in memory, "LF.1287 too: no outline while it fits"
     assert set(code) <= set(held)
 
 

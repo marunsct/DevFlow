@@ -35,6 +35,12 @@ REVIEW_STAGES = ("security_review", "advice_review", "code_review", "milestone_r
 #: measured re-reading on one medium run: the technical lead the product's code and the sprint's locked tests (12
 #: reads a file, 21 summaries), a test round the milestone's changed files (3.5-7 a file, 5-12 summaries a round).
 READING_STAGES = ("technical_lead", "test_round")
+#: The stages that write the files they work on and hold them as they are now from their first summary (LF.1288).
+#: Measured on one medium run: the suite's author read its own file 3-8 times a visit (up to 24): its memory held the
+#: file as the visit began, "read for the current text", and every summary deleted the copy it had read.
+#: And the builders (`specialist_` stages): measured on the next medium run, a sprint's backend builder spent 24 minutes
+#: reading about six files a call with a summary every two or three calls and one write.
+WRITING_STAGES = ("acceptance_author", "specialist_")
 
 #: How the memory heads a file it holds numbered, after `=== path `: a review's, and another reading stage's.
 NUMBERED_MARK = "(numbered lines, under review) ==="
@@ -47,6 +53,9 @@ HELD_MARK = "--- Held whole in the project memory for this review, with their li
 #: The same line in the request of another reading stage (`READING_STAGES`).
 HELD_TO_READ_MARK = "--- Held whole in the project memory for this work, with their line numbers: "
 _HELD_END = " ---"
+#: The request's sentence on the files its memory outlines rather than holds (LF.1287).
+OUTLINED = ("The project's other files are outlined in the project memory, each definition and test with its first "
+            "and last line: read only the lines you need, by range (`offset` and `limit`), not the whole file.\n")
 _NAME = re.compile(r"`([^`]+)`")
 
 #: Any other data file a review was shown before (the security review's own list had it).
@@ -59,7 +68,7 @@ def is_a_review_stage(stage: str) -> bool:
 
 def holds_what_it_reads(stage: str) -> bool:
     """Whether a stage's memory may hold the files it reads first, numbered: a review, or another reading stage."""
-    return str(stage or "").startswith(REVIEW_STAGES + READING_STAGES)
+    return str(stage or "").startswith(REVIEW_STAGES + READING_STAGES + WRITING_STAGES)
 
 
 def numbered_heading(stage: str) -> str:
@@ -225,8 +234,45 @@ def held_section(held: Sequence[str], stage: str = "") -> str:
         (HELD_MARK if review else HELD_TO_READ_MARK) + ", ".join(f"`{name}`" for name in held) + _HELD_END + "\n"
         "Each of these is in the project memory at the start of this message, whole and current, every line "
         + ("numbered: judge it there and cite its lines." if review else "numbered: work from it there.")
-        + " Reading one of them again returns nothing new.\n"
+        + " Reading one of them again returns nothing new.\n" + OUTLINED
     )
+
+
+def chosen_again(named: Sequence[str], written: Sequence[str], reads: Sequence[Sequence[Any]],
+                 repo_root: str | Path) -> list[str]:
+    """The files a stage's memory holds whole after a summary, most wanted first (LF.1288): those it wrote, the
+    latest first; then those it read, most reads first, then the latest; then those its opening named, in its order.
+    Only files `under_review` accepts: the product's code, configuration and tests, not documents, generated folders
+    or the files the harness keeps. Never raises: [].
+
+    Measured on one medium run: a lead summarised 21 times re-read 20 files 12 times each - its memory held what the
+    visit began with, and a summary deleted every file it had read since."""
+    try:
+        order = list(reversed(list(dict.fromkeys(str(p) for p in written or ()))))
+        counted = [(str(item[0]), int(item[1]), index) for index, item in enumerate(reads or ()) if len(item) >= 2]
+        order += [path for path, _, _ in sorted(counted, key=lambda r: (-r[1], -r[2]))]
+        order += [str(p) for p in named or ()]
+        order = list(dict.fromkeys(p.strip().lstrip("/") for p in order if p))
+        accepted = {path for path, _ in under_review(repo_root, order)}
+        return [path for path in order if path in accepted]
+    except Exception:  # noqa: BLE001 - the memory as it is
+        logger.debug("Could not choose the files to hold again", exc_info=True)
+        return []
+
+
+def with_the_held_line(text: str, held: Sequence[str]) -> str:
+    """`text` with the line of its request naming the files held (`held_section`) naming `held` instead; as it is
+    when it has no such line."""
+    for mark in (HELD_MARK, HELD_TO_READ_MARK):
+        start = str(text).find(mark)
+        if start < 0:
+            continue
+        start += len(mark)
+        end = text.find(_HELD_END, start)
+        if end < 0:
+            return text
+        return text[:start] + ", ".join(f"`{name}`" for name in held) + text[end:]
+    return text
 
 
 def held_named_in(opening: str) -> tuple[str, ...]:
@@ -252,6 +298,8 @@ def with_the_files_held(request: dict[str, Any], held: Sequence[str] | None, sta
 
 __all__ = [
     "HELD_MARK", "HELD_TO_READ_MARK", "NUMBERED_MARK", "NUMBERED_START", "NUMBERED_TO_READ", "READING_STAGES",
-    "REVIEW_STAGES", "fits_as_today", "held_for_review", "held_named_in", "held_section", "holds_what_it_reads",
+    "REVIEW_STAGES", "WRITING_STAGES", "chosen_again",
+    "fits_as_today", "held_for_review", "held_named_in", "held_section", "holds_what_it_reads",
     "is_a_review_stage", "numbered", "numbered_heading", "opening_of", "under_review", "with_the_files_held",
+    "with_the_held_line",
 ]

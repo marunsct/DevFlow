@@ -74,7 +74,28 @@ def test_each_review_stage_s_summaries_and_reads_a_file_are_counted():
     assert "   0  technical_lead: summaries; 2 reads of 1 files, 2.0 a file" in lines, "LF.1286: the lead too"
     assert "   0  acceptance_review: summaries; 1 reads of 1 files" in lines
     assert "   0  test_round: summaries; 1 reads of 1 files" in lines
-    assert "specialist_backend" not in lines
+    assert "   0  specialist_backend: summaries; 1 reads of 1 files" in lines, "LF.1288: the builders too"
+
+
+def test_whole_reads_are_counted_against_reads_by_range_and_the_suite_s_author_is_read_too():
+    """LF.1287/LF.1288: the memory outlines what it does not hold so a stage reads by range, and the suite's author
+    holds its own files after a summary; measured on one medium run, the author read its own file 3-8 times a visit."""
+    effects = runpy.run_path(str(SCRIPT))["effects"]
+
+    def read(stage: str, path: str, **window) -> dict:
+        return {"kind": "tool_call", "stage": stage, "tool": "read_file", "args": {"file_path": path, **window}}
+
+    records = [
+        read("technical_lead", "app/a.py"), read("technical_lead", "app/a.py", offset=40, limit=30),
+        {"kind": "tool_call", "stage": "technical_lead", "tool": "read_file",
+         "args": "{'file_path': 'app/b.py', 'offset': 1, 'limit': 20}"},
+        read("acceptance_author_0_accounts", "acceptance/a.spec.js"),
+        read("acceptance_author_1", "acceptance/a.spec.js"),
+    ]
+    lines = "\n".join(effects(records, ""))
+
+    assert "technical_lead: summaries; 3 reads of 2 files, 1.5 a file; 1 whole, 2 by range" in lines
+    assert "acceptance_author: summaries; 2 reads of 1 files, 2.0 a file; 2 whole, 0 by range" in lines
 
 
 def test_a_run_with_no_review_yet_says_so():

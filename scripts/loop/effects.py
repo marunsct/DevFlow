@@ -155,20 +155,36 @@ def budget_lines(records: list[dict]) -> list[str]:
     return lines
 
 
-#: The stages whose memory holds what they read (`review_files.REVIEW_STAGES` and `READING_STAGES`), by the start
-#: of their stage names: the reviews (LF.1284), the technical lead, the suite's review and the test rounds (LF.1286).
+#: The stages whose memory holds what they read (`review_files.REVIEW_STAGES`, `READING_STAGES` and
+#: `WRITING_STAGES`), by the start of their stage names: the reviews (LF.1284), the technical lead, the suite's review
+#: and the test rounds (LF.1286), the suite's author and the builders (LF.1288).
 _REVIEW_STAGE = re.compile(r"^(?:security_review|advice_review|code_review|milestone_review|acceptance_review"
-                           r"|technical_lead|test_round)")
+                           r"|technical_lead|test_round|acceptance_author|specialist_)")
 #: The words langchain's summariser opens its request with: one such request is one summary of the stage.
 _SUMMARISER = "Context Extraction Assistant"
 
 
+def _arguments(record: dict) -> dict:
+    """A tool call's arguments: a transcript records them as a mapping or as its text."""
+    args = record.get("args")
+    if isinstance(args, str):
+        import ast
+
+        try:
+            args = ast.literal_eval(args)
+        except (ValueError, SyntaxError):
+            args = None
+    return args if isinstance(args, dict) else {}
+
+
 def review_reading_lines(records: list[dict]) -> list[str]:
-    """LF.1284/LF.1285/LF.1286: per review or reading stage, its summaries and its `read_file` calls per distinct file.
-    Measured on one medium run before the files they read were held in the memory: 155 reads of 21 files and 11
-    summaries in one security review, 243 reads of 20 files and 21 summaries in a later sprint's technical lead; the
-    target is at most 1.2 reads a file and no summary."""
+    """LF.1284/LF.1285/LF.1286/LF.1288: per review, reading or writing stage, its summaries and its `read_file` calls
+    per distinct file, whole against by range (LF.1287: the memory outlines the files it does not hold, with their
+    lines). Measured on one medium run before the files they read were held in the memory: 155 reads of 21 files and
+    11 summaries in one security review, 243 reads of 20 files and 21 summaries in a later sprint's technical lead;
+    the target is at most 1.2 reads a file and no summary."""
     reads: dict[str, Counter] = collections.defaultdict(Counter)
+    ranged: Counter = Counter()
     summaries: Counter = Counter()
     for record in records:
         if not isinstance(record, dict):
@@ -176,11 +192,15 @@ def review_reading_lines(records: list[dict]) -> list[str]:
         stage = re.sub(r"_\d+(?:_\d+)*$", "", str(record.get("stage") or ""))
         if not _REVIEW_STAGE.match(stage):
             continue
+        if stage.startswith("acceptance_author"):
+            stage = "acceptance_author"  # one author a batch of criteria, named after it
         if record.get("kind") == "tool_call" and record.get("tool") == "read_file":
-            args = record.get("args") if isinstance(record.get("args"), dict) else {}
+            args = _arguments(record)
             path = str(args.get("file_path") or args.get("path") or "").strip().lstrip("/")
             if path:
                 reads[stage][path] += 1
+                if args.get("offset") not in (None, "", 0) or args.get("limit") not in (None, ""):
+                    ranged[stage] += 1
         elif record.get("kind") == "model_request" and _SUMMARISER in _text(record.get("messages")):
             summaries[stage] += 1
     label = "LF.1284/LF.1286 reading stages: summaries, and reads per distinct file (target <= 1.2, no summary)"
@@ -192,7 +212,7 @@ def review_reading_lines(records: list[dict]) -> list[str]:
         total, distinct = sum(reads[stage].values()), len(reads[stage])
         per_file = f"{total / distinct:.1f}" if distinct else "0"
         lines.append(f"  {summaries[stage]:>4}  {stage}: summaries; {total} reads of {distinct} files, "
-                     f"{per_file} a file")
+                     f"{per_file} a file; {total - ranged[stage]} whole, {ranged[stage]} by range")
     return lines
 
 

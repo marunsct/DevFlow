@@ -368,6 +368,10 @@ BUILDER_ON_CODE_DOCUMENTS = (*FIXER_DOCUMENTS, "docs/sprint_plan.md")
 #: Measured on one run: the sprint's code review, after the testing stage's loop, opened on the plans whole and of the
 #: code only an `__init__` and the manifest; it read the four files under review seven times each over four summaries.
 _ON_CODE_STAGES = ("specialist_", "code_review_")
+#: The stages that build the product from work orders: past their room, their memory outlines what it does not hold
+#: (LF.1287) and holds what they wrote and read at each summary (LF.1288). Measured on one medium run: a sprint's
+#: backend builder spent 24 minutes reading about six files a call, summarised every two or three calls, one write.
+_BUILDER_STAGES = ("specialist_",)
 #: The stages that set the project up: what they write is the scaffold, not the product's code.
 _SETUP_STAGES = ("stack_setup",)
 
@@ -468,7 +472,7 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
            for_a_fixer: bool = False, kept_out: tuple[str, ...] = (), sliced: bool = False,
            sprint_files: tuple[str, ...] = (), on_code: bool = False,
            documents_at_most: int = 0, review_files: tuple[str, ...] = (),
-           numbered_as: str = "") -> tuple[str, dict[str, str]]:
+           numbered_as: str = "", outlined: bool = False) -> tuple[str, dict[str, str]]:
     """The memory as text within `budget_characters`, and the files it holds by path.
 
     `for_a_fixer`: the product's code first, the acceptance criteria, and the specification as its outline and the
@@ -496,6 +500,11 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
     less the room the documents' digests need (`REVIEW_DOCUMENTS_ROOM`); the rest of the memory as before after them.
     Given only when today's request and memory would not show them all (`review_files.fits_as_today`).
     `numbered_as` heads each of them after its path (`review_files.numbered_heading`; a review's by default).
+    With them, every code file not held whole is in an outline of its definitions and tests with their lines
+    (`app.analysis.outline`, LF.1287) in place of the map of the files left out: its room comes first out of the
+    room for the whole files, each file held whole gives its share back, and the memory runs the documents, the
+    outline, then the files held whole. Measured on one medium run: 13 of 45 files fit whole and the map of the rest
+    had no line numbers, so a stage read whole each file it needed one function of.
     """
     files = current(repo_root)
     if not files or budget_characters <= 0:
@@ -546,6 +555,23 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
     ranked = _ranked(files, focus, unserved)
     under_review = [path for path in dict.fromkeys(review_files) if path in files and not path.startswith("docs/")]
     review_room = budget_characters - min(REVIEW_DOCUMENTS_ROOM, budget_characters // 4)
+    # Past the size gate (a review or reading stage's files under review), every code file not held whole is in an
+    # outline with its line ranges (LF.1287), its room taken before the whole files are chosen: each file held whole
+    # gives its outline's room back.
+    outline_blocks: dict[str, str] = {}
+    if under_review or outlined:
+        from app.analysis import outline
+
+        outline_blocks = {path: outline.block(path, files[path]) for path in ranked
+                          if not path.startswith("docs/") and path not in kept_out and path not in later
+                          and not _RECORDS.match(path)}
+    outline_most = int(review_room * OUTLINE_SHARE)
+    outline_left = sum(map(len, outline_blocks.values()))
+
+    def outline_room(holding: str = "") -> int:
+        """The outline's room once `holding` is held whole; 0 when there is no outline."""
+        return min(outline_most, outline_left - len(outline_blocks.get(holding, "")))
+
     if under_review:
         ranked = under_review + [p for p in ranked if p not in set(under_review)]
     elif for_a_fixer:
@@ -584,12 +610,13 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
             from app.agents.review_files import NUMBERED_MARK, numbered
 
             block = f"=== {path} {numbered_as or NUMBERED_MARK}\n{numbered(text)}\n"
-            if len(text) > LARGEST_FILE_CHARACTERS or used + len(block) > review_room:
+            if len(text) > LARGEST_FILE_CHARACTERS or used + len(block) + outline_room(path) > review_room:
                 left_out.append(path)
                 continue
             parts.append(block)
             held[path] = text
             used += len(block)
+            outline_left -= len(outline_blocks.get(path, ""))
             continue
         if the_slice is not None and path in product and path not in the_slice:
             # Not named by this request, nor imported by a file it names (`SLICED_MEMORY`).
@@ -620,7 +647,7 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
         if len(text) > largest and path.endswith(".md"):
             # Too large to hold whole: its outline and the sections this
             # stage's request points at, so it is not read window by window.
-            digest = digest_of(text, focus, min(largest, budget_characters - used))
+            digest = digest_of(text, focus, min(largest, budget_characters - used - outline_room()))
             if digest:
                 block = f"=== {path} (outline and the sections this request points at; read others by line) ===\n{digest}\n"
                 # Chosen by the request's words, so after what every request shares (plan PX.3).
@@ -628,14 +655,23 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
                  else after_the_rest if canonical else parts).append(block)
                 used += len(block)
                 continue
-        if len(text) > LARGEST_FILE_CHARACTERS or used + len(block) > budget_characters:
+        if len(text) > LARGEST_FILE_CHARACTERS or used + len(block) + outline_room(path) > budget_characters:
             left_out.append(path)
             continue
         (whole_documents if stable and path.startswith("docs/") else parts).append(block)
         held[path] = text
         used += len(block)
+        outline_left -= len(outline_blocks.get(path, ""))
     stable = stable and bool(whole_documents or chosen_documents)
     parts = whole_documents + chosen_documents + parts + after_the_rest
+    outlined_text, in_the_outline = _the_outline(repo_root, files, outline_blocks, held, outline_most, focus,
+                                                 canonical)
+    if under_review or outlined:
+        # What changes least first: the documents, the outline, then the files held whole (LF.1288 chooses those
+        # again at a summary, so the server's cache holds up to them).
+        parts = ([b for b in parts if b.startswith("=== docs/")] + ([outlined_text] if outlined_text else [])
+                 + [b for b in parts if not b.startswith("=== docs/")])
+        left_out = [path for path in left_out if path not in in_the_outline]
     if not parts:
         return "", {}
     head = (
@@ -658,7 +694,7 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
     if held_back:
         tail += ("\nNot included because every test in them is for a criterion a later sprint builds: "
                  + ", ".join(held_back) + "\n")
-    sources = {path: files[path] for path in left_out if not path.startswith("docs/")}
+    sources = {path: files[path] for path in left_out if not path.startswith("docs/") and not outline_blocks}
     # Ranked by the request only when the memory's order may follow it
     # (`CANONICAL_MEMORY` off); otherwise by what does not change between
     # requests, so the memory stays the same, and cached, from call to call.
@@ -667,6 +703,32 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
     if shapes:
         tail += "\nWhat those files define (read one when you need its body):\n" + shapes + "\n"
     return head + "\n".join(parts) + tail, held
+
+
+#: The most of a review's room (the budget less the documents' room) its outline of the other files may take.
+#: Measured on one medium run: an outline of all 45 files was 18,475 characters in a room of 70,598.
+OUTLINE_SHARE = 0.3
+#: How the memory heads its outline of the files it does not hold whole (LF.1287).
+OUTLINE_HEADING = (
+    "=== Outline of the project's other files, not held whole here: each file's definitions and tests, each with "
+    "its first and last line. Read only the lines you need, by range (`offset` and `limit`). ==="
+)
+
+
+def _the_outline(repo_root: str | Path, files: dict[str, str], blocks: dict[str, str], held: dict[str, str],
+                 most_characters: int, focus: str, canonical: bool) -> tuple[str, set[str]]:
+    """The memory's outline of the files in `blocks` it does not hold whole, and the files it names; ("", set())
+    for none. Past `most_characters` the files most worth a place first (`_by_relevance`), the rest counted."""
+    from app.analysis import outline
+
+    left = {path: text for path, text in blocks.items() if path not in held}
+    if not left:
+        return "", set()
+    order: list[str] = []
+    if sum(map(len, left.values())) > most_characters:
+        order = _by_relevance(outline.texts_of(left, files), "" if canonical else focus, importance_of(repo_root))
+    shown = set(outline.shown_of(left, most_characters, order))
+    return OUTLINE_HEADING + "\n" + outline.rendered_blocks(left, most_characters, order), shown
 
 
 def _the_sprint_s_slice(repo_root: str | Path, sprint_files: tuple[str, ...], files: dict[str, str]) -> set[str] | None:
@@ -812,6 +874,11 @@ def render_for_a_stage(repo_root: str | Path, model: Any, opening: str, stage: s
     memory, held = render(repo_root, budget_for(model), opening, **arguments)
     if fixer:
         return memory, held  # sized with its request (`nodes.fixes._sized_to_its_target`)
+    if str(stage or "").startswith(_BUILDER_STAGES) and memory and not _holds_every_code_file(
+            repo_root, stage, held, current(repo_root)):
+        # A builder past its room: the code files it does not hold are outlined with their lines (LF.1287).
+        arguments = {**arguments, "outlined": True}
+        memory, held = render(repo_root, budget_for(model), opening, **arguments)
     return _within_its_budget(repo_root, model, opening, stage, memory, held, arguments, noted=noted)
 
 
@@ -1078,6 +1145,112 @@ def _numbered(content: str) -> str:
     return "\n".join(f"{number:>6}\t{line}" for number, line in enumerate(content.splitlines(), start=1))
 
 
+#: What the running stage's memory keeps across calls, in `stage_memory`.
+_VISIT = "project_memory"
+#: The mark a summary leaves in the visit: the files written and the reads it replaced (LF.1288).
+_SUMMARISED = "summarised"
+
+
+def a_summary_was_made(written: Sequence[str], reads: Sequence[Sequence[Any]]) -> None:
+    """Mark the running stage's memory to choose again, at its next call, the files it holds whole (LF.1288).
+
+    `written`: the files the stage wrote, oldest first; `reads`: [path, reads] for each file it read, the latest read
+    last (`compaction.READS`). Nothing outside a graph run: no stage, no visit to mark."""
+    from app.agents.stage_memory import current_stage_key, store
+
+    if current_stage_key() is None:
+        return
+    store(_VISIT, {})[_SUMMARISED] = {"written": list(written or ()), "reads": [list(r) for r in reads or ()]}
+
+
+def _chosen_again_at_a_summary(repo_root: str | Path, visit: dict[str, Any], mark: dict[str, Any], model: Any) -> None:
+    """After a summary, the visit's memory holds whole the files the stage was reading and writing (LF.1288).
+
+    A summary is the moment a stage loses what it read, and the moment the server's cache after the memory is lost
+    anyway. When some code file the stage read or wrote is not held as it is now, the memory is rendered again on
+    the files `review_files.chosen_again` puts first (`render_for_a_review`), and the visit's snapshot, held files
+    and files as they are now are replaced. Between summaries nothing changes: the memory stays byte for byte.
+
+    Size gate: a visit whose request named no held files (it fit as today at its start) is changed only when today's
+    memory, rendered now, would not hold every code file of the product (`_every_code_file_fits`): a product whose
+    files fit is as today, whatever the stage wrote. Never raises: the memory as it was."""
+    try:
+        from app.agents import review_files
+
+        stage = str(visit.get("stage") or "")
+        if not review_files.holds_what_it_reads(stage) or not visit.get("snapshot"):
+            return
+        written = [str(p) for p in mark.get("written") or ()]
+        reads = [r for r in mark.get("reads") or () if isinstance(r, (list, tuple)) and len(r) >= 2]
+        touched = review_files.chosen_again((), written, reads, repo_root)
+        held = visit.get("held") or {}
+        now = current(repo_root)
+        stale = [path for path in touched if path in now and held.get(path) != now[path]]
+        if not stale:
+            return
+        opening = str(visit.get("opened_on") or "")
+        named = review_files.held_named_in(opening)
+        if not named and _every_code_file_fits(repo_root, model, opening, stage, now):
+            return
+        chosen = review_files.chosen_again(named, written, reads, repo_root)
+        memory, now_held = render_for_a_review(repo_root, model, opening, stage, chosen)
+        if not memory or not now_held:
+            return
+        visit["snapshot"], visit["held"] = memory, now_held
+        visit["files"] = dict(current(repo_root))
+        visit["first_held"] = dict(now_held)
+        visit["held_line"] = [path for path in chosen if path in now_held]
+        logger.info("%s: after a summary its memory holds %d files whole, numbered: %s", stage,
+                    len(visit["held_line"]), ", ".join(visit["held_line"][:10]))
+    except Exception:  # noqa: BLE001 - the memory as it was
+        logger.debug("Could not choose a stage's held files again", exc_info=True)
+
+
+def _every_code_file_fits(repo_root: str | Path, model: Any, opening: str, stage: str, now: dict[str, str]) -> bool:
+    """Whether the memory a stage would open on now holds every code file of the product (`review_files.under_review`
+    of every file): the size gate of a visit that opened as today. The files kept out of its memory on purpose - the
+    harness's own, a later sprint's tests - do not count."""
+    _, today = as_the_stage_opens(repo_root, model, opening, stage)
+    return _holds_every_code_file(repo_root, stage, today, now)
+
+
+def _holds_every_code_file(repo_root: str | Path, stage: str, held: dict[str, str], now: dict[str, str]) -> bool:
+    """Whether `held` holds every code file of the product but those kept out of `stage`'s memory on purpose."""
+    from app.agents.review_files import under_review
+
+    try:
+        from app.acceptance.sprint_scope import later_sprints_files
+
+        later = set(later_sprints_files(repo_root))
+    except Exception:  # noqa: BLE001 - every file is due
+        later = set()
+    kept = set(_kept_out_for(stage, repo_root)) | later
+    code = [path for path, _ in under_review(repo_root, [p for p in now
+                                                       if not p.startswith("docs/") and p not in kept])]
+    return all(path in held for path in code)
+
+
+def _naming_the_held(messages: list[Any], held: Sequence[str]) -> list[Any]:
+    """`messages` with each request's line naming the files held (`review_files.held_section`) naming `held`."""
+    from langchain_core.messages import HumanMessage
+
+    from app.agents.review_files import with_the_held_line
+
+    changed: list[Any] = []
+    for message in messages:
+        if getattr(message, "type", None) == "human" and isinstance(getattr(message, "content", None), str):
+            text = with_the_held_line(message.content, held)
+            if text != message.content:
+                message = HumanMessage(content=text, additional_kwargs=dict(
+                    getattr(message, "additional_kwargs", None) or {}), id=getattr(message, "id", None))
+        elif isinstance(message, dict) and message.get("role") == "user" and isinstance(message.get("content"), str):
+            text = with_the_held_line(message["content"], held)
+            if text != message["content"]:
+                message = {**message, "content": text}
+        changed.append(message)
+    return changed
+
+
 def build_project_memory_middleware(repo_root: str) -> Any:
     """Middleware that hands each call the project memory, and answers a read of what it already holds."""
     from langchain.agents.middleware import AgentMiddleware
@@ -1106,7 +1279,7 @@ def build_project_memory_middleware(repo_root: str) -> Any:
             """
             from app.agents.stage_memory import store
 
-            return store("project_memory", self._own)
+            return store(_VISIT, self._own)
 
         def wrap_model_call(self, request: Any, handler: Callable[[Any], Any]) -> Any:
             messages = getattr(request, "messages", None)
@@ -1130,6 +1303,12 @@ def build_project_memory_middleware(repo_root: str) -> Any:
                         visit["snapshot"], visit["held"] = render_for_a_stage(
                             repo_root, getattr(request, "model", None), opening, stage)
                     visit["files"] = dict(current(repo_root))
+                    visit["stage"], visit["opened_on"] = stage, opening
+                mark = visit.pop(_SUMMARISED, None)
+                if mark is not None:
+                    _chosen_again_at_a_summary(repo_root, visit, mark, getattr(request, "model", None))
+                if visit.get("held_line") is not None:
+                    messages = _naming_the_held(messages, visit["held_line"])
                 if visit.get("request") is not None:
                     messages = _without_the_list(messages, visit["opening"], visit["request"])
                 memory = visit["snapshot"]
@@ -1147,7 +1326,7 @@ def build_project_memory_middleware(repo_root: str) -> Any:
                         remember_if_unseen(held_path, held_content)
                 changed = _with_memory(messages, memory, list(held)) if memory else None
                 if changed is None and messages is not getattr(request, "messages", None):
-                    changed = messages  # a re-plan's request without its list, and no memory to put before it
+                    changed = messages  # a request rewritten here, and no memory to put before it
                 if changed is not None:
                     note = changes_since(visit.get("files") or {}, current(repo_root))
                     if note:

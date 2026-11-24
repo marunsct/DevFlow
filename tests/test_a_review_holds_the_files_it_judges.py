@@ -76,7 +76,9 @@ def test_a_review_s_memory_holds_the_code_under_review_before_the_plans(tmp_path
     memory, held = _memory(tmp_path, opening, "security_review")
 
     assert set(changed) <= set(held)
-    assert memory.index("=== app/routes/r00.py") < memory.index("=== docs/technical_specification.md")
+    documents = memory.index("=== docs/technical_specification.md (outline")
+    assert documents < memory.index("=== app/routes/r00.py"), \
+        "the documents as digests, then the files held whole (LF.1288: what changes least first)"
     assert '     1\tVALUE_00 = "route 0"' in memory, "numbered, so a finding cites a line without a read"
 
 
@@ -167,8 +169,9 @@ def test_a_product_whose_files_fit_is_reviewed_as_before(tmp_path, monkeypatch):
     assert f"--- The diff ---\n{ci.diff_since(tmp_path, since)}\n" in code
     for each, at in ((security, "security_review"), (advice_request["messages"][-1]["content"], advice_stage),
                      (code, stage)):
-        assert HELD not in each
-        assert NUMBERED not in _memory(tmp_path, each, at)[0]
+        assert HELD not in each and "outlined" not in each
+        memory = _memory(tmp_path, each, at)[0]
+        assert NUMBERED not in memory and "=== Outline" not in memory, "LF.1287 too: no outline while the files fit"
 
 
 def test_a_milestone_review_of_a_product_past_its_room_holds_the_changed_files(tmp_path, monkeypatch):

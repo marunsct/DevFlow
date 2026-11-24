@@ -50,7 +50,9 @@ def test_a_test_round_past_its_room_holds_the_changed_files_numbered(tmp_path, m
 
     assert HELD in opening and "`app/routes/r11.py`" in opening
     assert set(changed) <= set(held)
-    assert memory.index("=== app/routes/r00.py") < memory.index("=== docs/technical_specification.md")
+    documents = memory.index("=== docs/technical_specification.md (outline")
+    assert documents < memory.index("=== app/routes/r00.py"), \
+        "the documents as digests, then the files held whole (LF.1288: what changes least first)"
     assert '     1\tVALUE_00 = "route 0"' in memory
 
 

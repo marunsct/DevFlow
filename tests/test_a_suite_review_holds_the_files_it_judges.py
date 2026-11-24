@@ -81,7 +81,9 @@ def test_a_suite_review_past_its_room_holds_the_suite_numbered(tmp_path, monkeyp
 
     assert HELD in opening
     assert set(names) <= set(held)
-    assert memory.index("=== notes/acceptance/part00.spec.js") < memory.index("=== docs/technical_specification.md")
+    documents = memory.index("=== docs/technical_specification.md (outline")
+    assert documents < memory.index("=== notes/acceptance/part00.spec.js"), \
+        "the documents as digests, then the files held whole (LF.1288: what changes least first)"
     assert "     1\t// PART_00" in memory, "numbered, so a finding cites a line without a read"
     assert opening.count("// PART_00") == 0, "a held file is not repeated in the request"
     assert f"### notes/acceptance/part00.spec.js\n{requests.HELD_IN_THE_MEMORY}" in opening

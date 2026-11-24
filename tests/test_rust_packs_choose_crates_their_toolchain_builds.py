@@ -47,3 +47,16 @@ def test_sqlx_s_compile_time_query_macros_are_answered_and_kept_out_of_the_desig
     fact = next(f for f in PACK.design_facts if "query!" in f)
     assert "never" in fact
     assert not BANNED.search(said + fact)
+
+
+@pytest.mark.parametrize("phrase, answer", [
+    ("could not find `SqlitePoolOptions` in `sqlx`", "sqlx::sqlite::"),
+    ("could not find `JournalMode` in `sqlite`", "SqliteJournalMode"),
+    ("as it is not declared as mutable", "let mut"),
+])
+def test_the_one_line_faults_that_cost_a_round_each_are_answered(phrase, answer):
+    """Measured on one Rust run: once its queries built, three one-line faults came one a round until its attempts ran
+    out."""
+    said = next(text for known, text in AXUM_KNOWN_ERRORS.items() if phrase in known)
+
+    assert answer in said and not BANNED.search(said)

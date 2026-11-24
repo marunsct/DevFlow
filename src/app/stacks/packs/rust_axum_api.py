@@ -113,6 +113,20 @@ THE_SIGNATURE_DECIDES = (
 AXUM_KNOWN_ERRORS = {
     # Measured on a Rust run, once its crates resolved: the store used sqlx's `query!` macros, which check each query
     # against a live database when the crate compiles; the build has none, and the product could not start.
+    # Measured on the same Rust run, one after another once its queries built: three one-line faults, a round each.
+    "could not find `SqlitePoolOptions` in `sqlx`": (
+        "sqlx's SQLite pool builder lives in its `sqlite` module: `use sqlx::sqlite::{SqlitePoolOptions, "
+        "SqliteConnectOptions};` (with the `sqlite` feature in `Cargo.toml`)."
+    ),
+    "could not find `JournalMode` in `sqlite`": (
+        "sqlx names it `sqlx::sqlite::SqliteJournalMode`, set on the connection options: "
+        "`SqliteConnectOptions::new().filename(path).create_if_missing(true).journal_mode(SqliteJournalMode::Wal)`; "
+        "or leave the default journal mode."
+    ),
+    "as it is not declared as mutable": (
+        "a value a method changes (a signal stream's `recv()`, a `Vec`'s `push`) is declared without `mut`: declare it "
+        "`let mut <name> = ...`, as the compiler's help line says, at every place it names."
+    ),
     "to use query macros online": (
         "sqlx's `query!`, `query_as!` and `query_scalar!` macros check each query against a live database while the "
         "crate compiles, and this build has none. Write each query with sqlx's functions instead - "

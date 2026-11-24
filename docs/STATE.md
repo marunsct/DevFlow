@@ -60,7 +60,8 @@ Earlier runs (11-22 and before): `reports/product-reviews/`, `reports/status-boa
   test rounds - sprint 2's lead had read 32 files 145+ times with 14 summaries in 40 calls.
 - **LF.1287-1289 deployed 22:56 JST** (`reports/audits/2026-11-24-reading-stages-past-their-room.md`): past the room, an outline of every
   file with line ranges, whole files chosen again at each summary (what the stage wrote, then read most) - the suite author and
-  builders included; `READS_SIZED_TO_THE_ROOM` (off; M18) answers a whole read past the room with the outline.
+  builders included; `READS_SIZED_TO_THE_ROOM` (off; M18) answers a whole read past the room with the outline - ON for the
+  medium rerun only from 23:36 JST (its sprint 2 testing builder: 121 reads of 27 files, 7 summaries, 1 write in 25 min).
 - **`REQUEST_BUDGET_FOR_EVERY_STAGE` ON for the medium rerun only, from 19:16 JST** (`docs/measuring.md` M17): its code review re-read
   19 files 6-8 times each over 20 minutes; every other run keeps it off.
 - **`REPLY_ROOM_SIZED_PER_ROLE` ON for the medium rerun only, from 19:47 JST:** its security review was summarised after nearly every

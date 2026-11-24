@@ -87,7 +87,7 @@ Earlier runs (11-22 and before): `reports/product-reviews/`, `reports/status-boa
    (the brief's release line wins over a pack's pin) and LF.1313 (an editable install is not a package) deployed 03:20 JST; packs:
    java-spring-api and @4 scaffold, node-nest-api scaffolds, node-nest-api@12 does not (ESM; a 12 brief falls back to 11 and says so).
    LF.1312 (a unit test's stand-in hides a rule) deployed 04:29 JST. Owner: a GitHub token.
-0b. **Medium 3 live: run-bc3cbd00 (`tests/brief_medium.md`, thorough, :1234, started 01:53 JST 11-25)** with every fix from its first stage. Medium 2
+0b. **Medium 3 live: run-bc3cbd00 (`tests/brief_medium.md`, thorough, :1234, started 01:53 JST 11-25)** with every fix from its first stage; `READS_SIZED_TO_THE_ROOM` on for it from 05:14 JST (M18). Medium 2
    (run-c53e7bd2) failed at sprint 2 on its time budget: `reports/product-reviews/2026-11-25-medium-brief-rerun.md`. Hold deploys into it.
 1. Score the live runs when they finish (full run id), update this file, write the end-of-run review to `reports/product-reviews/`,
    start the next family on each port through the gated start (`ready` must print ALL READY).

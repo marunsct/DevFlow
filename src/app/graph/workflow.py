@@ -662,6 +662,8 @@ class WorkflowGraphState(TypedDict, total=False):
     # Of those, the ones about the design (an architecture review still asking for changes): they say nothing about
     # whether the build model can build, so the build rung does not count them (`GraphContext.the_model_for_this_attempt`).
     design_escalation_count: int
+    # The sprints planned again because later sprints build on what they would defer (`escalation._the_foundation_first`).
+    foundation_replanned_sprints: list[int]
     known_issues: list[str]
     unit_failures_accepted_at_an_escalation: list[str]
     # Plan QM.2, off until measured: the sprint attempts whose sources were

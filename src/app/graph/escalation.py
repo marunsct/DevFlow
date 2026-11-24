@@ -29,6 +29,7 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 
 from app.acceptance import suite
+from app.graph import foundation
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,12 @@ def _page(state: Any, error: str, failing: list[dict[str, Any]]) -> str:
     if failing:
         lines += ["## Acceptance criteria still failing", ""]
         lines += [f"- {e.get('id')}: {e.get('text')}" for e in failing]
+        lines.append("")
+    needed = foundation.what_later_work_needs(state, failing) if _where_next(state) == "sprint_advance" else []
+    if needed:
+        lines += ["## Later sprints build on this", "",
+                  "Deferring it would start the next sprint on work that fails:", ""]
+        lines += [f"- {reason}" for reason in needed]
         lines.append("")
     lines += [
         "## Your options",
@@ -235,7 +242,62 @@ def escalation(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         )
         return _handing_on(**update, stage="failed", error=error)
 
+    if _where_next(state) == "sprint_advance":
+        needed = foundation.what_later_work_needs(state, failing)
+        if needed:
+            return _the_foundation_first(state, update, failing, error, needed)
+
     return _defer_and_continue(state, update, failing, error, decided_by="auto")
+
+
+def _the_foundation_first(
+    state: Any, update: dict[str, Any], failing: list[dict[str, Any]], error: str, needed: list[str]
+) -> dict[str, Any]:
+    """Plan the stuck sprint again with what later sprints need of it named, or stop the run there (LF.1264).
+
+    Never the next sprint on it: measured on one run, a sign-up and sign-in sprint was deferred past at 5 of its 18
+    tests, and the next sprint, every test of which signs up first, ran fifteen hours without one more test passing.
+    """
+    from app.decisions import record_decision
+    from app.graph.workflow import MAX_MILESTONE_REVISIONS, _handing_on
+
+    index = int(state.get("current_sprint_index") or 0)
+    sprints = list(getattr(state.get("sprint_plan"), "sprints", None) or [])
+    goal = str(getattr(sprints[index], "goal", "") or "") if index < len(sprints) else ""
+    deferring = [str(e.get("id")) for e in failing if str(e.get("id", "")).startswith("AC-")]
+    replans = int(state.get("sprint_replan_count") or 0)
+    replanned = [int(n) for n in state.get("foundation_replanned_sprints") or []]
+    options = ["defer what fails and continue", f"plan sprint {index + 1} again", "stop the run"]
+    question = "The sprint could not be finished, and later sprints build on it: how does the run go on?"
+    evidence = "; ".join(needed)
+    if replans < MAX_MILESTONE_REVISIONS and index not in replanned:
+        record_decision(
+            state, update, point="escalation", question=question, options=options,
+            decision=f"plan sprint {index + 1} again for its foundation",
+            rationale=(f"Deferring {', '.join(deferring)} would build the next sprint on work that fails: {evidence}. "
+                       f"{replans} of {MAX_MILESTONE_REVISIONS} re-plans used. {error.strip()}")[:1500],
+            affects=deferring,
+        )
+        return _handing_on(
+            **update,
+            stage="technical_lead",
+            escalation=None,
+            revision_comments=[foundation.replan_guidance(index + 1, goal, deferring, needed)],
+            specialist_outputs={},
+            remediation=None,
+            test_round=0,
+            defect_cursor=0,
+            milestone_revision_count=0,
+            sprint_replan_count=replans + 1,
+            foundation_replanned_sprints=sorted({*replanned, index}),
+        )
+    why = (f"Not deliverable: sprint {index + 1} ({goal.strip() or 'the current sprint'}) is the foundation later "
+           f"sprints build on, and {', '.join(deferring)} still fail after it was planned again: {evidence}.")
+    record_decision(
+        state, update, point="escalation", question=question, options=options, decision="stop the run",
+        rationale=f"{why} {error.strip()}"[:1500], affects=deferring,
+    )
+    return _handing_on(**update, stage="failed", error=f"{why}\n\n{error}".strip())
 
 
 def _defer_and_continue(

@@ -342,8 +342,11 @@ def _the_quality_set(bench: Path, work: Path, runner: str, env: dict, notes: lis
         return found
     if not (work / "quality" / "conftest.py").exists() and (bench / "hidden" / "conftest.py").exists():
         shutil.copy(bench / "hidden" / "conftest.py", work / "quality" / "conftest.py")
+    # The benchmark's own folder too: a quality test may hold the product to data in its bench.json (a stale-knowledge
+    # family's `asked_release`), and the set runs from a copy.
     ran = _run([str(_python_runner()), "-m", "pytest", str(work / "quality"), "-q", f"--junitxml={report}",
-                "-p", "no:cacheprovider"], work, {**env, "DATA_DIR": str(data)}, timeout=1200)
+                "-p", "no:cacheprovider"], work, {**env, "DATA_DIR": str(data), "BENCH_DIR": str(bench.resolve())},
+               timeout=1200)
     found = _junit(report)
     if not found:
         notes.append("the quality tests produced no report: " + (ran.stdout + ran.stderr)[-800:])

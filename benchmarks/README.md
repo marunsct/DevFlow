@@ -27,6 +27,7 @@ measured. See `docs/architecture-decisions.md ADR-0005`.
 | `fullstack-bookmarks-py` | page + its own service | Python service, HTML/JS page | 8 (`fullstack-bookmarks`'s) | Playwright (page and API) |
 | `tasks-api` | HTTP service with accounts and per-user data | Python | 10 | pytest + httpx |
 | `tasks-api-change` | brownfield: a change to `tasks-api`'s product | Python | 15 (10 old, 5 new) | pytest + httpx |
+| `notes-api-stale-knowledge` | HTTP service | Java, Spring Boot 4.2 (stale-knowledge trap; held out since 2026-11-25) | 9 (`notes-api`'s) + 8 + 1 quality | pytest + httpx |
 
 The last two hold the `browser-react` and `node-http-api` stack packs to the
 same hidden tests as their siblings: the briefs differ only in the stack they
@@ -41,6 +42,44 @@ reference (`base/`, uploaded into the workspace by `loop.sh bench`) with a brief
 a done filter and a summary. The hidden suite is tasks-api's ten tests and five for the change,
 so a run that adds the features and breaks what was there loses points. The base scores 10 of 15
 (every old test, no new one) and the reference 15 of 15.
+
+## The stale-knowledge trap (`notes-api-stale-knowledge`)
+
+Every family above already scores full hidden marks, so outside knowledge (the stack facts, the stuck lookup, the API
+cards of HK.7) can move no hidden score on them (`reports/research/2026-11-24-agents-that-work-like-a-team.md`,
+section (e)3). This family asks for a framework whose current major line is newer than a model's training data and
+renamed or removed what the line before had; the hidden tests are `notes-api`'s nine, unchanged. Which framework is
+data: `bench.json`'s `asked_release` (framework, ecosystem, package, major, latest release and dates, the day it was
+checked), and the brief's Technical Constraints ask for that line in a person's words. Refresh both when the model
+changes or the line ages into training data. The quality set is `notes-api`'s plus one test,
+`quality/test_built_on_the_release_asked_for.py`: every version the product's manifests declare for the package is on
+the asked major (a product that passes the nine tests on the older line it knows did not do what the brief says). The
+scorer gives a quality set the benchmark's folder as `BENCH_DIR` for this. It is **held out** (`held_out_since`):
+Measure runs only (`MEASURE=1 loop.sh bench notes-api-stale-knowledge`), since a fix written after its hidden failures
+would tune the harness to one framework's changes.
+
+Today's line, checked 2026-11-25:
+
+- **Spring Boot 4.** 4.0.0 released 2025-11-20 (<https://github.com/spring-projects/spring-boot/releases/tag/v4.0.0>);
+  the newest is 4.2.0, released 2026-11-19 (<https://github.com/spring-projects/spring-boot/releases/tag/v4.2.0>;
+  Maven Central's `org/springframework/boot/spring-boot/maven-metadata.xml` gives `release` 4.2.0, after 4.0.0-4.0.10
+  and 4.1.0-4.1.3).
+- What the 4.0 line renamed or removed, from the Spring Boot 4.0 Migration Guide
+  (<https://github.com/spring-projects/spring-boot/wiki/Spring-Boot-4.0-Migration-Guide>, read 2026-11-25):
+  Jackson 3 is the JSON library, "with `com.fasterxml.jackson` becoming `tools.jackson`" (the 4.2.0 starter's
+  `spring-boot-jackson` depends on `tools.jackson.core:jackson-databind` 3.1.8, not the 2.x artifact, so
+  `import com.fasterxml.jackson.databind.ObjectMapper` no longer compiles without an added dependency), and an
+  auto-configured `JsonMapper` replaces the `ObjectMapper` bean; `@MockBean` and `@SpyBean` were removed for
+  `@MockitoBean` and `@MockitoSpyBean`; `@SpringBootTest` no longer gives MockMvc, `TestRestTemplate` or `WebClient`
+  without `@AutoConfigureMockMvc` / `@AutoConfigureTestRestTemplate`, and `TestRestTemplate` moved to
+  `org.springframework.boot.resttestclient`; `spring-boot-starter-web` is deprecated for `spring-boot-starter-webmvc`,
+  each technology with its own `-test` starter (`@WebMvcTest` is now
+  `org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest`, read from the 4.2.0 `spring-boot-webmvc-test` jar);
+  Java 17 or later, Jakarta EE 11 and Servlet 6.1.
+
+The harness's Java pack pins Spring Boot 3.4.5 (`stacks/packs/java_spring_api.py`), so until a scaffold takes the
+release a brief asks for, a run on this family is expected to build on 3.4.5 and fail the release check: that, and
+not the hidden score, is what the family shows first.
 
 ## How a benchmark is laid out
 

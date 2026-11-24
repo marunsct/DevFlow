@@ -1,12 +1,17 @@
 """Score the stuck lookup on past stuck defects whose fix is known: does the note a fixer is shown name it (plan HK.4).
 
-    PYTHONPATH=src python scripts/loop/replay_lookups.py [--through fixer|lookup] [--only id,id] [--pace 7]
+    PYTHONPATH=src python scripts/loop/replay_lookups.py [--through fixer|lookup] [--empty-workspace] [--only id,id]
+                                                         [--pace 7]
                                                          [--data data/lookup-replay] [--cases benchmarks/lookup-replay.json]
 
 No model and no run: each case of the replay set (`benchmarks/lookup-replay.json`) is looked up as the harness would -
 by default through the stuck lookup a fixer gets (`app.graph.stuck_lookup.section`, its first trigger: a defect a fix
 already left open, whose server printed the case's error), or with `--through lookup` straight through
-`app.tools.lookups.look_up` - and the note is searched for any of the case's patterns for its known fix. The report
+`app.tools.lookups.look_up` - and the note is searched for any of the case's patterns for its known fix. Through the
+fixer, each case is asked in the workspace its project had (the case's `workspace`: the dependency gate's record, the
+stack facts and the installed package's files its error needs), laid out in an empty one first, so the lookup's
+local-truth step and its library and release line fire as on a run; `--empty-workspace` asks in an empty one, as the
+replay did before, to compare. The report
 gives, for each case, named or not and what the note held, and the share named among the public cases (those whose
 line states a cause) against the set's target (60%). It calls only the public functions, so it scores the lookup as it
 stands, before and after a rebuild of it.
@@ -19,6 +24,7 @@ between cases (GitHub's search allows 10 a minute without a token). Exits 0; rep
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import os
 import re
@@ -48,8 +54,22 @@ def names_the_fix(case: dict[str, Any], note: str) -> str:
     return ""
 
 
-def through_the_fixer(case: dict[str, Any]) -> str:
-    """The note the stuck lookup gives the fixer of a defect a fix left open whose server printed the case's error."""
+def lay_out(case: dict[str, Any], root: str | Path) -> None:
+    """The case's workspace under `root`: each of its files at its path from the workspace root - its text, or a JSON
+    value written as JSON. A path that would leave the workspace is refused."""
+    base = Path(root).resolve()
+    for path, content in (case.get("workspace") or {}).items():
+        target = (base / path).resolve()
+        if base not in target.parents:
+            raise ValueError(f"{case['id']}: {path} is not inside the workspace")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content if isinstance(content, str) else json.dumps(content, indent=1) + "\n",
+                          encoding="utf-8")
+
+
+def through_the_fixer(case: dict[str, Any], *, workspace: bool = True) -> str:
+    """The note the stuck lookup gives the fixer of a defect a fix left open whose server printed the case's error,
+    asked in the case's workspace (`lay_out`), or in an empty one with `workspace` false."""
     from app.acceptance.what_went_wrong import THE_SERVER_PRINTED
     from app.graph import stuck_lookup
 
@@ -58,6 +78,8 @@ def through_the_fixer(case: dict[str, Any]) -> str:
                              attempts=[{"stage": "defect_fix_1_0", "outcome": "left open"}])
     stack = SimpleNamespace(language=case.get("language", ""), framework=case.get("framework", ""))
     with tempfile.TemporaryDirectory(prefix="workspace-replay-") as root:
+        if workspace:
+            lay_out(case, root)
         return stuck_lookup.section(root, defect, stack)
 
 
@@ -109,6 +131,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--cases", default=str(CASES))
     parser.add_argument("--through", choices=("fixer", "lookup"), default="fixer")
+    parser.add_argument("--empty-workspace", action="store_true",
+                        help="ask each case in an empty workspace, as the replay did before its fixtures")
     parser.add_argument("--only", default="", help="case ids, comma-separated")
     parser.add_argument("--pace", type=float, default=7.0, help="seconds between cases")
     parser.add_argument("--data", default=str(ROOT / "data" / "lookup-replay"))
@@ -120,7 +144,8 @@ def main(argv: list[str] | None = None) -> int:
     replay = load(Path(args.cases))
     only = {part.strip() for part in args.only.split(",") if part.strip()}
     cases = [case for case in replay["cases"] if not only or case["id"] in only]
-    scored = score(cases, through_the_fixer if args.through == "fixer" else through_the_lookup, pace=args.pace)
+    fixer = functools.partial(through_the_fixer, workspace=not args.empty_workspace)
+    scored = score(cases, fixer if args.through == "fixer" else through_the_lookup, pace=args.pace)
     print("\n".join(report(scored, float(replay.get("target") or 0.6))))
     if args.json:
         print(json.dumps(scored, indent=1, ensure_ascii=False))

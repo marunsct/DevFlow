@@ -1,5 +1,5 @@
 {
- "about": "Past stuck defects with the fix that closed them, for scoring the stuck lookup without a model (plan HK.4; scripts/loop/replay_lookups.py). `error` is the line a lookup searches; `names_the_fix` holds patterns (case-insensitive), any one of which in the note a fixer is shown means it names the known fix; `public` is false where the line itself names no cause, so no public answer could. `measured_in` is the fix-log row or plan item that recorded the case. Target: at least 60% of the public cases named.",
+ "about": "Past stuck defects with the fix that closed them, for scoring the stuck lookup without a model (plan HK.4; scripts/loop/replay_lookups.py). `error` is the line a lookup searches; `names_the_fix` holds patterns (case-insensitive), any one of which in the note a fixer is shown means it names the known fix; `public` is false where the line itself names no cause, so no public answer could. `measured_in` is the fix-log row or plan item that recorded the case. Target: at least 60% of the public cases named. `workspace` is what the case's project held when its error was met, laid out under an empty workspace before the lookup is asked (path from the workspace root: the file's text, or a JSON value written as JSON): the dependency gate's record and the stack facts for the packages the project declared, at the releases it ran (versions and dates read from each registry on 2026-11-25), and, where the error says a package has no such name, the installed package's files cut to the declarations the answer reads.",
  "target": 0.6,
  "cases": [
   {
@@ -15,7 +15,52 @@
     "resolver\\s*=\\s*\\\"?3"
    ],
    "public": true,
-   "measured_in": "LF.1277"
+   "measured_in": "LF.1277",
+   "workspace": {
+    ".harness/dependency-gate.json": {
+     "crates:axum": {
+      "verdict": "allowed"
+     },
+     "crates:sqlx": {
+      "verdict": "allowed"
+     }
+    },
+    ".harness/stack-facts.json": {
+     "written": "2026-11-25T00:00:00+00:00",
+     "toolchain": {
+      "crates": "rustc 1.85.1"
+     },
+     "dependencies": [
+      {
+       "ecosystem": "crates",
+       "package": "axum",
+       "version": "0.8.9",
+       "resolved": "0.8.9",
+       "declared_in": ".",
+       "released": "2026-04-14"
+      },
+      {
+       "ecosystem": "crates",
+       "package": "sqlx",
+       "version": "0.8.6",
+       "resolved": "0.8.6",
+       "declared_in": ".",
+       "released": "2025-05-19"
+      }
+     ],
+     "mismatches": {
+      ".": [
+       {
+        "package": "icu_collections",
+        "version": "2.4.0",
+        "needs": "rustc 1.88",
+        "toolchain": "rustc 1.85.1",
+        "fits": "2.1.1"
+       }
+      ]
+     }
+    }
+   }
   },
   {
    "id": "query-macros-need-a-database-at-compile-time",
@@ -33,7 +78,42 @@
     "non-macro"
    ],
    "public": true,
-   "measured_in": "LF.1278"
+   "measured_in": "LF.1278",
+   "workspace": {
+    ".harness/dependency-gate.json": {
+     "crates:axum": {
+      "verdict": "allowed"
+     },
+     "crates:sqlx": {
+      "verdict": "allowed"
+     }
+    },
+    ".harness/stack-facts.json": {
+     "written": "2026-11-25T00:00:00+00:00",
+     "toolchain": {
+      "crates": "rustc 1.85.1"
+     },
+     "dependencies": [
+      {
+       "ecosystem": "crates",
+       "package": "axum",
+       "version": "0.8.9",
+       "resolved": "0.8.9",
+       "declared_in": ".",
+       "released": "2026-04-14"
+      },
+      {
+       "ecosystem": "crates",
+       "package": "sqlx",
+       "version": "0.8.6",
+       "resolved": "0.8.6",
+       "declared_in": ".",
+       "released": "2025-05-19"
+      }
+     ],
+     "mismatches": {}
+    }
+   }
   },
   {
    "id": "pool-options-under-the-driver-module",
@@ -45,7 +125,44 @@
     "sqlite::SqlitePoolOptions"
    ],
    "public": true,
-   "measured_in": "LF.1279"
+   "measured_in": "LF.1279",
+   "workspace": {
+    ".harness/dependency-gate.json": {
+     "crates:axum": {
+      "verdict": "allowed"
+     },
+     "crates:sqlx": {
+      "verdict": "allowed"
+     }
+    },
+    ".harness/stack-facts.json": {
+     "written": "2026-11-25T00:00:00+00:00",
+     "toolchain": {
+      "crates": "rustc 1.85.1"
+     },
+     "dependencies": [
+      {
+       "ecosystem": "crates",
+       "package": "axum",
+       "version": "0.8.9",
+       "resolved": "0.8.9",
+       "declared_in": ".",
+       "released": "2026-04-14"
+      },
+      {
+       "ecosystem": "crates",
+       "package": "sqlx",
+       "version": "0.8.6",
+       "resolved": "0.8.6",
+       "declared_in": ".",
+       "released": "2025-05-19"
+      }
+     ],
+     "mismatches": {}
+    },
+    ".agent-home/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlx-0.8.6/src/lib.rs": "//! sqlx 0.8.6's crate root as published, cut to the SQLite driver's re-export.\n#[cfg(feature = \"_sqlite\")]\n#[cfg_attr(docsrs, doc(cfg(feature = \"_sqlite\")))]\n#[doc(inline)]\npub use sqlx_sqlite::{\n    self as sqlite, Sqlite, SqliteConnection, SqliteExecutor, SqlitePool, SqliteTransaction,\n};\n",
+    ".agent-home/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlx-sqlite-0.8.6/src/lib.rs": "//! sqlx-sqlite 0.8.6's crate root as published, cut to its options and its pool aliases.\npub use database::Sqlite;\npub use options::{\n    SqliteAutoVacuum, SqliteConnectOptions, SqliteJournalMode, SqliteLockingMode, SqliteSynchronous,\n};\n\nmod database;\nmod options;\n\n/// An alias for [`Pool`][crate::pool::Pool], specialized for SQLite.\npub type SqlitePool = crate::pool::Pool<Sqlite>;\n\n/// An alias for [`PoolOptions`][crate::pool::PoolOptions], specialized for SQLite.\npub type SqlitePoolOptions = crate::pool::PoolOptions<Sqlite>;\n"
+   }
   },
   {
    "id": "rejection-type-under-its-own-module",
@@ -58,7 +175,34 @@
     "extract::rejection"
    ],
    "public": true,
-   "measured_in": "LF.1280"
+   "measured_in": "LF.1280",
+   "workspace": {
+    ".harness/dependency-gate.json": {
+     "crates:axum": {
+      "verdict": "allowed"
+     }
+    },
+    ".harness/stack-facts.json": {
+     "written": "2026-11-25T00:00:00+00:00",
+     "toolchain": {
+      "crates": "rustc 1.85.1"
+     },
+     "dependencies": [
+      {
+       "ecosystem": "crates",
+       "package": "axum",
+       "version": "0.8.9",
+       "resolved": "0.8.9",
+       "declared_in": ".",
+       "released": "2026-04-14"
+      }
+     ],
+     "mismatches": {}
+    },
+    ".agent-home/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/axum-0.8.9/src/lib.rs": "//! axum 0.8.9's crate root as published, cut to its public modules.\npub mod body;\npub mod error_handling;\npub mod extract;\npub mod handler;\npub mod middleware;\npub mod response;\npub mod routing;\n",
+    ".agent-home/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/axum-0.8.9/src/extract/mod.rs": "//! axum 0.8.9's `extract` module as published, cut to its public modules.\npub mod connect_info;\npub mod path;\npub mod rejection;\n",
+    ".agent-home/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/axum-0.8.9/src/extract/rejection.rs": "//! axum 0.8.9's `extract::rejection` as published, cut to the JSON extractor's rejection.\n#[cfg(feature = \"json\")]\ncomposite_rejection! {\n    /// Rejection used for [`Json`](super::Json).\n    ///\n    /// Contains one variant for each way the [`Json`](super::Json) extractor\n    /// can fail.\n    #[cfg_attr(docsrs, doc(cfg(feature = \"json\")))]\n    pub enum JsonRejection {\n        JsonDataError,\n        JsonSyntaxError,\n        MissingJsonContentType,\n        BytesRejection,\n    }\n}\n"
+   }
   },
   {
    "id": "journal-mode-set-by-pragma",
@@ -72,7 +216,43 @@
     "journal_mode\\W+WAL"
    ],
    "public": true,
-   "measured_in": "LF.1239"
+   "measured_in": "LF.1239",
+   "workspace": {
+    ".harness/dependency-gate.json": {
+     "crates:axum": {
+      "verdict": "allowed"
+     },
+     "crates:rusqlite": {
+      "verdict": "allowed"
+     }
+    },
+    ".harness/stack-facts.json": {
+     "written": "2026-11-25T00:00:00+00:00",
+     "toolchain": {
+      "crates": "rustc 1.85.1"
+     },
+     "dependencies": [
+      {
+       "ecosystem": "crates",
+       "package": "axum",
+       "version": "0.8.9",
+       "resolved": "0.8.9",
+       "declared_in": ".",
+       "released": "2026-04-14"
+      },
+      {
+       "ecosystem": "crates",
+       "package": "rusqlite",
+       "version": "0.40.2",
+       "resolved": "0.40.2",
+       "declared_in": ".",
+       "released": "2026-08-08"
+      }
+     ],
+     "mismatches": {}
+    },
+    ".agent-home/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rusqlite-0.40.2/src/lib.rs": "//! rusqlite 0.40.2's crate root as published, cut to its public declarations.\npub use crate::cache::CachedStatement;\npub use crate::column::Column;\npub use crate::error::{to_sqlite_error, Error};\npub use crate::params::{params_from_iter, Params, ParamsFromIter};\npub use crate::row::{AndThenRows, Map, MappedRows, Row, RowIndex, Rows};\npub use crate::statement::{Statement, StatementStatus};\npub use crate::transaction::TransactionState;\npub use crate::transaction::{DropBehavior, Savepoint, Transaction, TransactionBehavior};\npub use crate::types::ToSql;\n\npub mod backup;\npub mod blob;\npub mod config;\npub mod functions;\npub mod hooks;\npub mod limits;\npub mod types;\n\nmod cache;\nmod column;\nmod error;\nmod params;\nmod pragma;\nmod row;\nmod statement;\nmod transaction;\n\n/// A connection to a SQLite database.\npub struct Connection {\n    db: RefCell<InnerConnection>,\n}\n"
+   }
   },
   {
    "id": "transaction-needs-a-mutable-connection",
@@ -85,7 +265,42 @@
     "unchecked_transaction"
    ],
    "public": true,
-   "measured_in": "LF.1240"
+   "measured_in": "LF.1240",
+   "workspace": {
+    ".harness/dependency-gate.json": {
+     "crates:axum": {
+      "verdict": "allowed"
+     },
+     "crates:rusqlite": {
+      "verdict": "allowed"
+     }
+    },
+    ".harness/stack-facts.json": {
+     "written": "2026-11-25T00:00:00+00:00",
+     "toolchain": {
+      "crates": "rustc 1.85.1"
+     },
+     "dependencies": [
+      {
+       "ecosystem": "crates",
+       "package": "axum",
+       "version": "0.8.9",
+       "resolved": "0.8.9",
+       "declared_in": ".",
+       "released": "2026-04-14"
+      },
+      {
+       "ecosystem": "crates",
+       "package": "rusqlite",
+       "version": "0.40.2",
+       "resolved": "0.40.2",
+       "declared_in": ".",
+       "released": "2026-08-08"
+      }
+     ],
+     "mismatches": {}
+    }
+   }
   },
   {
    "id": "question-mark-across-error-types",
@@ -99,7 +314,42 @@
     "Box<dyn\\s+(?:std::error::)?Error"
    ],
    "public": true,
-   "measured_in": "LF.1239"
+   "measured_in": "LF.1239",
+   "workspace": {
+    ".harness/dependency-gate.json": {
+     "crates:axum": {
+      "verdict": "allowed"
+     },
+     "crates:rusqlite": {
+      "verdict": "allowed"
+     }
+    },
+    ".harness/stack-facts.json": {
+     "written": "2026-11-25T00:00:00+00:00",
+     "toolchain": {
+      "crates": "rustc 1.85.1"
+     },
+     "dependencies": [
+      {
+       "ecosystem": "crates",
+       "package": "axum",
+       "version": "0.8.9",
+       "resolved": "0.8.9",
+       "declared_in": ".",
+       "released": "2026-04-14"
+      },
+      {
+       "ecosystem": "crates",
+       "package": "rusqlite",
+       "version": "0.40.2",
+       "resolved": "0.40.2",
+       "declared_in": ".",
+       "released": "2026-08-08"
+      }
+     ],
+     "mismatches": {}
+    }
+   }
   },
   {
    "id": "package-release-needs-a-newer-framework",
@@ -115,7 +365,31 @@
     "match(?:es|ing)? (?:your|the) (?:target )?framework"
    ],
    "public": true,
-   "measured_in": "LF.1248"
+   "measured_in": "LF.1248",
+   "workspace": {
+    ".harness/dependency-gate.json": {
+     "nuget:Microsoft.EntityFrameworkCore.Sqlite": {
+      "verdict": "allowed"
+     }
+    },
+    ".harness/stack-facts.json": {
+     "written": "2026-11-25T00:00:00+00:00",
+     "toolchain": {
+      "nuget": ".NET SDK 8.0"
+     },
+     "dependencies": [
+      {
+       "ecosystem": "nuget",
+       "package": "Microsoft.EntityFrameworkCore.Sqlite",
+       "version": "11.0.0",
+       "resolved": "11.0.0",
+       "declared_in": ".",
+       "released": "2026-11-10"
+      }
+     ],
+     "mismatches": {}
+    }
+   }
   },
   {
    "id": "no-dialect-for-the-database",
@@ -129,7 +403,42 @@
     "database-platform"
    ],
    "public": true,
-   "measured_in": "LF.1207"
+   "measured_in": "LF.1207",
+   "workspace": {
+    ".harness/stack-facts.json": {
+     "written": "2026-11-25T00:00:00+00:00",
+     "toolchain": {
+      "maven": "openjdk 21"
+     },
+     "dependencies": [
+      {
+       "ecosystem": "maven",
+       "package": "org.springframework.boot:spring-boot-starter-data-jpa",
+       "version": "3.4.5",
+       "resolved": "3.4.5",
+       "declared_in": ".",
+       "released": "2025-04-24"
+      },
+      {
+       "ecosystem": "maven",
+       "package": "org.hibernate.orm:hibernate-core",
+       "version": "6.6.13.Final",
+       "resolved": "6.6.13.Final",
+       "declared_in": ".",
+       "released": "2025-04-06"
+      },
+      {
+       "ecosystem": "maven",
+       "package": "org.xerial:sqlite-jdbc",
+       "version": "3.49.1.0",
+       "resolved": "3.49.1.0",
+       "declared_in": ".",
+       "released": "2025-02-19"
+      }
+     ],
+     "mismatches": {}
+    }
+   }
   },
   {
    "id": "hashing-library-broken-by-its-backend",
@@ -146,7 +455,53 @@
     "\\bpwdlib\\b"
    ],
    "public": true,
-   "measured_in": "LF.61"
+   "measured_in": "LF.61",
+   "workspace": {
+    ".harness/dependency-gate.json": {
+     "pypi:fastapi": {
+      "verdict": "allowed"
+     },
+     "pypi:passlib": {
+      "verdict": "allowed"
+     },
+     "pypi:bcrypt": {
+      "verdict": "allowed"
+     }
+    },
+    ".harness/stack-facts.json": {
+     "written": "2026-11-25T00:00:00+00:00",
+     "toolchain": {
+      "pypi": "Python 3.12"
+     },
+     "dependencies": [
+      {
+       "ecosystem": "pypi",
+       "package": "fastapi",
+       "version": "0.165.0",
+       "resolved": "0.165.0",
+       "declared_in": ".",
+       "released": "2026-11-18"
+      },
+      {
+       "ecosystem": "pypi",
+       "package": "passlib",
+       "version": "1.7.4",
+       "resolved": "1.7.4",
+       "declared_in": ".",
+       "released": "2020-10-08"
+      },
+      {
+       "ecosystem": "pypi",
+       "package": "bcrypt",
+       "version": "5.0.0",
+       "resolved": "5.0.0",
+       "declared_in": ".",
+       "released": "2025-09-25"
+      }
+     ],
+     "mismatches": {}
+    }
+   }
   },
   {
    "id": "token-subject-must-be-text",
@@ -160,7 +515,42 @@
     "as a string"
    ],
    "public": true,
-   "measured_in": "LF.179"
+   "measured_in": "LF.179",
+   "workspace": {
+    ".harness/dependency-gate.json": {
+     "pypi:fastapi": {
+      "verdict": "allowed"
+     },
+     "pypi:PyJWT": {
+      "verdict": "allowed"
+     }
+    },
+    ".harness/stack-facts.json": {
+     "written": "2026-11-25T00:00:00+00:00",
+     "toolchain": {
+      "pypi": "Python 3.12"
+     },
+     "dependencies": [
+      {
+       "ecosystem": "pypi",
+       "package": "fastapi",
+       "version": "0.165.0",
+       "resolved": "0.165.0",
+       "declared_in": ".",
+       "released": "2026-11-18"
+      },
+      {
+       "ecosystem": "pypi",
+       "package": "PyJWT",
+       "version": "2.15.1",
+       "resolved": "2.15.1",
+       "declared_in": ".",
+       "released": "2026-09-28"
+      }
+     ],
+     "mismatches": {}
+    }
+   }
   },
   {
    "id": "work-outside-the-application-context",
@@ -173,7 +563,31 @@
     "app\\.app_context"
    ],
    "public": true,
-   "measured_in": "LF.1213"
+   "measured_in": "LF.1213",
+   "workspace": {
+    ".harness/dependency-gate.json": {
+     "pypi:flask": {
+      "verdict": "allowed"
+     }
+    },
+    ".harness/stack-facts.json": {
+     "written": "2026-11-25T00:00:00+00:00",
+     "toolchain": {
+      "pypi": "Python 3.12"
+     },
+     "dependencies": [
+      {
+       "ecosystem": "pypi",
+       "package": "flask",
+       "version": "3.1.3",
+       "resolved": "3.1.3",
+       "declared_in": ".",
+       "released": "2026-02-19"
+      }
+     ],
+     "mismatches": {}
+    }
+   }
   },
   {
    "id": "an-id-past-the-database-integer",
@@ -190,7 +604,31 @@
     "check (?:the )?(?:id|value)s? (?:against|is within|range)"
    ],
    "public": true,
-   "measured_in": "LF.1194"
+   "measured_in": "LF.1194",
+   "workspace": {
+    ".harness/dependency-gate.json": {
+     "pypi:fastapi": {
+      "verdict": "allowed"
+     }
+    },
+    ".harness/stack-facts.json": {
+     "written": "2026-11-25T00:00:00+00:00",
+     "toolchain": {
+      "pypi": "Python 3.12"
+     },
+     "dependencies": [
+      {
+       "ecosystem": "pypi",
+       "package": "fastapi",
+       "version": "0.165.0",
+       "resolved": "0.165.0",
+       "declared_in": ".",
+       "released": "2026-11-18"
+      }
+     ],
+     "mismatches": {}
+    }
+   }
   },
   {
    "id": "an-index-declared-twice",
@@ -205,7 +643,42 @@
     "duplicate (?:index|Index)"
    ],
    "public": true,
-   "measured_in": "LF.1245"
+   "measured_in": "LF.1245",
+   "workspace": {
+    ".harness/dependency-gate.json": {
+     "pypi:fastapi": {
+      "verdict": "allowed"
+     },
+     "pypi:sqlalchemy": {
+      "verdict": "allowed"
+     }
+    },
+    ".harness/stack-facts.json": {
+     "written": "2026-11-25T00:00:00+00:00",
+     "toolchain": {
+      "pypi": "Python 3.12"
+     },
+     "dependencies": [
+      {
+       "ecosystem": "pypi",
+       "package": "fastapi",
+       "version": "0.165.0",
+       "resolved": "0.165.0",
+       "declared_in": ".",
+       "released": "2026-11-18"
+      },
+      {
+       "ecosystem": "pypi",
+       "package": "sqlalchemy",
+       "version": "2.0.58",
+       "resolved": "2.0.58",
+       "declared_in": ".",
+       "released": "2026-11-16"
+      }
+     ],
+     "mismatches": {}
+    }
+   }
   },
   {
    "id": "a-name-the-language-server-cannot-find",
@@ -218,7 +691,42 @@
     "from sqlalchemy\\.dialects"
    ],
    "public": true,
-   "measured_in": "LF.1231"
+   "measured_in": "LF.1231",
+   "workspace": {
+    ".harness/dependency-gate.json": {
+     "pypi:fastapi": {
+      "verdict": "allowed"
+     },
+     "pypi:sqlalchemy": {
+      "verdict": "allowed"
+     }
+    },
+    ".harness/stack-facts.json": {
+     "written": "2026-11-25T00:00:00+00:00",
+     "toolchain": {
+      "pypi": "Python 3.12"
+     },
+     "dependencies": [
+      {
+       "ecosystem": "pypi",
+       "package": "fastapi",
+       "version": "0.165.0",
+       "resolved": "0.165.0",
+       "declared_in": ".",
+       "released": "2026-11-18"
+      },
+      {
+       "ecosystem": "pypi",
+       "package": "sqlalchemy",
+       "version": "2.0.58",
+       "resolved": "2.0.58",
+       "declared_in": ".",
+       "released": "2026-11-16"
+      }
+     ],
+     "mismatches": {}
+    }
+   }
   },
   {
    "id": "a-namespace-the-autoloader-does-not-map",
@@ -231,7 +739,42 @@
     "dump-autoload"
    ],
    "public": true,
-   "measured_in": "LF.1209"
+   "measured_in": "LF.1209",
+   "workspace": {
+    ".harness/dependency-gate.json": {
+     "packagist:slim/slim": {
+      "verdict": "allowed"
+     },
+     "packagist:slim/psr7": {
+      "verdict": "allowed"
+     }
+    },
+    ".harness/stack-facts.json": {
+     "written": "2026-11-25T00:00:00+00:00",
+     "toolchain": {
+      "packagist": "PHP 8.4"
+     },
+     "dependencies": [
+      {
+       "ecosystem": "packagist",
+       "package": "slim/slim",
+       "version": "4.15.3",
+       "resolved": "4.15.3",
+       "declared_in": ".",
+       "released": "2026-09-01"
+      },
+      {
+       "ecosystem": "packagist",
+       "package": "slim/psr7",
+       "version": "1.8.1",
+       "resolved": "1.8.1",
+       "declared_in": ".",
+       "released": "2026-11-15"
+      }
+     ],
+     "mismatches": {}
+    }
+   }
   },
   {
    "id": "middleware-with-the-old-signature",
@@ -244,7 +787,42 @@
     "PSR-15"
    ],
    "public": true,
-   "measured_in": "WL.4"
+   "measured_in": "WL.4",
+   "workspace": {
+    ".harness/dependency-gate.json": {
+     "packagist:slim/slim": {
+      "verdict": "allowed"
+     },
+     "packagist:slim/psr7": {
+      "verdict": "allowed"
+     }
+    },
+    ".harness/stack-facts.json": {
+     "written": "2026-11-25T00:00:00+00:00",
+     "toolchain": {
+      "packagist": "PHP 8.4"
+     },
+     "dependencies": [
+      {
+       "ecosystem": "packagist",
+       "package": "slim/slim",
+       "version": "4.15.3",
+       "resolved": "4.15.3",
+       "declared_in": ".",
+       "released": "2026-09-01"
+      },
+      {
+       "ecosystem": "packagist",
+       "package": "slim/psr7",
+       "version": "1.8.1",
+       "resolved": "1.8.1",
+       "declared_in": ".",
+       "released": "2026-11-15"
+      }
+     ],
+     "mismatches": {}
+    }
+   }
   },
   {
    "id": "a-static-local-function-reads-an-outer-variable",
@@ -259,7 +837,31 @@
     "pass (?:it|the \\w+|\\w+) (?:in )?as (?:a |an )?(?:parameter|argument)"
    ],
    "public": true,
-   "measured_in": "LF.1226"
+   "measured_in": "LF.1226",
+   "workspace": {
+    ".harness/dependency-gate.json": {
+     "nuget:Microsoft.Data.Sqlite": {
+      "verdict": "allowed"
+     }
+    },
+    ".harness/stack-facts.json": {
+     "written": "2026-11-25T00:00:00+00:00",
+     "toolchain": {
+      "nuget": ".NET SDK 8.0"
+     },
+     "dependencies": [
+      {
+       "ecosystem": "nuget",
+       "package": "Microsoft.Data.Sqlite",
+       "version": "8.0.34",
+       "resolved": "8.0.34",
+       "declared_in": ".",
+       "released": "2026-11-10"
+      }
+     ],
+     "mismatches": {}
+    }
+   }
   },
   {
    "id": "an-access-modifier-on-a-local-function",
@@ -274,7 +876,31 @@
     "(?:move|put) (?:it |them |the \\w+ )?(?:in)?to a (?:static )?class"
    ],
    "public": true,
-   "measured_in": "LF.1226"
+   "measured_in": "LF.1226",
+   "workspace": {
+    ".harness/dependency-gate.json": {
+     "nuget:Microsoft.Data.Sqlite": {
+      "verdict": "allowed"
+     }
+    },
+    ".harness/stack-facts.json": {
+     "written": "2026-11-25T00:00:00+00:00",
+     "toolchain": {
+      "nuget": ".NET SDK 8.0"
+     },
+     "dependencies": [
+      {
+       "ecosystem": "nuget",
+       "package": "Microsoft.Data.Sqlite",
+       "version": "8.0.34",
+       "resolved": "8.0.34",
+       "declared_in": ".",
+       "released": "2026-11-10"
+      }
+     ],
+     "mismatches": {}
+    }
+   }
   },
   {
    "id": "an-es-module-import-without-its-extension",
@@ -291,7 +917,42 @@
     "fully[- ]specified"
    ],
    "public": true,
-   "measured_in": "WM.3"
+   "measured_in": "WM.3",
+   "workspace": {
+    ".harness/dependency-gate.json": {
+     "npm:hono": {
+      "verdict": "allowed"
+     },
+     "npm:@hono/node-server": {
+      "verdict": "allowed"
+     }
+    },
+    ".harness/stack-facts.json": {
+     "written": "2026-11-25T00:00:00+00:00",
+     "toolchain": {
+      "npm": "v24"
+     },
+     "dependencies": [
+      {
+       "ecosystem": "npm",
+       "package": "hono",
+       "version": "4.13.21",
+       "resolved": "4.13.21",
+       "declared_in": ".",
+       "released": "2026-11-23"
+      },
+      {
+       "ecosystem": "npm",
+       "package": "@hono/node-server",
+       "version": "1.19.19",
+       "resolved": "1.19.19",
+       "declared_in": ".",
+       "released": "2026-11-11"
+      }
+     ],
+     "mismatches": {}
+    }
+   }
   },
   {
    "id": "a-handler-that-returns-nothing",
@@ -306,7 +967,42 @@
     "return (?:the |a )?(?:response|Response)"
    ],
    "public": true,
-   "measured_in": "LF.330"
+   "measured_in": "LF.330",
+   "workspace": {
+    ".harness/dependency-gate.json": {
+     "npm:hono": {
+      "verdict": "allowed"
+     },
+     "npm:@hono/node-server": {
+      "verdict": "allowed"
+     }
+    },
+    ".harness/stack-facts.json": {
+     "written": "2026-11-25T00:00:00+00:00",
+     "toolchain": {
+      "npm": "v24"
+     },
+     "dependencies": [
+      {
+       "ecosystem": "npm",
+       "package": "hono",
+       "version": "4.13.21",
+       "resolved": "4.13.21",
+       "declared_in": ".",
+       "released": "2026-11-23"
+      },
+      {
+       "ecosystem": "npm",
+       "package": "@hono/node-server",
+       "version": "1.19.19",
+       "resolved": "1.19.19",
+       "declared_in": ".",
+       "released": "2026-11-11"
+      }
+     ],
+     "mismatches": {}
+    }
+   }
   },
   {
    "id": "a-standard-package-not-imported",
@@ -322,7 +1018,17 @@
     "import (?:the )?`?strconv"
    ],
    "public": true,
-   "measured_in": "LF.1219"
+   "measured_in": "LF.1219",
+   "workspace": {
+    ".harness/stack-facts.json": {
+     "written": "2026-11-25T00:00:00+00:00",
+     "toolchain": {
+      "go": "go1.24"
+     },
+     "dependencies": [],
+     "mismatches": {}
+    }
+   }
   },
   {
    "id": "a-gem-release-that-was-never-published",
@@ -337,7 +1043,42 @@
     "gem (?:search|list --remote)"
    ],
    "public": true,
-   "measured_in": "LF.1138"
+   "measured_in": "LF.1138",
+   "workspace": {
+    ".harness/dependency-gate.json": {
+     "rubygems:sinatra": {
+      "verdict": "allowed"
+     },
+     "rubygems:sqlite3": {
+      "verdict": "allowed"
+     }
+    },
+    ".harness/stack-facts.json": {
+     "written": "2026-11-25T00:00:00+00:00",
+     "toolchain": {
+      "rubygems": "ruby 3.3"
+     },
+     "dependencies": [
+      {
+       "ecosystem": "rubygems",
+       "package": "sinatra",
+       "version": "4.2.2",
+       "resolved": "4.2.2",
+       "declared_in": ".",
+       "released": "2026-11-17"
+      },
+      {
+       "ecosystem": "rubygems",
+       "package": "sqlite3",
+       "version": "2.10.2",
+       "resolved": "2.10.2",
+       "declared_in": ".",
+       "released": "2026-10-26"
+      }
+     ],
+     "mismatches": {}
+    }
+   }
   },
   {
    "id": "a-server-error-whose-line-names-no-cause",
@@ -351,7 +1092,31 @@
     "(?:tables?|schema) (?:are |is |were )?(?:never |not )?created"
    ],
    "public": false,
-   "measured_in": "LF.1290"
+   "measured_in": "LF.1290",
+   "workspace": {
+    ".harness/dependency-gate.json": {
+     "pypi:fastapi": {
+      "verdict": "allowed"
+     }
+    },
+    ".harness/stack-facts.json": {
+     "written": "2026-11-25T00:00:00+00:00",
+     "toolchain": {
+      "pypi": "Python 3.12"
+     },
+     "dependencies": [
+      {
+       "ecosystem": "pypi",
+       "package": "fastapi",
+       "version": "0.165.0",
+       "resolved": "0.165.0",
+       "declared_in": ".",
+       "released": "2026-11-18"
+      }
+     ],
+     "mismatches": {}
+    }
+   }
   },
   {
    "id": "a-read-of-a-field-the-product-refused-to-store",
@@ -364,7 +1129,31 @@
     "allow (?:an )?empty"
    ],
    "public": false,
-   "measured_in": "LF.1273"
+   "measured_in": "LF.1273",
+   "workspace": {
+    ".harness/dependency-gate.json": {
+     "pypi:fastapi": {
+      "verdict": "allowed"
+     }
+    },
+    ".harness/stack-facts.json": {
+     "written": "2026-11-25T00:00:00+00:00",
+     "toolchain": {
+      "pypi": "Python 3.12"
+     },
+     "dependencies": [
+      {
+       "ecosystem": "pypi",
+       "package": "fastapi",
+       "version": "0.165.0",
+       "resolved": "0.165.0",
+       "declared_in": ".",
+       "released": "2026-11-18"
+      }
+     ],
+     "mismatches": {}
+    }
+   }
   }
  ]
 }

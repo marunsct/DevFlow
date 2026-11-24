@@ -194,6 +194,15 @@ class StartRunRequest(BaseModel):
             "follows the deployment's switches."
         ),
     )
+    product_research: bool = Field(
+        default=False,
+        description=(
+            "The run owner's consent, for this run only, to product research: before the intake, a few web "
+            "searches for products of the brief's kind, built from its product type alone (never its names), "
+            "summarised into cited suggestions the brief does not require. Done only where the deployment's "
+            "`PRODUCT_RESEARCH` switch is on and Internet lookups are not 'off'. Kept as the run's own setting."
+        ),
+    )
     pin_model: bool = Field(
         default=False,
         description=(

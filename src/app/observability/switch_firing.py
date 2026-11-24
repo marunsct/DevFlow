@@ -48,6 +48,7 @@ SIGNALS: dict[str, str] = {
     "CONTESTED_TESTS_CONFIRMED": "The harness ran a copy of this test with",
     "WEB_TOOLS_AFTER_TWO_FAILED_FIXES": "Two fixes of this defect have failed, so `search_the_web` and `read_web_page`",
     "STUCK_LOOKUP_CONDENSED": "A note on this error, condensed from what others found",
+    "PRODUCT_RESEARCH": "Comparable products: suggestions the brief does not require",
     "PULL_REQUEST_DELIVERY": "Delivered to the seeded repository",
     # Recorded by the harness once per run and role (`app.agents.prompt_size`); the lead's in its memory's own words.
     "QA_PROMPT_TRIMMED": "Stack guidance kept to its parts about tests for",

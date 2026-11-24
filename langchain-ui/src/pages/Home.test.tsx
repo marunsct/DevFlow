@@ -65,6 +65,31 @@ describe('starting a build', () => {
     expect(payload.internet_lookups).toBe('off');
   });
 
+  // Plan HK.10: product research only with the owner's consent for this run - unticked each time, and never under "off".
+  it('sends consent to product research only when ticked for this run', async () => {
+    show();
+    await userEvent.type(screen.getByLabelText(/Write the brief/), '## Features\n- Add a note');
+    const consent = screen.getByLabelText(/Product research for this run/) as HTMLInputElement;
+    expect(consent.checked).toBe(false);
+    await userEvent.click(consent);
+    await userEvent.click(screen.getByRole('button', { name: /Start Workflow Run/ }));
+    await waitFor(() => expect(mocks.startRun).toHaveBeenCalled());
+    const payload = (mocks.startRun.mock.calls.at(-1) as unknown as [string, Record<string, any>])[1];
+    expect(payload.product_research).toBe(true);
+  });
+
+  it('sends no consent to product research with internet lookups off, even once ticked', async () => {
+    show();
+    await userEvent.type(screen.getByLabelText(/Write the brief/), '## Features\n- Add a note');
+    await userEvent.click(screen.getByLabelText(/Product research for this run/));
+    await userEvent.selectOptions(screen.getByLabelText(/Internet lookups/), 'off');
+    expect((screen.getByLabelText(/Product research for this run/) as HTMLInputElement).disabled).toBe(true);
+    await userEvent.click(screen.getByRole('button', { name: /Start Workflow Run/ }));
+    await waitFor(() => expect(mocks.startRun).toHaveBeenCalled());
+    const payload = (mocks.startRun.mock.calls.at(-1) as unknown as [string, Record<string, any>])[1];
+    expect(payload.product_research).toBe(false);
+  });
+
   it('starts a run from an uploaded codebase with that upload named as its source', async () => {
     mocks.uploadCodebase.mockResolvedValueOnce({ upload_id: 'app_1a2b3c4d.zip' } as any);
     const { container } = show();

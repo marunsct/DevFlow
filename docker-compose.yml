@@ -84,6 +84,8 @@ x-app-env: &app-env
   WEB_TOOLS_OFFERED: ${WEB_TOOLS_OFFERED:-on}
   WEB_TOOLS_AFTER_TWO_FAILED_FIXES: ${WEB_TOOLS_AFTER_TWO_FAILED_FIXES:-on}
   STUCK_LOOKUP_CONDENSED: ${STUCK_LOOKUP_CONDENSED:-off}
+  # Plan HK.10: cited suggestions from comparable products for the intake, only with the run owner's consent.
+  PRODUCT_RESEARCH: ${PRODUCT_RESEARCH:-off}
   CONTESTED_TESTS_CONFIRMED: ${CONTESTED_TESTS_CONFIRMED:-off}
   # Per-role audit 2026-11-20 (items 4, 7, 8): smaller prompts, each read once per run, off until measured.
   QA_PROMPT_TRIMMED: ${QA_PROMPT_TRIMMED:-off}

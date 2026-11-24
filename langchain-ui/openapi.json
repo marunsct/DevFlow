@@ -3667,6 +3667,12 @@
       "description": "With pin_model: pin to this model name instead of the settings'.",
       "title": "Pin Model Name"
      },
+     "product_research": {
+      "default": false,
+      "description": "The run owner's consent, for this run only, to product research: before the intake, a few web searches for products of the brief's kind, built from its product type alone (never its names), summarised into cited suggestions the brief does not require. Done only where the deployment's `PRODUCT_RESEARCH` switch is on and Internet lookups are not 'off'. Kept as the run's own setting.",
+      "title": "Product Research",
+      "type": "boolean"
+     },
      "review_policy": {
       "anyOf": [
        {

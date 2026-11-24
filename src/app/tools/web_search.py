@@ -116,7 +116,8 @@ def _from_the_apis(query: str) -> tuple[list[dict[str, Any]], list[str]]:
     return found, unasked
 
 
-def search(query: str, *, fetch: Fetch | None = None, with_the_apis: bool = True) -> dict[str, Any]:
+def search(query: str, *, fetch: Fetch | None = None, with_the_apis: bool = True,
+           categories: tuple[str, ...] = CATEGORIES) -> dict[str, Any]:
     """The web's top results for `query`, or {"error": ...}.
 
     One search path (plan KS.4, LF.1294): Stack Exchange and GitHub are asked through their own APIs, counted against
@@ -125,7 +126,8 @@ def search(query: str, *, fetch: Fetch | None = None, with_the_apis: bool = True
     a GitHub engine inside the private search, keyless and uncounted, on the same per-address quota the harness's own
     lookups spend. `with_the_apis` false asks the private search alone (the lookups, which ask the APIs themselves).
     Engines the private search names as not answering (`unresponsive_engines`) are given back as `unresponsive`, so
-    a refusal upstream is not read as "nothing was found"."""
+    a refusal upstream is not read as "nothing was found". `categories`: the private search's categories asked, in
+    turn (product research asks the general engines alone, `app.agents.product_research`)."""
     query = " ".join(str(query or "").split())
     if len(query) < 3:
         return {"error": "Ask for something: a few words, an error message, a library and its version."}
@@ -139,7 +141,7 @@ def search(query: str, *, fetch: Fetch | None = None, with_the_apis: bool = True
         found, unasked = _from_the_apis(query)
     failure = ""
     unresponsive: list[str] = []
-    for category in CATEGORIES:
+    for category in categories:
         try:
             status, body, _ = (fetch or _get)(
                 f"{_url()}/search", {"q": query[:300], "format": "json", "language": "en", "categories": category})

@@ -40,6 +40,11 @@ def product_manager_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
     from app.agents.code_map import with_the_map
 
     request = with_the_map(request, state["repository"].root_path)
+    # What products of this kind commonly offer, as cited suggestions: only with its switch and this run's consent
+    # (plan HK.10); otherwise the request is as it was.
+    from app.agents import product_research
+
+    request = product_research.with_the_note(request, state, ctx.planning_model)
     update = _run_gated_agent(
         state,
         config,
@@ -52,6 +57,8 @@ def product_manager_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
     if _hand_back(update, "product_intake"):
         return update
 
+    # A suggestion from that research stays a suggestion, recorded as taken or left, before the brief's guards below.
+    product_research.settled(state, update)
     # The brief's own constraints, put back before anything is rendered
     # from this. Every later stage reads the intake; none reads the brief.
     update["product_intake"] = with_the_constraints_the_brief_states(
@@ -230,6 +237,11 @@ def stack_selector_node(state: WorkflowGraphState, config: RunnableConfig, ctx: 
     from app.agents.code_map import with_the_map
 
     request = with_the_map(request, state["repository"].root_path)
+    # What products of this kind commonly offer, as cited suggestions: only with its switch and this run's consent
+    # (plan HK.10); otherwise the request is as it was.
+    from app.agents import product_research
+
+    request = product_research.with_the_note(request, state, ctx.planning_model)
     update = _run_gated_agent(
         state,
         config,

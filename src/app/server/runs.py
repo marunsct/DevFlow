@@ -445,6 +445,11 @@ def create_runs_router(
 
             run_switches.update(switches_for(body.internet_lookups))
         run_switches.update(body.switches or {})
+        if body.product_research:
+            # The owner's consent to product research, for this run only (plan HK.10): never a deployment setting.
+            from app.agents.product_research import CONSENT
+
+            run_switches[CONSENT] = True
         if body.switches:
             # Only switches the harness has, refused before the run starts: an unknown name is no arm.
             from app.observability.provenance import SWITCHES as _KNOWN

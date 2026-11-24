@@ -837,6 +837,8 @@ export interface StartRunRequest {
   pin_model?: boolean;
   /** With pin_model: pin to this model name instead of the settings'. */
   pin_model_name?: string | null;
+  /** The run owner's consent, for this run only, to product research: before the intake, a few web searches for products of the brief's kind, built from its product type alone (never its names), summarised into cited suggestions the brief does not require. Done only where the deployment's `PRODUCT_RESEARCH` switch is on and Internet lookups are not 'off'. Kept as the run's own setting. */
+  product_research?: boolean;
   /** Which optional human review gates to enable. */
   review_policy?: Record<string, boolean> | null;
   /** Identity recorded on review decisions. */

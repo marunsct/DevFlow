@@ -95,6 +95,8 @@ export const Home: React.FC = () => {
   const [useFrontierModel, setUseFrontierModel] = useState<boolean>(true);
   // What the agents may look up on the internet in this run (plan WL.3); kept with the run.
   const [internetLookups, setInternetLookups] = useState<InternetLookups>('always');
+  // Consent to product research (plan HK.10): asked afresh for every run, never kept with the form's defaults.
+  const [productResearch, setProductResearch] = useState<boolean>(false);
   // Set once the server says no frontier model is configured. See the check below.
   const noFrontierModel = useRef(false);
   // Minutes a review gate waits for a person before approving itself; blank
@@ -310,6 +312,7 @@ export const Home: React.FC = () => {
         delivery_mode: deliveryMode,
         use_frontier_model: useFrontierModel,
         internet_lookups: internetLookups,
+        product_research: internetLookups !== 'off' && productResearch,
         approval_timeout_minutes:
           !unattended && parseInt(approvalTimeout, 10) > 0 ? parseInt(approvalTimeout, 10) : undefined,
         review_policy: unattended
@@ -590,6 +593,13 @@ export const Home: React.FC = () => {
               documentation are read under every choice: that is how packages are installed and used.
             </span>
           </label>
+          <Checkbox
+            label="Product research for this run"
+            hint="Before the intake, search the web for products of this kind - by the product's type only, never its names - and offer what they commonly have as cited suggestions the brief does not require. Only where the deployment has product research switched on."
+            checked={internetLookups !== 'off' && productResearch}
+            disabled={internetLookups === 'off'}
+            onChange={(e) => setProductResearch(e.target.checked)}
+          />
         </Step>
 
         <details className="rounded-xl border border-border bg-surface/50">

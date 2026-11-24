@@ -117,6 +117,10 @@ def effects(records: list[dict], decisions: str = "") -> list[str]:
         lines.append("  defects: " + ", ".join(f"{event} {n}" for event, n in sorted(defects.items())))
     lines.extend(budget_lines(records))
     lines.extend(outbound_lines(records))
+    # LF.1310: a testing stage's refused product change kept as its blocker, and the refusals each testing stage had.
+    from app.tools.testing_blockers import effects_lines as testing_blocker_lines
+
+    lines.extend(testing_blocker_lines(records))
     # HK.4 and KS.6: whether a lookup note's defect was closed by the next fix, and each lookup source's answer rate.
     from app.observability.lookup_notes import outcome_lines, source_lines
 

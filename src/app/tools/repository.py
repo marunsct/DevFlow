@@ -2043,7 +2043,42 @@ def _the_harness_s_own_or_the_locked_suite(root: Path, target: Path) -> str | No
     )
 
 
-def _a_tester_changing_the_product(root: Path, target: Path, content: str = "") -> str | None:
+def _the_testing_work_order_s_refusal(root: Path, stage: str, shown: str, needed: str) -> str:
+    """The testing work order's refusal of product code, its change recorded as its blocker (LF.1310).
+
+    Measured over nine runs: this refusal was returned 54 times, up to 15 in one run - the testing builder found a
+    real fault in the product, tried to fix it, was refused and tried again, although the refusal asked it to name
+    the fault in `blockers`. The harness now records the change as the stage's blocker at the first refusal
+    (`app.tools.testing_blockers`), and a second refusal of the same file in the same stage is one short line.
+    Only asking whether a write would be refused records nothing.
+    """
+    if _JUST_ASKING.get():
+        first = True
+    else:
+        from app.tools import testing_blockers
+
+        first = testing_blockers.record(root, stage, shown, needed)
+    if not first:
+        return (
+            f"'{shown}' is product code, refused to this testing work order before and already recorded as this "
+            "stage's blocker for the builder that owns it. Write the test against the interface and go on. "
+            "Nothing was written."
+        )
+    return (
+        f"'{shown}' is product code, and this is the testing work order: it writes "
+        "tests against the interfaces the other work orders promise, while they "
+        "write the code. The change you sent is recorded as this stage's blocker, with "
+        "what your test needed, and goes to the builder whose work order owns "
+        f"'{shown}' before the tests are run; the milestone review reads it too. Do not "
+        "send it again: write the test against the interface as the plan gives it, even "
+        "if the code is not there yet or does not match it yet, and go on with your own "
+        "files. A product that does not start is the builders' to fix as well. Tests, "
+        "test configuration and the package manifest are yours to change. "
+        "Nothing was written."
+    )
+
+
+def _a_tester_changing_the_product(root: Path, target: Path, content: str = "", *, change: str = "") -> str | None:
     """The refusal for a testing stage changing application code, or None.
 
     A test round finds what fails and reports each failure as a defect for the
@@ -2120,17 +2155,7 @@ def _a_tester_changing_the_product(root: Path, target: Path, content: str = "") 
         # runner's way so it can be deleted, as the delete refusal suggests.
         return None
     if stage.startswith(_THE_TESTING_TASK):
-        return _outside_its_own_files() + (
-            f"'{shown}' is product code, and this is the testing work order: it writes "
-            "tests against the interfaces the other work orders promise, while they "
-            "write the code. Write the test against the interface as the plan gives it, "
-            "even if the code is not there yet. If the code a test needs is missing or "
-            "does not match its interface, say exactly what in `blockers` - the "
-            "milestone review reads it and the owner makes the change. A product that does not "
-            "start is the builders' to fix as well. Tests, test "
-            "configuration and the package manifest are yours to change. "
-            "Nothing was written."
-        )
+        return _outside_its_own_files() + _the_testing_work_order_s_refusal(root, stage, shown, change or content)
     return _outside_its_own_files() + (
         f"'{shown}' is product code, and this is a test round: its job is to find "
         "what fails and report it, not to change the product, even one that does not start. A fix made here is "
@@ -2351,7 +2376,7 @@ def _not_this_stage_s_to_take(
     for refusal in (
         _installed_by_a_tool(root, target, done=done),
         _another_work_order_s_file(root, target),
-        _a_tester_changing_the_product(root, target) if product_code else None,
+        _a_tester_changing_the_product(root, target, change=f"the file {done}") if product_code else None,
     ):
         if refusal is not None:
             return refusal.replace("Nothing was written.", f"Nothing was {done}.")
@@ -2359,7 +2384,7 @@ def _not_this_stage_s_to_take(
 
 
 def _guard_a_targeted_change(
-    repo_root: str | Path, relative_path: str, replacement: str
+    repo_root: str | Path, relative_path: str, replacement: str, *, change: str = ""
 ) -> tuple[Path, Path]:
     """Every check a targeted change must pass, in one place.
 
@@ -2393,7 +2418,9 @@ def _guard_a_targeted_change(
     someone_else_s = _another_work_order_s_file(root, target)
     if someone_else_s is not None:
         raise RepositoryToolError(someone_else_s)
-    not_this_round_s = _a_tester_changing_the_product(root, target)
+    not_this_round_s = _a_tester_changing_the_product(
+        root, target, change=change or f"it to read {replacement[:400]!r}"
+    )
     if not_this_round_s is not None:
         raise RepositoryToolError(not_this_round_s)
     returning = _the_response_it_should_be_returning(
@@ -3339,7 +3366,9 @@ def replace_approved_lines(
             position instead of being refused, and costs you nothing.
     """
     content = _content_without_a_copied_gutter(content, start_line)
-    root, target = _guard_a_targeted_change(repo_root, relative_path, content)
+    root, target = _guard_a_targeted_change(
+        repo_root, relative_path, content, change=f"lines {start_line}-{end_line} replaced with {content[:400]!r}"
+    )
 
     with _MUTATION_LOCK:
         original = target.read_text(encoding="utf-8")
@@ -3772,7 +3801,9 @@ def edit_approved_artifact(
     # These were inline here while this was the only tool that changed part of
     # a file; a second one would have had to copy nine checks or quietly go
     # without them.
-    root, target = _guard_a_targeted_change(repo_root, relative_path, replace)
+    root, target = _guard_a_targeted_change(
+        repo_root, relative_path, replace, change=f"{find[:200]!r} replaced with {replace[:200]!r}"
+    )
     if not find:
         raise RepositoryToolError(
             "The `find` text is empty. Give the exact passage to replace, or use "
@@ -6989,7 +7020,9 @@ def write_approved_artifact(
     someone_else_s = _another_work_order_s_file(artifact_root, target)
     if someone_else_s is not None:
         raise RepositoryToolError(someone_else_s)
-    not_this_round_s = _a_tester_changing_the_product(artifact_root, target, content)
+    not_this_round_s = _a_tester_changing_the_product(
+        artifact_root, target, content, change=f"the file written as {content[:400]!r}"
+    )
     if not_this_round_s is not None:
         raise RepositoryToolError(not_this_round_s)
 

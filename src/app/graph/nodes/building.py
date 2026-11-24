@@ -565,6 +565,10 @@ def technical_lead_node(state: WorkflowGraphState, config: RunnableConfig, ctx: 
     # A plan's builders are sent back for unfinished work at most once each way (`unfinished_build`).
     update["unfinished_orders"] = {}
     update["builders_sent_back"] = []
+    # And the changes its testing stages were refused, kept as their blockers (`testing_blockers`, LF.1310).
+    from app.tools import testing_blockers
+
+    testing_blockers.forget(state["repository"].root_path)
     return update
 
 
@@ -635,11 +639,14 @@ def _drafted_from_the_specification(state: Any, config: RunnableConfig, ctx: Gra
 
 def _on_to_the_ci_gate(state: Any, **fields: Any) -> dict[str, Any]:
     """Every builder has finished: on to CI, unless a work order is not finished - then back to its builder, once
-    an attempt, before any test runs (`app.graph.unfinished_build`, LF.1299)."""
+    an attempt, before any test runs (`app.graph.unfinished_build`, LF.1299) - or a testing stage was refused a
+    change in a builder's files - then that builder is sent it, once an attempt (`app.tools.testing_blockers`,
+    LF.1310)."""
     from app.graph import unfinished_build
+    from app.tools import testing_blockers
     from app.graph.workflow import _handing_on
 
-    sent = unfinished_build.after_the_build(state)
+    sent = testing_blockers.joined(unfinished_build.after_the_build(state), testing_blockers.to_their_builders(state))
     if sent:
         return _handing_on(**{**fields, **sent, "specialist_task_index": 0}, stage="specialist_dispatch")
     return _handing_on(**fields, stage="ci_gate")
@@ -759,8 +766,11 @@ def specialist_dispatch_node(state: WorkflowGraphState, config: RunnableConfig, 
         # The interfaces it changed, read by the harness (plan PH.3, off until measured).
         from app.agents import interface_changes
 
-        outputs[stage_name], built = unfinished_build.built_again(state, stage_name, interface_changes.with_them(
-            update.pop("__specialist_result__"), state["repository"].root_path))
+        from app.tools import testing_blockers
+
+        outputs[stage_name], built = unfinished_build.built_again(state, stage_name, testing_blockers.with_them(
+            interface_changes.with_them(update.pop("__specialist_result__"), state["repository"].root_path),
+            state["repository"].root_path, stage_name))
         update.update(built)
         update["specialist_outputs"] = outputs
         update["specialist_task_index"] = index + 1
@@ -893,8 +903,11 @@ def specialist_worker_node(state: dict, config: RunnableConfig, ctx: GraphContex
     # again on every pass until the recursion limit ended the run.
     from app.agents import interface_changes
 
-    output, built = unfinished_build.built_again(state, stage_name, interface_changes.with_them(
-        update["__specialist_result__"], state["repository"].root_path))
+    from app.tools import testing_blockers
+
+    output, built = unfinished_build.built_again(state, stage_name, testing_blockers.with_them(
+        interface_changes.with_them(update["__specialist_result__"], state["repository"].root_path),
+        state["repository"].root_path, stage_name))
     finished: dict[str, Any] = {"specialist_outputs": {stage_name: output}, **built}
     if answered_in_a_batch:
         # Its pause was answered in a batch and never surfaced, so its queue

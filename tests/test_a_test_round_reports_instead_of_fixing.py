@@ -74,7 +74,8 @@ def test_the_testing_work_order_may_not_change_product_code(project: Path, monke
     _in_stage(monkeypatch, "specialist_testing_3")
     with pytest.raises(RepositoryToolError, match="this is the testing work order") as refused:
         write_approved_artifact(project, "shop/cart.py", "TOTAL = 1\n")
-    assert "`blockers`" in str(refused.value) and "Nothing was written." in str(refused.value)
+    # Recorded as the stage's blocker by the harness (LF.1310), not left to the model to name in `blockers`.
+    assert "recorded as this stage's blocker" in str(refused.value) and "Nothing was written." in str(refused.value)
     with pytest.raises(RepositoryToolError, match="testing work order"):
         edit_approved_artifact(project, "shop/cart.py", "TOTAL = 0", "TOTAL = 1")
     with pytest.raises(RepositoryToolError, match="Nothing was deleted."):

@@ -117,7 +117,7 @@ Checked: none of these has a module in src. Each is a candidate only if a measur
 |---|---|---|---|
 | PX.1 prefix-break reason per model call | cache_report has `prefix_break` fields; the per-reason split (tools, steering, thinking, clock, memory order, truncation, eviction) is partly there | S | unverified how much remains; finish if cache share is a priority |
 | PX.4 `APPEND_ONLY_HISTORY`, PX.7 `SLOT_AFFINITY` / `id_slot`, PX.6 `--cache-reuse` advice | no module or switch in src | M, M, S | uncached tokens a call; PX.8 only on PX.1's eviction share (decision gate) |
-| AZ skeleton + slices; BB lead plans in parts; BE one container per run; BI rubric-graded candidates; BJ one input budget per request; BD two local tiers + model advice | all P1/P2, none built | M-L | measured long-context cost or a quality ceiling; BI after AY |
+| AZ skeleton + slices; BB lead plans in parts; BE one container per run; BI rubric-graded candidates; BD two local tiers + model advice | all P1/P2, none built | M-L | measured long-context cost or a quality ceiling; BI after AY |
 | AY bounded fix cycle steps 5-6 | step 5 deferred (memory pointer already answers a re-read), step 6 waits on measurement of 1-4 | S | after the AY switches' measurement |
 | AQ repeated-read hypotheses; Pillar 10 code and test index; Pillar 9 context bus | gated on redundant-read measurement (M12) | M | M12 result |
 | BH preference applied (model registry and measured edit preference) | registry done, applying the preference waits | S | group 2 measured |

@@ -58,6 +58,8 @@ SIGNALS: dict[str, str] = {
     "SUMMARISE_LATER_WITH_HEADROOM": "A conversation kept whole past the usual trigger, the window having room",
     # Recorded by the harness once per run and stage (`app.agents.reply_room`).
     "REPLY_ROOM_SIZED_PER_ROLE": "The room kept for the reply was sized to the role",
+    # Recorded by the harness once per stage visit whose memory it held to the budget (`app.agents.request_budget`).
+    "REQUEST_BUDGET_FOR_EVERY_STAGE": "A stage's memory was held to its request's input budget",
     # Recorded by the harness each time it switches thinking off for it (`app.agents.deliberated_reads`).
     "LONG_REASONING_BEFORE_A_READ": "Thinking switched off for the reply after one that reasoned at length and then only read",
 }
@@ -66,7 +68,7 @@ SIGNALS: dict[str, str] = {
 HARNESS_RECORDS: dict[str, str] = {"repository_delivery": "message", "prompt_shaped": "message", "fix_order": "message",
                                    "summarised_later": "message",
                                    "reply_room": "message", "thinking_off_after_a_read": "message",
-                                   "time_budget": "message"}
+                                   "time_budget": "message", "request_budget": "message"}
 
 
 @dataclass(frozen=True)

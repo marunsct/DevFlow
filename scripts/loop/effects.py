@@ -111,10 +111,46 @@ def effects(records: list[dict], decisions: str = "") -> list[str]:
     lines.append(f"  {salvaged['continuation']:>4}  RS.1 replies cut off part way through their text, continued")
     if defects:
         lines.append("  defects: " + ", ".join(f"{event} {n}" for event, n in sorted(defects.items())))
+    lines.extend(budget_lines(records))
     # Beside what fired: a switch that was on, had its chance and did nothing (`CHANCES`).
     from app.observability.switch_firing import chance_lines
 
     lines.extend(chance_lines(records, decisions))
+    return lines
+
+
+def budget_lines(records: list[dict]) -> list[str]:
+    """LF.1274: how many opening requests were checked against their input budget, how many were past it and cut, by
+    how much, and which sections were cut or left out most (`app.agents.request_budget`, records `request_budget`);
+    and, apart, the stages whose memory would have been cut with `REQUEST_BUDGET_FOR_EVERY_STAGE` on (`applied`
+    false: sent as built)."""
+    checked = [r for r in records if isinstance(r, dict) and r.get("kind") == "request_budget"]
+    label = "LF.1274 opening requests past their input budget, cut to it"
+    if not checked:
+        return [f"     -  {label}: not reached"]
+    past = [r for r in checked if int(r.get("sent") or 0) < int(r.get("built") or 0)]
+    cut = [r for r in past if r.get("applied") is not False]
+    would = [r for r in past if r.get("applied") is False]
+
+    def median(values: list[int]) -> int:
+        ordered = sorted(values)
+        return ordered[len(ordered) // 2]
+
+    def described(group: list[dict]) -> str:
+        named: Counter = Counter(str(n).split(" (")[0].split(" as its outline")[0]
+                                 for r in group for n in [*(r.get("cut") or []), *(r.get("left_out") or [])])
+        kinds = Counter(re.sub(r"_\d+(?:_\d+)*$", "", str(r.get("stage") or "")) for r in group)
+        return (f"built median {median([int(r.get('built') or 0) for r in group]):,} -> sent "
+                f"{median([int(r.get('sent') or 0) for r in group]):,} characters, target "
+                f"{median([int(r.get('target') or 0) for r in group]):,}; "
+                + ", ".join(f"{kind} {n}" for kind, n in kinds.most_common(4))
+                + ("; most cut: " + ", ".join(f"{name} {n}" for name, n in named.most_common(3)) if named else ""))
+
+    lines = [f"  {len(cut):>4}  {label} ({len(checked)} checked" + (f"; {described(cut)})" if cut else
+                                                                     ", none cut)")]
+    if would:
+        lines.append(f"  {len(would):>4}  LF.1274 stage memories past the budget, sent as built "
+                     f"(REQUEST_BUDGET_FOR_EVERY_STAGE off; would be {described(would)})")
     return lines
 
 

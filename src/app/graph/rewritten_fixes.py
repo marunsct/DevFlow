@@ -345,8 +345,15 @@ def _the_files(
 
 
 def fix_request(root: Path, path: str, defect: Any, failure: str, specification: Any,
-                stack: Any, others: list[str], diagnostics: list[str], co_failures: str = "", kept: str = "") -> str:
-    """What one file's rewrite is asked. `co_failures`: the other open defects that point at this file (`co_defect_failures`)."""
+                stack: Any, others: list[str], diagnostics: list[str], co_failures: str = "", kept: str = "",
+                model: Any = None) -> str:
+    """What one file's rewrite is asked. `co_failures`: the other open defects that point at this file (`co_defect_failures`).
+
+    Past its input budget (`request_budget.opening_target` for `model`'s window, LF.1274) it opens with the defect's
+    evidence and the file to correct, keeps what binds the fix whole, and cuts its standing context to what the
+    defect touches: the API to the routes its failing tests call, the facts to its files, the project to the files the
+    failure names and what they import (`_fitted`). Within it, the request is as it was built.
+    """
     from app.agents.shared_facts import the_facts_section
     from app.agents.specialists import specification_for_the_work_order
     from app.graph.drafting import _neighbours, _stack_line, _the_registry_s_releases, the_reference_code
@@ -379,30 +386,36 @@ def fix_request(root: Path, path: str, defect: Any, failure: str, specification:
     defect_part = (f"--- The defect ---\n{getattr(defect, 'description', '')}\n"
                    f"Expected: {getattr(defect, 'expected_behavior', '')}" + (f"\nActual: {actual}" if actual else ""))
     from app.agents.ledger import enabled as _ledger_on
+    from app.agents.request_budget import EVIDENCE, KEPT
     from app.graph.cause_journal import tried_before
 
-    changing = (
-        earlier_attempts(defect).strip(),
+    # Each with what it is to the input budget: what the defect is, or what binds the fix.
+    changing_parts = (
+        (KEPT, earlier_attempts(defect).strip()),
         # What was tried on its cause in earlier cycles too (deep review 1.4).
-        tried_before(root, defect, shown=(getattr(defect, "attempts", None) or []) if _ledger_on() else ()).strip(),
-        f"--- What failed ---\n{failure}" if failure.strip() else "",
-        co_failures,
+        (KEPT, tried_before(root, defect, shown=(getattr(defect, "attempts", None) or []) if _ledger_on() else ()).strip()),
+        (EVIDENCE, f"--- What failed ---\n{failure}" if failure.strip() else ""),
+        (EVIDENCE, co_failures),
         # The fixes made before this one, which a rewrite must not undo (`specialists.fixes_to_keep_section`).
         # Measured on one run: every fix of a page's list-structure check came through this rewrite, which was never
         # told of the fix it kept undoing for another test.
-        kept.strip(),
-        ("--- The compiler still reports, in the files just written ---\n" + "\n".join(diagnostics)) if diagnostics else "",
-        ("--- Edits from the last pass that were not made, and why ---\n" + "\n".join(unapplied)) if unapplied else "",
+        (KEPT, kept.strip()),
+        (EVIDENCE, ("--- The compiler still reports, in the files just written ---\n" + "\n".join(diagnostics))
+         if diagnostics else ""),
+        (EVIDENCE, ("--- Edits from the last pass that were not made, and why ---\n" + "\n".join(unapplied))
+         if unapplied else ""),
         # The registry's current releases, for a rewrite of a dependency manifest (plan WL.4 T4).
-        _the_registry_s_releases(root, path, specification, stack),
+        (KEPT, _the_registry_s_releases(root, path, specification, stack)),
     )
+    changing = tuple(text for _, text in changing_parts)
     project = f"--- The project ---\n{neighbours}" if neighbours else ""
     the_file = ((anchored_edits.in_the_memory(path) if held.get(path) == now
                  else anchored_edits.excerpt(path, now, failure, _the_defect_s_words(defect))) if long_file
                 else f"--- `{path}` as it is now ---\n{now}")
     # The facts every builder and judge reads (plan CM.1), and the pack's golden example for a file in its languages
     # (deep review 2026-11-18, item E4).
-    facts = "\n\n".join(part for part in (the_facts_section(root).strip(), the_reference_code(root, path)) if part)
+    the_facts, reference = the_facts_section(root).strip(), the_reference_code(root, path)
+    facts = "\n\n".join(part for part in (the_facts, reference) if part)
     instruction = (anchored_edits.instruction(path) if long_file else
                    f"Reply with the complete corrected content of `{path}` and nothing else, in one fenced "
                    "code block. Change only what the failure needs; keep every name, signature and "
@@ -412,17 +425,91 @@ def fix_request(root: Path, path: str, defect: Any, failure: str, specification:
 
     if stable_memory_order.enabled():
         # What every rewrite of the sprint shares first, then what this file and this failure change (LR.52).
-        return "\n\n".join(part for part in (
+        built = "\n\n".join(part for part in (
             "Correct one file of this product so the failure given below no longer happens. "
             f"The stack: {_stack_line(stack)}.",
             facts, project, detail.strip(),
             f"--- The file to correct: `{path}` ---", defect_part, *changing, the_file, instruction,
         ) if part)
-    return "\n\n".join(part for part in (
-        f"Correct the file `{path}` of this product so the failure below no longer happens. "
-        f"The stack: {_stack_line(stack)}.",
-        defect_part, *changing, detail.strip(), project, the_file, facts, instruction,
-    ) if part)
+    else:
+        built = "\n\n".join(part for part in (
+            f"Correct the file `{path}` of this product so the failure below no longer happens. "
+            f"The stack: {_stack_line(stack)}.",
+            defect_part, *changing, detail.strip(), project, the_file, facts, instruction,
+        ) if part)
+    return _within_its_budget(
+        built, model=model, root=root, path=path, others=others, defect=defect, failure=failure,
+        specification=specification, opening=f"Correct the file `{path}` of this product so the failure below no "
+                                             f"longer happens. The stack: {_stack_line(stack)}.",
+        defect_part=defect_part, changing=changing_parts, detail=detail, now=now, long_file=long_file,
+        the_facts=the_facts, reference=reference, instruction=instruction,
+        project=project, has_memory=bool(neighbours) and project_memory.enabled())
+
+
+def _within_its_budget(built: str, *, model: Any, root: Path, path: str, others: list[str], defect: Any, failure: str,
+                       specification: Any, opening: str, defect_part: str, changing: Sequence[tuple[str, str]],
+                       detail: str, now: str, long_file: bool, the_facts: str, reference: str, instruction: str,
+                       project: str, has_memory: bool) -> str:
+    """`built` when it is within its input budget; past it, the same request fitted to it (`request_budget.fit`).
+    Never raises: `built` as it is.
+
+    Measured on small runs: one file's rewrite was asked in 84,000-99,000 characters, about 39,000 of them the
+    project's other files, beside the whole API and every fact of the workspace.
+    """
+    try:
+        from app.agents import project_memory, request_budget
+        from app.agents.request_budget import EVIDENCE, INSTRUCTION, KEPT, STANDING, Part
+        from app.graph import anchored_edits
+        from app.graph import fixer_request_shape as shape
+        from app.observability.transcript import _stage_from_config
+
+        stage = str(_stage_from_config("defect_fix") or "defect_fix")
+        target = request_budget.opening_target(model)
+        if len(built) <= target:
+            request_budget.noted(stage, built=len(built), target=target)
+            return built
+        evidence = "\n".join((defect_part, *(text for kind, text in changing if kind == EVIDENCE and text)))
+        touched = shape.the_files_it_touches(root, evidence, [path, *others, *(getattr(defect, "affected_files", None)
+                                                                              or [])])
+        parts = [
+            Part(INSTRUCTION, opening),
+            Part(EVIDENCE, defect_part + "\n\n"),
+            *(Part(EVIDENCE, text.strip("\n") + "\n\n") for kind, text in changing if kind == EVIDENCE and text),
+            # The file to correct is what a rewrite answers with; a long one as the parts its failure points at.
+            Part(EVIDENCE, anchored_edits.excerpt(path, now, failure, _the_defect_s_words(defect)) if long_file
+                 else f"--- `{path}` as it is now ---\n{now}\n"),
+            *(Part(KEPT, text) for kind, text in changing if kind == KEPT and text),
+        ]
+        if detail.strip():
+            parts.append(Part(STANDING, detail, where="/docs/technical_specification.md",
+                              cut=shape.specification_cut(specification, detail, [
+                                  failure, str(getattr(defect, "actual_behavior", "") or ""),
+                                  str(getattr(defect, "reproduction_steps", "") or "")])))
+        # The rulings and the fixes undone for a start that broke bind every stage: kept whole; the facts are cut.
+        if the_facts:
+            parts.extend(shape.split_facts("\n" + the_facts + "\n", touched))
+        if reference:
+            parts.append(Part(STANDING, reference))
+        if project and not has_memory:
+            parts.append(Part(STANDING, project))  # the neighbouring files, without the project memory
+        parts.append(Part(INSTRUCTION, instruction))
+
+        def the_project(room: int) -> str:
+            # The files the failure names and what they import, whole; the rest named, within the room left.
+            memory, _ = project_memory.render(root, min(MEMORY_CHARACTERS, room), focus=f"{path}\n{evidence}",
+                                              for_a_fixer=True, sliced=True)
+            return f"--- The project ---\n{memory}" if memory else ""
+
+        least = int(target * request_budget.MEMORY_LEAST_SHARE) if has_memory else 0
+        fitted = request_budget.fit(parts, target=target, memory=least,
+                                    memory_text=the_project if has_memory else None)
+        request_budget.noted(stage, built=len(built), target=target, fitted=fitted)
+        logger.info("Rewrite request for %s is past its input budget (%d characters, target %d); evidence first, "
+                    "standing context cut to %d characters", path, len(built), target, fitted.sent)
+        return fitted.text
+    except Exception:  # noqa: BLE001 - the request as built
+        logger.debug("Could not fit a rewrite request to its budget", exc_info=True)
+        return built
 
 
 def _the_defect_s_words(defect: Any) -> str:
@@ -598,7 +685,8 @@ def fix_by_rewriting(
                     break
                 current = (root / path).read_text(encoding="utf-8", errors="replace")
                 asked = fix_request(root, path, defect, failure, specification, stack,
-                                    [f for f in files if f != path], diagnostics, co_failures.get(path, ""), kept=kept)
+                                    [f for f in files if f != path], diagnostics, co_failures.get(path, ""), kept=kept,
+                                    model=active_model)
                 if repeated_rewrite_prompts.exhausted(root, asked):
                     logger.info("Rewrite of %s not sent: the same request has failed %d times", path,
                                 repeated_rewrite_prompts.MOST_IDENTICAL)
@@ -740,7 +828,8 @@ def fix_by_candidates(
             if active_model is None or not hasattr(active_model, "invoke"):
                 return index, path, ""
             asked = fix_request(root, path, defect, failure, specification, stack,
-                                [f for f in files if f != path], [], co_failures.get(path, ""), kept=kept)
+                                [f for f in files if f != path], [], co_failures.get(path, ""), kept=kept,
+                                model=active_model)
             if repeated_rewrite_prompts.exhausted(root, asked):
                 return index, path, ""
             sent.append(asked)

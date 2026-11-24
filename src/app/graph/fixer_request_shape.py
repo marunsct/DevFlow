@@ -25,46 +25,27 @@ reshaped (`shaped`):
 
 Still past the target, whole standing sections go, largest first, each named as left out; the evidence and what is
 kept whole never do. A quality fix with a size threshold, so always on and no switch: a small request is as before.
+The target, the parts and the fitting are every stage's (`app.agents.request_budget`, LF.1274).
 """
 from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 from typing import Any, Iterable
 
+# The budget, the parts and their order are every stage's (LF.1274); the agent-loop fixer's request was the first
+# sized by them.
+from app.agents.request_budget import (
+    EVIDENCE, KEPT, LEAST_OPENING_CHARACTERS, MEMORY_LEAST_SHARE, STANDING, STANDING_HEADING, WORKING_CALLS, Part,
+    fit, opening_target, sections,
+)
+
 logger = logging.getLogger(__name__)
 
-#: Working calls the opening request leaves room for before the conversation is first summarised.
-WORKING_CALLS = 10
-#: The smallest target, in characters, whatever the window: below it a fixer is shown too little to act on.
-LEAST_OPENING_CHARACTERS = 24_000
-#: The share of the target the project memory keeps past it, at least: the files the evidence names.
-MEMORY_LEAST_SHARE = 0.25
-
-#: Where a reshaped request's standing context begins; what comes before it is the defect's evidence and what is kept.
-STANDING_HEADING = ("--- Around this defect: the setup, the API and the facts, cut to what it touches (read the rest "
-                    "when you need it) ---")
 #: The section that names the round's shared cause.
 CAUSE_HEADING = "--- The shared cause the same measurement raised beside this defect ---"
-
-EVIDENCE, KEPT, STANDING = "evidence", "kept", "standing"
-
-
-def opening_target(model: Any = None) -> int:
-    """The opening request's size target, in characters, for `model`'s window (the deployment's when None)."""
-    from app.agents.context_budget import CHARS_PER_TOKEN, ContextBudget
-
-    try:
-        from app.models import environment_of
-
-        budget = ContextBudget.resolve(environment_of(model))
-    except Exception:  # noqa: BLE001 - the deployment's own window
-        budget = ContextBudget.resolve()
-    room = budget.trigger_tokens * CHARS_PER_TOKEN - WORKING_CALLS * budget.tool_output_bytes
-    return max(LEAST_OPENING_CHARACTERS, int(room))
 
 
 def the_evidence(opening: str) -> str:
@@ -77,33 +58,6 @@ def the_evidence(opening: str) -> str:
 
 def reshaped(opening: str) -> bool:
     return STANDING_HEADING in str(opening or "")
-
-
-@dataclass
-class Part:
-    """One part of a fixer's request: what kind it is, its text as built, and its text cut to what the defect touches."""
-
-    kind: str
-    text: str
-    cut: str | None = None
-
-
-_A_HEADING = re.compile(r"^--- .+ ---[ \t]*$", re.M)
-
-
-def sections(text: str) -> list[str]:
-    """`text` split at each `--- heading ---` line, each section with its heading; the text before the first is one."""
-    text = str(text or "")
-    starts = [m.start() for m in _A_HEADING.finditer(text)]
-    # A heading's own leading newlines go with it.
-    starts = [len(text[:s].rstrip("\n")) for s in starts]
-    bounds = sorted({0, *starts, len(text)})
-    return [text[a:b] for a, b in zip(bounds, bounds[1:]) if text[a:b]]
-
-
-def _heading_of(section: str) -> str:
-    found = _A_HEADING.search(section)
-    return found.group(0).strip("- \t") if found else ""
 
 
 #: Sections of a mixed part that are kept whole: the fixes earlier rounds made.
@@ -320,34 +274,32 @@ def the_files_it_touches(root: str | Path | None, evidence: str, named: Iterable
 # --- the shape ----------------------------------------------------------------------------------------------------
 
 def shaped(parts: list[Part], *, target: int, memory: int, cause: str = "") -> str:
-    """The request past its target: the evidence and `cause` first, what is kept whole next, the standing context cut
-    and, while the request and its memory are still past `target`, whole standing sections left out, largest first.
+    """The request past its target (`request_budget.fit`): the evidence and `cause` first, what is kept whole next,
+    the standing context cut and, while the request and its memory are still past `target`, whole standing sections
+    left out, largest first. `memory`: the characters the project memory will hold at least."""
+    return fit(parts, target=target, memory=memory, cause=cause).text
 
-    `memory`: the characters the project memory will hold at least.
-    """
-    head = "".join(p.text for p in parts if p.kind == EVIDENCE).rstrip("\n") + "\n" + cause
-    kept = "\n\n".join(text for p in parts if p.kind == KEPT if (text := p.text.strip("\n")))
-    standing = [s.strip("\n") + "\n\n" for p in parts if p.kind == STANDING
-                for s in sections(p.cut if p.cut is not None else p.text) if s.strip()]
-    room = target - memory
-    left_out: list[str] = []
 
-    def total() -> int:
-        return len(head) + len(kept) + len(STANDING_HEADING) + 4 + sum(map(len, standing))
+def specification_cut(specification: Any, text: str, observed: Iterable[str]) -> str | None:
+    """`text` (a request's part holding the product's whole API) with that API cut to the routes `observed` (what
+    the failing tests printed, the defect's account of them) call; None when no route can be read, no endpoint
+    matches, or `text` does not hold the whole API (the whole API is then the one shown)."""
+    try:
+        from app.acceptance.api_reference import api_reference
 
-    while standing and total() > room:
-        largest = max(range(len(standing)), key=lambda i: len(standing[i]))
-        left_out.append(_heading_of(standing[largest]) or "part of the setup")
-        del standing[largest]
-    named = ("Left out to keep this request small - each is in /docs or in the project, to read when you need it: "
-             + "; ".join(left_out) + ".\n") if left_out else ""
-    return (head.rstrip("\n") + "\n\n" + kept + "\n\n" + STANDING_HEADING + "\n"
-            + named + "\n" + "".join(standing).rstrip("\n") + "\n")
+        whole = api_reference(specification)
+        if not whole or whole not in str(text or ""):
+            return None
+        cut = the_api_cut(specification, routes_called(observed))
+        return text.replace(whole, cut, 1) if cut else None
+    except Exception:  # noqa: BLE001 - the whole API
+        logger.debug("Could not cut the API to the defect's routes", exc_info=True)
+        return None
 
 
 __all__ = [
     "CAUSE_HEADING", "EVIDENCE", "KEPT", "LEAST_OPENING_CHARACTERS", "MEMORY_LEAST_SHARE", "Part", "STANDING",
     "STANDING_HEADING", "WORKING_CALLS", "opening_target", "reshaped", "resource_of", "routes_called", "sections",
-    "shaped", "split_facts", "split_mixed", "the_api_cut", "the_evidence", "the_facts_cut", "the_files_it_touches",
-    "the_round_s_cause",
+    "shaped", "specification_cut", "split_facts", "split_mixed", "the_api_cut", "the_evidence", "the_facts_cut",
+    "the_files_it_touches", "the_round_s_cause",
 ]

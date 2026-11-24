@@ -185,23 +185,12 @@ def _the_fix_request(
 def _the_specification_cut(state: Any, specification: str, observed: Any, shown: Any) -> str | None:
     """The specification's part of a fix request with its API cut to the routes the defect's failing tests call; None
     when no route can be read, or no endpoint matches (the whole API is then the one shown)."""
-    try:
-        from app.acceptance.api_reference import api_reference
-        from app.graph import fixer_request_shape as shape
+    from app.graph import fixer_request_shape as shape
 
-        spec = state.get("technical_specification")
-        whole = api_reference(spec)
-        if not whole or whole not in specification:
-            return None
-        routes = shape.routes_called([
-            str((observed or {}).get("output") or ""), str(getattr(shown, "actual_behavior", "") or ""),
-            str(getattr(shown, "reproduction_steps", "") or ""),
-        ])
-        cut = shape.the_api_cut(spec, routes)
-        return specification.replace(whole, cut, 1) if cut else None
-    except Exception:  # noqa: BLE001 - the whole API
-        logger.debug("Could not cut the API to the defect's routes", exc_info=True)
-        return None
+    return shape.specification_cut(state.get("technical_specification"), specification, [
+        str((observed or {}).get("output") or ""), str(getattr(shown, "actual_behavior", "") or ""),
+        str(getattr(shown, "reproduction_steps", "") or ""),
+    ])
 
 
 def _sized_to_its_target(request: dict[str, Any], parts: list[Any], state: Any, cycle: Any, defect_index: int,
@@ -209,25 +198,38 @@ def _sized_to_its_target(request: dict[str, Any], parts: list[Any], state: Any, 
     """`request` as built when it and its project memory are within the size target; reshaped past it (LF.1270).
     Never raises: the request as built."""
     try:
-        from app.agents import project_memory
+        from app.agents import project_memory, request_budget
         from app.graph import fixer_request_shape as shape
 
         content = request["messages"][-1]["content"]
         target = shape.opening_target(model)
+        stage = f"defect_fix_{state.get('test_round', 0)}_{defect_index}"
+        # Once a fixer, as its `shown` record: not on each resume of its stage after a gated tool call.
+        first_visit = not state.get("pending_inner_thread_id")
         if len(content) > target:
             memory = 0  # past it on its own: the memory is cut whatever it would be
         else:
             if not project_memory.enabled():
+                if first_visit:
+                    request_budget.noted(stage, built=len(content), target=target)
                 return request
-            stage = f"defect_fix_{state.get('test_round', 0)}_{defect_index}"
             memory = len(project_memory.render_for_a_stage(state["repository"].root_path, model, content, stage)[0])
             if memory + 2 + len(content) <= target:
+                if first_visit:
+                    request_budget.noted(stage, built=len(content) + memory + 2, target=target)
                 return request
         least = int(target * shape.MEMORY_LEAST_SHARE) if project_memory.enabled() else 0
         # The round that raised this round's defects: a fix stage runs under the next round's number.
         raised_in = int(state.get("test_round", 0) or 0) - 1
         cause = shape.the_round_s_cause(cycle, defect_index, raised_in if raised_in >= 0 else None)
-        shaped = shape.shaped(parts, target=target, memory=least, cause=cause)
+        fitted = request_budget.fit(parts, target=target, memory=least, cause=cause)
+        shaped = fitted.text
+        if first_visit:
+            # With the memory it is given then, as `project_memory.render_for_a_stage` cuts it for a reshaped request.
+            given = (len(project_memory.render_for_a_stage(state["repository"].root_path, model, shaped, stage)[0]) + 2
+                     if project_memory.enabled() else 0)
+            request_budget.noted(stage, built=len(content) + (memory + 2 if memory else 0), sent=len(shaped) + given,
+                                 target=target, fitted=fitted)
         logger.info("Fix request for defect %d is past its size target (%d characters with its memory, target %d); "
                     "evidence first, standing context cut to %d characters", defect_index,
                     len(content) + memory, target, len(shaped))

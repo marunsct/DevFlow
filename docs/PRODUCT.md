@@ -270,7 +270,7 @@ Every role is `create_role_agent` (`app/agents/role_agent.py`) wrapping `deepage
 - a bounded tool set (3.2); the deepagents built-in write tools are denied at the permission layer as well as absent from the tool list;
 - a structured response schema (Pydantic) per role - the answer tool - so the workflow routes on fields, not prose;
 - `interrupt_on` for every high-risk tool (`HUMAN_APPROVAL_TOOLS`: `write_artifact`, `edit_artifact`, `replace_lines`, `delete_artifact`, `move_artifact`, `run_terminal_command`, `run_validation`). With `auto_approve` on, the runner answers these automatically; with it off each pauses for a person;
-- a middleware chain, outermost first: compaction (keeps the stage's request, summarises the rest, `agents/compaction.py`); transcript; verify-after-write; batch file claims; research share; fresh-conversation reset; gathering (a stage on the judgement model gathers on the build model, `agents/gathering.py`); text-tool-call repair; workspace path normaliser; line batches; environment contract; workspace digest (a map of the workspace with line counts, purpose line, interface, marking harness-owned files); project memory (the project's documents and files handed over current at the start of each call, a read of one already held answered with a pointer; a fixer, and a builder opening on code an earlier stage wrote, get the specification, the acceptance criteria and (a builder) the sprint plan, each long one as a digest of the sections its request points at, the other plans named and the product's code with the rest of the budget); plugin instructions (3.5); filesystem layer; edits-together; repeated-query guard; settled-answer guard (ends a stage once it has answered and stopped progressing; budget 40 calls); optional task list (`HARNESS_TASK_LIST`);
+- a middleware chain, outermost first: compaction (keeps the stage's request, summarises the rest, `agents/compaction.py`); transcript; verify-after-write; batch file claims; research share; fresh-conversation reset; gathering (a stage on the judgement model gathers on the build model, `agents/gathering.py`); text-tool-call repair; workspace path normaliser; line batches; environment contract; workspace digest (a map of the workspace with line counts, purpose line, interface, marking harness-owned files); project memory (the project's documents and files handed over current at the start of each call, a read of one already held answered with a pointer; a fixer, and a builder opening on code an earlier stage wrote, get the specification, the acceptance criteria and (a builder) the sprint plan, each long one as a digest of the sections its request points at, the other plans named and the product's code with the rest of the budget; with `REQUEST_BUDGET_FOR_EVERY_STAGE` on, a stage whose request and memory are past its input budget gets the memory within what the budget leaves, long documents as digests, 7.3a); plugin instructions (3.5); filesystem layer; edits-together; repeated-query guard; settled-answer guard (ends a stage once it has answered and stopped progressing; budget 40 calls); optional task list (`HARNESS_TASK_LIST`);
 - a checkpointer, so a paused approval resumes the inner agent (`resume_with_decision`) rather than restarting it.
 
 A role whose document the workflow renders has no write tool: the model returns its structured answer and a template renders `docs/*.md`. Reasoning ("thinking") is controlled per model and stage (`agents/thinking.py`): fast delivery runs the build model with reasoning off, a fix reasons as configured, replies that spend the whole reply cap reasoning are salvaged from their own reasoning (`models/reply_salvage.py`). Behind `LONG_REASONING_BEFORE_A_READ` (`agents/deliberated_reads.py`), the reply after one that reasoned 8,000 tokens or more and then only read goes without thinking, for that one reply.
@@ -565,7 +565,7 @@ Defects that share a cause are bundled so one fixer sees all of them (`_bundle_c
 9. **Best checkpoint** (`graph/best_checkpoint.py`): a fix alone commits each write whose immediate check finds the defect's own tests passing, beside the branch. When the stage ends worse than that checkpoint, the checkpoint is put back and measured in the stage's place, kept only if that measurement holds. Not used by fixers of a batch (they share a workspace).
 10. **Settle** (`workflow._settle_the_fix`, LF.1260): a kept fix closes its defect only on a measurement - its own tests in the snapshot just taken, or a harness check showing it gone (the language service, the interface check, a regressed test passing, the start, a page check). With none it stays open as **unverified** (ledger event `unverified`, attempt outcome `unverified: ...`, KPI `defects_unverified`; not counted as a failed fix), and a test round that finds nothing wrong closes it (`sprint.closed_by_a_round_that_found_nothing`). A stage after which no file of the product differs from its start (`ci.unchanged_since`; for a batch, the batch as a whole) is "left open: nothing was changed", whatever the fixer lists. A kept fix whose own tests still fail is read for where they fail (LF.1272, `judged_fixes.progress`): the defect's tests as the stage found them (`.harness/fix-profiles.json`, kept only when the suite's saved result is of the product as it was) against the suite's result after it. One that passes now, fails at a later line of the test (the outermost frame of the test's own code, `first_failing_step.where_the_test_was`), or with an answer nearer the one wanted (a thrown error, then a 5xx, then a 4xx, then an assertion on what came back) - with none failing earlier, further from its answer, or newly failing - moved forward: the attempt is `moved forward: <tests> now fail at <step>`, the defect's actual behaviour carries that evidence for the next fixer (replacing the last such note), and it is not counted as a failed fix (as unverified is not). Where no failure can be read either side (no frames, no answers), it is "left open: its tests still fail" and counted, as before; the revert rule is not loosened by progress. The start-break note (`agents/start_breaks.py`) is ended here, only by a kept fix that changed the product and was measured with it starting.
 
-### 7.3a What a fixer's request holds (LF.1270)
+### 7.3a What a fixer's request holds (LF.1270, LF.1274)
 
 - **Fresh evidence, always** (`graph/fresh_evidence.py`): each time a defect is shown to a fixer its actual behaviour is
   read against the latest saved measurement of the product as it is now (its fingerprint): the server log it carries is
@@ -573,7 +573,8 @@ Defects that share a cause are bundled so one fixer sees all of them (`_bundle_c
   is the latest one, and a revert note for a start that failed is dropped once the latest measurement finds the product
   starting. A defect raised for one step many tests stop at (it names no criterion) is shown its tests as the latest
   measurement found them, not the last failing command. The stored defect is unchanged (revert tallies and disputes read it).
-- **Sized to a target** (`graph/fixer_request_shape.py`): the opening request - request and project memory - leaves room
+- **Sized to a target** (one input budget per request, `agents/request_budget.py`; the fixer's shape in
+  `graph/fixer_request_shape.py`): the opening request - request and project memory - leaves room
   for `WORKING_CALLS` = 10 calls of one command's output each before the first summary (`ContextBudget.trigger_tokens`;
   at least 24,000 characters). Under it the request is as built. Past it: the defect's evidence first (defect,
   reproduction, expected, actual, files, its failing tests' output, bundled failures), then an open defect the previous
@@ -582,7 +583,23 @@ Defects that share a cause are bundled so one fixer sees all of them (`_bundle_c
   standing context cut to what the defect touches - the API only for the routes its failing tests call (whole when none
   can be read), facts and unserved-code lines only about its files and their imports - and the project memory holds whole
   only the files its evidence names and what they import (`project_memory.render_for_a_stage`). Still past the target,
-  whole standing sections go, largest first, each named.
+  whole standing sections go, largest first, each named with where to read it.
+- **The rewrite path's request under the same budget** (`rewritten_fixes.fix_request`, LF.1274): one file's rewrite past
+  the target opens with its instruction, the defect, what failed, the bundled failures, the compiler's word and the file
+  to correct (a long file as the parts its failure points at); keeps earlier attempts, the cause journal, the fixes to
+  keep and a manifest's registry releases whole; cuts the API to the routes its failing tests call (the rest named in
+  `/docs/technical_specification.md`), the facts to its files (rulings and start breaks whole) and the project to the
+  files its evidence names and their imports; and ends with its reply instruction. Within the target it is as built.
+- **Every other stage's memory under it, behind `REQUEST_BUDGET_FOR_EVERY_STAGE`** (group Context and cost, off until
+  measured, `docs/measuring.md` M17; `project_memory.render_for_a_stage`): with it on, a stage whose request and memory
+  are past the target is given the memory within what the target leaves beside its request (at least a quarter of
+  it), each long workflow document held as its outline by line and the sections its request points at, at most
+  `DOCUMENTS_PAST_THE_BUDGET` = 12,000 characters (measured: a medium run's builders, lead, planner, reviews and suite
+  author carried 53-69K characters of the specification's digest beside the parts their requests quoted). Small runs
+  open past the target too, hence the switch. Off, or within the target, the memory is as before.
+- **Recorded**: each check is one `request_budget` transcript record (stage, target, size built and sent with its
+  memory, sections cut, sections left out, `applied`; with the switch off a stage's record says what would have been
+  cut, `applied` false), counted by `loop.sh effects` (cut, and apart, would be cut).
 
 ### 7.4 Compiler and language-service feedback
 
@@ -664,7 +681,7 @@ Steering and plugin instructions are one mechanism (3.5). `GET|POST /runs/{id}/s
 5. **The bundle**: a bundled feature follows its bundle's run setting, stored setting or variable.
 6. **The module's `ON_BY_DEFAULT`** (`default`).
 
-Each module exposes `enabled()` through `is_on`. `observability/provenance.SWITCHES` maps 117 switch names to the module that reads each, so every run's KPI row records which were on and which fired (`observability/switch_firing.py`, `loop.sh effects`).
+Each module exposes `enabled()` through `is_on`. `observability/provenance.SWITCHES` maps 132 switch names to the module that reads each, so every run's KPI row records which were on and which fired (`observability/switch_firing.py`, `loop.sh effects`).
 
 ### 9.2 Kinds
 

@@ -466,7 +466,8 @@ def kept_by_the_harness(repo_root: str | Path) -> tuple[str, ...]:
 
 def render(repo_root: str | Path, budget_characters: int, focus: str = "",
            for_a_fixer: bool = False, kept_out: tuple[str, ...] = (), sliced: bool = False,
-           sprint_files: tuple[str, ...] = (), on_code: bool = False) -> tuple[str, dict[str, str]]:
+           sprint_files: tuple[str, ...] = (), on_code: bool = False,
+           documents_at_most: int = 0) -> tuple[str, dict[str, str]]:
     """The memory as text within `budget_characters`, and the files it holds by path.
 
     `for_a_fixer`: the product's code first, the acceptance criteria, and the specification as its outline and the
@@ -486,6 +487,9 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
     its digest, and the other plans named, so the rest of the budget holds the product's code. A slice orders that
     code, the files the request names and what they import first; it leaves none out, since a file the builder is to
     write does not exist yet to import what it builds on.
+
+    `documents_at_most`: each workflow document longer than this is held as its digest - its outline by line and the
+    sections the request points at, within this size (a request past its input budget, `render_for_a_stage`).
     """
     files = current(repo_root)
     if not files or budget_characters <= 0:
@@ -590,6 +594,8 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
         largest = (shorter_documents or LARGEST_FILE_CHARACTERS) if path.startswith("docs/") else LARGEST_FILE_CHARACTERS
         if (replan is not None or on_code) and path.startswith("docs/"):
             largest = min(largest, memory_slices.MOST_CHARACTERS_WHOLE)
+        if documents_at_most and path.startswith("docs/"):
+            largest = min(largest, documents_at_most)
         if len(text) > largest and path.endswith(".md"):
             # Too large to hold whole: its outline and the sections this
             # stage's request points at, so it is not read window by window.
@@ -717,6 +723,15 @@ def render_for_a_stage(repo_root: str | Path, model: Any, opening: str, stage: s
     A fixer whose request was cut to its size target (`fixer_request_shape.reshaped`) is given the memory cut the same
     way (LF.1270): the files its evidence names and what they import held whole, the rest named, within what the
     target leaves beside the request. The fix request reads this too, to tell whether it is past its target.
+
+    Any other stage whose request and memory together are past its input budget (`request_budget.opening_target`,
+    LF.1274) is given the memory within what the budget leaves beside its request (at least
+    `request_budget.MEMORY_LEAST_SHARE` of it), each long workflow document as its outline by line and the sections
+    the request points at (`documents_at_most`) - with `REQUEST_BUDGET_FOR_EVERY_STAGE` on (off until measured: small
+    runs open past the budget too). Measured on a medium run: every builder of the first sprint, the lead, the
+    planner, the reviews and the suite's author opened on 157,000-198,000 characters, 53,000-69,000 of them the
+    specification's sections beside the parts of it their requests already quoted. Within the budget it is as before.
+    One `request_budget` record a visit says which, and with the switch off what would have been cut.
     """
     from app.agents import memory_slices
 
@@ -729,9 +744,57 @@ def render_for_a_stage(repo_root: str | Path, model: Any, opening: str, stage: s
             least = int(target * fixer_request_shape.MEMORY_LEAST_SHARE)
             return render(repo_root, min(budget_for(model), max(least, target - len(opening))),
                           fixer_request_shape.the_evidence(opening), for_a_fixer=True, sliced=True)
-    return render(repo_root, budget_for(model), opening, for_a_fixer=fixer, kept_out=_kept_out_for(stage, repo_root),
-                  sliced=memory_slices.enabled() and str(stage or "").startswith(("defect_fix", "specialist_")),
-                  on_code=builds_on_code(repo_root, stage))
+    arguments = dict(for_a_fixer=fixer, kept_out=_kept_out_for(stage, repo_root),
+                     sliced=memory_slices.enabled() and str(stage or "").startswith(("defect_fix", "specialist_")),
+                     on_code=builds_on_code(repo_root, stage))
+    memory, held = render(repo_root, budget_for(model), opening, **arguments)
+    if fixer:
+        return memory, held  # sized with its request (`nodes.fixes._sized_to_its_target`)
+    return _within_its_budget(repo_root, model, opening, stage, memory, held, arguments)
+
+
+#: The size a long workflow document is held to, as its digest, in the memory of a request past its input budget.
+DOCUMENTS_PAST_THE_BUDGET = 12_000
+
+
+def _within_its_budget(repo_root: str | Path, model: Any, opening: str, stage: str, memory: str,
+                       held: dict[str, str], arguments: dict[str, Any]) -> tuple[str, dict[str, str]]:
+    """`memory` when it and `opening` are within the stage's input budget; past it, with
+    `REQUEST_BUDGET_FOR_EVERY_STAGE` on, the memory rendered again within what the budget leaves, long documents as
+    digests - off, `memory` as it is and the record says what would have been cut. Never raises: `memory` as it is."""
+    try:
+        from app.agents import request_budget
+
+        target = request_budget.opening_target(model)
+        built = len(opening) + (len(memory) + 2 if memory else 0)
+        if built <= target or not memory:
+            request_budget.noted(stage, built=built, target=target)
+            return memory, held
+        room = min(budget_for(model), max(int(target * request_budget.MEMORY_LEAST_SHARE), target - len(opening) - 2))
+        smaller, smaller_held = render(repo_root, room, opening, **arguments,
+                                       documents_at_most=DOCUMENTS_PAST_THE_BUDGET)
+        if not smaller or len(smaller) >= len(memory):
+            request_budget.noted(stage, built=built, target=target)
+            return memory, held
+        documents = [path for path in held if path.startswith("docs/") and path not in smaller_held]
+        documents += [path for path in DOCUMENT_ORDER if path not in held and f"=== {path} (outline" in memory
+                      and f"=== {path} (outline" in smaller and path not in documents]
+        fitted = request_budget.Fitted(
+            text=smaller, built=len(memory), target=target,
+            cut=[f"{path} as its outline and the sections this request points at (read others by line)"
+                 for path in documents],
+            left_out=[path for path in held if not path.startswith("docs/") and path not in smaller_held])
+        applied = request_budget.for_every_stage_switch.enabled()
+        request_budget.noted(stage, built=built, sent=len(opening) + len(smaller) + 2, target=target, fitted=fitted,
+                             applied=applied, message=request_budget.SAID_FOR_EVERY_STAGE if applied else "")
+        if not applied:
+            return memory, held  # what would have been cut is in the record (`REQUEST_BUDGET_FOR_EVERY_STAGE` off)
+        logger.info("The memory of %s is past its input budget (%d characters with its request, target %d); held "
+                    "within %d characters, long documents as digests", stage, built, target, room)
+        return smaller, smaller_held
+    except Exception:  # noqa: BLE001 - the memory as rendered
+        logger.debug("Could not hold a stage's memory to its budget", exc_info=True)
+        return memory, held
 
 
 def budget_for(model: Any) -> int:

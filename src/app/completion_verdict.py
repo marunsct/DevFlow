@@ -58,6 +58,11 @@ _NOTES = re.compile(
         # What the stack facts hold against what ships (HK.1): the suite that passed at release ran on it.
         r"A dependency its registry marks withdrawn ships:",
         r"A resolved package needs a newer toolchain than the one here:",
+        # Advisories and support dates (HK.6, `app.stacks.advisories`): a package for development only does not ship;
+        # a support window and a check that could not be made are for the reader. A shipped advisory blocks.
+        r"A development-only dependency has a known advisory; it does not ship:",
+        r"What the product runs on is past its end of support:",
+        r"Advisories for what ships are not known:",
         r"The judgement model .* could not be built ",
         # What the intake assumed where the brief does not say (deep review C8): the reader is told, nothing failed.
         r"Assumed at intake where the brief does not say:",

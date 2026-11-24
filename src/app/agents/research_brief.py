@@ -163,11 +163,16 @@ def research_notes(stack: Any, brief: str, model: Any, *, workers: int = 6, root
         return ""
     logger.info("Research done before the architect: %d package(s) looked up, %d page(s) read", len(looked_up), len(read))
     facts = stack_facts.library_lines(root, stack, libraries) if looked_up else ""
+    # Each library's release, support window, open advisories and fit as one table (HK.8, `app.stacks.stack_evidence`).
+    from app.stacks.stack_evidence import for_the_architect
+
+    evidence = for_the_architect(root, stack)
     return "\n\n".join(part for part in (
         "--- Research done for this stage: current registry releases and documentation excerpts ---\n"
         "Read for you before this stage, from the registries and the libraries' own documentation. "
         "Write from it; documentation and registry lookups are not offered in this stage.",
         facts or (("Registry releases:\n" + "\n".join(looked_up)) if looked_up else ""),
+        evidence,
         "\n\n".join(read),
     ) if part) + "\n"
 

@@ -448,6 +448,10 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     from app.stacks import stack_facts
 
     gaps.extend(stack_facts.release_gaps(root))
+    # A known advisory on what ships, a runtime past its support (HK.6, `app.stacks.advisories`).
+    from app.stacks import advisories
+
+    gaps.extend(advisories.release_gaps(root))
     gaps.extend(unit_test_quarantine.release_note(root))
     unit_gap = _no_unit_tests_ran(root)
     if unit_gap:

@@ -125,6 +125,10 @@ def after_resolving(root: str | Path, directory: str | Path) -> str:
         mismatches = check(root, directory)
         where = str(directory.relative_to(root)) if directory != root and directory.is_relative_to(root) else "."
         stack_facts.write(root, mismatches={where: mismatches})
+        # The advisories and support dates of what it resolved (HK.6, `app.stacks.advisories`).
+        from app.stacks import advisories
+
+        advisories.after_resolving(root, directory)
         return described(mismatches)
     except Exception:  # noqa: BLE001 - the install's result as it was
         logger.debug("Could not check the toolchain fit after an install", exc_info=True)

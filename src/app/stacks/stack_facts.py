@@ -81,6 +81,20 @@ def _save(root: str | Path, sheet: dict[str, Any]) -> None:
     path.write_text(json.dumps(sheet, indent=1, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def amend(root: str | Path, change: Any) -> dict[str, Any]:
+    """Apply `change` (the sheet in, the sheet to keep out) to the sheet at `root` under the writers' lock, and keep
+    it; the sheet kept. For the checks that add their own parts (`app.stacks.advisories`, `app.stacks.stack_evidence`).
+    Never raises."""
+    try:
+        with _WRITING:
+            sheet = change(read(root))
+            _save(root, sheet)
+            return sheet
+    except Exception:  # noqa: BLE001 - the sheet as it was
+        logger.warning("Could not amend the stack facts", exc_info=True)
+        return read(root)
+
+
 def _installed(banner: str) -> bool:
     from app.tools.release_fit import numbers
 
@@ -243,7 +257,9 @@ def write(root: str | Path, *, stack: Any = None, libraries: Iterable[str] = (),
             kept = dict(sheet.get("mismatches") or {}) if isinstance(sheet.get("mismatches"), dict) else {}
             kept.update(mismatches or {})
             ecosystems = [d["ecosystem"] for d in dependencies] + [e for e in (ecosystem,) if e]
+            # What other checks keep in the sheet (advisories, support dates, evidence: HK.6, HK.8) stays.
             sheet = {
+                **sheet,
                 "written": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                 "toolchain": toolchains(ecosystems or None, root) if ecosystems else dict(sheet.get("toolchain") or {}),
                 "dependencies": dependencies or list(sheet.get("dependencies") or []),
@@ -332,6 +348,6 @@ def release_gaps(root: str | Path | None) -> list[str]:
 
 
 __all__ = ["MISFIT_GAP", "SHEET", "SWITCH", "TOOLCHAINS_HEADING", "TOOLCHAIN_LINE", "VERSIONS_LINE", "WITHDRAWN_GAP",
-           "enabled", "fact",
+           "amend", "enabled", "fact",
            "for_a_fixer", "library_lines", "read", "release_gaps", "toolchain_line", "toolchains", "toolchains_section",
            "write"]

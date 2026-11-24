@@ -178,6 +178,11 @@ def principal_architect_node(state: WorkflowGraphState, config: RunnableConfig, 
                 update.get("technical_specification"), previous_specification
             )
 
+        # Each decision naming a candidate records the evidence row it relied on (HK.8).
+        from app.stacks.stack_evidence import with_the_rows_relied_on
+
+        update["technical_specification"] = with_the_rows_relied_on(
+            update.get("technical_specification"), state["repository"].root_path)
         # Rendered from the decision the pipeline routes on, so the
         # document and the structured answer cannot disagree. See
         # `app.agents.specification_document`.

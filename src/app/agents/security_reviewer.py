@@ -201,6 +201,16 @@ def _how_text_reaches_the_page(repository_root: str) -> str:
         return ""
 
 
+def _advisories_of_what_ships(repository_root: str) -> str:
+    """The known advisories and support dates of what the installs resolved (HK.6, `app.stacks.advisories`)."""
+    try:
+        from app.stacks.advisories import for_the_security_reviewer
+
+        return for_the_security_reviewer(repository_root)
+    except Exception:  # noqa: BLE001 - the request as it was
+        return ""
+
+
 def build_security_review_request(
     changed_files: list[str],
     tool_permissions: str,
@@ -214,6 +224,7 @@ def build_security_review_request(
         + f"--- Changed files under review ---\n{files_text}\n\n"
         + _the_source_under_review(changed_files, repository_root, held)
         + _how_text_reaches_the_page(repository_root)
+        + _advisories_of_what_ships(repository_root)
         + f"\n--- Tool permissions context ---\n{tool_permissions}\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}

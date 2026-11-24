@@ -218,7 +218,10 @@ def stack_selector_node(state: WorkflowGraphState, config: RunnableConfig, ctx: 
     constraints = constraints_note(getattr(document, "text", "") or "")
     # The toolchains this environment runs, so a library is chosen whose current release runs here (HK.1).
     from app.stacks.stack_facts import toolchains_section
+    # Each candidate's current release, support window, open advisories, fit and pack, read first (HK.8).
+    from app.stacks.stack_evidence import for_the_selector
 
+    evidence = for_the_selector(state.get("tools_models"), state["repository"].root_path)
     request = {
         "messages": [
             {
@@ -227,6 +230,7 @@ def stack_selector_node(state: WorkflowGraphState, config: RunnableConfig, ctx: 
                     f"{constraints}"
                     f"{supported_stacks_note()}"
                     f"{toolchains_section()}"
+                    f"{evidence}"
                     f"Product Intake: {state['product_intake']}\n"
                     f"Tools: {state.get('tools_models')}"
                 ),

@@ -5,9 +5,9 @@ the block below is written by `loop.sh state`. The map of all documents is `docs
 `docs/improvement-plan.md`; how the product works is `docs/PRODUCT.md`; how to run and test it is `docs/HANDOVER.md`;
 decisions in force are `docs/owner-decisions.md`; old information is found through `docs/ARCHIVE.md`.
 <!-- state:generated -->
-**As of:** 11-25 04:30 JST (written by `loop.sh state`). Harness ab10499e committed; ab10499e deployed.
-**Live, and stopped in the last day:** run-b6c5c636 running at tools_models; run-bc3cbd00 running at acceptance_author_0; run-c53e7bd2 failed at failed; run-df1ac51d failed at failed
-**Last scored:** run-ec516cd8 tasks-api 10/10 (completed, handoff 1.0; scored 11-25 04:30 JST); run-cc265cee notes-api-java 9/9 (completed, mixed, 59 active min, handoff 1.0; scored 11-25 02:45 JST); run-c46d5d9a notes-api-csharp 9/9 (completed, mixed, 35 active min, handoff 1.0; scored 11-25 01:13 JST).
+**As of:** 11-25 07:59 JST (written by `loop.sh state`). Harness 38658eaf committed; 38658eaf deployed.
+**Live, and stopped in the last day:** run-bc3cbd00 running at advice_review_backend; run-2c83118a running at product_manager; run-c53e7bd2 failed at failed; run-df1ac51d failed at failed
+**Last scored:** run-b6c5c636 fullstack-bookmarks 8/8 (completed, handoff 1.0; scored 11-25 07:59 JST); run-ec516cd8 tasks-api 10/10 (completed, mixed, 86 active min, handoff 1.0; scored 11-25 04:30 JST); run-cc265cee notes-api-java 9/9 (completed, mixed, 59 active min, handoff 1.0; scored 11-25 02:45 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -69,7 +69,7 @@ Earlier runs (11-22 and before): `reports/product-reviews/`, `reports/status-boa
   **Found since (design review `reports/audits/2026-11-24-review-stages-reread-loop.md`):** neither switch touches the loop - the summary
   trigger never counts the memory, and doubled review rows hit the 32K cap. LF.1284-1285 (deployed 21:09) is the fix; judged on
   the medium run's sprint 2 reviews by `loop.sh effects` (target: at most 1.2 reads a file, no summary in a review).
-- Scored 2026-11-25: **tasks-api 24 (10/10, 7/7; delivered, 94 min; HK.6 advisories asked)**, **notes-api-java 12 (9/9, 8/8; not deliverable - 4 own unit tests failing, locked 15/16)**, **notes-api-csharp 16 (9/9, 8/8; delivered, 40 min - the first with stack facts; the empty-body probe asked 3)**, **notes-api-rust 4 (9/9, 7/8; delivered, 58 min - the second local Rust pass; a body limit the spec added, LF.1298)**.
+- Scored 2026-11-25: **fullstack-bookmarks 15 (8/8, 7/7; delivered, 3 h 24 min - unit tests sharing one store, LF.1316)**, **tasks-api 24 (10/10, 7/7; delivered, 94 min; HK.6 advisories asked)**, **notes-api-java 12 (9/9, 8/8; not deliverable - 4 own unit tests failing, locked 15/16)**, **notes-api-csharp 16 (9/9, 8/8; delivered, 40 min - the first with stack facts; the empty-body probe asked 3)**, **notes-api-rust 4 (9/9, 7/8; delivered, 58 min - the second local Rust pass; a body limit the spec added, LF.1298)**.
 - Scored 2026-11-24: **notes-api-hono 11 (9/9, 8/8; delivered, about 51 min active; the empty body kept - LF.1283 for the probe that asked nothing)**, **notes-api-rust 3 (9/9, 8/8; delivered, 74 min - the first local Rust pass, after LF.1277; three fixes reverted, LF.1282)**, **notes-api-rust 2 (0/9, 0/8; failed: never built - rustc 1.85 vs newer crates, then sqlx macros and three one-line faults, LF.1277-1279)**, **notes-api-js 1 (9/9, 7/8; delivered, 50 min, mixed; an empty body refused - the fifth family with that loss, LF.1273 building)**, **web-todo 6 (10/10, 6/6; delivered, 57 min, mixed; a unit test set aside, the sprint accepted at an escalation)**, **textkit-lib 9 (8/8, 7/7; delivered in 18 min)**, **notes-api-go 13 (9/9, 7/8; not deliverable: a false check finding kept a right suite in repair until the budget ran out - LF.1256/1267)**,
   **notes-api-java 11 (9/9, 8/8; delivered with cuts: AC-18; the :8888 server was down 6 h 47 min)**, **wordstats-cli 7 (6/8, 6/6; delivered, 36 min; "The 3" where words are compared in lower case - LF.1255)**,
   **notes-api-ruby 6 (9/9, 6/8; delivered, 72 min; delete-twice and a long body lost - LF.1254 building)**,
@@ -87,7 +87,8 @@ Earlier runs (11-22 and before): `reports/product-reviews/`, `reports/status-boa
    (the brief's release line wins over a pack's pin) and LF.1313 (an editable install is not a package) deployed 03:20 JST; packs:
    java-spring-api and @4 scaffold, node-nest-api scaffolds, node-nest-api@12 does not (ESM; a 12 brief falls back to 11 and says so).
    LF.1312 (a unit test's stand-in hides a rule) deployed 04:29 JST; LF.1314 (a leading `NAME=value` answered plainly) and LF.1315 (sprints
-   sized by work: at most 6 criteria, an empty or oversized sprint sent back once, then split) deployed 05:32. Owner: a GitHub token.
+   sized by work: at most 6 criteria, an empty or oversized sprint sent back once, then split) deployed 05:32; LF.1316 (unit tests that share
+   one store shown the leaked records; actual values kept in the defect listing) deployed 07:56. Owner: a GitHub token.
 0b. **Medium 3 live: run-bc3cbd00 (`tests/brief_medium.md`, thorough, :1234, started 01:53 JST 11-25)** with every fix from its first stage; `READS_SIZED_TO_THE_ROOM` on for it from 05:14 JST (M18); rewound to its scrum master at
    05:33 JST after its plan put all 13 criteria in sprint 1 (LF.1315). Medium 2
    (run-c53e7bd2) failed at sprint 2 on its time budget: `reports/product-reviews/2026-11-25-medium-brief-rerun.md`. Hold deploys into it.

@@ -33,7 +33,9 @@ CEILINGS = {
     # specification were copied into locked tests in three runs, one costing 283 model calls on a right product.
     # + what the brief states is never restated otherwise, and "instead" means nothing else (LF.807): a specification
     # added "followed by three-count summary lines" to a mode the brief said prints the top words instead.
-    "principal_architect": 13_700,
+    # 14,100 since a group of values compared in a normal form is reported in that form (LF.1317): two more runs of
+    # that brief printed "The 3", the count's key as first read, while their locked suites passed.
+    "principal_architect": 14_100,
     "technical_lead": 10_800,
     "stack_selector": 10_100,
     "senior_architect_reviewer": 9_500,
@@ -54,7 +56,9 @@ CEILINGS = {
     # records whose title held "Work <id>", one of its two never did, and it failed a right product for a sprint.
     # 6,250 since a value compared in a normal form is tested in another form (LF.1255): three runs of one brief printed
     # "The 3" where words are compared in lower case, and no locked test gave a capital.
-    "acceptance_reviewer": 6_250,
+    # 6,450 since a test of a group of such values checks the key it reports, not only the merged count (LF.1317): two
+    # runs passed their locked suite and printed "The 3".
+    "acceptance_reviewer": 6_450,
 }
 # 4,300 for the same read-only wording (LF.967).
 OTHERWISE = 4_300

@@ -25,6 +25,7 @@ from app.agents.stand_in_rule import FOR_TEST_WRITERS
 from app.agents.own_store_rule import FOR_TEST_WRITERS as OWN_STORE_FOR_TEST_WRITERS
 from app.agents.testability import TESTABILITY_RULE
 from app.agents.testing_dependency_rule import RULE_FOR_BUILDERS
+from app.agents.normal_form import A_GROUP_IN_ITS_NORMAL_FORM
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 from app.agents.role_agent import create_role_agent, default_repo_root
 from app.agents.severity import validator_for as severity_in
@@ -112,7 +113,9 @@ _ROLE_DESCRIPTIONS: dict[SpecialistRole, str] = {
         "CRITICAL: Do NOT remove or disable core application logic or UI logic, or stub "
         "it out, to make testing easier or to satisfy headless test framework errors. The UI "
         "logic must be fully functional. Keeping pure logic in its own functions, called by "
-        "the entry point that does the I/O, is not removing it: the product still runs it."
+        "the entry point that does the I/O, is not removing it: the product still runs it. "
+        # LF.1317: a count of words compared in lower case printed each as first read ("The 3").
+        + A_GROUP_IN_ITS_NORMAL_FORM
     ),
     "database": (
         "You are the Database specialist. You MUST write complete, executable "
@@ -138,7 +141,9 @@ _ROLE_DESCRIPTIONS: dict[SpecialistRole, str] = {
         "browser, no backend framework - there is no service to start, and "
         "writing one creates a second data layer the product never talks to: "
         "implement the logic in the code the page loads instead. "
-        + REFUSE_WHAT_IT_CANNOT_USE
+        + REFUSE_WHAT_IT_CANNOT_USE + " "
+        # LF.1317: a count of words compared in lower case printed each as first read ("The 3").
+        + A_GROUP_IN_ITS_NORMAL_FORM
     ),
     "testing": (
         "You are the Testing and Quality Engineering specialist. You define and "

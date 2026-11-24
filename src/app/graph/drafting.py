@@ -372,6 +372,7 @@ def draft_request(root: Path, path: str, task: Any, specification: Any, stack: A
     `written_before` are the files of earlier drafting waves this file depends on (`drafting_waves`), shown first
     of all, so it wires to what they declare instead of declaring it again.
     """
+    from app.agents.normal_form import for_a_draft as _a_group_in_its_normal_form
     from app.agents.shared_facts import the_facts_section
     from app.agents.specialists import specification_for_the_work_order
     from app.stacks import api_cards
@@ -400,6 +401,8 @@ def draft_request(root: Path, path: str, task: Any, specification: Any, stack: A
         _what_a_stand_in_leaves_out(path),
         # A test file is told that a test that stores data starts from an empty store of its own (LF.1316).
         _an_empty_store_of_its_own(path),
+        # A product file is told a group of values compared in a normal form is reported in that form (LF.1317).
+        _a_group_in_its_normal_form(path),
         detail.strip(),
         f"--- The work order it belongs to ---\n{getattr(task, 'task_description', '')}"
         + (f"\nDone when:\n{criteria}" if criteria else ""),

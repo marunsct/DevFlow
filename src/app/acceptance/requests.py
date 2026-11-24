@@ -64,7 +64,10 @@ TESTS_ASSUME_ONLY_WHAT_THEY_MADE = (
     # Measured on three runs of one brief: it said words are "compared in lower case", the tests used lower-case words
     # only, the product printed "The 3", and the hidden tests expecting "the 3" failed.
     "- Where a criterion compares values in a normal form - in lower case, trimmed, without accents - its tests give "
-    "values in another form (\"The\" beside \"the\") and expect the normal form in what the product shows.\n"
+    "values in another form (\"The\" beside \"the\") and expect the normal form in what the product shows. "
+    # LF.1317: two more runs passed their suite and printed "The 3"; the tests checked that the spellings merged.
+    "A test of a group or count of such values feeds two spellings of one value and checks that the key it reports "
+    "is the normal form (\"the 2\"), not only that the two were counted together.\n"
     # Measured on one run: a test made "Work <id>" and "Work Two <id>", kept those whose title held "Work <id>", and
     # expected two; the second never held it, and the test failed a right product through every round of fixes.
     "- A test picks out its own records by one marker every one of them carries whole - the same unique value in each "

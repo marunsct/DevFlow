@@ -26,6 +26,7 @@ from app.agents.scope_discipline import SCOPE_DISCIPLINE
 from app.agents.project_layout import PROJECT_LAYOUT
 from app.agents.testability import TESTABILITY_RULE
 from app.agents.testing_dependency_rule import RULE_FOR_DESIGNERS
+from app.agents.normal_form import A_GROUP_IN_ITS_NORMAL_FORM
 from app.agents.project_layout import PLANNED_PROJECT_DIRECTORY
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 from app.agents.role_agent import create_role_agent
@@ -581,6 +582,7 @@ Responsibilities:
   comparing leaves the output open, and builders print what they read first.
   Where the brief names the form they are compared in ("in lower case",
   "trimmed"), they are shown in that form unless the brief shows otherwise.
+- {A_GROUP_IN_ITS_NORMAL_FORM}
 - {WHAT_THE_BRIEF_STATES} Where the brief says one output
   replaces another ("instead", "only", "rather than"), that mode prints
   nothing else.

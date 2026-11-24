@@ -281,3 +281,40 @@ def test_replies_lost_to_reasoning_are_counted_across_a_compaction(tmp_path):
     sent, _ = _sent(middleware, messages)
 
     assert _replies_that_were_all_reasoning(sent) == 1
+
+
+def _a_reading_conversation() -> list:
+    """A review that reads three files forty lines at a time, as a reading stage does."""
+    messages: list = [
+        HumanMessage(content=BRIEF, id="opening"),
+        AIMessage(content="", id="ai-pointer", tool_calls=[{
+            "id": "held", "name": "read_file", "args": {"file_path": "shop/src/held.tsx"}}]),
+        ToolMessage(content="`shop/src/held.tsx` is in the project memory at the start of this conversation",
+                    tool_call_id="held", id="tool-held"),
+    ]
+    for n in range(12):
+        start = (n // 3) * 40 + 1
+        messages.append(AIMessage(content="", id=f"ai{n}", tool_calls=[{
+            "id": f"read{n}", "name": "read_file",
+            "args": {"file_path": f"shop/src/part{n % 3}.tsx", "offset": start - 1, "limit": 40},
+        }]))
+        messages.append(ToolMessage(content="\n".join(f"{k:>6}\tconst line{k} = {k};" for k in range(start, start + 40)),
+                                    tool_call_id=f"read{n}", id=f"tool{n}"))
+    messages.extend([AIMessage(content="Reading on.", id="ai-last"), HumanMessage(content="next", id="h-last")])
+    return messages
+
+
+def test_a_summary_names_the_files_the_stage_had_read(tmp_path):
+    """LF.1285, measured on one medium run: a security review summarised 11 times in 31 calls kept nothing of which
+    files it had read, and read the same 21 files again after each summary (155 reads)."""
+    from app.agents.compaction import SUMMARIES
+
+    sent, _ = _sent(_built(RequestKeepingSummarization, tmp_path), _a_reading_conversation())
+
+    said = sent[0].content
+    assert "Files this stage has read" in said
+    assert "`shop/src/part0.tsx` (lines 1-160)" in said and "`shop/src/part2.tsx` (lines 1-120)" in said
+    assert "shop/src/held.tsx" not in said, "a read the memory answered read nothing"
+    # The last read, in the kept tail, is still in the conversation and is not named as read before.
+    assert sent[0].additional_kwargs[SUMMARIES] == 1
+    assert not BANNED.search(said.replace(BRIEF, ""))

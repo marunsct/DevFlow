@@ -10,7 +10,7 @@ from app.agents.severity import validator_for as severity_in
 from app.agents.project_layout import WORKSPACE_ROOT_NOTE
 
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Sequence
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -79,12 +79,7 @@ class SecurityReviewOutput(BaseModel):
 #: product's whole application, and bounded so a large one still starts.
 SOURCE_BUDGET = 24_000
 
-#: Files worth putting in front of a security reviewer. Tests and lockfiles are
-#: not where a vulnerability in the product lives.
-_WORTH_REVIEWING = {".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".py", ".html", ".json"}
-
-
-def _the_source_under_review(changed_files: list[str], repository_root: str) -> str:
+def _the_source_under_review(changed_files: list[str], repository_root: str, held: Sequence[str] = ()) -> str:
     """The contents of the changed files, or a note saying why there are none.
 
     The reviewer was given a list of names and asked to review them. It has
@@ -104,8 +99,16 @@ def _the_source_under_review(changed_files: list[str], repository_root: str) -> 
     the first and drop the rest without a word - and the reviewer is told to
     open those itself. The workflow records the same list in the review
     document (`source_coverage`), so a pass over part of the source says so.
+
+    Which files are shown is the language table's (`review_files.under_review`): the fixed list of suffixes it
+    replaced knew JavaScript, Python, HTML and JSON only, and a Go, Rust or Java product's request said none of its
+    files could be read. `held`: the files the project memory holds for this review, numbered
+    (`review_files.held_for_review`, LF.1284); named as held, not repeated here and not to be opened. Only for a
+    product whose files today's request and memory do not show; otherwise this is as it was.
     """
-    shown, not_shown = _select(changed_files, repository_root)
+    shown, not_shown = _select(changed_files, repository_root, held)
+    if held:
+        return _with_the_files_held(held, shown, not_shown)
     if not shown and not not_shown:
         return (
             "None of the changed files could be read for this request. Open "
@@ -128,21 +131,38 @@ def _the_source_under_review(changed_files: list[str], repository_root: str) -> 
     return request
 
 
-def _select(changed_files: list[str], repository_root: str) -> tuple[list[tuple[str, str]], list[str]]:
-    """The reviewable changed files that fit the budget, with their text, and those that do not."""
-    root = Path(repository_root)
+def _with_the_files_held(held: Sequence[str], shown: list[tuple[str, str]], not_shown: list[str]) -> str:
+    """The source part of a request whose memory holds `held`: those named, the rest shown or named as before."""
+    from app.agents.review_files import held_section
+
+    request = held_section(held)
+    if shown or not_shown:
+        request += (
+            "\n--- The rest of the source under review, in full ---"
+            + "".join(f"\n--- {name} ---\n{body}" for name, body in shown)
+            + "".join(f"\n--- {name} (not shown: the budget for this request is full) ---" for name in not_shown)
+            + "\n"
+        )
+    request += "\nThis is the code itself, not a summary. Judge it on what is here.\n"
+    if not_shown:
+        request += (
+            f"\n{len(not_shown)} file(s) above are neither held nor shown. Open each of them with your "
+            "read tools before deciding: a review that passes code it never read is "
+            "recorded as covering only what it read.\n"
+        )
+    return request
+
+
+def _select(changed_files: list[str], repository_root: str,
+            held: Sequence[str] = ()) -> tuple[list[tuple[str, str]], list[str]]:
+    """The reviewable changed files that fit the budget, with their text, and those that do not; none of `held`."""
+    from app.agents.review_files import under_review
+
     shown: list[tuple[str, str]] = []
     not_shown: list[str] = []
     used = 0
-    for name in changed_files:
-        path = (root / name).resolve()
-        try:
-            if not path.is_file() or root not in path.parents and path.parent != root:
-                continue
-            if path.suffix.lower() not in _WORTH_REVIEWING:
-                continue
-            body = path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
+    for name, body in under_review(repository_root, changed_files):
+        if name in held:
             continue
         if used + len(body) > SOURCE_BUDGET:
             not_shown.append(name)
@@ -152,10 +172,11 @@ def _select(changed_files: list[str], repository_root: str) -> tuple[list[tuple[
     return shown, not_shown
 
 
-def source_coverage(changed_files: list[str], repository_root: str) -> tuple[list[str], list[str]]:
-    """(files shown to the reviewer in full, reviewable files the budget left out)."""
-    shown, not_shown = _select(changed_files, repository_root)
-    return [name for name, _ in shown], not_shown
+def source_coverage(changed_files: list[str], repository_root: str,
+                    held: Sequence[str] = ()) -> tuple[list[str], list[str]]:
+    """(files shown to the reviewer in full - in its memory or its request -, reviewable files the budget left out)."""
+    shown, not_shown = _select(changed_files, repository_root, held)
+    return [*held, *(name for name, _ in shown)], not_shown
 
 
 def _how_text_reaches_the_page(repository_root: str) -> str:
@@ -184,13 +205,14 @@ def build_security_review_request(
     changed_files: list[str],
     tool_permissions: str,
     repository_root: str,
+    held: Sequence[str] = (),
 ) -> dict[str, list[dict[str, str]]]:
-    """Build the Deep Agent input for a security review."""
+    """Build the Deep Agent input for a security review; `held` as `_the_source_under_review` takes it."""
     files_text = "\n".join(f"- {name}" for name in changed_files) or "- (none reported)"
     brief = (
         WORKSPACE_ROOT_NOTE
         + f"--- Changed files under review ---\n{files_text}\n\n"
-        + _the_source_under_review(changed_files, repository_root)
+        + _the_source_under_review(changed_files, repository_root, held)
         + _how_text_reaches_the_page(repository_root)
         + f"\n--- Tool permissions context ---\n{tool_permissions}\n"
     )

@@ -1,0 +1,234 @@
+"""The files a review judges, held by the harness in the project memory, not explored by tool (LF.1284).
+
+Measured on one medium run (19-21 files): the code review read 19 files six to eight times each over twenty minutes,
+the security review made 155 reads of 21 files and was summarised 11 times in 31 calls, the security-and-reliability
+advice review made 112 reads with 6 summaries in 19 calls. Each review was pointed at the whole sprint and told to
+open what its request did not show; the reads went into the conversation, the one place a summary deletes, and the
+set was larger than the room the conversation has. Each summary dropped two or three batches of reads and the next
+call read them again, until the call cap ended the stage.
+
+So the harness hands the files over itself, where a summary cannot reach them: ranked first in the project memory,
+numbered so a finding can cite a line without a read, with the plans after them as digests
+(`project_memory.render_for_a_review`); the request names them as held instead of repeating them or ordering a read
+of each. A product whose files today's request and memory already show (`fits_as_today`) is sent exactly as today:
+nothing else in this module is used for it.
+
+`under_review` also decides which changed files a review is shown at all, from the language table
+(`app.stacks.languages`) and the file kinds (`app.analysis.file_kinds`), not from a fixed list of suffixes: the
+security review's own list knew JavaScript, Python, HTML and JSON only, so a Go, Rust or Java product's request said
+"None of the changed files could be read" on every size of product.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import re
+from pathlib import Path
+from typing import Any, Iterable, Sequence
+
+logger = logging.getLogger(__name__)
+
+#: The stages whose memory may hold the files under review first.
+REVIEW_STAGES = ("security_review", "advice_review", "code_review", "milestone_review")
+
+#: How the memory heads a file it holds numbered, after `=== path `.
+NUMBERED_MARK = "(numbered lines, under review) ==="
+
+#: The line of a review's request that names the files its memory holds; the memory is rendered from it.
+HELD_MARK = "--- Held whole in the project memory for this review, with their line numbers: "
+_HELD_END = " ---"
+_NAME = re.compile(r"`([^`]+)`")
+
+#: Any other data file a review was shown before (the security review's own list had it).
+_DATA_SUFFIXES = (".json",)
+
+
+def is_a_review_stage(stage: str) -> bool:
+    return str(stage or "").startswith(REVIEW_STAGES)
+
+
+def numbered(text: str) -> str:
+    """`text` with each line's number, as a read of the file shows it, so a finding cites a line without a read."""
+    return "\n".join(f"{number:>6}\t{line}" for number, line in enumerate(str(text).splitlines(), start=1))
+
+
+def _code_suffixes() -> frozenset[str]:
+    from app.analysis.file_kinds import BEHAVIOUR_SUFFIXES, SCRIPTED_MARKUP_SUFFIXES
+    from app.stacks.languages import LANGUAGES
+
+    return frozenset({s for row in LANGUAGES for s in row.suffixes} | BEHAVIOUR_SUFFIXES | SCRIPTED_MARKUP_SUFFIXES
+                     | set(_DATA_SUFFIXES))
+
+
+def _rank(path: str) -> int | None:
+    """0 the product's code, 1 its configuration, 2 its tests; None for what no review judges."""
+    from app.analysis.file_kinds import classify_file
+
+    kind = classify_file(path)
+    if kind in ("vendored", "document"):
+        return None
+    if kind == "config":
+        return 1
+    if Path(path).suffix.lower() not in _code_suffixes():
+        return None
+    return 2 if kind == "test" else 0
+
+
+def _generated(root: Path, relative: str) -> bool:
+    """Whether a folder on the path is a tool's, an installer's or a build's, not the product's."""
+    from app.stacks.languages import NOT_THE_PRODUCT, is_generated
+
+    parts = Path(relative).parts[:-1]
+    for depth, name in enumerate(parts):
+        if name in NOT_THE_PRODUCT or name == ".harness" or name.endswith((".egg-info", ".dist-info")):
+            return True
+        try:
+            siblings = os.listdir(root.joinpath(*parts[:depth]))
+        except OSError:
+            siblings = []
+        if is_generated(name, siblings):
+            return True
+    return False
+
+
+def under_review(repo_root: str | Path, changed_files: Iterable[str]) -> list[tuple[str, str]]:
+    """The changed files a review judges, each with its text: the product's code, then its configuration, then its
+    tests, each group in the order given. Generated folders, lock files, documents and the files the harness writes
+    and keeps for its pack are left out. Never raises."""
+    root = Path(repo_root)
+    try:
+        from app.agents.project_memory import kept_by_the_harness
+
+        kept = set(kept_by_the_harness(root))
+    except Exception:  # noqa: BLE001 - none left out for being the harness's
+        kept = set()
+    ranked: list[tuple[int, int, str, str]] = []
+    seen: set[str] = set()
+    for order, name in enumerate(changed_files or ()):
+        name = str(name or "").strip().lstrip("/")
+        if not name or name in seen or name in kept:
+            continue
+        seen.add(name)
+        rank = _rank(name)
+        if rank is None:
+            continue
+        path = (root / name).resolve()
+        try:
+            resolved_root = root.resolve()
+            if not path.is_file() or (resolved_root not in path.parents and path.parent != resolved_root):
+                continue
+            if _generated(root, name):
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        ranked.append((rank, order, name, text))
+    return [(name, text) for _, _, name, text in sorted(ranked)]
+
+
+def _as_the_agent_sees_it(model: Any) -> Any:
+    """The chat model a role agent is built on (`role_agent.a_chat_model`), whose window the memory is sized from."""
+    try:
+        from app.agents.role_agent import a_chat_model
+
+        return a_chat_model(model)
+    except Exception:  # noqa: BLE001
+        return model
+
+
+def opening_of(request: dict[str, Any]) -> str:
+    """The text of a request's last message, as the project memory reads it."""
+    try:
+        content = request["messages"][-1]["content"]
+    except (KeyError, IndexError, TypeError):
+        return ""
+    return content if isinstance(content, str) else str(content)
+
+
+def _in_the_request(text: str, opening: str) -> bool:
+    """Whether `opening` carries the whole of `text`: as it is, or as a new file's diff (`+` before every line)."""
+    body = str(text).rstrip()
+    if body in opening:
+        return True
+    lines = body.splitlines()
+    return bool(lines) and "\n".join("+" + line for line in lines) in opening
+
+
+def fits_as_today(files: Sequence[tuple[str, str]], repo_root: str | Path, model: Any, stage: str,
+                  opening: str, told_to_open: Sequence[str] = ()) -> bool:
+    """Whether today's request and memory already show every file under review whole: the size gate. True means
+    the review is sent exactly as today. A file today's request tells the reviewer to open (`told_to_open`) is not
+    shown by the memory: the reviewer reads it into the conversation all the same. Never raises: True."""
+    if not files:
+        return True
+    try:
+        from app.agents import project_memory
+
+        if not project_memory.enabled():
+            return True
+        _, held = project_memory.render_for_a_stage(repo_root, _as_the_agent_sees_it(model), opening, stage,
+                                                    noted=False)
+        return all((path in held and path not in told_to_open) or _in_the_request(text, opening)
+                   for path, text in files)
+    except Exception:  # noqa: BLE001 - as today
+        logger.debug("Could not tell whether a review's files fit", exc_info=True)
+        return True
+
+
+def held_for_review(files: Sequence[tuple[str, str]], repo_root: str | Path, model: Any, stage: str,
+                    opening: str, told_to_open: Sequence[str] = ()) -> list[str] | None:
+    """The files under review the memory holds for this review, in its order; None when they fit as today (or the
+    memory would hold none of them), and the review is sent as today. Never raises: None."""
+    if not files or not is_a_review_stage(stage) or fits_as_today(files, repo_root, model, stage, opening,
+                                                                   told_to_open):
+        return None
+    try:
+        from app.agents import project_memory
+
+        names = [path for path, _ in files]
+        _, held = project_memory.render_for_a_review(repo_root, _as_the_agent_sees_it(model), "", stage, names)
+        chosen = [path for path in names if path in held]
+        if chosen:
+            logger.info("%s: %d of %d files under review held in its memory, numbered", stage, len(chosen), len(names))
+        return chosen or None
+    except Exception:  # noqa: BLE001 - as today
+        logger.debug("Could not hold a review's files", exc_info=True)
+        return None
+
+
+def held_section(held: Sequence[str]) -> str:
+    """The request's lines naming the files its memory holds, and how to use them; "" for none."""
+    if not held:
+        return ""
+    return (
+        HELD_MARK + ", ".join(f"`{name}`" for name in held) + _HELD_END + "\n"
+        "Each of these is in the project memory at the start of this message, whole and current, every line "
+        "numbered: judge it there and cite its lines. Reading one of them again returns nothing new.\n"
+    )
+
+
+def held_named_in(opening: str) -> tuple[str, ...]:
+    """The files a review's request says its memory holds (`held_section`), or () for a request as today."""
+    text = str(opening or "")
+    start = text.find(HELD_MARK)
+    if start < 0:
+        return ()
+    start += len(HELD_MARK)
+    end = text.find(_HELD_END, start)
+    return tuple(dict.fromkeys(_NAME.findall(text[start:end if end >= 0 else len(text)])))
+
+
+def with_the_files_held(request: dict[str, Any], held: Sequence[str] | None) -> dict[str, Any]:
+    """`request` with `held_section` added to its last message; as it is for none."""
+    if held:
+        last = request["messages"][-1]
+        if isinstance(last.get("content"), str):
+            last["content"] += "\n\n" + held_section(held)
+    return request
+
+
+__all__ = [
+    "HELD_MARK", "NUMBERED_MARK", "REVIEW_STAGES", "fits_as_today", "held_for_review", "held_named_in",
+    "held_section", "is_a_review_stage", "numbered", "opening_of", "under_review", "with_the_files_held",
+]

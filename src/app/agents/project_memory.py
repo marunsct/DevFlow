@@ -29,7 +29,7 @@ import os
 import re
 import threading
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -467,7 +467,7 @@ def kept_by_the_harness(repo_root: str | Path) -> tuple[str, ...]:
 def render(repo_root: str | Path, budget_characters: int, focus: str = "",
            for_a_fixer: bool = False, kept_out: tuple[str, ...] = (), sliced: bool = False,
            sprint_files: tuple[str, ...] = (), on_code: bool = False,
-           documents_at_most: int = 0) -> tuple[str, dict[str, str]]:
+           documents_at_most: int = 0, review_files: tuple[str, ...] = ()) -> tuple[str, dict[str, str]]:
     """The memory as text within `budget_characters`, and the files it holds by path.
 
     `for_a_fixer`: the product's code first, the acceptance criteria, and the specification as its outline and the
@@ -490,6 +490,10 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
 
     `documents_at_most`: each workflow document longer than this is held as its digest - its outline by line and the
     sections the request points at, within this size (a request past its input budget, `render_for_a_stage`).
+
+    `review_files`: the files a review judges (`review_files.under_review`), held first, numbered, within the budget
+    less the room the documents' digests need (`REVIEW_DOCUMENTS_ROOM`); the rest of the memory as before after them.
+    Given only when today's request and memory would not show them all (`review_files.fits_as_today`).
     """
     files = current(repo_root)
     if not files or budget_characters <= 0:
@@ -538,7 +542,11 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
 
     shorter_documents = document_limit(files)
     ranked = _ranked(files, focus, unserved)
-    if for_a_fixer:
+    under_review = [path for path in dict.fromkeys(review_files) if path in files and not path.startswith("docs/")]
+    review_room = budget_characters - min(REVIEW_DOCUMENTS_ROOM, budget_characters // 4)
+    if under_review:
+        ranked = under_review + [p for p in ranked if p not in set(under_review)]
+    elif for_a_fixer:
         ranked = [p for p in ranked if not p.startswith("docs/")] + [p for p in ranked if p.startswith("docs/")]
     elif on_code:
         # The documents first, each held to a digest's size, then the code with the rest of the budget.
@@ -569,6 +577,17 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
             # work (see `app.acceptance.sprint_scope`); the snapshot held them
             # back and the memory now stands in for it.
             held_back.append(f"{path} ({', '.join(later[path])})")
+            continue
+        if path in under_review:
+            from app.agents.review_files import NUMBERED_MARK, numbered
+
+            block = f"=== {path} {NUMBERED_MARK}\n{numbered(text)}\n"
+            if len(text) > LARGEST_FILE_CHARACTERS or used + len(block) > review_room:
+                left_out.append(path)
+                continue
+            parts.append(block)
+            held[path] = text
+            used += len(block)
             continue
         if the_slice is not None and path in product and path not in the_slice:
             # Not named by this request, nor imported by a file it names (`SLICED_MEMORY`).
@@ -717,7 +736,32 @@ def _the_sprint_s_files(stage: str, opening: str) -> tuple[str, ...]:
     return tuple(prompt_size.sprint_files_in(opening))
 
 
-def render_for_a_stage(repo_root: str | Path, model: Any, opening: str, stage: str) -> tuple[str, dict[str, str]]:
+def _arguments_for(repo_root: str | Path, stage: str) -> dict[str, Any]:
+    """How `render` is called for a stage that is not a fixer cut to its target."""
+    from app.agents import memory_slices
+
+    return dict(for_a_fixer=str(stage or "").startswith("defect_fix"), kept_out=_kept_out_for(stage, repo_root),
+                sliced=memory_slices.enabled() and str(stage or "").startswith(("defect_fix", "specialist_")),
+                on_code=builds_on_code(repo_root, stage))
+
+
+#: The room a review's memory leaves after the files under review for the documents' digests, at most a quarter.
+REVIEW_DOCUMENTS_ROOM = 12_000
+
+
+def render_for_a_review(repo_root: str | Path, model: Any, opening: str, stage: str,
+                        review_files: Sequence[str]) -> tuple[str, dict[str, str]]:
+    """A review's memory with `review_files` held first, numbered, and each long document as its digest (LF.1284).
+
+    The budget is the model's share whatever the request's size: the files the request names as held are exactly
+    those this holds (`review_files.held_for_review` renders it to find them), so it is not cut again to the input
+    budget as other requests are (`_within_its_budget`)."""
+    return render(repo_root, budget_for(model), opening, **_arguments_for(repo_root, stage),
+                  documents_at_most=DOCUMENTS_PAST_THE_BUDGET, review_files=tuple(review_files))
+
+
+def render_for_a_stage(repo_root: str | Path, model: Any, opening: str, stage: str,
+                       noted: bool = True) -> tuple[str, dict[str, str]]:
     """The memory a stage's opening request is given, and the files it holds (not a lead's re-plan's).
 
     A fixer whose request was cut to its size target (`fixer_request_shape.reshaped`) is given the memory cut the same
@@ -731,10 +775,12 @@ def render_for_a_stage(repo_root: str | Path, model: Any, opening: str, stage: s
     runs open past the budget too). Measured on a medium run: every builder of the first sprint, the lead, the
     planner, the reviews and the suite's author opened on 157,000-198,000 characters, 53,000-69,000 of them the
     specification's sections beside the parts of it their requests already quoted. Within the budget it is as before.
-    One `request_budget` record a visit says which, and with the switch off what would have been cut.
-    """
-    from app.agents import memory_slices
+    One `request_budget` record a visit says which, and with the switch off what would have been cut (none with
+    `noted` False: the size gate of a review asking what today's memory holds, `review_files.fits_as_today`).
 
+    A review whose request names the files its memory holds (`review_files.held_section`) is given
+    `render_for_a_review` (LF.1284).
+    """
     fixer = str(stage or "").startswith("defect_fix")
     if fixer:
         from app.graph import fixer_request_shape
@@ -744,13 +790,29 @@ def render_for_a_stage(repo_root: str | Path, model: Any, opening: str, stage: s
             least = int(target * fixer_request_shape.MEMORY_LEAST_SHARE)
             return render(repo_root, min(budget_for(model), max(least, target - len(opening))),
                           fixer_request_shape.the_evidence(opening), for_a_fixer=True, sliced=True)
-    arguments = dict(for_a_fixer=fixer, kept_out=_kept_out_for(stage, repo_root),
-                     sliced=memory_slices.enabled() and str(stage or "").startswith(("defect_fix", "specialist_")),
-                     on_code=builds_on_code(repo_root, stage))
+    from app.agents import review_files
+
+    named = review_files.held_named_in(opening) if not fixer and review_files.is_a_review_stage(stage) else ()
+    if named:
+        memory, held = render_for_a_review(repo_root, model, opening, stage, named)
+        if noted:
+            _noted_as_built(stage, model, opening, memory)
+        return memory, held
+    arguments = _arguments_for(repo_root, stage)
     memory, held = render(repo_root, budget_for(model), opening, **arguments)
     if fixer:
         return memory, held  # sized with its request (`nodes.fixes._sized_to_its_target`)
-    return _within_its_budget(repo_root, model, opening, stage, memory, held, arguments)
+    return _within_its_budget(repo_root, model, opening, stage, memory, held, arguments, noted=noted)
+
+
+def _noted_as_built(stage: str, model: Any, opening: str, memory: str) -> None:
+    try:
+        from app.agents import request_budget
+
+        request_budget.noted(stage, built=len(opening) + (len(memory) + 2 if memory else 0),
+                             target=request_budget.opening_target(model))
+    except Exception:  # noqa: BLE001 - a record never fails the request
+        logger.debug("Could not record a review's request", exc_info=True)
 
 
 #: The size a long workflow document is held to, as its digest, in the memory of a request past its input budget.
@@ -758,23 +820,27 @@ DOCUMENTS_PAST_THE_BUDGET = 12_000
 
 
 def _within_its_budget(repo_root: str | Path, model: Any, opening: str, stage: str, memory: str,
-                       held: dict[str, str], arguments: dict[str, Any]) -> tuple[str, dict[str, str]]:
+                       held: dict[str, str], arguments: dict[str, Any], noted: bool = True) -> tuple[str, dict[str, str]]:
     """`memory` when it and `opening` are within the stage's input budget; past it, with
     `REQUEST_BUDGET_FOR_EVERY_STAGE` on, the memory rendered again within what the budget leaves, long documents as
     digests - off, `memory` as it is and the record says what would have been cut. Never raises: `memory` as it is."""
     try:
         from app.agents import request_budget
 
+        def note(*args: Any, **kwargs: Any) -> None:
+            if noted:
+                request_budget.noted(*args, **kwargs)
+
         target = request_budget.opening_target(model)
         built = len(opening) + (len(memory) + 2 if memory else 0)
         if built <= target or not memory:
-            request_budget.noted(stage, built=built, target=target)
+            note(stage, built=built, target=target)
             return memory, held
         room = min(budget_for(model), max(int(target * request_budget.MEMORY_LEAST_SHARE), target - len(opening) - 2))
         smaller, smaller_held = render(repo_root, room, opening, **arguments,
                                        documents_at_most=DOCUMENTS_PAST_THE_BUDGET)
         if not smaller or len(smaller) >= len(memory):
-            request_budget.noted(stage, built=built, target=target)
+            note(stage, built=built, target=target)
             return memory, held
         documents = [path for path in held if path.startswith("docs/") and path not in smaller_held]
         documents += [path for path in DOCUMENT_ORDER if path not in held and f"=== {path} (outline" in memory
@@ -785,7 +851,7 @@ def _within_its_budget(repo_root: str | Path, model: Any, opening: str, stage: s
                  for path in documents],
             left_out=[path for path in held if not path.startswith("docs/") and path not in smaller_held])
         applied = request_budget.for_every_stage_switch.enabled()
-        request_budget.noted(stage, built=built, sent=len(opening) + len(smaller) + 2, target=target, fitted=fitted,
+        note(stage, built=built, sent=len(opening) + len(smaller) + 2, target=target, fitted=fitted,
                              applied=applied, message=request_budget.SAID_FOR_EVERY_STAGE if applied else "")
         if not applied:
             return memory, held  # what would have been cut is in the record (`REQUEST_BUDGET_FOR_EVERY_STAGE` off)
@@ -1093,7 +1159,12 @@ def build_project_memory_middleware(repo_root: str) -> Any:
                     from langchain_core.messages import ToolMessage
 
                     answered = visit.setdefault("first_rereads_answered", [])
-                    if (first_reread_switch.enabled() and path not in answered
+                    # A file the memory holds numbered (a review's, LF.1284) has its lines there already: its
+                    # numbered copy in the conversation is the copy a summary deletes and the review reads again.
+                    from app.agents.review_files import NUMBERED_MARK
+
+                    numbered_there = f"=== {path} {NUMBERED_MARK}" in str(visit.get("snapshot") or "")
+                    if (first_reread_switch.enabled() and path not in answered and not numbered_there
                             and held.count("\n") + 1 <= MOST_LINES_A_FIRST_REREAD_GETS):
                         # The first time, the lines themselves: a pointer is a turn that brings nothing back.
                         answered.append(path)

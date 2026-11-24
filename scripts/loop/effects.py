@@ -112,6 +112,7 @@ def effects(records: list[dict], decisions: str = "") -> list[str]:
     if defects:
         lines.append("  defects: " + ", ".join(f"{event} {n}" for event, n in sorted(defects.items())))
     lines.extend(budget_lines(records))
+    lines.extend(review_reading_lines(records))
     # Beside what fired: a switch that was on, had its chance and did nothing (`CHANCES`).
     from app.observability.switch_firing import chance_lines
 
@@ -151,6 +152,44 @@ def budget_lines(records: list[dict]) -> list[str]:
     if would:
         lines.append(f"  {len(would):>4}  LF.1274 stage memories past the budget, sent as built "
                      f"(REQUEST_BUDGET_FOR_EVERY_STAGE off; would be {described(would)})")
+    return lines
+
+
+#: The review stages, by the start of their stage names.
+_REVIEW_STAGE = re.compile(r"^(?:security_review|advice_review|code_review|milestone_review)")
+#: The words langchain's summariser opens its request with: one such request is one summary of the stage.
+_SUMMARISER = "Context Extraction Assistant"
+
+
+def review_reading_lines(records: list[dict]) -> list[str]:
+    """LF.1284/LF.1285: per review stage, its summaries and its `read_file` calls per distinct file. Measured on one
+    medium run before the files under review were held in the memory: 155 reads of 21 files and 11 summaries in one
+    security review; the target is at most 1.2 reads a file and no summary in a review."""
+    reads: dict[str, Counter] = collections.defaultdict(Counter)
+    summaries: Counter = Counter()
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        stage = re.sub(r"_\d+(?:_\d+)*$", "", str(record.get("stage") or ""))
+        if not _REVIEW_STAGE.match(stage):
+            continue
+        if record.get("kind") == "tool_call" and record.get("tool") == "read_file":
+            args = record.get("args") if isinstance(record.get("args"), dict) else {}
+            path = str(args.get("file_path") or args.get("path") or "").strip().lstrip("/")
+            if path:
+                reads[stage][path] += 1
+        elif record.get("kind") == "model_request" and _SUMMARISER in _text(record.get("messages")):
+            summaries[stage] += 1
+    label = "LF.1284 review stages: summaries, and reads per distinct file (target <= 1.2, no summary)"
+    stages = sorted(set(reads) | set(summaries))
+    if not stages:
+        return [f"     -  {label}: not reached"]
+    lines = [f"        {label}:"]
+    for stage in stages:
+        total, distinct = sum(reads[stage].values()), len(reads[stage])
+        per_file = f"{total / distinct:.1f}" if distinct else "0"
+        lines.append(f"  {summaries[stage]:>4}  {stage}: summaries; {total} reads of {distinct} files, "
+                     f"{per_file} a file")
     return lines
 
 

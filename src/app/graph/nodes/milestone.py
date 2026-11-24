@@ -128,6 +128,12 @@ def _review_the_milestone(state: WorkflowGraphState, config: RunnableConfig, ctx
     # it (`username` where the specification said `full_name`) is the
     # review's to catch, and it saw only the specification's headings.
     _with_the_api(request, state)
+    # The changed files held in its memory when today's request and memory do not show them all (LF.1284).
+    from app.agents import review_files
+
+    review_files.with_the_files_held(request, review_files.held_for_review(
+        review_files.under_review(state["repository"].root_path, changed_files), state["repository"].root_path,
+        ctx.judgement_model, "milestone_review", review_files.opening_of(request)))
     # The page as a person sees it, for a reviewer whose model can see. See
     # `app.agents.page_screenshots`; a model that cannot is not sent them.
     from app.models.vision import the_reviewer_reads_images

@@ -589,7 +589,8 @@ def code_review(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         logger.info("Code review left to the tests and checks (fast delivery)")
         return _handing_on(stage="test_and_triage")
     accepted = ci.load(root, "accepted")
-    diff = ci.diff_since(root, accepted.commit if accepted else "")
+    since = accepted.commit if accepted else ""
+    diff = ci.diff_since(root, since)
     if not diff.strip():
         return _handing_on(stage="test_and_triage")
     due = set(criteria_due(state) or [])
@@ -604,15 +605,26 @@ def code_review(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories,
     )
     attempt = int(state.get("sprint_replan_count") or 0), int(state.get("milestone_revision_count") or 0)
+    stage_name = f"code_review_{attempt[0]}_{attempt[1]}"
+    # The facts the work is built and judged under (plan CM.1).
+    request = with_the_facts(build_code_review_request(diff, orders, criteria, str(state.get("ci_report") or ""),
+                                                       later), state["repository"].root_path)
+    # The changed files held in its memory when today's diff and memory do not show them all; a new file held there
+    # is not sent again as a diff of every line (LF.1284).
+    from app.agents import review_files
+
+    held = review_files.held_for_review(review_files.under_review(root, ci.changed_since(root, since)), root,
+                                        ctx.judgement_model, stage_name, review_files.opening_of(request))
+    if held:
+        new = set(ci.new_since(root, since))
+        request = with_the_facts(build_code_review_request(
+            ci.diff_since(root, since, leaving_out=[path for path in held if path in new]), orders, criteria,
+            str(state.get("ci_report") or ""), later, held=held), state["repository"].root_path)
     update = _run_gated_agent(
         state, config,
-        stage_name=f"code_review_{attempt[0]}_{attempt[1]}",
+        stage_name=stage_name,
         agent=agent,
-        # The facts the work is built and judged under (plan CM.1).
-        initial_request=with_the_facts(
-            build_code_review_request(diff, orders, criteria, str(state.get("ci_report") or ""), later),
-            state["repository"].root_path,
-        ),
+        initial_request=request,
         output_key="__code_review__",
         next_stage="code_review",
     )

@@ -87,8 +87,15 @@ def build_advice_review_request(
     sprint_goal: str,
     sprint_scope: str,
     changed_files: Sequence[str],
+    held: Sequence[str] = (),
 ) -> dict[str, list[dict[str, str]]]:
-    """The input asking one specialist to check its adopted advice against a sprint."""
+    """The input asking one specialist to check its adopted advice against a sprint.
+
+    `held`: the changed files its project memory holds, numbered (`review_files.held_for_review`, LF.1284), named
+    where they are; given only for a product whose files today's memory does not hold. Measured on one medium run:
+    the security-and-reliability review, told only the files' names, read 112 times and was summarised 6 times in
+    19 calls.
+    """
     from app.agents.specialist_advice import ROLE_TITLE
 
     files = "\n".join(f"- {name}" for name in changed_files) or "- (none recorded)"
@@ -99,10 +106,19 @@ def build_advice_review_request(
         + f"\n\n--- The sprint just finished ---\n{sprint_goal}\n\n"
         f"{sprint_scope}"
         f"--- The files it changed ---\n{files}\n\n"
-        f"As the {ROLE_TITLE.get(role, role)}, check each item due by now against the code "
+        + _where_the_files_are(held)
+        + f"As the {ROLE_TITLE.get(role, role)}, check each item due by now against the code "
         "and report the ones not built."
     )
     return {"messages": [{"role": "user", "content": content}]}
+
+
+def _where_the_files_are(held: Sequence[str]) -> str:
+    if not held:
+        return ""
+    from app.agents.review_files import held_section
+
+    return held_section(held) + "Read with your tools only a changed file not held there.\n\n"
 
 
 def create_advice_reviewer_agent(

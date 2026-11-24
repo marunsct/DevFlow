@@ -61,7 +61,7 @@ def test_the_workflow_records_the_coverage(tmp_path, monkeypatch) -> None:
 
     covered = []
     monkeypatch.setattr(security_reviewer, "source_coverage",
-                        lambda names, root: covered.append(list(names)) or (["app/a.js"], ["app/big.js"]))
+                        lambda names, root, held=(): covered.append(list(names)) or (["app/a.js"], ["app/big.js"]))
 
     run_node(monkeypatch, tmp_path, "security_review", answer=SecurityReviewOutput(status="passed"),
              milestone_plan=two_work_orders(),

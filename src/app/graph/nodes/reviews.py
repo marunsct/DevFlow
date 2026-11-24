@@ -38,13 +38,21 @@ def _the_security_review(state: Any, config: RunnableConfig, ctx: GraphContext) 
     if not _changes_any_code(changed_files) and not state.get("pending_inner_thread_id"):
         return None, SecurityReviewOutput(status="passed", findings=[])
     agent = create_security_reviewer_agent(model=ctx.judgement_model, checkpointer=ctx.checkpointer, repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories)
-    request = build_security_review_request(
-        changed_files,
-        "Permissions: All tools have read/write access to the repository scope. Validation tools are restricted to a safe list of commands.",
-        state["repository"].root_path,
-    )
+    from app.agents import review_files
+
+    root = state["repository"].root_path
+    permissions = ("Permissions: All tools have read/write access to the repository scope. Validation tools are "
+                   "restricted to a safe list of commands.")
     # The facts the work is built and judged under (plan CM.1).
-    request = with_the_facts(request, state["repository"].root_path)
+    request = with_the_facts(build_security_review_request(changed_files, permissions, root), root)
+    # The files under review held in its memory when today's request and memory do not show them all (LF.1284).
+    from app.agents.security_reviewer import source_coverage
+
+    held = review_files.held_for_review(review_files.under_review(root, changed_files), root, ctx.judgement_model,
+                                        "security_review", review_files.opening_of(request),
+                                        told_to_open=source_coverage(changed_files, root)[1]) or []
+    if held:
+        request = with_the_facts(build_security_review_request(changed_files, permissions, root, held=held), root)
     update = _run_gated_agent(
         state,
         config,
@@ -65,9 +73,7 @@ def _the_security_review(state: Any, config: RunnableConfig, ctx: GraphContext) 
     # no document of its own to render - the same latent shape that ended
     # one run at stage three when the stack selector finally used it.
     # It had never misbehaved; neither had the stack selector, until it did.
-    from app.agents.security_reviewer import source_coverage
-
-    shown, not_shown = source_coverage(changed_files, state["repository"].root_path)
+    shown, not_shown = source_coverage(changed_files, state["repository"].root_path, held)
     _record_document(
         state,
         "docs/security_review.md",
@@ -129,16 +135,30 @@ def _one_advice_review(state: Any, config: RunnableConfig, role: str, ctx: Graph
     if role == "database" and not state.get("pending_inner_thread_id") and not _changes_any_code(changed_files):
         return None, []
     milestone = state.get("milestone_plan")
-    request = build_advice_review_request(
-        role,
-        adopted(advice, specification, role),
-        str(getattr(milestone, "selected_sprint_goal", "") or ""),
-        _this_sprint_s_scope_for_review(state),
-        changed_files,
-    )
-    # The facts the work is built and judged under (plan CM.1).
-    request = with_the_facts(request, state["repository"].root_path)
-    request["messages"][-1]["content"] += _fixes_a_review_must_not_undo(state)
+    root = state["repository"].root_path
+
+    def built(held: list[str]) -> dict[str, Any]:
+        request = build_advice_review_request(
+            role,
+            adopted(advice, specification, role),
+            str(getattr(milestone, "selected_sprint_goal", "") or ""),
+            _this_sprint_s_scope_for_review(state),
+            changed_files,
+            held=held,
+        )
+        # The facts the work is built and judged under (plan CM.1).
+        request = with_the_facts(request, root)
+        request["messages"][-1]["content"] += _fixes_a_review_must_not_undo(state)
+        return request
+
+    from app.agents import review_files
+
+    request = built([])
+    # The changed files held in its memory when today's memory does not hold them all (LF.1284).
+    held = review_files.held_for_review(review_files.under_review(root, changed_files), root, ctx.judgement_model,
+                                        f"advice_review_{role}", review_files.opening_of(request))
+    if held:
+        request = built(held)
     if role == "ui_ux":
         # The design QA loop: the page as a person sees it, for a model that can see.
         from app.models.vision import the_reviewer_reads_images

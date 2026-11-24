@@ -630,12 +630,26 @@ def unchanged_since(root: str | Path, commit_id: str) -> bool | None:
     return not status.stdout.strip()
 
 
-def diff_since(root: str | Path, commit_id: str, max_chars: int = 30_000) -> str:
+def new_since(root: str | Path, commit_id: str) -> list[str]:
+    """Workspace-relative paths added between `commit_id` and HEAD that still exist (the workflow's documents aside)."""
+    if not commit_id:
+        return []
+    result = _git(root, "diff", "--name-only", "--diff-filter=A", commit_id, "HEAD", "--", ".", ":(exclude)docs")
+    if result is None or result.returncode != 0:
+        return []
+    return [line.strip() for line in result.stdout.splitlines() if line.strip() and (Path(root) / line.strip()).is_file()]
+
+
+def diff_since(root: str | Path, commit_id: str, max_chars: int = 30_000, leaving_out: Sequence[str] = ()) -> str:
     """The product's committed changes since `commit_id`, for a reviewer. The
-    workflow's own documents are left out; commit first to include new files."""
+    workflow's own documents are left out; commit first to include new files.
+
+    `leaving_out`: files the reviewer is handed whole another way (new files its project memory holds, LF.1284), so
+    each is not sent a second time as a diff of every line."""
     if not commit_id:
         return ""
-    result = _git(root, "diff", commit_id, "HEAD", "--", ".", ":(exclude)docs")
+    excluded = [f":(exclude,literal){path}" for path in leaving_out if str(path or "").strip()]
+    result = _git(root, "diff", commit_id, "HEAD", "--", ".", ":(exclude)docs", *excluded)
     text = result.stdout if result is not None and result.returncode == 0 else ""
     if len(text) > max_chars:
         text = text[:max_chars] + f"\n... (diff cut at {max_chars} characters; read the files for the rest)"

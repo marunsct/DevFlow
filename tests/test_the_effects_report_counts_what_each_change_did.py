@@ -48,3 +48,32 @@ def test_a_long_reply_that_answered_is_not_lost():
          "tool_calls": "[]"},
     ]
     assert "   1  replies lost to the output cap" in "\n".join(effects(records, ""))
+
+
+def test_each_review_stage_s_summaries_and_reads_a_file_are_counted():
+    """LF.1284: measured on one medium run, a security review made 155 reads of 21 files and was summarised 11 times;
+    the next medium run is read for at most 1.2 reads a file and no summary in a review."""
+    effects = runpy.run_path(str(SCRIPT))["effects"]
+
+    def read(stage: str, path: str) -> dict:
+        return {"kind": "tool_call", "stage": stage, "tool": "read_file", "args": {"file_path": path}}
+
+    records = [
+        read("security_review", "app/a.py"), read("security_review", "app/a.py"), read("security_review", "/app/b.py"),
+        {"kind": "model_request", "stage": "security_review",
+         "messages": [{"content": "You are a Context Extraction Assistant ..."}]},
+        read("code_review_0_1", "app/a.py"),
+        read("specialist_backend_0", "app/a.py"),
+    ]
+    lines = "\n".join(effects(records, ""))
+
+    assert "   1  security_review: summaries; 3 reads of 2 files, 1.5 a file" in lines
+    assert "   0  code_review: summaries; 1 reads of 1 files, 1.0 a file" in lines
+    assert "specialist_backend" not in lines
+
+
+def test_a_run_with_no_review_yet_says_so():
+    effects = runpy.run_path(str(SCRIPT))["effects"]
+
+    assert "LF.1284 review stages: summaries, and reads per distinct file (target <= 1.2, no summary): not reached" \
+        in "\n".join(effects([], ""))

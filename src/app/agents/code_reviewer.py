@@ -14,7 +14,7 @@ defect with an owner, fixed and re-tested in the sprint's own loop.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Sequence
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -81,10 +81,15 @@ def build_code_review_request(
     criteria: str,
     ci_report: str,
     later: str = "",
+    held: Sequence[str] = (),
 ) -> dict[str, list[dict[str, str]]]:
     """`later` is what the plan gives to later sprints. One run's review raised
     a later sprint's features as missing; each finding became a defect, and the
-    fix loop would have built the next sprint inside this one."""
+    fix loop would have built the next sprint inside this one.
+
+    `held`: the changed files the project memory holds for this review, numbered (`review_files.held_for_review`,
+    LF.1284); the diff then leaves out the new files among them (`ci.diff_since`), since a new file's diff is the
+    file again with a `+` on every line. Only for a product whose files today's request and memory do not show."""
     later_text = (
         f"--- Planned for later sprints, so NOT missing from this batch ---\n{later}\n"
         "Do not report anything listed here as missing or incomplete.\n\n"
@@ -96,10 +101,23 @@ def build_code_review_request(
         f"--- Acceptance criteria this sprint serves ---\n{criteria or '(none recorded)'}\n\n"
         f"{later_text}"
         f"--- What CI measured after the batch ---\n{ci_report}\n\n"
-        f"--- The diff ---\n{diff or '(no product files changed)'}\n\n"
-        "Review the batch."
+        f"--- The diff ---\n{diff or _NO_DIFF[bool(held)]}\n\n"
+        + _where_the_files_are(held)
+        + "Review the batch."
     )
     return {"messages": [{"role": "user", "content": content}]}
+
+
+_NO_DIFF = ("(no product files changed)", "(only new files, held whole in the project memory: see below)")
+
+
+def _where_the_files_are(held: Sequence[str]) -> str:
+    if not held:
+        return ""
+    from app.agents.review_files import held_section
+
+    return (held_section(held) + "A new file among them is left out of the diff above: its diff would be the whole "
+            "file again. A changed one is in the diff as what changed.\n\n")
 
 
 def create_code_reviewer_agent(

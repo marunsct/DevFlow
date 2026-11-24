@@ -21,6 +21,7 @@ has written, and the summariser is handed the latest work it can summarise.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from deepagents.middleware.summarization import SummarizationMiddleware
@@ -37,6 +38,10 @@ CALLS_BEFORE = "harness_calls_before"
 #: How many of those replies were lost to reasoning, so the rule that keeps
 #: thinking off after a second loss counts across a compaction too.
 LOST_BEFORE = "harness_lost_before"
+#: The files the replaced messages had read, by path, as the line ranges their results showed (LF.1285).
+FILES_READ = "harness_files_read"
+#: How many summaries this stage has had, this one included (LF.1285).
+SUMMARIES = "harness_summaries"
 
 #: The tools that change a file, and the argument naming it.
 _WRITING_TOOLS = frozenset({
@@ -109,6 +114,57 @@ def _files_written(messages: list[AnyMessage]) -> list[str]:
     return found
 
 
+#: A line of a read's result as `read_file` numbers it: `    12\t...`, a long line's continuation `    12.1\t...`.
+_NUMBERED_LINE = re.compile(r"^\s*(\d+)(?:\.\d+)?\t", re.M)
+MOST_FILES_READ_NAMED = 40
+
+
+def _files_read(messages: list[AnyMessage]) -> dict[str, list[list[int]]]:
+    """Each file the messages read, with the line ranges the reads' results showed; a read that returned no numbered
+    line (a pointer to the memory, an error) read nothing and is not named."""
+    results = {str(getattr(m, "tool_call_id", "")): _text(m.content) for m in messages
+               if getattr(m, "type", None) == "tool"}
+    found: dict[str, list[list[int]]] = {}
+    for message in messages:
+        if not isinstance(message, AIMessage):
+            continue
+        for call in message.tool_calls or []:
+            if call.get("name") != "read_file":
+                continue
+            args = call.get("args") or {}
+            path = str(args.get("file_path") or args.get("path") or "").strip().lstrip("/")
+            numbers = [int(n) for n in _NUMBERED_LINE.findall(results.get(str(call.get("id") or ""), ""))]
+            if path and numbers:
+                found.setdefault(path, []).append([min(numbers), max(numbers)])
+    return found
+
+
+def _merged_ranges(*groups: dict[str, list[list[int]]]) -> dict[str, list[list[int]]]:
+    merged: dict[str, list[list[int]]] = {}
+    for group in groups:
+        for path, ranges in (group or {}).items():
+            merged.setdefault(str(path), []).extend([int(a), int(b)] for a, b in ranges)
+    for path, ranges in merged.items():
+        joined: list[list[int]] = []
+        for start, end in sorted(ranges):
+            if joined and start <= joined[-1][1] + 1:
+                joined[-1][1] = max(joined[-1][1], end)
+            else:
+                joined.append([start, end])
+        merged[path] = joined
+    return merged
+
+
+def files_read_line(files_read: dict[str, list[list[int]]]) -> str:
+    """The summary's line naming what the stage had read before it; "" when it read nothing."""
+    if not files_read:
+        return ""
+    named = list(files_read.items())[-MOST_FILES_READ_NAMED:]
+    shown = ", ".join(f"`{path}` (lines " + ", ".join(f"{a}-{b}" if a != b else str(a) for a, b in ranges) + ")"
+                      for path, ranges in named)
+    return ("Files this stage has read so far, whose text is no longer in this conversation: " + shown + ".")
+
+
 class RequestKeepingSummarization(SummarizationMiddleware):
     """`SummarizationMiddleware` whose summary keeps the request and is never empty."""
 
@@ -131,13 +187,14 @@ class RequestKeepingSummarization(SummarizationMiddleware):
         self._most_kept_tokens = most_kept_tokens
         # Set while one summary is made, read when its message is built: the
         # two run in turn within one model call.
-        self._kept: tuple[str, list[str], int, int] | None = None
+        self._kept: tuple[str, list[str], int, int, dict[str, list[list[int]]], int] | None = None
 
     def _prepare(self, messages: list[AnyMessage]) -> list[AnyMessage]:
         """What the summariser is handed; records the request and the files for the message."""
         self._kept = None
         request, files, earlier, rest = "", [], "", list(messages)
-        calls = lost = 0
+        calls = lost = summaries = 0
+        read: dict[str, list[list[int]]] = {}
         if rest and getattr(rest[0], "type", None) == "human" and self._is_summary_message(rest[0]):
             kwargs = rest[0].additional_kwargs or {}
             request = str(kwargs.get(KEPT_REQUEST) or "")
@@ -145,6 +202,8 @@ class RequestKeepingSummarization(SummarizationMiddleware):
             earlier = str(kwargs.get(SUMMARY) or "")
             calls = int(kwargs.get(CALLS_BEFORE) or 0)
             lost = int(kwargs.get(LOST_BEFORE) or 0)
+            summaries = int(kwargs.get(SUMMARIES) or 0)
+            read = dict(kwargs.get(FILES_READ) or {})
             rest = rest[1:]
         else:
             # The stage's whole opening turn, every message of it before the
@@ -169,7 +228,8 @@ class RequestKeepingSummarization(SummarizationMiddleware):
         from app.agents.settled_answer import _replies_that_were_all_reasoning
 
         lost += _replies_that_were_all_reasoning(rest)
-        self._kept = (request, files[-MOST_FILES_NAMED:], calls, lost)
+        self._kept = (request, files[-MOST_FILES_NAMED:], calls, lost, _merged_ranges(read, _files_read(rest)),
+                      summaries + 1)
 
         opening = HumanMessage(
             content=_THE_WORK_SO_FAR + (f"\n\nThe summary of the work before it:\n{earlier}" if earlier else "")
@@ -289,7 +349,7 @@ class RequestKeepingSummarization(SummarizationMiddleware):
         kept, self._kept = self._kept, None
         if not kept or not built:
             return built
-        request, files, calls, lost = kept
+        request, files, calls, lost, read, summaries = kept
         message = built[0]
         parts = []
         if request:
@@ -300,6 +360,9 @@ class RequestKeepingSummarization(SummarizationMiddleware):
         parts.append(_text(message.content))
         if files:
             parts.append("Files this stage has written or changed so far: " + ", ".join(f"`{p}`" for p in files) + ".")
+        if read:
+            # What it covered, so a stage that still reads past its room is told so (LF.1285).
+            parts.append(files_read_line(read))
         return [HumanMessage(
             content="\n\n".join(parts),
             additional_kwargs={
@@ -309,8 +372,10 @@ class RequestKeepingSummarization(SummarizationMiddleware):
                 SUMMARY: summary,
                 CALLS_BEFORE: calls,
                 LOST_BEFORE: lost,
+                FILES_READ: read,
+                SUMMARIES: summaries,
             },
         )]
 
 
-__all__ = ["CALLS_BEFORE", "LOST_BEFORE", "KEPT_TAIL_SHARE", "RequestKeepingSummarization", "KEPT_REQUEST", "FILES_WRITTEN"]
+__all__ = ["CALLS_BEFORE", "FILES_READ", "LOST_BEFORE", "SUMMARIES", "files_read_line", "KEPT_TAIL_SHARE", "RequestKeepingSummarization", "KEPT_REQUEST", "FILES_WRITTEN"]

@@ -2326,7 +2326,7 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
     # Each fix is handed one defect, so each carries what the product shows:
     # "element not found" cannot tell an absent control from a misnamed one.
     shown = str(saved.get("shows") or "")
-    seen = f" What the product shows when it loads, before any test touches it:\n{shown[:600]}" if shown else ""
+    seen = f"{WHAT_THE_PRODUCT_SHOWS}{shown[:600]}" if shown else ""
     never_started = str(saved.get("problem") or "")
     if never_started.startswith(suite.PRODUCT_DID_NOT_START):
         # One defect for the one cause: nothing could be measured while it stands.
@@ -2454,10 +2454,7 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
                 if hint not in actual and entry.get("id") in tags_in(str(getattr(item, "description", "") or "")):
                     item.actual_behavior = f"{actual}\n{hint}".strip()
             continue
-        detail = "; ".join(
-            f"{t.get('name')}: " + (((t.get("message") or "").strip().splitlines() or ["failed"])[0][:300])
-            for t in failed[:3]
-        ) or "no test carrying this id ran"
+        detail = the_failed_tests_line(failed)
         # What the page showed when the first of them failed: whether the
         # control is absent, misnamed, or never appeared after the action.
         met = next((suite.page_it_failed_on(t.get("message", "")) for t in failed if suite.page_it_failed_on(t.get("message", ""))), "")
@@ -2465,11 +2462,7 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
             detail += f"{THE_PAGE_WHEN_IT_FAILED}{met}"
         if hint:
             detail += f"\n{hint}"
-        if logged:
-            detail += f"\nWhat the product's server logged while the suite ran:\n{logged}"
-            hidden = what_the_logged_frames_hide(_root(state), logged)
-            if hidden:
-                detail += f"\n{hidden}"
+        detail += server_log_block(_root(state), logged)
         hid = the_server_hid_the_cause([t.get("message") or "" for t in failed], logged, _root(state))
         detail += hid
         # What the page reported while it loaded is likely why this criterion fails too: measured on one run, the
@@ -2520,6 +2513,28 @@ _THE_PAGE_DID_NOT_RUN = re.compile(r"(?:HTTP 404|request failed|ERR_\w+)[^;]*\.(
 
 #: Said before the page's own load errors, on each criterion's defect while they stand.
 THE_PAGE_REPORTED_WHILE_LOADING = "While it loaded, before any test acted, the page itself reported: "
+
+#: How a failing criterion's defect opens what the product's server logged while the suite ran (`server_log_block`).
+SERVER_LOG_HEADING = "What the product's server logged while the suite ran:"
+#: What the product shows when it loads, as a failing criterion's defect says it after the server's log.
+WHAT_THE_PRODUCT_SHOWS = " What the product shows when it loads, before any test touches it:\n"
+
+
+def the_failed_tests_line(failed: list[dict]) -> str:
+    """The line a failing criterion's defect opens with: its first three failed tests, each with its first line."""
+    return "; ".join(
+        f"{t.get('name')}: " + (((t.get("message") or "").strip().splitlines() or ["failed"])[0][:300])
+        for t in failed[:3]
+    ) or "no test carrying this id ran"
+
+
+def server_log_block(root: Any, logged: str) -> str:
+    """What the product's server logged, as a failing criterion's defect carries it, with what its frames hide; ""
+    when it logged nothing."""
+    if not logged:
+        return ""
+    hidden = what_the_logged_frames_hide(root, logged)
+    return f"\n{SERVER_LOG_HEADING}\n{logged}" + (f"\n{hidden}" if hidden else "")
 
 
 def due_criteria_failing(state: Any) -> str:

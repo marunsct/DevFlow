@@ -711,6 +711,29 @@ def _the_sprint_s_files(stage: str, opening: str) -> tuple[str, ...]:
     return tuple(prompt_size.sprint_files_in(opening))
 
 
+def render_for_a_stage(repo_root: str | Path, model: Any, opening: str, stage: str) -> tuple[str, dict[str, str]]:
+    """The memory a stage's opening request is given, and the files it holds (not a lead's re-plan's).
+
+    A fixer whose request was cut to its size target (`fixer_request_shape.reshaped`) is given the memory cut the same
+    way (LF.1270): the files its evidence names and what they import held whole, the rest named, within what the
+    target leaves beside the request. The fix request reads this too, to tell whether it is past its target.
+    """
+    from app.agents import memory_slices
+
+    fixer = str(stage or "").startswith("defect_fix")
+    if fixer:
+        from app.graph import fixer_request_shape
+
+        if fixer_request_shape.reshaped(opening):
+            target = fixer_request_shape.opening_target(model)
+            least = int(target * fixer_request_shape.MEMORY_LEAST_SHARE)
+            return render(repo_root, min(budget_for(model), max(least, target - len(opening))),
+                          fixer_request_shape.the_evidence(opening), for_a_fixer=True, sliced=True)
+    return render(repo_root, budget_for(model), opening, for_a_fixer=fixer, kept_out=_kept_out_for(stage, repo_root),
+                  sliced=memory_slices.enabled() and str(stage or "").startswith(("defect_fix", "specialist_")),
+                  on_code=builds_on_code(repo_root, stage))
+
+
 def budget_for(model: Any) -> int:
     """The memory's share of `model`'s window, in characters."""
     try:
@@ -946,8 +969,6 @@ def build_project_memory_middleware(repo_root: str) -> Any:
                     from app.observability.log_context import _from_the_graph
 
                     stage = str(_from_the_graph()[1] or "")
-                    from app.agents import memory_slices
-
                     sprint_files = _the_sprint_s_files(stage, opening)
                     if sprint_files:
                         visit["snapshot"], visit["held"], visit["request"] = render_for_a_replan(
@@ -955,12 +976,8 @@ def build_project_memory_middleware(repo_root: str) -> Any:
                             kept_out=_kept_out_for(stage, repo_root))
                         visit["opening"] = opening
                     else:
-                        visit["snapshot"], visit["held"] = render(repo_root, budget_for(getattr(request, "model", None)), opening,
-                                                                  for_a_fixer=stage.startswith("defect_fix"),
-                                                                  kept_out=_kept_out_for(stage, repo_root),
-                                                                  sliced=memory_slices.enabled() and stage.startswith(
-                                                                      ("defect_fix", "specialist_")),
-                                                                  on_code=builds_on_code(repo_root, stage))
+                        visit["snapshot"], visit["held"] = render_for_a_stage(
+                            repo_root, getattr(request, "model", None), opening, stage)
                     visit["files"] = dict(current(repo_root))
                 if visit.get("request") is not None:
                     messages = _without_the_list(messages, visit["opening"], visit["request"])

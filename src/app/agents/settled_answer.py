@@ -1900,6 +1900,42 @@ _WRITE_NOW_NOTICE = (
 )
 
 
+#: Said to a fix stage on its last two model calls with no answer written (LF.1270): its last call is kept for a
+#: write. Measured on a medium run: 10 fix stages ended at their call cap with their final edit refused - the calls
+#: reserved for the answer had withheld every tool, the writers too.
+LAST_CALLS_KEPT_FOR_A_WRITE = (
+    "Two model calls are left in this stage: this one and the last. Reading and running are withheld from here; the "
+    "tools that change files are still yours. If your change is not made yet, your next call must be that write - or "
+    "make it now: a write on the last call is kept and run, and your structured response is asked for once after it. "
+    "If your change is made, return your structured response now."
+)
+LAST_CALL_KEPT_FOR_A_WRITE = (
+    "This is the last model call of this stage. If your change is not made yet, make it now with a tool that changes "
+    "a file: it is kept and run, and your structured response is asked for once after it. If your change is made, "
+    "return your structured response now."
+)
+
+
+def _a_fix_stage_s_last_calls(messages: list[Any], limit: int, stage_name: str, tools: list[Any]) -> str:
+    """The notice for a fix stage on its last two calls under `limit`, which keep its writers; "" otherwise."""
+    if limit <= 0 or not _the_graph_stage(stage_name).startswith("defect_fix_"):
+        return ""
+    if not any(_named(tool) in _THE_WRITING_TOOLS for tool in tools or ()):
+        return ""
+    left = limit - _model_calls_used(messages)
+    if left == CALLS_RESERVED_FOR_THE_ANSWER:
+        return LAST_CALLS_KEPT_FOR_A_WRITE
+    if left == 1:
+        return LAST_CALL_KEPT_FOR_A_WRITE
+    return ""
+
+
+def _only_writes_pending(pending: list[Any], stage_name: str) -> bool:
+    """Whether a fix stage's reply asks only for writes - run, even at the call cap (LF.1270)."""
+    return (bool(pending) and _the_graph_stage(stage_name).startswith("defect_fix_")
+            and all(str((call or {}).get("name") or "") in _THE_WRITING_TOOLS for call in pending))
+
+
 def _the_graph_stage(role_name: str = "") -> str:
     """The graph stage making this call (`defect_fix_2_14`), not the role the agent was built with."""
     try:
@@ -2356,9 +2392,21 @@ def build_settled_answer_middleware(
                 if fixed_already:
                     correction = f"{correction}\n\n{_FIXED_ANSWER_NOW_NOTICE}" if correction else _FIXED_ANSWER_NOW_NOTICE
                     logger.warning("Stage %s was told its defect is fixed and carried on; only its answer is left", stage_name or "?")
-                answer_only = (spiralled and not spiral_quiet) or _nothing_left_but_the_answer(
-                    messages, _the_step_limit(step_limit), schema
-                ) or (stalled and not writers) or (ignored and not writers) or stuck_on_a_failure or fixed_already \
+                answer_due = _nothing_left_but_the_answer(messages, _the_step_limit(step_limit), schema)
+                # A fix stage's last two calls keep its writers: its last call is kept for the write (LF.1270).
+                last_writes = _a_fix_stage_s_last_calls(
+                    messages, _the_step_limit(step_limit), stage_name, list(getattr(request, "tools", None) or [])
+                ) if answer_due else ""
+                if last_writes:
+                    budget_warning = _running_out_of_room(messages, _the_step_limit(step_limit), schema)
+                    if budget_warning and correction:
+                        correction = correction.replace(budget_warning, "").strip()
+                    correction = f"{correction}\n\n{last_writes}" if correction else last_writes
+                    logger.warning("Stage %s is %d call(s) from its budget with no answer; its writers are kept for "
+                                   "the write", stage_name or "?",
+                                   _the_step_limit(step_limit) - _model_calls_used(messages))
+                answer_only = (spiralled and not spiral_quiet) or (answer_due and not last_writes) \
+                    or (stalled and not writers) or (ignored and not writers) or stuck_on_a_failure or fixed_already \
                     or outside_too_often
                 if ignored:
                     # Named as well: the model is told which call it kept
@@ -2521,6 +2569,9 @@ def build_settled_answer_middleware(
                             )
                     if ignored or (stalled and writers):
                         kept, narrowed = _without_the_looking_tools_in(kept), True
+                    if last_writes:
+                        # Only the tools that change a file: a command run on these calls is one write fewer.
+                        kept, narrowed = [tool for tool in kept if _named(tool) in _THE_WRITING_TOOLS], True
                     if narrowed and stable:
                         withheld_here = ({_named(tool) for tool in getattr(request, "tools", None) or []}
                                          - {_named(tool) for tool in kept} - {""})
@@ -2726,6 +2777,13 @@ def build_settled_answer_middleware(
             # repetition is still required.
             if _the_step_limit(step_limit) and _model_calls_used(messages) >= _the_step_limit(step_limit):
                 spent = _most_recent_answer(messages, schema)
+                if (spent is None and _only_writes_pending(pending, stage_name)
+                        and _model_calls_used(messages) == _the_step_limit(step_limit)):
+                    # A fix stage's write on its last call is run, not dropped with the stage (LF.1270); the call after
+                    # it has only its answer left (`_nothing_left_but_the_answer`), and past that the stage ends here.
+                    logger.info("Stage %s wrote on its last model call; running the write before its answer",
+                                stage_name or "?")
+                    return None
                 if spent is not None:
                     logger.info(
                         "Stage %s reached its model-call budget with an answer "

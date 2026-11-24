@@ -87,6 +87,7 @@ def run(
     printed: dict[str, Any] | None = None,
     side_by_side: bool = False,
     during: Any = None,
+    real_brief: bool = False,
 ) -> tuple[dict[str, Any], Seen]:
     """Run `node` once on `state`.
 
@@ -95,7 +96,8 @@ def run(
     what the localisation finds. `fast`: fast delivery. `approves`: whether the run approves its own writes.
     `broke`: what `engineering.after_a_fix` says the fix broke. `printed`: what each failure reader returns, by
     "criteria" / "unit" / "last". `side_by_side`: parallel mode's batches. `during`: called with the stage's name
-    while its agent runs; what it returns is kept in `Seen.during`.
+    while its agent runs; what it returns is kept in `Seen.during`. `real_brief`: the brief and what each failure
+    reader returns are built as they ship, from the workspace and the state.
     """
     from app.graph import workflow
 
@@ -178,6 +180,10 @@ def run(
         "app.graph.bounded_fixes.the_candidate_model": {"return_value": candidate_model},
         "app.observability.defect_ledger.shown": {"side_effect": shown},
     }
+    if real_brief:
+        for built in ("build_defect_fix_request", "_what_the_criteria_s_tests_printed", "_what_the_unit_tests_printed",
+                      "_what_the_last_failure_printed"):
+            stubs.pop(f"app.graph.workflow.{built}")
     with ExitStack() as stack:
         for target, how in stubs.items():
             stack.enter_context(patch(target, **how))

@@ -1184,6 +1184,37 @@ def build_defect_fix_request(
     the regression-test clause: a defect the harness settles by a check of
     its own (`app.acceptance.mutation_guided.what_settles_it`).
     """
+    parts = defect_fix_brief_parts(
+        description, reproduction_steps, expected_behavior, actual_behavior, affected_files,
+        regression_test_required, repository_root, stack, observed, caught_by=caught_by,
+        done_already=done_already, what_settles_it=what_settles_it,
+    )
+    return {"messages": [{"role": "user", "content": "".join(parts.values())}]}
+
+
+#: Where a fix request's account of its defect begins.
+FIX_ASSIGNED = "A test failure has been assigned to you to fix.\n\n"
+
+
+def defect_fix_brief_parts(
+    description: str,
+    reproduction_steps: str,
+    expected_behavior: str,
+    actual_behavior: str,
+    affected_files: list[str],
+    regression_test_required: bool,
+    repository_root: str,
+    stack: Any = None,
+    observed: dict[str, str] | None = None,
+    caught_by: str = "",
+    done_already: list[str] | None = None,
+    what_settles_it: str = "",
+) -> dict[str, str]:
+    """`build_defect_fix_request`'s brief in its parts, in order: the workspace line, the setup (stack and project
+    contract), the defect's evidence, how to look at the page, and how the fix is settled. Joined, they are the brief.
+
+    A request past its size target opens with the evidence (`app.graph.fixer_request_shape`).
+    """
     files_text = "\n".join(f"- {name}" for name in affected_files) or "- (none identified)"
     regression_clause = what_settles_it or (
         # "Fails before your fix and passes after it" was read, by one run, as
@@ -1198,24 +1229,26 @@ def build_defect_fix_request(
         or _already_caught_clause(caught_by)
         or "A regression test is not required for this defect, but name any test you did run."
     )
-    brief = (
-        f"The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
-        f"{describe_stack(stack, repository_root)}"
-        f"{project_contract(repository_root)}"
-        "A test failure has been assigned to you to fix.\n\n"
-        f"--- Defect ---\n{description}\n\n"
-        f"--- Reproduction steps ---\n{reproduction_steps}\n\n"
-        f"--- Expected behavior ---\n{expected_behavior}\n\n"
-        f"--- Actual behavior ---\n{actual_behavior}\n\n"
-        f"--- Affected files ---\n{files_text}\n\n"
-        f"{_observed_output(observed)}"
-        f"{_look_before_changing_the_page(repository_root)}"
-        f"{_where_the_product_stands(done_already)}"
-        f"{regression_clause}\n\n"
-        "Fix only this defect. If you cannot fix it, say why in `blockers` rather than "
-        "claiming it is resolved."
-    )
-    return {"messages": [{"role": "user", "content": brief}]}
+    return {
+        "workspace": "The workspace is rooted at '/'; all paths you use are relative to it.\n\n",
+        "setup": f"{describe_stack(stack, repository_root)}{project_contract(repository_root)}",
+        "evidence": (
+            FIX_ASSIGNED
+            + f"--- Defect ---\n{description}\n\n"
+            f"--- Reproduction steps ---\n{reproduction_steps}\n\n"
+            f"--- Expected behavior ---\n{expected_behavior}\n\n"
+            f"--- Actual behavior ---\n{actual_behavior}\n\n"
+            f"--- Affected files ---\n{files_text}\n\n"
+            f"{_observed_output(observed)}"
+        ),
+        "page": _look_before_changing_the_page(repository_root),
+        "settled": (
+            f"{_where_the_product_stands(done_already)}"
+            f"{regression_clause}\n\n"
+            "Fix only this defect. If you cannot fix it, say why in `blockers` rather than "
+            "claiming it is resolved."
+        ),
+    }
 
 
 #: For a fix stage on a product with a page. See `app.tools.page_view`.

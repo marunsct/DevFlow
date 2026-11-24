@@ -23,8 +23,16 @@ from app.graph.workflow import WorkflowGraphState
 logger = logging.getLogger("app.graph.workflow")
 
 
-def _the_fix_request(state: Any, config: RunnableConfig, cycle: Any, defect_index: int) -> tuple[dict[str, Any], list[tuple[int, Any]]]:
-    """What one defect's fixer is asked, and the related failures bundled with it."""
+def _the_fix_request(
+    state: Any, config: RunnableConfig, cycle: Any, defect_index: int, model: Any = None,
+) -> tuple[dict[str, Any], list[tuple[int, Any]]]:
+    """What one defect's fixer is asked, and the related failures bundled with it.
+
+    Its actual behaviour, its failing tests' output and the server's log are the latest measurement's
+    (`fresh_evidence`). A request that, with the project memory it is given, is past its size target opens with the
+    defect's evidence and the round's shared cause, and carries its standing context cut to what the defect touches
+    (`fixer_request_shape`, LF.1270); one under it is as built. `model`: the fixer's, whose window sets the target.
+    """
     from app.graph.workflow import (
         APP_RUN_ID_KEY, _bundle_co_defects, _the_database_section, _the_last_attempt_section,
         _the_specification_for_the_fix, _the_stub_still_served_section, _the_unserved_code_section,
@@ -32,27 +40,36 @@ def _the_fix_request(state: Any, config: RunnableConfig, cycle: Any, defect_inde
         _what_the_last_failure_printed, _what_the_unit_tests_printed, build_defect_fix_request,
         defect_fix_modes, mutation_guided, with_the_facts,
     )
+    from app.graph import fixer_request_shape as shape
+    from app.graph import fresh_evidence
+    from app.graph.fixer_request_shape import EVIDENCE, KEPT, STANDING, Part
 
     defect = cycle.defects[defect_index]
+    root = state["repository"].root_path
     from app.acceptance import probes_at_release
     from app.acceptance.junit import tags_in
 
     co_defects = _bundle_co_defects(cycle, defect_index)
-    request = build_defect_fix_request(
-        defect.description,
-        defect.reproduction_steps,
-        defect.expected_behavior,
-        defect.actual_behavior,
-        defect.affected_files,
-        defect.regression_test_required,
-        state["repository"].root_path,
+    # What the latest measurement says of it, not what the round that raised it said (LF.1270).
+    shown = fresh_evidence.as_shown(root, defect, cycle.defects)
+    brief_args = (
+        shown.description,
+        shown.reproduction_steps,
+        shown.expected_behavior,
+        shown.actual_behavior,
+        shown.affected_files,
+        shown.regression_test_required,
+        root,
         getattr(state.get("stack_selection"), "technology_stack", None),
         # What the failing command actually printed, alongside the prose
         # description of it. See `build_defect_fix_request`.
         # A failing criterion's own tests first: the last failing command may be another criterion's.
-        _what_the_criteria_s_tests_printed(state["repository"].root_path, defect)
-        or _what_the_unit_tests_printed(state["repository"].root_path, defect)
+        _what_the_criteria_s_tests_printed(root, defect)
+        or fresh_evidence.what_its_tests_printed_now(root, defect)
+        or _what_the_unit_tests_printed(root, defect)
         or _what_the_last_failure_printed(config["configurable"].get(APP_RUN_ID_KEY), defect),
+    )
+    brief_kwargs = dict(
         caught_by=getattr(defect, "caught_by", ""),
         # Only for a defect that is not itself a failing criterion - nor a
         # mutation finding, whose product is not wrong (plan QM.2) - nor a harness probe's finding, whose product is.
@@ -65,50 +82,94 @@ def _the_fix_request(state: Any, config: RunnableConfig, cycle: Any, defect_inde
         ),
         what_settles_it=mutation_guided.what_settles_it(defect, mutation_gaps_bundled.not_bundled(cycle.defects, co_defects)),
     )
-    request["messages"][-1]["content"] += _what_a_fix_stage_must_leave_alone(state, defect)
+    request = build_defect_fix_request(*brief_args, **brief_kwargs)
+    brief = request["messages"][-1]["content"]
+    # Each part as it is added, for a request past its size target to be put in another order and cut.
+    parts: list[Part] = []
+    try:
+        from app.agents.specialists import defect_fix_brief_parts
+
+        pieces = defect_fix_brief_parts(*brief_args, **brief_kwargs)
+        if "".join(pieces.values()) == brief:
+            parts += [Part(KEPT, pieces["workspace"]), Part(STANDING, pieces["setup"]), Part(EVIDENCE, pieces["evidence"]),
+                      Part(STANDING, pieces["page"]), Part(KEPT, pieces["settled"])]
+    except Exception:  # noqa: BLE001 - the brief is one part
+        parts = []
+    if not parts:
+        parts.append(Part(EVIDENCE, brief))
+
+    def add(kind: str, text: str, cut: str | None = None) -> None:
+        request["messages"][-1]["content"] += text
+        if text:
+            parts.append(Part(kind, text, cut))
+
+    def added_by(change: Any) -> None:
+        """What `change(request)` put before or after the request's text, as a standing part."""
+        nonlocal request
+        before = request["messages"][-1]["content"]
+        request = change(request)
+        after = request["messages"][-1]["content"]
+        if not isinstance(after, str) or after == before:
+            return
+        if after.startswith(before):
+            parts.append(Part(STANDING, after[len(before):]))
+        elif after.endswith(before):
+            parts.insert(0, Part(STANDING, after[: len(after) - len(before)]))
+
+    left_alone = _what_a_fix_stage_must_leave_alone(state, defect)
+    request["messages"][-1]["content"] += left_alone
+    parts.extend(shape.split_mixed(left_alone))
     # What this attempt may write: test files only, for a first fix of a failing unit test beside a green suite.
-    request["messages"][-1]["content"] += defect_fix_modes.briefing(state, config, defect_index)
-    request["messages"][-1]["content"] += _the_specification_for_the_fix(state, defect, co_defects)
-    request["messages"][-1]["content"] += _the_bundled_section(co_defects)
+    add(KEPT, defect_fix_modes.briefing(state, config, defect_index))
+    specification = _the_specification_for_the_fix(state, defect, co_defects)
+    add(STANDING, specification, cut=_the_specification_cut(state, specification, brief_args[8], shown))
+    add(EVIDENCE, _the_bundled_section(co_defects, root, cycle.defects))
     # A defect on its last permitted attempt gets a different shape of
     # work, not a third variation of the instruction that failed twice.
     # See `_the_last_attempt_section`.
-    request["messages"][-1]["content"] += _the_last_attempt_section(cycle, defect_index)
+    add(KEPT, _the_last_attempt_section(cycle, defect_index))
     # Each earlier attempt as measured (plan PH.2), not a revert sentence.
     from app.agents import ledger as _ledger
 
-    request["messages"][-1]["content"] += _ledger.earlier_attempts(defect, cycle.defects[:defect_index])
+    add(KEPT, _ledger.earlier_attempts(defect, cycle.defects[:defect_index]))
     # What was tried on its cause in earlier cycles too: a re-plan clears the cycle, not the journal (deep review 1.4).
     from app.graph import cause_journal
 
-    request["messages"][-1]["content"] += cause_journal.tried_before(
-        state["repository"].root_path, defect, shown=(defect.attempts if _ledger.enabled() else ()))
-    request["messages"][-1]["content"] += _what_others_found(state, defect, defect_index, cycle)  # WL.4, its switch
+    add(KEPT, cause_journal.tried_before(root, defect, shown=(defect.attempts if _ledger.enabled() else ())))
+    add(KEPT, _what_others_found(state, defect, defect_index, cycle))  # WL.4, its switch
     # The web tools, for a fixer whose defect failed twice (plan WL.5, its switch): offered with the agent.
     from app.graph import web_tools_after_two_failed_fixes
 
-    request["messages"][-1]["content"] += web_tools_after_two_failed_fixes.said(
-        cycle, defect_index, state["repository"].root_path)
-    request["messages"][-1]["content"] += _the_stub_still_served_section(state["repository"].root_path)
-    request["messages"][-1]["content"] += _the_unserved_code_section(state["repository"].root_path)
-    request["messages"][-1]["content"] += _the_database_section(state["repository"].root_path)
+    add(KEPT, web_tools_after_two_failed_fixes.said(cycle, defect_index, root))
+    add(KEPT, _the_stub_still_served_section(root))
+    # The files its evidence names and what they import: the facts about other files are cut past the target.
+    touched = shape.the_files_it_touches(root, "".join(p.text for p in parts if p.kind == EVIDENCE), [
+        *(defect.affected_files or []), *(f for _, d in co_defects for f in (d.affected_files or []))])
+    unserved = _the_unserved_code_section(root)
+    add(STANDING, unserved, cut=shape.the_facts_cut(unserved, touched))
+    add(STANDING, _the_database_section(root))
     # The layout the judges read too (plan CM.1); the stub and the code the product does not run are above.
-    request = with_the_facts(request, state["repository"].root_path, built=False)
+    before = request["messages"][-1]["content"]
+    request = with_the_facts(request, root, built=False)
+    facts = request["messages"][-1]["content"][len(before):]
+    # The rulings and the fixes undone for a start that broke bind every stage: kept whole; the layout facts are cut.
+    parts.extend(shape.split_facts(facts, touched))
     # Where the sprint stands (plan PH.1, off until measured).
     from app.agents import where_things_stand
 
-    request = where_things_stand.with_it(request, state)
+    added_by(lambda r: where_things_stand.with_it(r, state))
     # The defect's files' neighbours in the code graph (plan CG.2, off until measured).
     from app.analysis import project_graph
 
-    request = project_graph.with_the_neighbourhood(request, state["repository"].root_path, [
-        *(defect.affected_files or []), *(f for _, d in co_defects for f in (d.affected_files or []))])
+    added_by(lambda r: project_graph.with_the_neighbourhood(r, root, [
+        *(defect.affected_files or []), *(f for _, d in co_defects for f in (d.affected_files or []))]))
+    request = _sized_to_its_target(request, parts, state, cycle, defect_index, model)
     # The page as a person sees it, for a build model that reads images:
     # only the reviewer was shown it. Last, as it makes the request's text
     # a list of parts.
     from app.agents.page_screenshots import with_the_page_for_a_fixer
 
-    request = with_the_page_for_a_fixer(request, state["repository"].root_path)
+    request = with_the_page_for_a_fixer(request, root)
     # What this fixer was shown, so a later try can be compared with it (deep review F9): once a fixer, not on
     # each resume of its stage after a gated tool call (measured: every 6 to 10 seconds for one fixer).
     from app.observability import defect_ledger
@@ -121,13 +182,70 @@ def _the_fix_request(state: Any, config: RunnableConfig, cycle: Any, defect_inde
     return request, co_defects
 
 
-def _the_bundled_section(co_defects: list[tuple[int, Any]]) -> str:
+def _the_specification_cut(state: Any, specification: str, observed: Any, shown: Any) -> str | None:
+    """The specification's part of a fix request with its API cut to the routes the defect's failing tests call; None
+    when no route can be read, or no endpoint matches (the whole API is then the one shown)."""
+    try:
+        from app.acceptance.api_reference import api_reference
+        from app.graph import fixer_request_shape as shape
+
+        spec = state.get("technical_specification")
+        whole = api_reference(spec)
+        if not whole or whole not in specification:
+            return None
+        routes = shape.routes_called([
+            str((observed or {}).get("output") or ""), str(getattr(shown, "actual_behavior", "") or ""),
+            str(getattr(shown, "reproduction_steps", "") or ""),
+        ])
+        cut = shape.the_api_cut(spec, routes)
+        return specification.replace(whole, cut, 1) if cut else None
+    except Exception:  # noqa: BLE001 - the whole API
+        logger.debug("Could not cut the API to the defect's routes", exc_info=True)
+        return None
+
+
+def _sized_to_its_target(request: dict[str, Any], parts: list[Any], state: Any, cycle: Any, defect_index: int,
+                         model: Any) -> dict[str, Any]:
+    """`request` as built when it and its project memory are within the size target; reshaped past it (LF.1270).
+    Never raises: the request as built."""
+    try:
+        from app.agents import project_memory
+        from app.graph import fixer_request_shape as shape
+
+        content = request["messages"][-1]["content"]
+        target = shape.opening_target(model)
+        if len(content) > target:
+            memory = 0  # past it on its own: the memory is cut whatever it would be
+        else:
+            if not project_memory.enabled():
+                return request
+            stage = f"defect_fix_{state.get('test_round', 0)}_{defect_index}"
+            memory = len(project_memory.render_for_a_stage(state["repository"].root_path, model, content, stage)[0])
+            if memory + 2 + len(content) <= target:
+                return request
+        least = int(target * shape.MEMORY_LEAST_SHARE) if project_memory.enabled() else 0
+        # The round that raised this round's defects: a fix stage runs under the next round's number.
+        raised_in = int(state.get("test_round", 0) or 0) - 1
+        cause = shape.the_round_s_cause(cycle, defect_index, raised_in if raised_in >= 0 else None)
+        shaped = shape.shaped(parts, target=target, memory=least, cause=cause)
+        logger.info("Fix request for defect %d is past its size target (%d characters with its memory, target %d); "
+                    "evidence first, standing context cut to %d characters", defect_index,
+                    len(content) + memory, target, len(shaped))
+        request["messages"][-1]["content"] = shaped
+    except Exception:  # noqa: BLE001 - the request as built
+        logger.debug("Could not size the fix request to its target", exc_info=True)
+    return request
+
+
+def _the_bundled_section(co_defects: list[tuple[int, Any]], root: Any = None, defects: Any = ()) -> str:
     """The related failures bundled with a fix, as its fixer is shown them; "" when none.
 
     Mutation findings in the same file are listed with their line, change and what settles each
-    (`MUTATION_GAPS_BUNDLED`); any other related failure with what it expected and what happened.
+    (`MUTATION_GAPS_BUNDLED`); any other related failure with what it expected and what happened - as the latest
+    measurement says it (`fresh_evidence`).
     """
     from app.acceptance import mutation_guided
+    from app.graph import fresh_evidence
 
     others = [(pos, d) for pos, d in co_defects if not mutation_guided.is_a_finding(d)]
     lines = []
@@ -139,7 +257,7 @@ def _the_bundled_section(co_defects: list[tuple[int, Any]]) -> str:
         for pos, co_d in others:
             lines.append(f"- Failure {pos + 1}: {co_d.description}")
             lines.append(f"  Expected: {co_d.expected_behavior}")
-            lines.append(f"  Actual: {co_d.actual_behavior}")
+            lines.append(f"  Actual: {fresh_evidence.actual_behavior_now(root, co_d, defects)}")
     return ("\n".join(lines) + "\n" if lines else "") + mutation_gaps_bundled.section(co_defects)
 
 
@@ -213,8 +331,11 @@ def _fixed_by_rewriting(
                     and defect_fix_modes.may_write(state, config, defect, root, path))
 
     # The defect's own failing tests first, as the agent loop's request does (HR F3).
+    from app.graph import fresh_evidence
+
     last_failure = (
         _what_the_criteria_s_tests_printed(str(root), defect)
+        or fresh_evidence.what_its_tests_printed_now(str(root), defect)
         or _what_the_unit_tests_printed(str(root), defect)
         or _what_the_last_failure_printed(config["configurable"].get(APP_RUN_ID_KEY), defect)
     )
@@ -360,7 +481,7 @@ def _fix_one(state: Any, config: RunnableConfig, defect_index: int, ctx: GraphCo
                 cycle, defect_index, stage_name, root=state["repository"].root_path,
                 resumed=bool(state.get("pending_inner_thread_id"))),
         )
-        request, co_defects = _the_fix_request(state, config, cycle, defect_index)
+        request, co_defects = _the_fix_request(state, config, cycle, defect_index, model=fix_model)
         # Each write followed by the defect's own tests (plan AY step 3, off until measured).
         from app.acceptance import mutant_check_in_stage
         from app.graph import verify_after_write
@@ -721,11 +842,12 @@ def defect_fix_worker_node(state: dict, config: RunnableConfig, ctx: GraphContex
     stage_name = f"defect_fix_{state.get('test_round', 0)}_{index}"
     from app.graph import web_tools_after_two_failed_fixes
 
+    fix_model = ctx.the_build_model(
+        state, stage_name, failed_fix_tries(cycle, index), reasons=True,
+        after_a_revert=_a_revert_escalates_this_fix(cycle, index),
+    )
     agent = create_specialist_agent(
-        defect.owner, model=ctx.the_build_model(
-            state, stage_name, failed_fix_tries(cycle, index), reasons=True,
-            after_a_revert=_a_revert_escalates_this_fix(cycle, index),
-        ),
+        defect.owner, model=fix_model,
         checkpointer=ctx.checkpointer, repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories,
         web_tools_for_this_fix=web_tools_after_two_failed_fixes.tools_for(
             cycle, index, stage_name, root=state["repository"].root_path,
@@ -733,7 +855,7 @@ def defect_fix_worker_node(state: dict, config: RunnableConfig, ctx: GraphContex
     )
     if not (state.get("queued_decisions") or {}).get(stage_name):
         _diagnosed_if_it_keeps_failing(state, defect, ctx)
-    request, _ = _the_fix_request(state, config, cycle, index)
+    request, _ = _the_fix_request(state, config, cycle, index, model=fix_model)
     temp_state: Any = dict(state)
     # A worker may only answer its own approval gate: see `specialist_worker_node`.
     temp_state.update(_only_this_worker_s_pause(state, stage_name))

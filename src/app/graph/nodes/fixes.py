@@ -141,6 +141,11 @@ def _the_fix_request(
     from app.stacks import stack_facts
 
     add(KEPT, stack_facts.for_a_fixer(root))
+    # The installed API of libraries newer than the model, for the defect's files that use one (plan HK.7).
+    from app.stacks import api_cards
+
+    add(STANDING, api_cards.for_a_fixer(root, [*(defect.affected_files or []), *(f for _, d in co_defects for f in (
+        d.affected_files or []))], "".join(p.text for p in parts if p.kind == EVIDENCE), model))
     # The web tools, for a fixer whose defect failed twice (plan WL.5, its switch): offered with the agent.
     from app.graph import web_tools_after_two_failed_fixes
 

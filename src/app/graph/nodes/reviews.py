@@ -53,6 +53,11 @@ def _the_security_review(state: Any, config: RunnableConfig, ctx: GraphContext) 
                                         told_to_open=source_coverage(changed_files, root)[1]) or []
     if held:
         request = with_the_facts(build_security_review_request(changed_files, permissions, root, held=held), root)
+    # The framework's own security guidance for the release this project uses (plan HK.9).
+    from app.stacks import framework_guidance
+
+    request = framework_guidance.for_the_security_review(
+        request, getattr(state.get("stack_selection"), "technology_stack", None), root)
     update = _run_gated_agent(
         state,
         config,

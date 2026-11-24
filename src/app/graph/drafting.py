@@ -352,6 +352,7 @@ def draft_request(root: Path, path: str, task: Any, specification: Any, stack: A
     """
     from app.agents.shared_facts import the_facts_section
     from app.agents.specialists import specification_for_the_work_order
+    from app.stacks import api_cards
 
     detail = specification_for_the_work_order(
         specification, SimpleNamespace(files=[path], interfaces=list(getattr(task, "interfaces", None) or [])),
@@ -389,6 +390,8 @@ def draft_request(root: Path, path: str, task: Any, specification: Any, stack: A
         _where_dependencies_go(root),
         # The registry's current releases, before a dependency manifest is written (plan WL.4 T4).
         _the_registry_s_releases(root, path, specification, stack),
+        # The installed API of libraries newer than the model, when this file uses one (plan HK.7).
+        api_cards.for_a_draft(root, path, detail),
         f"Reply with the complete content of `{path}` and nothing else, in one fenced code block. "
         "Every name, signature, message, import and library call is the one the specification "
         "gives; where it gives none, write the plainest code that meets the work order.",

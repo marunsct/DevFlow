@@ -68,6 +68,8 @@ FIELDS: tuple[Field, ...] = (
     Field("quantisation", "Quantisation", "text"),
     Field("recommended_sampling", "Recommended sampling", "text"),
     Field("model_card", "Model card", "text"),
+    # When its training data ends (plan HK.7): libraries released after it get their installed API in the requests.
+    Field("knowledge_cutoff", "Training data ends (year-month)", "text"),
     Field("think_tag_tokens", "How it opens its reasoning", "text"),
     Field("send_sampling", "Send the recommended sampling with every request", "bool"),
     Field("sampling_to_send", "Sampling to send", "text"),
@@ -525,6 +527,7 @@ def look_up(names: list[str]) -> dict[str, dict]:
             if total:
                 out["parameters"] = _found(f"{total / 1e9:.1f}B" + (f" ({out['parameters']['value']})" if "parameters" in out else ""),
                                            "model card", "the repository's weights")
+            readme = ""
             try:
                 readme = _get(f"https://huggingface.co/{repo}/raw/main/README.md")
                 sampling = dict((k.lower(), v) for k, v in _SAMPLING.findall(readme))
@@ -533,6 +536,9 @@ def look_up(names: list[str]) -> dict[str, dict]:
                                                          "model card", "from the card's text")
             except Exception:  # noqa: BLE001 - the card's text is optional
                 pass
+            from app.models.knowledge_cutoff import found_on_the_card
+
+            out.update(found_on_the_card(info, readme if isinstance(readme, str) else ""))
             break
         except Exception:  # noqa: BLE001 - no card is an unknown, not a failure
             logger.debug("Could not look the model up", exc_info=True)

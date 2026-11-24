@@ -86,6 +86,8 @@ x-app-env: &app-env
   STUCK_LOOKUP_CONDENSED: ${STUCK_LOOKUP_CONDENSED:-off}
   # Plan HK.10: cited suggestions from comparable products for the intake, only with the run owner's consent.
   PRODUCT_RESEARCH: ${PRODUCT_RESEARCH:-off}
+  API_CARDS_FOR_NEWER_RELEASES: ${API_CARDS_FOR_NEWER_RELEASES:-off}
+  FRAMEWORK_GUIDANCE_FOR_ADVISERS: ${FRAMEWORK_GUIDANCE_FOR_ADVISERS:-off}
   CONTESTED_TESTS_CONFIRMED: ${CONTESTED_TESTS_CONFIRMED:-off}
   # Per-role audit 2026-11-20 (items 4, 7, 8): smaller prompts, each read once per run, off until measured.
   QA_PROMPT_TRIMMED: ${QA_PROMPT_TRIMMED:-off}

@@ -388,6 +388,7 @@ def fix_request(root: Path, path: str, defect: Any, failure: str, specification:
     from app.agents.ledger import enabled as _ledger_on
     from app.agents.request_budget import EVIDENCE, KEPT
     from app.graph.cause_journal import tried_before
+    from app.stacks import api_cards
 
     # Each with what it is to the input budget: what the defect is, or what binds the fix.
     changing_parts = (
@@ -406,6 +407,8 @@ def fix_request(root: Path, path: str, defect: Any, failure: str, specification:
          if unapplied else ""),
         # The registry's current releases, for a rewrite of a dependency manifest (plan WL.4 T4).
         (KEPT, _the_registry_s_releases(root, path, specification, stack)),
+        # The installed API of libraries newer than the model, when this file uses one (plan HK.7).
+        (KEPT, api_cards.for_a_fixer(root, [path], failure, model).strip()),
     )
     changing = tuple(text for _, text in changing_parts)
     project = f"--- The project ---\n{neighbours}" if neighbours else ""

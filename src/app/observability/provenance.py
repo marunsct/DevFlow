@@ -85,6 +85,8 @@ SWITCHES: dict[str, str] = {
     "WEB_LOOKUP_WHEN_STUCK": "app.graph.stuck_lookup",
     "STUCK_LOOKUP_CONDENSED": "app.graph.stuck_research:condensed_switch",
     "PRODUCT_RESEARCH": "app.agents.product_research:research_switch",
+    "API_CARDS_FOR_NEWER_RELEASES": "app.stacks.api_cards:cards_switch",
+    "FRAMEWORK_GUIDANCE_FOR_ADVISERS": "app.stacks.framework_guidance:guidance_switch",
     "WEB_TOOLS_OFFERED": "app.tools.web_search:web_tools_offered_switch",
     "PRODUCT_PREVIEW": "app.server.preview:preview_switch",
     "WEB_TOOLS_AFTER_TWO_FAILED_FIXES": "app.graph.web_tools_after_two_failed_fixes:web_tools_after_two_failed_fixes_switch",

@@ -877,6 +877,7 @@ def build_specialist_task_request(
     contract while the code is written from it.
     """
     from app.analysis.work_orders import brief_for, contract_for_testing
+    from app.stacks import api_cards
 
     criteria_text = "\n".join(f"- {criterion}" for criterion in acceptance_criteria)
     order = ""
@@ -899,6 +900,8 @@ def build_specialist_task_request(
         f"{_the_interface_design(interface_design)}"
         f"{_task_names_a_workflow_document(task_description, acceptance_criteria)}"
         f"{_a_file_another_specialist_is_also_given(task_description, acceptance_criteria, other_tasks)}"
+        # The installed API of libraries newer than the model, for the files this order uses them in (plan HK.7).
+        f"{api_cards.for_a_work_order(repository_root, work_order, specification_detail)}"
         f"**CRITICAL INSTRUCTION**: All application code lives in ONE project directory at the workspace root. Run `ls` FIRST: if a project directory already exists, write into that exact directory, spelled exactly as it already is. Only create one if none exists, naming it after this product in lowercase-with-hyphens. Never scaffold directly in the workspace root, never use a generic name like 'nest-app', and never create a second project directory. Documentation that ships with the product goes inside that project directory beside the code it describes. `docs/` is the workflow's own directory and writing anything into it is refused.\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}

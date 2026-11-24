@@ -205,9 +205,13 @@ GROUPS: dict[str, tuple[str, ...]] = {
     # A stuck lookup's findings condensed by one call into a note checked against the project's versions (plan HK.3):
     # off until measured.
     # The product manager shown cited suggestions from comparable products (plan HK.10): off until measured, and only
-    # in a run whose owner consented to it (`app.agents.product_research`).
+    # in a run whose owner consented to it (`app.agents.product_research`). Builders and fixers given the installed API
+    # of libraries whose release line is newer than the model's training data (plan HK.7); the security and testing
+    # advisers and the security reviewer given the framework's own current guidance for its release (plan HK.9): each
+    # off until measured.
     "Internet lookups": ("WEB_LOOKUP_WHEN_STUCK", "WEB_TOOLS_OFFERED", "WEB_TOOLS_AFTER_TWO_FAILED_FIXES",
-                         "STUCK_LOOKUP_CONDENSED", "PRODUCT_RESEARCH"),
+                         "STUCK_LOOKUP_CONDENSED", "PRODUCT_RESEARCH", "API_CARDS_FOR_NEWER_RELEASES",
+                         "FRAMEWORK_GUIDANCE_FOR_ADVISERS"),
     # Which locked tests a dispute may still send back past the reclassification cap: only those whose quoted repair
     # the harness confirmed by running it (`graph.contested_tests`). Off until measured: it relaxes the cap.
     "Suite disputes": ("CONTESTED_TESTS_CONFIRMED",),

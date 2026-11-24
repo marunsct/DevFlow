@@ -5,9 +5,9 @@ the block below is written by `loop.sh state`. The map of all documents is `docs
 `docs/improvement-plan.md`; how the product works is `docs/PRODUCT.md`; how to run and test it is `docs/HANDOVER.md`;
 decisions in force are `docs/owner-decisions.md`; old information is found through `docs/ARCHIVE.md`.
 <!-- state:generated -->
-**As of:** 11-24 17:25 JST (written by `loop.sh state`). Harness aba3cd59 committed; 60183449 deployed (not the same).
-**Live, and stopped in the last day:** run-59135d0b running at consult_database; run-df1ac51d failed at failed; run-c53e7bd2 running at specialist_backend_1; run-8f0be29e failed at failed
-**Last scored:** run-df1ac51d notes-api-rust 0/9 (failed, handoff 0.375; scored 11-24 17:25 JST); run-031094d4 notes-api-js 9/9 (completed, mixed, 47 active min, handoff 1.0; scored 11-24 15:24 JST); run-972956f5 web-todo 10/10 (completed, mixed, 55 active min, handoff 1.0; scored 11-24 15:10 JST).
+**As of:** 11-24 18:42 JST (written by `loop.sh state`). Harness d1baf5f2 committed; bd901c2d deployed (not the same).
+**Live, and stopped in the last day:** run-10b376e2 running at tools_models; run-c53e7bd2 running at specialist_testing_3; run-df1ac51d failed at failed; run-8f0be29e failed at failed
+**Last scored:** run-59135d0b notes-api-rust 9/9 (completed, handoff 1.0; scored 11-24 18:42 JST); run-df1ac51d notes-api-rust 0/9 (failed, mixed, 111 active min, handoff 0.375; scored 11-24 17:25 JST); run-031094d4 notes-api-js 9/9 (completed, mixed, 47 active min, handoff 1.0; scored 11-24 15:24 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -53,12 +53,14 @@ Earlier runs (11-22 and before): `reports/product-reviews/`, `reports/status-boa
 - **LF.1279 deployed 17:34 JST:** three one-line Rust faults answered (`sqlx::sqlite::SqlitePoolOptions`, `SqliteJournalMode`, `let mut`).
 - **LF.1280-1281 deployed 18:26 JST (the Rust service pack scaffolds):** axum's `JsonRejection` path; and the general answer - a Rust import the crate does not
   have is answered from the crate's own source (`analysis/rust_crate_exports.py`: where the name is public, or the nearest names).
-- Scored 2026-11-24: **notes-api-rust 2 (0/9, 0/8; failed: never built - rustc 1.85 vs newer crates, then sqlx macros and three one-line faults, LF.1277-1279)**, **notes-api-js 1 (9/9, 7/8; delivered, 50 min, mixed; an empty body refused - the fifth family with that loss, LF.1273 building)**, **web-todo 6 (10/10, 6/6; delivered, 57 min, mixed; a unit test set aside, the sprint accepted at an escalation)**, **textkit-lib 9 (8/8, 7/7; delivered in 18 min)**, **notes-api-go 13 (9/9, 7/8; not deliverable: a false check finding kept a right suite in repair until the budget ran out - LF.1256/1267)**, **notes-api-java 11 (9/9, 8/8; delivered with cuts: AC-18; the :8888 server was down 6 h 47 min)**, **wordstats-cli 7 (6/8, 6/6; delivered, 36 min; "The 3" where words are compared in lower case - LF.1255)**, **notes-api-ruby 6 (9/9, 6/8; delivered, 72 min; delete-twice and a long body lost - LF.1254 building)**,
+- **Held (pushed, suite green): LF.1282** - a forward repair may rewrite the file the start's error names, not only the fix's own.
+- Scored 2026-11-24: **notes-api-rust 3 (9/9, 8/8; delivered, 74 min - the first local Rust pass, after LF.1277; three fixes reverted, LF.1282)**, **notes-api-rust 2 (0/9, 0/8; failed: never built - rustc 1.85 vs newer crates, then sqlx macros and three one-line faults, LF.1277-1279)**, **notes-api-js 1 (9/9, 7/8; delivered, 50 min, mixed; an empty body refused - the fifth family with that loss, LF.1273 building)**, **web-todo 6 (10/10, 6/6; delivered, 57 min, mixed; a unit test set aside, the sprint accepted at an escalation)**, **textkit-lib 9 (8/8, 7/7; delivered in 18 min)**, **notes-api-go 13 (9/9, 7/8; not deliverable: a false check finding kept a right suite in repair until the budget ran out - LF.1256/1267)**, **notes-api-java 11 (9/9, 8/8; delivered with cuts: AC-18; the :8888 server was down 6 h 47 min)**, **wordstats-cli 7 (6/8, 6/6; delivered, 36 min; "The 3" where words are compared in lower case - LF.1255)**,
+  **notes-api-ruby 6 (9/9, 6/8; delivered, 72 min; delete-twice and a long body lost - LF.1254 building)**,
   **notes-api-php 12 (9/9, 7/8; not deliverable: a blank title answered 500, left open two attempts - LF.1252; 117 min)**,
   **fullstack-bookmarks 8 (8/8, 7/7; delivered, 66 min, mutation 0.73)**, **tasks-api 15 (10/10, 7/7; delivered, 3 h 7 min, mutation 0.36; the probes signed in and reached every write - LF.1242/1249)**,
   **web-todo-react 5 (10/10, 6/6; delivered, 66 min, mutation 0.58)**, **notes-api-csharp 15 (9/9, 8/8; delivered, 78 min, mutation 1.0; NU1202 from a lookup offering EF Core 11 on net8.0, LF.1248)**.
 - Scored 2026-11-23: **fullstack-bookmarks 7 (8/8, 6/7; not deliverable: AC-8, AC-15, AC-17 deferred on page tests counting a shared list, LF.1246; 186 min)**, **notes-api-go 12 (9/9, 8/8; delivered, 48 min, mutation 0.89; LF.1242's probes reached every write)**, **tasks-api 14 (10/10, 5/7; delivered with cuts: AC-21; 63 min; blank title and concurrent creates lost - the release probes never signed in, LF.1242)**, **textkit-lib 8 (8/8, 7/7; delivered from the first draft in 10 min, mutation 1.0)**, **notes-api-rust 1 (9/9, 8/8; delivered, 97 min, mixed, mutation 0.50; one own unit test shipped failing - the fifth run with that note)**, **fullstack-bookmarks 6 (8/8, 7/7; delivered with cuts: AC-4 deferred on a locked test that could not pass, AC-14; 114 min, mixed, mutation 0.50)**.
-- Every local family scored full hidden marks today except Rust (0/9 in four local runs; Haiku-built 9/9 twice).
+- Every local family has scored full hidden marks; Rust first did on 11-24 (container 3) after four 0/9 runs.
 - Each run's product review: `reports/product-reviews/`.
 
 ## Next actions

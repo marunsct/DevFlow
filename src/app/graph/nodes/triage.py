@@ -451,6 +451,10 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
     from app.graph import start_first
 
     reported = start_first.folded(reported)
+    # A product that starts: its foundation smoked before any fixer of one criterion is sent (LF.1268).
+    from app.graph import foundation_first
+
+    reported, smoke = foundation_first.at_the_round(state, reported, test_round)
     # An error the stack pack knows, given its cause (`app.stacks.known_errors`).
     from app.stacks.known_errors import with_known_causes
 
@@ -469,6 +473,7 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
     # finds passing is fixed, whichever fix did it, and does not count
     # against the sprint as still open.
     cycle = _closed_by_this_round_s_measurement(state, cycle, test_round)
+    cycle = foundation_first.settled_by_the_round(cycle, smoke, test_round, state.get("current_sprint_index", 0))
     # The test command this round left failing, if it left one. See
     # `_needs_a_new_test`.
     caught_by, _ = _the_test_command_this_stage_left_failing(

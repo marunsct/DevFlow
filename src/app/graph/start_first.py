@@ -88,11 +88,16 @@ def folded(reported: Sequence[Any]) -> list[Any]:
 
 
 def held_back(defects: Sequence[Any]) -> set[int]:
-    """The indices of open defects no fixer is sent to yet: every one but the start defects, while one is open."""
+    """The indices of open defects no fixer is sent to yet: every one but the start defects, while one is open; else
+    every one but the foundation smoke's, while it is open (LF.1268: the next tier after a product that does not
+    start - a product where no account can be made or no record read back fails every test built on it)."""
+    from app.acceptance.foundation_smoke import is_a_smoke_defect
+
     open_ = [(at, d) for at, d in enumerate(defects) if str(getattr(d, "status", "")) == "open"]
-    if not any(is_a_start_defect(d) for _, d in open_):
-        return set()
-    return {at for at, d in open_ if not is_a_start_defect(d)}
+    for first in (is_a_start_defect, is_a_smoke_defect):
+        if any(first(d) for _, d in open_):
+            return {at for at, d in open_ if not first(d)}
+    return set()
 
 
 __all__ = ["ALSO_WHILE_IT_DOES_NOT_START", "DEPENDENCIES_DO_NOT_INSTALL", "folded", "held_back", "is_a_start_defect"]

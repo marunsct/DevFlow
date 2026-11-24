@@ -1624,6 +1624,10 @@ def still_raised(repo_root: str | Path, description: str, *, runner: Any = None)
 
     if text.startswith(page_probe.PAGE_CHECK_FAILED):
         return page_probe.still_raised(repo_root, text, runner=runner)
+    from app.acceptance import foundation_smoke
+
+    if text.startswith(foundation_smoke.FOUNDATION_FAILS):
+        return foundation_smoke.still_raised(repo_root, text, runner=runner)
     if not text.startswith(SERVER_FAILED):
         return None
     # A call may be named for any request; each kind is settled by asking the same request again.

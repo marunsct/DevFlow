@@ -48,15 +48,20 @@ def defect_id(defect: Any) -> str:
 
 
 def note(event: str, stage: str, *, defect: Any = None, round_: int | None = None,
-         index: int | None = None, detail: str = "", sprint: int | None = None) -> None:
-    """Record one event in this run's transcript. Never raises."""
+         index: int | None = None, detail: str = "", sprint: int | None = None, **fields: Any) -> None:
+    """Record one event in this run's transcript, with any structured `fields` beside the usual ones. Never raises.
+
+    A defect's outcome is followed by whether a lookup note shown to it since its last outcome helped (HK.4,
+    `lookup_notes.outcome_seen`)."""
+    key = ""
     try:
         from app.observability.transcript import _run_id_from_config, record
 
+        key = defect_id(defect) if defect is not None else ""
         record(
             _run_id_from_config(), stage, "defect",
             event=event,
-            defect_id=defect_id(defect) if defect is not None else "",
+            defect_id=key,
             sprint=sprint,
             round=round_,
             index=index,
@@ -64,9 +69,14 @@ def note(event: str, stage: str, *, defect: Any = None, round_: int | None = Non
             owner=str(getattr(defect, "owner", "") or ""),
             description=" ".join(str(getattr(defect, "description", "") or "").split())[:300],
             detail=" ".join(str(detail or "").split())[:900],
+            **fields,
         )
     except Exception:  # noqa: BLE001 - a ledger must never fail the stage it records
         pass
+    if key:
+        from app.observability import lookup_notes
+
+        lookup_notes.outcome_seen(event, stage, defect, key)
 
 
 def shown(stage: str, defect: Any, request: Any, *, round_: int | None = None, index: int | None = None,

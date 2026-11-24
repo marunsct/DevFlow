@@ -39,8 +39,9 @@ TRIGGER_STUCK = "T1 stuck"
 TRIGGER_INSTALL = "T2 install"
 TRIGGER_RECURRING = "T3 recurring build error"
 
-#: (workspace, cleaned query) already looked up in this process: one lookup per error per run.
-_DONE: dict[tuple[str, str], str] = {}
+#: (workspace, cleaned error) already looked up in this process - one lookup per error per run - and (the section it
+#: gave, the query it searched).
+_DONE: dict[tuple[str, str], tuple[str, str]] = {}
 
 
 def enabled() -> bool:
@@ -206,7 +207,9 @@ def _the_installer_words(repo_root: str | Path, stack: Any) -> str:
 def _looked_up(repo_root: str | Path, error: str, stack_words: str, *, trigger: str, stage_name: str,
                defect: Any = None) -> str:
     """`error` looked up once per run - the same cleaned error met by any trigger is asked once - as the section a
-    request carries; each first lookup a ledger record naming its trigger. "" when nothing was found."""
+    request carries; "" when nothing was found. Each note shown is a ledger record with its id and the defect it was
+    for, the first as a lookup, each later one as shown again (`app.observability.lookup_notes`, HK.4)."""
+    from app.observability import lookup_notes
     from app.tools import lookups
 
     private = _the_private_words(repo_root)
@@ -214,20 +217,15 @@ def _looked_up(repo_root: str | Path, error: str, stack_words: str, *, trigger: 
     if not key[1]:
         return ""
     if key in _DONE:
-        return _DONE[key]
+        shown, query = _DONE[key]
+        if shown:
+            lookup_notes.record(stage_name, {"query": query}, trigger=trigger, defect=defect, again=True)
+        return shown
     answer = lookups.look_up(error, stack_words, private, repo_root=repo_root)
     shown = lookups.as_a_section(answer)
     shown = ("\n" + shown) if shown else ""
-    _DONE[key] = shown
-    try:
-        from app.observability import defect_ledger
-
-        defect_ledger.note(LOOKUP_EVENT, stage_name, defect=defect, detail=(
-            f"{trigger}: searched {answer.get('query')!r}: {len(answer.get('found') or [])} found"
-            + (" (cached)" if answer.get("cached") else f" from {', '.join(answer.get('asked') or [])}")
-            + (f"; skipped {'; '.join(answer['skipped'])}" if answer.get("skipped") else "")))
-    except Exception:  # noqa: BLE001 - a record must never fail the stage
-        pass
+    _DONE[key] = (shown, str(answer.get("query") or ""))
+    lookup_notes.record(stage_name, answer, trigger=trigger, defect=defect)
     return shown
 
 

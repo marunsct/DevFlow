@@ -41,7 +41,7 @@ def test_ready_prints_the_sources_above_the_model_s_verdict_and_keeps_its_status
 
 def test_an_optional_source_with_no_key_or_at_its_cap_says_so_instead_of_being_asked(tmp_path, monkeypatch, capsys):
     """WL.6: the paid searches are listed with no key, and a source at its daily cap is listed as capped, unasked."""
-    from app.tools import lookups, package_registry, page_reader
+    from app.tools import lookups, package_registry, page_reader, source_health
 
     sent = []
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
@@ -54,6 +54,7 @@ def test_an_optional_source_with_no_key_or_at_its_cap_says_so_instead_of_being_a
     monkeypatch.setattr(page_reader, "_fetch", lambda url, address: (404, {}, b"") if url.endswith("robots.txt") else (
         200, {"content-type": "text/plain"}, b"Example Domain"))
     monkeypatch.setattr(page_reader, "_resolve", lambda host: ["93.184.215.14"])
+    monkeypatch.setattr(source_health, "_get", lambda url, headers: sent.append(url) or (503, {}, ""))
 
     _module().main()
 
@@ -61,5 +62,5 @@ def test_an_optional_source_with_no_key_or_at_its_cap_says_so_instead_of_being_a
     assert "LOOKUPS brave: no key (optional; asked only with one)" in printed
     assert "LOOKUPS tavily: no key (optional; asked only with one)" in printed
     assert any(line.startswith("LOOKUPS context7: capped (daily cap of 0 requests reached)") for line in printed)
-    assert any(line.startswith("LOOKUPS page reader: answers") for line in printed)
+    assert any(line.startswith("LOOKUPS page reader, a documentation page: answers") for line in printed)
     assert not [url for url in sent if "context7" in url or "brave" in url or "tavily" in url]

@@ -1,0 +1,370 @@
+{
+ "about": "Past stuck defects with the fix that closed them, for scoring the stuck lookup without a model (plan HK.4; scripts/loop/replay_lookups.py). `error` is the line a lookup searches; `names_the_fix` holds patterns (case-insensitive), any one of which in the note a fixer is shown means it names the known fix; `public` is false where the line itself names no cause, so no public answer could. `measured_in` is the fix-log row or plan item that recorded the case. Target: at least 60% of the public cases named.",
+ "target": 0.6,
+ "cases": [
+  {
+   "id": "rust-crates-newer-than-the-toolchain",
+   "language": "Rust",
+   "framework": "axum",
+   "error": "error: rustc 1.85.1 is not supported by the following package: icu_collections@2.4.0 requires rustc 1.88",
+   "fix": "Let cargo choose the releases this toolchain builds: `incompatible-rust-versions = \"fallback\"` in `.cargo/config.toml` (the MSRV-aware resolver), or pin the crate with `cargo update -p <crate> --precise <older release>`.",
+   "names_the_fix": [
+    "incompatible-rust-versions",
+    "--precise",
+    "msrv[- ]aware",
+    "resolver\\s*=\\s*\\\"?3"
+   ],
+   "public": true,
+   "measured_in": "LF.1277"
+  },
+  {
+   "id": "query-macros-need-a-database-at-compile-time",
+   "language": "Rust",
+   "framework": "axum sqlx",
+   "error": "error: set `DATABASE_URL` to use query macros online, or run `cargo sqlx prepare` to update the query cache",
+   "fix": "Use the function forms, `sqlx::query(...).bind(...)` and `sqlx::query_as::<_, T>(...)`, which need no database while the crate compiles (or build offline with `SQLX_OFFLINE` and a prepared `.sqlx` cache).",
+   "names_the_fix": [
+    "sqlx::query\\(",
+    "query_as::<",
+    "query_as\\(",
+    "SQLX_OFFLINE",
+    "\\.sqlx\\b",
+    "without (?:the )?macros?",
+    "non-macro"
+   ],
+   "public": true,
+   "measured_in": "LF.1278"
+  },
+  {
+   "id": "pool-options-under-the-driver-module",
+   "language": "Rust",
+   "framework": "axum sqlx",
+   "error": "error[E0432]: unresolved import `sqlx::SqlitePoolOptions`",
+   "fix": "Import it from the driver's module: `sqlx::sqlite::SqlitePoolOptions`.",
+   "names_the_fix": [
+    "sqlite::SqlitePoolOptions"
+   ],
+   "public": true,
+   "measured_in": "LF.1279"
+  },
+  {
+   "id": "rejection-type-under-its-own-module",
+   "language": "Rust",
+   "framework": "axum",
+   "error": "error[E0432]: unresolved import `axum::extract::JsonRejection`",
+   "fix": "Import it from `axum::extract::rejection::JsonRejection`.",
+   "names_the_fix": [
+    "rejection::JsonRejection",
+    "extract::rejection"
+   ],
+   "public": true,
+   "measured_in": "LF.1280"
+  },
+  {
+   "id": "journal-mode-set-by-pragma",
+   "language": "Rust",
+   "framework": "axum rusqlite",
+   "error": "error[E0432]: unresolved import `rusqlite::JournalMode`",
+   "fix": "The crate has no such type; set the mode with a pragma: `conn.pragma_update(None, \"journal_mode\", \"WAL\")`.",
+   "names_the_fix": [
+    "pragma_update",
+    "PRAGMA\\s+journal_mode",
+    "journal_mode\\W+WAL"
+   ],
+   "public": true,
+   "measured_in": "LF.1239"
+  },
+  {
+   "id": "transaction-needs-a-mutable-connection",
+   "language": "Rust",
+   "framework": "axum rusqlite",
+   "error": "error[E0596]: cannot borrow `*conn` as mutable, as it is behind a `&` reference",
+   "fix": "Take the connection as `&mut Connection` (or use `unchecked_transaction()` on a shared one).",
+   "names_the_fix": [
+    "&mut\\s+(?:Connection|conn|self)\\b",
+    "unchecked_transaction"
+   ],
+   "public": true,
+   "measured_in": "LF.1240"
+  },
+  {
+   "id": "question-mark-across-error-types",
+   "language": "Rust",
+   "framework": "axum rusqlite",
+   "error": "error[E0277]: `?` couldn't convert the error to `rusqlite::Error`",
+   "fix": "Convert the error explicitly with `map_err`, or return an error type that implements `From` for both (`impl From<std::io::Error>`).",
+   "names_the_fix": [
+    "map_err",
+    "impl\\s+From<",
+    "Box<dyn\\s+(?:std::error::)?Error"
+   ],
+   "public": true,
+   "measured_in": "LF.1239"
+  },
+  {
+   "id": "package-release-needs-a-newer-framework",
+   "language": "C#",
+   "framework": "ASP.NET Core",
+   "error": "error NU1202: Package Microsoft.EntityFrameworkCore.Sqlite 11.0.0 is not compatible with net8.0 (.NETCoreApp,Version=v8.0). Package Microsoft.EntityFrameworkCore.Sqlite 11.0.0 supports: net10.0 (.NETCoreApp,Version=v10.0)",
+   "fix": "Use the newest release of the package's line that targets the project's framework (8.0.x for net8.0), an older version than the newest.",
+   "names_the_fix": [
+    "Version=\\\"8\\.",
+    "\\b8\\.0\\.\\d+",
+    "older (?:version|release)",
+    "downgrad",
+    "match(?:es|ing)? (?:your|the) (?:target )?framework"
+   ],
+   "public": true,
+   "measured_in": "LF.1248"
+  },
+  {
+   "id": "no-dialect-for-the-database",
+   "language": "Java",
+   "framework": "Spring Boot",
+   "error": "org.hibernate.HibernateException: Unable to determine Dialect without JDBC metadata (please set 'jakarta.persistence.jdbc.url' for common cases or 'hibernate.dialect' when a custom Dialect implementation must be provided)",
+   "fix": "Add `org.hibernate.orm:hibernate-community-dialects` and set `spring.jpa.database-platform=org.hibernate.community.dialect.SQLiteDialect` (and create the data folder before the first connection).",
+   "names_the_fix": [
+    "community[.-]dialects?",
+    "SQLiteDialect",
+    "database-platform"
+   ],
+   "public": true,
+   "measured_in": "LF.1207"
+  },
+  {
+   "id": "hashing-library-broken-by-its-backend",
+   "language": "Python",
+   "framework": "FastAPI passlib",
+   "error": "ValueError: password cannot be longer than 72 bytes, truncate manually if necessary (e.g. my_password[:72])",
+   "fix": "passlib 1.7.4 (its last release) breaks with bcrypt 4.1 and later: pin `bcrypt==4.0.1`, or call `bcrypt` directly with `bcrypt.hashpw` instead of passlib.",
+   "names_the_fix": [
+    "bcrypt\\s*(?:==|<=?|~=)\\s*4\\.0",
+    "4\\.0\\.1",
+    "bcrypt\\.hashpw",
+    "passlib (?:is )?(?:no longer|un)maintained",
+    "(?:drop|replace|remove) passlib",
+    "\\bpwdlib\\b"
+   ],
+   "public": true,
+   "measured_in": "LF.61"
+  },
+  {
+   "id": "token-subject-must-be-text",
+   "language": "Python",
+   "framework": "FastAPI PyJWT",
+   "error": "jwt.exceptions.InvalidSubjectError: Subject must be a string",
+   "fix": "Put the account's id in the `sub` claim as a string: `\"sub\": str(user.id)`, and convert it back when reading.",
+   "names_the_fix": [
+    "sub\\W{1,6}str\\(",
+    "convert(?:ed)? (?:it |the \\w+ )?to (?:a )?string",
+    "as a string"
+   ],
+   "public": true,
+   "measured_in": "LF.179"
+  },
+  {
+   "id": "work-outside-the-application-context",
+   "language": "Python",
+   "framework": "Flask",
+   "error": "RuntimeError: Working outside of application context.",
+   "fix": "Do the start-up work inside `with app.app_context():` (and in tests through a fixture or `app.test_client()`).",
+   "names_the_fix": [
+    "app_context\\(\\)",
+    "app\\.app_context"
+   ],
+   "public": true,
+   "measured_in": "LF.1213"
+  },
+  {
+   "id": "an-id-past-the-database-integer",
+   "language": "Python",
+   "framework": "FastAPI sqlite3",
+   "error": "OverflowError: Python int too large to convert to SQLite INTEGER",
+   "fix": "Check an id against SQLite's 64-bit range (at most 2**63 - 1) before the query and answer 404 for one past it.",
+   "names_the_fix": [
+    "2\\s*\\*\\*\\s*63",
+    "9223372036854775807",
+    "64[- ]bit",
+    "sys\\.maxsize",
+    "(?:range|bound)s? check",
+    "check (?:the )?(?:id|value)s? (?:against|is within|range)"
+   ],
+   "public": true,
+   "measured_in": "LF.1194"
+  },
+  {
+   "id": "an-index-declared-twice",
+   "language": "Python",
+   "framework": "FastAPI SQLAlchemy",
+   "error": "sqlite3.OperationalError: index ix_users_email already exists",
+   "fix": "Declare the index once - the column's `index=True` or an explicit `Index`, not both - or create it `IF NOT EXISTS`.",
+   "names_the_fix": [
+    "IF NOT EXISTS",
+    "checkfirst",
+    "(?:declared|defined|created) twice",
+    "duplicate (?:index|Index)"
+   ],
+   "public": true,
+   "measured_in": "LF.1245"
+  },
+  {
+   "id": "a-name-the-language-server-cannot-find",
+   "language": "Python",
+   "framework": "SQLAlchemy",
+   "error": "\"JSONB\" is not defined",
+   "fix": "Import it from the dialect: `from sqlalchemy.dialects.postgresql import JSONB`.",
+   "names_the_fix": [
+    "dialects\\.postgresql import",
+    "from sqlalchemy\\.dialects"
+   ],
+   "public": true,
+   "measured_in": "LF.1231"
+  },
+  {
+   "id": "a-namespace-the-autoloader-does-not-map",
+   "language": "PHP",
+   "framework": "Slim",
+   "error": "PHP Fatal error: Uncaught Error: Class \"Api\\SqliteRepository\" not found",
+   "fix": "Map the namespace to its folder in `composer.json` (`autoload.psr-4`) and run `composer dump-autoload`, or use the namespace already mapped.",
+   "names_the_fix": [
+    "psr-4",
+    "dump-autoload"
+   ],
+   "public": true,
+   "measured_in": "LF.1209"
+  },
+  {
+   "id": "middleware-with-the-old-signature",
+   "language": "PHP",
+   "framework": "Slim 4",
+   "error": "PHP Fatal error: Uncaught TypeError: Argument #2 ($handler) must be of type callable, Psr\\Http\\Server\\RequestHandlerInterface given",
+   "fix": "Write the middleware the PSR-15 way: `function (Request $request, RequestHandler $handler)` returning `$handler->handle($request)`.",
+   "names_the_fix": [
+    "->handle\\(",
+    "PSR-15"
+   ],
+   "public": true,
+   "measured_in": "WL.4"
+  },
+  {
+   "id": "a-static-local-function-reads-an-outer-variable",
+   "language": "C#",
+   "framework": "ASP.NET Core",
+   "error": "error CS8421: A static local function cannot contain a reference to 'connectionString'.",
+   "fix": "Remove the `static` from the local function, or pass the value in as a parameter.",
+   "names_the_fix": [
+    "remove (?:the )?`?static",
+    "non-static",
+    "without (?:the )?`?static",
+    "pass (?:it|the \\w+|\\w+) (?:in )?as (?:a |an )?(?:parameter|argument)"
+   ],
+   "public": true,
+   "measured_in": "LF.1226"
+  },
+  {
+   "id": "an-access-modifier-on-a-local-function",
+   "language": "C#",
+   "framework": "ASP.NET Core minimal API",
+   "error": "error CS0106: The modifier 'public' is not valid for this item",
+   "fix": "In top-level statements a declared function is a local function: drop the `public`, or move it into a class.",
+   "names_the_fix": [
+    "top-level statements?",
+    "local functions?",
+    "(?:remove|drop) (?:the )?`?public",
+    "(?:move|put) (?:it |them |the \\w+ )?(?:in)?to a (?:static )?class"
+   ],
+   "public": true,
+   "measured_in": "LF.1226"
+  },
+  {
+   "id": "an-es-module-import-without-its-extension",
+   "language": "TypeScript",
+   "framework": "Node Hono",
+   "error": "Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/app/src/middleware/bodyLimit' imported from /app/src/index.ts",
+   "fix": "Relative imports in ES modules name the file with its file extension (`./middleware/bodyLimit.ts` where Node runs TypeScript itself, `.js` after a build).",
+   "names_the_fix": [
+    "file extensions?",
+    "(?:add|include|with|need) (?:the |a |an )?`?\\.(?:js|ts)`? extension",
+    "extensions? (?:is|are) (?:required|mandatory)",
+    "allowImportingTsExtensions",
+    "rewriteRelativeImportExtensions",
+    "fully[- ]specified"
+   ],
+   "public": true,
+   "measured_in": "WM.3"
+  },
+  {
+   "id": "a-handler-that-returns-nothing",
+   "language": "TypeScript",
+   "framework": "Node Hono",
+   "error": "TypeError: res.body.getReader is not a function",
+   "fix": "Return the response the context builds from the handler: `return c.json(body, status)`.",
+   "names_the_fix": [
+    "return c\\.",
+    "(?:must|need to|forgot to|should|did not|didn't) return",
+    "missing return",
+    "return (?:the |a )?(?:response|Response)"
+   ],
+   "public": true,
+   "measured_in": "LF.330"
+  },
+  {
+   "id": "a-standard-package-not-imported",
+   "language": "Go",
+   "framework": "net/http",
+   "error": "undefined: strconv",
+   "fix": "Import the standard package: `import \"strconv\"` (goimports adds what a file uses).",
+   "names_the_fix": [
+    "import\\s*\\(?\\s*\\\"strconv\\\"",
+    "goimports",
+    "add (?:the |an )?import",
+    "missing import",
+    "import (?:the )?`?strconv"
+   ],
+   "public": true,
+   "measured_in": "LF.1219"
+  },
+  {
+   "id": "a-gem-release-that-was-never-published",
+   "language": "Ruby",
+   "framework": "Sinatra",
+   "error": "Could not find gem 'sqlite3 (~> 1.0.2)' in rubygems repository https://rubygems.org/ or installed locally.",
+   "fix": "Ask for a release the registry has (`gem \"sqlite3\", \"~> 2.0\"`); `bundle add sqlite3` picks the current one.",
+   "names_the_fix": [
+    "~>\\s*(?:1\\.[4-9]|2\\.\\d)",
+    "bundle add",
+    "bundle update",
+    "gem (?:search|list --remote)"
+   ],
+   "public": true,
+   "measured_in": "LF.1138"
+  },
+  {
+   "id": "a-server-error-whose-line-names-no-cause",
+   "language": "Python",
+   "framework": "FastAPI",
+   "error": "ERROR: Exception in ASGI application",
+   "fix": "The product never created its tables at start: call the schema's `create_all` when the application starts.",
+   "names_the_fix": [
+    "create_all",
+    "metadata\\.create",
+    "(?:tables?|schema) (?:are |is |were )?(?:never |not )?created"
+   ],
+   "public": false,
+   "measured_in": "LF.1290"
+  },
+  {
+   "id": "a-read-of-a-field-the-product-refused-to-store",
+   "language": "Python",
+   "framework": "FastAPI",
+   "error": "KeyError: 'id'",
+   "fix": "The product refused an empty body that the brief allows; allow an empty string for it.",
+   "names_the_fix": [
+    "empty (?:string|body)",
+    "allow (?:an )?empty"
+   ],
+   "public": false,
+   "measured_in": "LF.1273"
+  }
+ ]
+}

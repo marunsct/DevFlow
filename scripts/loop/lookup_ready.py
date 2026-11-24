@@ -5,9 +5,12 @@
 Measured 2026-11-20: the private search's general engines had refused every query for weeks and nothing noticed -
 the container's health check tests only that it is up. Each source here is asked one fixed, generic question with the
 cache bypassed; one line per source says whether it answered, how many results and how long it took. An optional
-source with no key, or one at its daily request cap (plan WL.6), says so instead of being asked. The page reader is
-asked for one public page. A warning, never a block: `ready`'s last line is the model's verdict alone, and a source
-that does not answer only means lookups for a stuck fixer find less. Exits 0 always. No key is ever printed.
+source with no key, or one at its daily request cap (plan WL.6), says so instead of being asked. Then (KS.6,
+`app.tools.source_health`): each engine of the private search that did not answer, Stack Exchange's and GitHub's
+allowances left, and the page reader on one page of each kind a lookup reads - a file on a code host, a documentation
+page, a question and its answers - in place of example.com, which never failed the way they do. A warning, never a
+block: `ready`'s last line is the model's verdict alone, and a source that does not answer only means lookups for a
+stuck fixer find less. Exits 0 always. No key is ever printed.
 """
 from __future__ import annotations
 
@@ -17,8 +20,6 @@ import time
 QUESTION = "TypeError: Cannot read properties of undefined reading map"
 #: The library the question is about, for a source that looks up a library's documentation.
 LIBRARY = "node"
-#: A public page that is always there, for the page reader.
-PAGE = "https://example.com/"
 
 
 def _ask(name: str, ask) -> str:
@@ -53,25 +54,13 @@ def _source_lines() -> list[str]:
     return lines
 
 
-def _page_reader_line() -> str:
-    from app.tools import page_reader
-
-    def read() -> int:
-        page = page_reader.read(PAGE)
-        if page.get("error"):
-            raise RuntimeError(page["error"])
-        return 1
-
-    return _ask("page reader", read)
-
-
 def main() -> int:
-    from app.tools import package_registry
+    from app.tools import package_registry, source_health
 
     lines = [
         *_source_lines(),
         _ask("package registry", lambda: 1 if package_registry.look_up("npm", "express").get("version") else 0),
-        _page_reader_line(),
+        *source_health.lines(),
     ]
     for line in lines:
         print(line)

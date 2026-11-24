@@ -38,7 +38,6 @@ import ssl
 from html.parser import HTMLParser
 from typing import Any, Callable
 from urllib.parse import quote, urljoin, urlparse, urlsplit
-from urllib.robotparser import RobotFileParser
 
 from app.tools.untrusted_text import defanged
 
@@ -185,19 +184,17 @@ def _get(url: str, fetch: Fetch, resolve: Resolve) -> tuple[str, Response | None
 # --- robots.txt -----------------------------------------------------------------------------------------------------
 
 def _robots_allow(url: str, fetch: Fetch, resolve: Resolve) -> bool:
-    """Whether the site's robots.txt lets `USER_AGENT` read `url`; asked on each read, as the MCP fetch server does."""
-    parsed = urlparse(url)
-    try:
-        _, response, why = _get(f"{parsed.scheme}://{parsed.netloc}/robots.txt", fetch, resolve)
-    except Exception:  # noqa: BLE001 - unreachable: RFC 9309 says assume it disallows
-        return False
-    if why or response is None or response[0] >= 500:
-        return False
-    if not 200 <= response[0] < 300:
-        return True  # 4xx: no robots.txt, everything allowed
-    rules = RobotFileParser()
-    rules.parse(_decoded(response[2], response[1]).splitlines())
-    return rules.can_fetch(USER_AGENT, url)
+    """Whether the site's robots.txt lets `USER_AGENT` read `url`: its rules read as RFC 9309 says (`*` and `$` in a
+    path), the file asked once per host a day for this transport (`app.tools.robots`, KS.7)."""
+    from app.tools import robots
+
+    def robots_txt(address: str) -> tuple[int, str] | None:
+        _, response, why = _get(address, fetch, resolve)
+        if why or response is None:
+            return None
+        return response[0], _decoded(response[2], response[1]) if 200 <= response[0] < 300 else ""
+
+    return robots.allows(url, USER_AGENT, robots_txt, cache_for=fetch)
 
 
 # --- main text ------------------------------------------------------------------------------------------------------

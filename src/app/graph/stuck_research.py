@@ -475,10 +475,11 @@ def _merged(answers: list[dict[str, Any]], leads: list[dict[str, Any]]) -> dict[
 
 def research(repo_root: str | Path, error: str, stack_words: str, private: list[str], *, stack: Any = None,
              defect: Any = None, trigger: str = "", stage_name: str = "defect_fix",
-             model: Any = None) -> tuple[str, str]:
+             model: Any = None, always_condensed: bool = False) -> tuple[str, str]:
     """(the note a stuck fixer's request carries for `error`, or "" when nothing was found; the query it is known by).
     The note is one ledger record (`lookup_notes.record`: its id, its defect, the sources asked and what each gave,
-    the queries, the sources shown and the verdict) and one line of `NOTES_FILE`, either way. Never raises."""
+    the queries, the sources shown and the verdict) and one line of `NOTES_FILE`, either way. `always_condensed`: the
+    leads are condensed whatever `STUCK_LOOKUP_CONDENSED` says (the `research` tool, plan HK.11). Never raises."""
     from app.observability import lookup_notes
     from app.tools import lookups
 
@@ -521,7 +522,8 @@ def research(repo_root: str | Path, error: str, stack_words: str, private: list[
             record["sources"] = [{"url": lead.get("url"), "source": lead.get("source"), "date": lead.get("date"),
                                   "resolution_by": lead.get("resolution_by", "")} for lead in leads]
             record["refused"] = sorted({n for a in answers for n in a.get("refused") or []})
-            note = condense(model, found, leads, stack_words) if leads and model is not None and condensed() else None
+            note = (condense(model, found, leads, stack_words)
+                    if leads and model is not None and (always_condensed or condensed()) else None)
             if note is not None:
                 record.update(verdict="applies" if note["applies"] else "does not apply", condensed=note,
                               another_line=another_line(note.get("versions", ""), found))

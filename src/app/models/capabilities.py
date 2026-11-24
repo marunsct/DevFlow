@@ -70,6 +70,8 @@ FIELDS: tuple[Field, ...] = (
     Field("model_card", "Model card", "text"),
     # When its training data ends (plan HK.7): libraries released after it get their installed API in the requests.
     Field("knowledge_cutoff", "Training data ends (year-month)", "text"),
+    # Whether it looks up what is newer than its training, and uses the answer (plan HK.11): it decides its web tools.
+    Field("researches", "Looks up what is newer than its training, and uses the answer", "bool"),
     Field("think_tag_tokens", "How it opens its reasoning", "text"),
     Field("send_sampling", "Send the recommended sampling with every request", "bool"),
     Field("sampling_to_send", "Sampling to send", "text"),
@@ -475,6 +477,10 @@ def measure(model: Any, no_images: bool = False) -> dict[str, dict]:
                                                                                   f": {' '.join(text.split())[:40]!r}"))
     except Exception as error:  # noqa: BLE001
         _failed(out, "multilingual", error, "no answer")
+    # Given a file to write against a release newer than its training and a lookup, does it ask and use the answer.
+    from app.models import research_check
+
+    out.update(research_check.measure(model))
     return out
 
 

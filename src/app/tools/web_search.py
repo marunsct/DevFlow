@@ -325,7 +325,14 @@ def offered() -> bool:
 
 
 def web_tools(repo_root: str | Path | None = None) -> list[Any]:
-    """The web search and page reader for a stage: only with a search service and only when they are offered."""
+    """The web search and page reader for a stage: only with a search service and only when they are offered. By the
+    model's measured verdict (`app.tools.research_tool`, plan HK.11): one `research` tool in their place for a model
+    that looks things up, none for one that never does."""
+    from app.tools import research_tool
+
+    by_tier = research_tool.tools_by_tier(repo_root)
+    if by_tier is not None:
+        return by_tier
     return build_web_tools(repo_root=repo_root) if enabled() and offered() else []
 
 

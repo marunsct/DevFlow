@@ -787,6 +787,10 @@ def execute_workflow_run(
 
             if not capabilities.found_values(served_name(served)):
                 capabilities.fill(served, served_name(served), str(getattr(served, "model_name", "") or ""))
+            from app.models import research_check
+
+            # A model whose capabilities were found before the check existed (plan HK.11).
+            research_check.measure_if_new(served, served_name(served))
             note_in_transcript(run_id, "", "model_diagnostic", event="end")
         except _NotDiagnosed:
             pass

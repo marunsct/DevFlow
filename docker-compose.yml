@@ -88,6 +88,8 @@ x-app-env: &app-env
   PRODUCT_RESEARCH: ${PRODUCT_RESEARCH:-off}
   API_CARDS_FOR_NEWER_RELEASES: ${API_CARDS_FOR_NEWER_RELEASES:-off}
   FRAMEWORK_GUIDANCE_FOR_ADVISERS: ${FRAMEWORK_GUIDANCE_FOR_ADVISERS:-off}
+  # Plan HK.11: no web tool schemas for a model measured never to look things up (off until measured).
+  WEB_TOOLS_BY_MEASURED_TIER: ${WEB_TOOLS_BY_MEASURED_TIER:-off}
   CONTESTED_TESTS_CONFIRMED: ${CONTESTED_TESTS_CONFIRMED:-off}
   # Per-role audit 2026-11-20 (items 4, 7, 8): smaller prompts, each read once per run, off until measured.
   QA_PROMPT_TRIMMED: ${QA_PROMPT_TRIMMED:-off}

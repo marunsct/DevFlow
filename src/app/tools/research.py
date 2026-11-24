@@ -76,7 +76,8 @@ def researched(done: bool = True) -> Iterator[None]:
 
 #: The tools that spend each share, by the share they spend.
 _TOOL_OF = {
-    "documentation": ("read_docs",), "packages": ("look_up_package",), "web": ("search_the_web", "read_web_page"),
+    "documentation": ("read_docs",), "packages": ("look_up_package",),
+    "web": ("search_the_web", "read_web_page", "research"),
 }
 
 

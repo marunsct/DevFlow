@@ -93,7 +93,6 @@ Plan: `reports/research/2026-11-24-agents-that-work-like-a-team.md`. The harness
 | HK.1 stack facts sheet (`.harness/stack-facts.json`): toolchain versions, each dependency's newest release that fits it, deprecated/yanked, every ecosystem | training-data defaults vs the real ecosystem (Rust 0/9 for days) | M | owner go-ahead | install failures by cause, never-built runs | built (LF.1292), not yet measured |
 | HK.2 toolchain-fit check after the install resolves: a mismatch is a stated cause in the first minute | the general form of LF.1277 / NU1202 | S-M | HK.1 | first-minute cause on a version trap | built (LF.1293), not yet measured |
 | HK.3 stuck lookup rebuilt: installed package first, short queries, the library's own tracker, the resolution read, ranked, condensed to cause/fix/versions/source, version-checked | 2 of 9 looked-up defects fixed today | M-L | owner | replay set; share closed by the next fix | not built |
-| HK.4 outcome records and a replay set of 15-25 past stuck defects | measures HK.3 without model runs | S-M | none | note names the known fix in >=60% | not built |
 Phases 2-3 (HK.6-HK.12: advisories and end-of-life, version-pinned API cards, stack-selection evidence, current security/testing guidance, product research, tools by measured tier, a production lookup service with shared public cache, single-flight, atomic per-tenant limits) are in the report.
 
 ### 3.1b Search without paid keys, as open-source harnesses do (KS, research 2026-11-25; owner: implement)

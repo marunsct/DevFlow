@@ -35,6 +35,45 @@ def at_most(problems: list[Any], most: int) -> list[Any]:
     more = f" (and {len(rest) - 1} more of the same check: {named}{'; ...' if len(rest) > 6 else ''})"
     return kept + [last.model_copy(update={"description": f"{getattr(last, 'description', '')}{more}"})]
 
+
+#: Defects one source - the test round, the acceptance suite, the page check, a review - raises into fixers in one
+#: round; the rest ride on the last, as `at_most` bundles them. Measured on one medium run: 14 and 15 fixers queued in
+#: one round from the test round and the acceptance suite, uncapped while the cross-file check was capped, and the
+#: run's graph met its step limit in the fix round.
+MOST_FROM_ONE_SOURCE_PER_ROUND = MOST_PROVEN_PER_ROUND
+
+_SEVERITY_RANK = {"blocking": 2, "major": 1}
+
+
+def _size_of_its_cause(defect: Any) -> tuple[int, int]:
+    """How large a cause is, for keeping the largest: a blocking one first, then the most that measured it."""
+    return (_SEVERITY_RANK.get(str(getattr(defect, "severity", "") or ""), 0),
+            len(getattr(defect, "evidence", None) or ()))
+
+
+def at_most_of_each_source(reported: list[Any], most: int = MOST_FROM_ONE_SOURCE_PER_ROUND) -> list[Any]:
+    """`reported` with each source's defects at most `most`: an over-full source keeps its largest causes and bundles
+    the rest into one defect of its own (`at_most`), in the place its first defect had. A source within `most` is
+    left as it is, in its order."""
+    by_source: dict[str, list[Any]] = {}
+    for defect in reported:
+        by_source.setdefault(str(getattr(defect, "source", "") or ""), []).append(defect)
+    capped: dict[str, list[Any] | None] = {
+        source: at_most(sorted(group, key=_size_of_its_cause, reverse=True), most)
+        for source, group in by_source.items() if len(group) > most
+    }
+    if not capped:
+        return list(reported)
+    kept: list[Any] = []
+    for defect in reported:
+        source = str(getattr(defect, "source", "") or "")
+        if source not in capped:
+            kept.append(defect)
+        elif capped[source] is not None:
+            kept.extend(capped[source] or [])
+            capped[source] = None
+    return kept
+
 #: The workflow's logger: the nodes log as they did inside the builder.
 logger = logging.getLogger("app.graph.workflow")
 
@@ -416,6 +455,13 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
     from app.stacks.known_errors import with_known_causes
 
     reported = with_known_causes(state["repository"].root_path, reported)
+    # No source queues more fixers a round than the graph can step through, once the one-cause rules above have
+    # merged what is one problem (LF.1261).
+    capped = at_most_of_each_source(reported)
+    if len(capped) < len(reported):
+        logger.warning("test_round_%d raised %d defect(s); bundled to %d, at most %d from one source",
+                       test_round, len(reported), len(capped), MOST_FROM_ONE_SOURCE_PER_ROUND)
+    reported = capped
     cycle = state.get("remediation") or start_remediation(
         milestone.selected_sprint_goal, max_attempts=MAX_REMEDIATION_ATTEMPTS
     )

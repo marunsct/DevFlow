@@ -24,6 +24,8 @@ from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any
 
+from langgraph.errors import GraphRecursionError
+
 from app.agents.approval import approve_write_decision, reject_write_decision
 from app.documents import DocumentContent
 from app.graph.workflow import (
@@ -1540,38 +1542,58 @@ class WorkflowRunner:
                 else {}
             )
 
-            if resume:
-                decision = getattr(record, "pending_decision_payload", None)
-                if decision and decision.get("type") == "approval":
-                    state = await asyncio.to_thread(
-                        resume_pending_approval, graph, record.thread_id, decision["decision"],
-                        metadata=trace_meta, run_id=run_id,
-                    )
-                elif decision and decision.get("type") == "review":
-                    state = await asyncio.to_thread(
-                        resume_pending_review, graph, record.thread_id, decision["decision"],
-                        metadata=trace_meta, run_id=run_id,
-                    )
-                elif self._resume_means_answering_own_gate(record, graph):
-                    state = await asyncio.to_thread(
-                        resume_pending_approval, graph, record.thread_id,
-                        approve_write_decision(), metadata=trace_meta, run_id=run_id,
-                    )
-                else:
-                    from app.graph.workflow import resume_failed_run
+            from app.graph.workflow import resume_failed_run
+            from app.server import step_limit
 
-                    state = await asyncio.to_thread(
-                        resume_failed_run, graph, record.thread_id, metadata=trace_meta,
-                        run_id=run_id,
-                    )
-            else:
-                state = await asyncio.to_thread(
-                    start_workflow, graph, document, repository, record.thread_id,
-                    review_policy=record.review_policy, reviewer=record.reviewer,
-                    metadata=trace_meta, run_id=run_id,
-                )
+            stops = step_limit.StepLimitStops()
+            went_on = False
+            while True:
+                try:
+                    if went_on:
+                        # From the checkpoint the stop left, as a resume goes on (`resume_failed_run`).
+                        state = await asyncio.to_thread(
+                            resume_failed_run, graph, record.thread_id, metadata=trace_meta, run_id=run_id,
+                        )
+                    elif resume:
+                        decision = getattr(record, "pending_decision_payload", None)
+                        if decision and decision.get("type") == "approval":
+                            state = await asyncio.to_thread(
+                                resume_pending_approval, graph, record.thread_id, decision["decision"],
+                                metadata=trace_meta, run_id=run_id,
+                            )
+                        elif decision and decision.get("type") == "review":
+                            state = await asyncio.to_thread(
+                                resume_pending_review, graph, record.thread_id, decision["decision"],
+                                metadata=trace_meta, run_id=run_id,
+                            )
+                        elif self._resume_means_answering_own_gate(record, graph):
+                            state = await asyncio.to_thread(
+                                resume_pending_approval, graph, record.thread_id,
+                                approve_write_decision(), metadata=trace_meta, run_id=run_id,
+                            )
+                        else:
+                            state = await asyncio.to_thread(
+                                resume_failed_run, graph, record.thread_id, metadata=trace_meta,
+                                run_id=run_id,
+                            )
+                    else:
+                        state = await asyncio.to_thread(
+                            start_workflow, graph, document, repository, record.thread_id,
+                            review_policy=record.review_policy, reviewer=record.reviewer,
+                            metadata=trace_meta, run_id=run_id,
+                        )
 
-            await self._handle_state(record, graph, state, trace_meta)
+                    await self._handle_state(record, graph, state, trace_meta)
+                    break
+                except GraphRecursionError:
+                    # The outer graph's step limit bounds one invoke, and a run without a gate is one invoke: a long
+                    # healthy run met it and was failed (LF.1261). Gone on from its checkpoint unless it has stopped
+                    # moving; a stage's own agent spinning is not this stop and fails as before.
+                    if not step_limit.a_step_limit_stop(graph, record.thread_id):
+                        raise
+                    if not await self._go_on_after_a_step_limit_stop(record, graph, stops):
+                        return
+                    went_on = True
 
         except asyncio.CancelledError:
             await self._finish_cancelled(record)
@@ -2044,6 +2066,71 @@ class WorkflowRunner:
                 logger.info("Pruned %d expired scratch file(s)", removed)
         except Exception:  # noqa: BLE001 - cleanup is never load-bearing
             logger.warning("Could not prune scratch storage", exc_info=True)
+
+    async def _go_on_after_a_step_limit_stop(self, record: RunRecord, graph: Any, stops: Any) -> bool:
+        """After the outer graph stopped on its step limit: whether the run goes on from its checkpoint.
+
+        Said in the transcript and the event stream either way. A run that has stopped on the limit again with nothing
+        moved (`app.server.step_limit`) is left paused for a person - resumable, nothing failed - rather than gone on
+        with for ever.
+        """
+        from app.graph.workflow import DEFAULT_RECURSION_LIMIT
+        from app.observability.transcript import record as note_in_transcript
+        from app.server import step_limit
+
+        run_id = record.run_id
+        try:
+            snapshot = graph.get_state({"configurable": {"thread_id": record.thread_id}})
+            values = dict(getattr(snapshot, "values", None) or {})
+        except Exception:  # noqa: BLE001 - an unread state shows no progress
+            values = {}
+        stage = str(values.get("stage") or record.current_stage or "")
+        go_on = stops.go_on_after(step_limit.progress_mark(values))
+        note_in_transcript(
+            run_id, stage, "step_limit", event="went on" if go_on else "left for a person",
+            steps=DEFAULT_RECURSION_LIMIT, stops=stops.stops, without_progress=stops.without_progress,
+        )
+        if go_on:
+            logger.warning(
+                "Run %s: the graph stopped on its %d-step limit at '%s'; going on from its checkpoint (stop %d)",
+                run_id, DEFAULT_RECURSION_LIMIT, stage, stops.stops,
+            )
+            await self.event_bus.publish(
+                run_id,
+                RunEvent(
+                    run_id=run_id,
+                    sequence=await self.event_bus.next_sequence(run_id),
+                    stage=stage,
+                    event_type="log",
+                    message=(
+                        f"The workflow reached its limit of {DEFAULT_RECURSION_LIMIT} steps in one go at '{stage}'; "
+                        "it goes on from where it stopped."
+                    ),
+                ),
+            )
+            return True
+        record.status = "paused"
+        record.error = (
+            f"Paused for a person: the workflow stopped on its limit of {DEFAULT_RECURSION_LIMIT} steps "
+            f"{stops.without_progress + 1} times in a row at '{stage}' with nothing moved between the stops - no new "
+            "sprint, round or stage output, and no defect closed or worked on. That is a loop between stages, not "
+            "slow work. Nothing is lost: resume to go on from here, or cancel the run."
+        )
+        record.updated_at = datetime.now(timezone.utc).isoformat()
+        self._persist(record)
+        logger.warning("Run %s left paused for a person: %s", run_id, record.error)
+        await self.event_bus.publish(
+            run_id,
+            RunEvent(
+                run_id=run_id,
+                sequence=await self.event_bus.next_sequence(run_id),
+                stage=stage,
+                event_type="error",
+                message=f"Run paused: {record.error}",
+            ),
+        )
+        await self.event_bus.close(run_id)
+        return False
 
     def _resume_means_answering_own_gate(
         self, record: RunRecord, graph: Any = None

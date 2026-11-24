@@ -40,7 +40,12 @@ def a_step_limit_stop(graph: Any, thread_id: str) -> bool:
         return False
     if snapshot is None or not tuple(getattr(snapshot, "next", ()) or ()):
         return False
-    return not any(getattr(task, "error", None) for task in getattr(snapshot, "tasks", ()) or ())
+    try:
+        # LangGraph's `StateSnapshot.tasks`: each pending node of the checkpoint, with the error it raised, if any.
+        pending = tuple(snapshot.tasks or ())
+    except AttributeError:
+        pending = ()
+    return not any(getattr(entry, "error", None) for entry in pending)
 
 
 def _field(value: Any, name: str, default: Any = None) -> Any:

@@ -52,7 +52,6 @@ def test_the_ledger_record_of_a_lookup_names_the_source_skipped(tmp_path, monkey
     monkeypatch.setattr("app.observability.transcript._run_id_from_config", lambda: "run-x")
     monkeypatch.setattr(lookups, "_get", _fetch([]))
     monkeypatch.setenv("WEB_LOOKUP_WHEN_STUCK", "on")
-    stuck_lookup._DONE.clear()  # noqa: SLF001
     lookups.look_up("error: lock file version 4 requires a newer toolchain", "rust")
     stuck = SimpleNamespace(description="The product does not build.", attempts=[{"outcome": "left open"}] * 2,
                             actual_behavior="error: failed to parse manifest at line 12 column 3")

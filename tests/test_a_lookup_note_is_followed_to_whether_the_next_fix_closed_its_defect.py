@@ -26,7 +26,6 @@ def run(monkeypatch, tmp_path):
     monkeypatch.setenv("WEB_LOOKUP_WHEN_STUCK", "on")
     monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setattr(transcript, "_run_id_from_config", lambda: "run-notes")
-    stuck_lookup._DONE.clear()  # noqa: SLF001
 
     def look_up(error, stack_words="", private_words=(), **_k):  # the network's edge
         return {"query": "OverflowError: Python int too large to convert to SQLite INTEGER", "asked": [
@@ -36,7 +35,6 @@ def run(monkeypatch, tmp_path):
 
     monkeypatch.setattr(lookups, "look_up", look_up)
     yield lambda: [r for r in transcript.read_transcript("run-notes") if r.get("kind") == "defect"]
-    stuck_lookup._DONE.clear()  # noqa: SLF001
 
 
 def _stuck(description: str) -> SimpleNamespace:

@@ -39,7 +39,6 @@ def outside(monkeypatch, tmp_path):
     monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
     monkeypatch.delenv("STACKEXCHANGE_KEY", raising=False)
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
-    stuck_lookup._DONE.clear()  # noqa: SLF001
     sent: list[str] = []
 
     def fetch(url, headers):
@@ -53,7 +52,6 @@ def outside(monkeypatch, tmp_path):
 
     monkeypatch.setattr(lookups, "_get", fetch)
     yield sent
-    stuck_lookup._DONE.clear()  # noqa: SLF001
 
 
 @pytest.fixture

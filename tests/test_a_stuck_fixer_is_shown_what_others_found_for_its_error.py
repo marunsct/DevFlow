@@ -21,7 +21,6 @@ BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I
 def _on(monkeypatch, tmp_path):
     monkeypatch.setenv("WEB_LOOKUP_WHEN_STUCK", "on")
     monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
-    stuck_lookup._DONE.clear()  # noqa: SLF001
     asked = []
 
     def look_up(error, stack_words="", private_words=(), **_k):

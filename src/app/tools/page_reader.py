@@ -451,7 +451,18 @@ def _pages(text: str) -> list[str]:
 
 
 def _text(url: str, fetch: Fetch, resolve: Resolve, render: Render) -> tuple[str, str, str]:
-    """(final url, the page's main text, "") for `url`, or ("", "", why it could not be read).
+    """(final url, the page's main text, "") for `url`, or ("", "", why it could not be read). Through the network's
+    own transport a read that succeeded is kept for every run and machine - an hour, a week for a versioned address -
+    shared between tenants when the address holds none of the tenant's words (`lookup_service.page_kept`, HK.12)."""
+    if fetch is _fetch:
+        from app.tools import lookup_service
+
+        return lookup_service.page_kept(url, lambda: _text_now(url, fetch, resolve, render))
+    return _text_now(url, fetch, resolve, render)
+
+
+def _text_now(url: str, fetch: Fetch, resolve: Resolve, render: Render) -> tuple[str, str, str]:
+    """(final url, the page's main text, "") for `url` read now, or ("", "", why it could not be read).
 
     An address its site offers an official channel for - a Stack Exchange question, a GitHub issue, file, release
     list or repository, a registry's package page - is read through that channel and never as a page

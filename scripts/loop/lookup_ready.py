@@ -8,7 +8,9 @@ cache bypassed; one line per source says whether it answered, how many results a
 source with no key, or one at its daily request cap (plan WL.6), says so instead of being asked. Then (KS.6,
 `app.tools.source_health`): each engine of the private search that did not answer, Stack Exchange's and GitHub's
 allowances left, and the page reader on one page of each kind a lookup reads - a file on a code host, a documentation
-page, a question and its answers - in place of example.com, which never failed the way they do. A warning, never a
+page, a question and its answers - in place of example.com, which never failed the way they do. Then (HK.12,
+`app.tools.lookup_service`): each source's daily allowance used and this tenant's budget, each rated source's tokens
+left, and the shared store's memory beside the queue's (`maxmemory`, its policy, the lookups' keys). A warning, never a
 block: `ready`'s last line is the model's verdict alone, and a source that does not answer only means lookups for a
 stuck fixer find less. Exits 0 always. No key is ever printed.
 """
@@ -55,13 +57,16 @@ def _source_lines() -> list[str]:
 
 
 def main() -> int:
-    from app.tools import package_registry, source_health
+    from app.tools import lookup_service, lookup_store, package_registry, source_health
 
-    lines = [
-        *_source_lines(),
-        _ask("package registry", lambda: 1 if package_registry.look_up("npm", "express").get("version") else 0),
-        *source_health.lines(),
-    ]
+    # Asked live: nothing the shared store keeps is read (plan HK.12), so a source that stopped answering shows here.
+    with lookup_store.fresh():
+        lines = [
+            *_source_lines(),
+            _ask("package registry", lambda: 1 if package_registry.look_up("npm", "express").get("version") else 0),
+            *source_health.lines(),
+            *lookup_service.probe_lines(),
+        ]
     for line in lines:
         print(line)
     return 0

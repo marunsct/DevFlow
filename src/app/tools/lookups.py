@@ -351,7 +351,10 @@ def ordered_sources(first: tuple[str, ...] | list[str] = ()) -> list[Source]:
                                             if n.strip())]
     by_name = {source.name: source for source in SOURCES}
     first = [by_name[name] for name in dict.fromkeys(named) if name in by_name]
-    return first + [source for source in SOURCES if source not in first]
+    from app.tools import lookup_service
+
+    # A paid source only after every free official one, whatever the order names (plan HK.12, LF.1308).
+    return lookup_service.free_first(first + [source for source in SOURCES if source not in first])
 
 
 def daily_cap(source: Source | str) -> int:
@@ -405,7 +408,8 @@ class Capped(Exception):
 
 def guarded(name: str, fetch: Fetch | None = None) -> Callable[..., tuple[int, str, dict[str, str]]]:
     """A fetch for the source called `name`: never sent while a refusal holds it (`source_breaker.Refused`) or past its
-    daily cap or the tenant's daily budget (`Capped`); each request counted against both in one step, so requests sent
+    daily cap or the tenant's daily budget, nor faster than its rate - a token from its bucket, shared by every run
+    (`lookup_service.wait_for_a_token`, plan HK.12) - (`Capped`); each request counted against both in one step, so requests sent
     at once never pass either (`lookup_store.reserve`, plan KS.5); a reply that refuses raises `Refused` and holds the
     source."""
     from app.tools import lookup_store, source_breaker
@@ -414,7 +418,9 @@ def guarded(name: str, fetch: Fetch | None = None) -> Callable[..., tuple[int, s
         until = source_breaker.held_until(name)
         if until:
             raise source_breaker.Refused(name, until)
-        refused = lookup_store.reserve(name, daily_cap(name))
+        from app.tools import lookup_service
+
+        refused = lookup_service.wait_for_a_token(name) or lookup_store.reserve(name, daily_cap(name))
         if refused:
             raise Capped(refused)
         got = _reply((fetch or _get)(url, headers) if body is None else (fetch or _get)(url, headers, body))
@@ -503,7 +509,12 @@ def look_up(error_line: str, stack_words: str = "", private_words: list[str] | t
 
 def _days_kept(answer: dict[str, Any]) -> float | None:
     """Days an answer is kept: one that found something `KEPT_DAYS`, a true "nothing found" `NOTHING_FOUND_DAYS`, and
-    one with a refusal, a failure or a skipped source not at all."""
+    one with a refusal, a failure or a skipped source not at all - nor one holding a paid search's results whose terms
+    are not known to allow storing them (`lookup_service.may_keep`, plan HK.12)."""
+    from app.tools import lookup_service
+
+    if not lookup_service.may_keep(answer):
+        return None
     if answer.get("found"):
         return KEPT_DAYS
     return NOTHING_FOUND_DAYS if answer.get("nothing_found") else None

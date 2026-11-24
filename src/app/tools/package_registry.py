@@ -55,6 +55,9 @@ def _fetch(url: str, most_bytes: int = MAX_RESPONSE_BYTES) -> tuple[int, bytes]:
     """(status, body) of a GET; the body stops one chunk past `most_bytes`, so a longer one says it is longer."""
     import httpx
 
+    from app.tools import lookup_service
+
+    lookup_service.registry_rate(url)  # a registry's own rate, shared by every run (crates.io: one a second)
     with httpx.Client(timeout=TIMEOUT_SECONDS, follow_redirects=True,
                       headers={"User-Agent": "software-harness-package-lookup"}) as client:
         with client.stream("GET", url) as response:
@@ -390,10 +393,19 @@ def look_up(ecosystem: str, name: str, *, fetch: Fetch | None = None) -> dict[st
         return {"error": f"{name!r} is not a package name."}
     # Keyed by where the answer came from as well: an answer read through a fetch the caller supplied is that fetch's
     # alone. Found when the dependency gate (LF.1074) began asking at every install: one stub's answer for a package
-    # was handed to the next caller asking the same name through a stub of its own.
-    key = (which, name, fetch)
-    if key in _CACHE:
-        return _with_the_version_asked(_CACHE[key], version_asked)
+    # was handed to the next caller asking the same name through a stub of its own. The registry's own answer for a
+    # public name is kept in the shared store for every run and machine with this toolchain, an hour (plan HK.12).
+    from app.tools import lookup_service
+
+    result = lookup_service.registry_answer(which, name, runtime_here(which), lambda: _asked(which, name, fetch),
+                                            memo=_CACHE, memo_key=(which, name, fetch), shared=fetch is None)
+    if "error" in result:
+        return result
+    return _with_the_version_asked(result, version_asked)
+
+
+def _asked(which: str, name: str, fetch: Fetch | None) -> dict[str, Any]:
+    """The registry's current release of `name` asked now, or {"error": ...}."""
     from app.tools.outbound import refused_name  # the one outbound gate (HK.5): never the product's own name
     if refused := refused_name(which, name):
         return {"error": refused}
@@ -407,7 +419,7 @@ def look_up(ecosystem: str, name: str, *, fetch: Fetch | None = None) -> dict[st
         # Asked by the name a person writes - `Hono`, `Playwright`,
         # `TypeScript` - where the registry's is lowercase. One run's research
         # found 1 of 7 libraries in its stack this way.
-        lowered = look_up(which, name.lower() + (f"@{version_asked}" if version_asked else ""), fetch=fetch)
+        lowered = _asked(which, name.lower(), fetch)
         if "error" not in lowered:
             return lowered
     if "status" in found:
@@ -425,8 +437,7 @@ def look_up(ecosystem: str, name: str, *, fetch: Fetch | None = None) -> dict[st
     found = release_fit.fitted(which, name, found, fetch)
     result = {"ecosystem": which, "package": name, **{k: v for k, v in found.items() if v not in (None, "", {}, [])}}
     result["this_environment_runs"] = runtime_here(which)
-    _CACHE[key] = result
-    return _with_the_version_asked(result, version_asked)
+    return result
 
 
 def _with_the_version_asked(result: dict[str, Any], version_asked: str) -> dict[str, Any]:

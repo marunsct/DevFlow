@@ -40,10 +40,8 @@ def a_run(monkeypatch, tmp_path):
     monkeypatch.setattr("app.server.runtime_settings.secrets", lambda **_: {})
     monkeypatch.setattr("app.models.model_pin.current_run_id", lambda: "run-chosen")
     switches._RUN_OVERRIDES.clear()  # noqa: SLF001
-    stuck_lookup._DONE.clear()  # noqa: SLF001
     yield runs
     switches._RUN_OVERRIDES.clear()  # noqa: SLF001
-    stuck_lookup._DONE.clear()  # noqa: SLF001
 
 
 @pytest.fixture

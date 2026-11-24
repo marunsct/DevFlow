@@ -33,11 +33,26 @@ What it holds:
   stale; every later read under that label, by either arm of a pair or a rerun, gets that same answer.
 
 `LOOKUPS_STORE_PREFIX` names the deployment's keys (default `lookups`), so two deployments may share one Redis.
+
+The rest of HK.12 (LF.1308) added, used by `app.tools.lookup_service`:
+
+- **Any kept value** (`kept`): the registries' answers, a documentation page, a read web page and a run's own
+  once-only records, each under its own lifetime, single-flight like an answer, and none larger than the caller says.
+- **Token buckets** (`take`): a source's rate per second, minute or hour, shared by every run and machine and taken in
+  one atomic step (the store's own clock, so machines whose clocks differ agree).
+- **The run's "Off" choice** (`shares`): a run whose Internet lookups choice is "off" neither reads nor writes any
+  kept answer, document, page, robots.txt or snapshot - everything it needs is asked afresh and kept nowhere. Counts,
+  holds and buckets still apply to it: they carry no query, and they guard the deployment's one address.
+- **Room for the queue** (`_room`): the store is the queue's Redis, which refuses every write when full (`noeviction`);
+  a value is written there only while the store's memory is under `LOOKUP_STORE_MEMORY_SHARE` (default half) of its
+  `maxmemory`, else it goes to this machine's files. Every value has a lifetime.
+- **A probe's fresh read** (`fresh`): inside it nothing kept is read, so `loop.sh lookups` asks each source live.
 """
 
 from __future__ import annotations
 
 import contextlib
+import contextvars
 import fcntl
 import hashlib
 import json
@@ -72,7 +87,14 @@ TENANT_DAILY_CAP = 5_000
 #: The tenant of a run outside any tenant's folder, and of a call outside a run.
 NO_TENANT = "shared"
 
+#: Share of the store's `maxmemory` above which nothing more is written to it (`LOOKUP_STORE_MEMORY_SHARE`).
+MEMORY_SHARE = 0.5
+#: Seconds a reading of the store's memory is trusted before it is read again.
+MEMORY_SECONDS = 30.0
+
 _LOCK = threading.Lock()
+_FRESH: contextvars.ContextVar[bool] = contextvars.ContextVar("lookup_store_fresh", default=False)
+_ROOM: dict[str, tuple[float, bool]] = {}
 _CLIENTS: dict[str, Any] = {}
 _DOWN_UNTIL: dict[str, float] = {}
 _FLIGHTS: dict[str, threading.Lock] = {}
@@ -91,6 +113,23 @@ redis.call('HINCRBY', KEYS[2], ARGV[2], 1)
 redis.call('EXPIRE', KEYS[1], ARGV[5])
 redis.call('EXPIRE', KEYS[2], ARGV[5])
 return 0
+"""
+# A token taken from a bucket holding at most ARGV[1] tokens, refilled at ARGV[1] per ARGV[2] seconds, by the store's
+# own clock: "0" when one was taken, else the seconds until one will be there.
+_TAKE = """
+local most = tonumber(ARGV[1])
+local per = tonumber(ARGV[2])
+local clock = redis.call('TIME')
+local now = tonumber(clock[1]) + tonumber(clock[2]) / 1000000
+local kept = redis.call('HMGET', KEYS[1], 'tokens', 'at')
+local tokens = tonumber(kept[1]) or most
+local at = tonumber(kept[2]) or now
+tokens = math.min(most, tokens + math.max(0, now - at) * most / per)
+local wait = 0
+if tokens >= 1 then tokens = tokens - 1 else wait = (1 - tokens) * per / most end
+redis.call('HSET', KEYS[1], 'tokens', tostring(tokens), 'at', tostring(now))
+redis.call('EXPIRE', KEYS[1], math.ceil(per) + 60)
+return tostring(wait)
 """
 # A lease given back only by the asker that holds it.
 _RELEASE = """
@@ -251,16 +290,19 @@ def _put(where: str, scope: str, kind: str, query: str, answer: Any, days: float
     entry = {"at": time.time(), "days": days, "answer": answer}
     text = json.dumps(entry)
     lives = int((FROZEN_DAYS if days is None else days) * 86_400) + 3_600
-    if len(text) <= MOST_SHARED:
+    if len(text) <= MOST_SHARED and _room():
         done, _ = _shared(lambda client: client.set(_key(where, scope, kind, query), text, ex=lives))
         if done:
             return
     _write_json(_path(where, scope, kind, query), entry)
 
 
-def _kept(scope: str, kind: str, query: str) -> Any:
-    """The answer kept for `query`: under a frozen label the snapshot's, which the live answer seeds; else the live."""
-    label = frozen_label()
+def _kept(scope: str, kind: str, query: str, frozen: bool = True) -> Any:
+    """The answer kept for `query`: under a frozen label the snapshot's, which the live answer seeds; else the live.
+    Nothing inside `fresh`."""
+    if _FRESH.get():
+        return None
+    label = frozen_label() if frozen else ""
     if not label:
         return _get("live", scope, kind, query)
     where = f"frozen-{label}"
@@ -272,14 +314,14 @@ def _kept(scope: str, kind: str, query: str) -> Any:
     return found
 
 
-def _keep(scope: str, kind: str, query: str, answer: Any, days: float) -> None:
+def _keep(scope: str, kind: str, query: str, answer: Any, days: float, frozen: bool = True) -> None:
     _put("live", scope, kind, query, answer, days)
-    if frozen_label():
+    if frozen and frozen_label():
         _put(f"frozen-{frozen_label()}", scope, kind, query, answer, None)
 
 
 @contextlib.contextmanager
-def _first_asker(scope: str, kind: str, query: str) -> Iterator[Callable[[], Any]]:
+def _first_asker(scope: str, kind: str, query: str, frozen: bool = True) -> Iterator[Callable[[], Any]]:
     """Wait until this caller is the only one asking `query`, or until another asker's answer is kept; yields a
     function giving that kept answer (None when this caller must ask)."""
     flight = _key("flight", scope, kind, query)
@@ -287,7 +329,7 @@ def _first_asker(scope: str, kind: str, query: str) -> Iterator[Callable[[], Any
     deadline = time.monotonic() + LEASE_SECONDS
     step = 0.02
     while True:
-        found = _kept(scope, kind, query)
+        found = _kept(scope, kind, query, frozen)
         if found is not None:
             yield lambda: found
             return
@@ -296,7 +338,7 @@ def _first_asker(scope: str, kind: str, query: str) -> Iterator[Callable[[], Any
             break
         if taken:
             try:
-                found = _kept(scope, kind, query)
+                found = _kept(scope, kind, query, frozen)
                 yield lambda: found
             finally:
                 _shared(lambda client: client.eval(_RELEASE, 1, flight, token))
@@ -311,7 +353,7 @@ def _first_asker(scope: str, kind: str, query: str) -> Iterator[Callable[[], Any
         lock = _FLIGHTS.setdefault(flight, threading.Lock())
     got = lock.acquire(timeout=LEASE_SECONDS)
     try:
-        found = _kept(scope, kind, query)
+        found = _kept(scope, kind, query, frozen)
         yield lambda: found
     finally:
         if got:
@@ -323,17 +365,50 @@ def remembered(kind: str, query: str, ask: Callable[[], dict[str, Any]], *,
                repo_root: str | Path | None = None) -> tuple[dict[str, Any], bool]:
     """(the answer for `query`, whether it was kept from before): kept when fresh, else asked once however many
     callers ask at the same moment (`ask`), and kept for `days(answer)` days (None: not kept). Shared between tenants
-    only when the query is public (`public`)."""
-    scope = _scope(query, repo_root)
-    with _first_asker(scope, kind, query) as kept:
-        found = kept()
+    only when the query is public (`public`); neither read nor kept for a run whose lookups are "off" (`shares`)."""
+    return kept(kind, query, ask, days=days, scope=_scope(query, repo_root))
+
+
+def shares() -> bool:
+    """Whether the run in progress may read and write what the store keeps: not when its Internet lookups choice is
+    "off" (`app.internet_lookups`). Outside a run, and for a run with no choice, it may."""
+    try:
+        from app import internet_lookups
+
+        return internet_lookups.chosen_for_the_run() != "off"
+    except Exception:  # noqa: BLE001 - no run's choice to read
+        return True
+
+
+@contextlib.contextmanager
+def fresh() -> Iterator[None]:
+    """Inside it nothing kept is read - every caller asks - and what is asked is kept as usual: a probe's live read."""
+    token = _FRESH.set(True)
+    try:
+        yield
+    finally:
+        _FRESH.reset(token)
+
+
+def kept(kind: str, key: str, ask: Callable[[], Any], *, days: float | Callable[[Any], float | None] | None,
+         scope: str = "shared", frozen: bool = True, most: int | None = None) -> tuple[Any, bool]:
+    """(the value for `key`, whether it was kept from before): kept when fresh, else asked once however many callers
+    ask at the same moment (`ask`) and kept for `days` (a number, or a function of the value; None: not kept) under
+    `scope` - "shared" for what any tenant may read, a tenant's or a run's own name otherwise. A value of more than
+    `most` characters is not kept. `frozen`: a Measure batch's snapshot (`LOOKUPS_FROZEN`) holds it too. A run whose
+    lookups are "off" (`shares`) asks, and nothing is read or kept."""
+    if not shares():
+        return ask(), False
+    scope = re.sub(r"[^\w.-]", "-", str(scope or "shared"))
+    with _first_asker(scope, kind, key, frozen) as found_before:
+        found = found_before()
         if found is not None:
             return found, True
-        answer = ask()
-        lasts = days(answer)
-        if lasts is not None:
-            _keep(scope, kind, query, answer, lasts)
-        return answer, False
+        value = ask()
+        lasts = days(value) if callable(days) else days
+        if lasts is not None and value is not None and (most is None or len(json.dumps(value)) <= most):
+            _keep(scope, kind, key, value, lasts, frozen)
+        return value, False
 
 
 # --- counts and caps ------------------------------------------------------------------------------------------------
@@ -426,6 +501,107 @@ def count(source: str, sent: int = 1, who: str | None = None) -> None:
                 _write_json(path, numbers)
 
 
+# --- token buckets --------------------------------------------------------------------------------------------------
+
+def _bucket_key(name: str) -> str:
+    return f"{_prefix()}:bucket:{name}"
+
+
+def _buckets_path() -> Path:
+    return _folder() / "buckets.json"
+
+
+def take(name: str, most: int, per_seconds: float) -> float:
+    """One token from the bucket `name` - at most `most` tokens, refilled at `most` per `per_seconds` - taken in one
+    step no other run or machine interleaves with: 0 when taken, else the seconds until one will be there (nothing
+    taken)."""
+    most, per_seconds = max(1, int(most)), max(0.001, float(per_seconds))
+    done, said = _shared(lambda client: client.eval(_TAKE, 1, _bucket_key(name), most, per_seconds))
+    if done:
+        return max(0.0, float(said or 0))
+    with _local_lock("buckets"):
+        buckets = _read_json(_buckets_path())
+        buckets = buckets if isinstance(buckets, dict) else {}
+        now = time.time()
+        entry = buckets.get(name) if isinstance(buckets.get(name), dict) else {}
+        tokens = min(most, float(entry.get("tokens", most)) + max(0.0, now - float(entry.get("at", now)))
+                     * most / per_seconds)
+        wait = 0.0
+        if tokens >= 1:
+            tokens -= 1
+        else:
+            wait = (1 - tokens) * per_seconds / most
+        buckets[name] = {"tokens": tokens, "at": now}
+        _write_json(_buckets_path(), buckets)
+        return wait
+
+
+def tokens_left(name: str, most: int, per_seconds: float) -> float:
+    """Tokens the bucket `name` holds now, none taken (the probe's line)."""
+    most, per_seconds = max(1, int(most)), max(0.001, float(per_seconds))
+    done, entry = _shared(lambda client: client.hgetall(_bucket_key(name)))
+    if not done:
+        buckets = _read_json(_buckets_path())
+        entry = buckets.get(name) if isinstance(buckets, dict) else None
+    if not entry:
+        return float(most)
+    try:
+        return min(float(most), float(entry["tokens"]) + max(0.0, time.time() - float(entry["at"])) * most
+                   / per_seconds)
+    except (KeyError, TypeError, ValueError):
+        return float(most)
+
+
+# --- room for the queue ---------------------------------------------------------------------------------------------
+
+def memory_share() -> float:
+    """Share of the store's `maxmemory` above which nothing more is written to it (`LOOKUP_STORE_MEMORY_SHARE`)."""
+    try:
+        value = float(os.environ.get("LOOKUP_STORE_MEMORY_SHARE", "") or MEMORY_SHARE)
+    except ValueError:
+        value = MEMORY_SHARE
+    return min(1.0, max(0.0, value))
+
+
+def memory() -> dict[str, Any]:
+    """The store's memory: {"used", "most" (0: no limit), "policy"} in bytes, or {} when there is no store."""
+    done, info = _shared(lambda client: client.info("memory"))
+    if not done or not isinstance(info, dict):
+        return {}
+    return {"used": int(info.get("used_memory") or 0), "most": int(info.get("maxmemory") or 0),
+            "policy": str(info.get("maxmemory_policy") or "")}
+
+
+def _room() -> bool:
+    """Whether a value may be written to the store: its memory is under `memory_share` of its limit (read at most
+    every `MEMORY_SECONDS`). The queue shares it under `noeviction`, so a full store fails the queue's own writes."""
+    url = os.environ.get("REDIS_URL", "").strip()
+    hit = _ROOM.get(url)
+    if hit is not None and time.monotonic() - hit[0] < MEMORY_SECONDS:
+        return hit[1]
+    found = memory()
+    room = not found or not found["most"] or found["used"] < memory_share() * found["most"]
+    _ROOM[url] = (time.monotonic(), room)
+    if not room:
+        logger.warning("The lookup store holds %d of its %d bytes; values go to this machine's files", found["used"],
+                       found["most"])
+    return room
+
+
+def kept_keys(most: int = 100_000) -> int:
+    """The deployment's lookup keys in the store, counted up to `most` (the probe's memory line); -1 with no store."""
+    def counted(client: Any) -> int:
+        n = 0
+        for _ in client.scan_iter(match=f"{_prefix()}:*", count=1000):
+            n += 1
+            if n >= most:
+                break
+        return n
+
+    done, n = _shared(counted)
+    return int(n) if done else -1
+
+
 # --- holds ----------------------------------------------------------------------------------------------------------
 
 def _hold_key(source: str) -> str:
@@ -498,7 +674,9 @@ def shared_robots(get: Callable[[str], "tuple[int, str] | None"]) -> Callable[[s
     every process and machine: a site's robots.txt is public. An unreachable one (None, 5xx) is not kept."""
 
     def kept_or_asked(address: str) -> "tuple[int, str] | None":
-        found = _get("live", "shared", ROBOTS, address)
+        if not shares():
+            return get(address)
+        found = None if _FRESH.get() else _get("live", "shared", ROBOTS, address)
         if isinstance(found, list) and len(found) == 2:
             return int(found[0]), str(found[1])
         answer = get(address)
@@ -509,6 +687,6 @@ def shared_robots(get: Callable[[str], "tuple[int, str] | None"]) -> Callable[[s
     return kept_or_asked
 
 
-__all__ = ["LOOKUP", "NO_TENANT", "ROBOTS", "TENANT_DAILY_CAP", "changed_hold", "count", "frozen_label", "hold_of",
-           "public", "remembered", "requests_today", "reserve", "shared_robots", "tenant", "tenant_daily_cap",
-           "tenant_requests_today"]
+__all__ = ["LOOKUP", "NO_TENANT", "ROBOTS", "TENANT_DAILY_CAP", "changed_hold", "count", "fresh", "frozen_label",
+           "hold_of", "kept", "kept_keys", "memory", "memory_share", "public", "remembered", "requests_today", "reserve",
+           "shared_robots", "shares", "take", "tenant", "tenant_daily_cap", "tenant_requests_today", "tokens_left"]

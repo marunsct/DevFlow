@@ -95,7 +95,6 @@ def test_the_fixer_s_path_searches_the_case_s_error_with_its_stack(monkeypatch, 
             "url": "https://stackoverflow.com/q/1", "excerpt": "Wrap it in with app.app_context(): first."}]}
 
     monkeypatch.setattr(lookups, "look_up", look_up)
-    stuck_lookup._DONE.clear()  # noqa: SLF001
     case = next(case for case in REPLAY["cases"] if case["id"] == "work-outside-the-application-context")
 
     note = _scorer().through_the_fixer(case)

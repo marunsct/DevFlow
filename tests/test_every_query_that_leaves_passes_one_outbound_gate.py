@@ -54,7 +54,6 @@ def run(monkeypatch, tmp_path):
     monkeypatch.setenv("WEB_SEARCH_ENABLED", "false")
     monkeypatch.setattr("app.observability.transcript._run_id_from_config", lambda: RUN)
     monkeypatch.setattr(stage_memory, "current_stage_key", lambda: "thread-gate")
-    stuck_lookup._DONE.clear()  # noqa: SLF001
     yield _workspace(tmp_path / "workspaces")
     stage_memory.forget_everything()
 

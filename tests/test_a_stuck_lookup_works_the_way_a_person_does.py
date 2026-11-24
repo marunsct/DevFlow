@@ -43,9 +43,7 @@ def _on(monkeypatch, tmp_path):
     monkeypatch.setenv("PACKAGE_EXPORTS_NAMED", "on")
     for variable in ("STACKEXCHANGE_KEY", "GITHUB_TOKEN", "LOOKUP_ORDER", "LOOKUP_DAILY_CAPS"):
         monkeypatch.delenv(variable, raising=False)
-    stuck_lookup._DONE.clear()  # noqa: SLF001
     yield
-    stuck_lookup._DONE.clear()  # noqa: SLF001
 
 
 def _stuck(error: str) -> SimpleNamespace:
@@ -255,7 +253,6 @@ def test_the_harness_names_another_release_line_than_the_one_the_project_runs(ve
 def test_an_error_nobody_wrote_about_is_not_asked_again_by_the_next_run(tmp_path, sites):
     first = sites()
     stuck_lookup.section(_rust_workspace(tmp_path), _stuck(STUCK_RUST), RUST)
-    stuck_lookup._DONE.clear()  # noqa: SLF001 - the next run in this process
     second = sites()
 
     stuck_lookup.section(_rust_workspace(tmp_path / "next"), _stuck(STUCK_RUST), RUST)

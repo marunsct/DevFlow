@@ -42,11 +42,6 @@ TRIGGER_STUCK = "T1 stuck"
 TRIGGER_INSTALL = "T2 install"
 TRIGGER_RECURRING = "T3 recurring build error"
 
-#: (workspace, cleaned error) already looked up in this process - one lookup per error per run - and (the section it
-#: gave, the query it searched).
-_DONE: dict[tuple[str, str], tuple[str, str]] = {}
-
-
 def enabled() -> bool:
     return is_on("WEB_LOOKUP_WHEN_STUCK", ON_BY_DEFAULT)
 
@@ -217,19 +212,23 @@ def _looked_up(repo_root: str | Path, error: str, stack_words: str, *, trigger: 
     from app.observability import lookup_notes
     from app.tools import lookups
 
+    from app.tools import lookup_service
+
     private = _the_private_words(repo_root)
-    key = (str(repo_root), lookups.cleaned(error, private))
-    if not key[1]:
+    cleaned = lookups.cleaned(error, private)
+    if not cleaned:
         return ""
-    if key in _DONE:
-        shown, query = _DONE[key]
-        if shown:
-            lookup_notes.record(stage_name, {"query": query}, trigger=trigger, defect=defect, again=True)
-        return shown
-    shown, query = stuck_research.research(repo_root, error, stack_words, private, stack=stack, defect=defect,
-                                           trigger=trigger, stage_name=stage_name, model=model)
-    shown = ("\n" + shown) if shown else ""
-    _DONE[key] = (shown, query)
+
+    def research() -> list[str]:
+        shown, query = stuck_research.research(repo_root, error, stack_words, private, stack=stack, defect=defect,
+                                               trigger=trigger, stage_name=stage_name, model=model)
+        return [("\n" + shown) if shown else "", query]
+
+    # The run's own record in the shared store (plan HK.12): kept across a deploy, a restart and every worker of the
+    # run, where a module dictionary was lost with its process and never emptied.
+    (shown, query), again = lookup_service.once_per_run("stuck lookup", repo_root, cleaned, research)
+    if again and shown:
+        lookup_notes.record(stage_name, {"query": query}, trigger=trigger, defect=defect, again=True)
     return shown
 
 

@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import logging
 import re
-import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -355,28 +354,32 @@ _READERS: dict[str, Callable[[str, Fetch], list[Release]]] = {
     "packagist": _packagist, "nuget": _nuget,
 }
 
-_CACHE: dict[tuple[str, str, Any], list[Release]] = {}
-_NEEDS: dict[tuple[str, str, str, Any], tuple[str, str]] = {}
-_LOCK = threading.Lock()
+#: What this process keeps that the shared store may not (a stub's answers, a run whose lookups are "off"); the
+#: registry's own answers for public names live in the shared store (`lookup_service`, plan HK.12).
+_CACHE: dict[tuple[str, str, Any], list[list[Any]]] = {}
+_NEEDS: dict[tuple[str, str, str, Any], list[str]] = {}
 
 
 def releases(ecosystem: str, name: str, *, fetch: Fetch | None = None) -> list[Release]:
-    """Every release of `name` its registry lists, newest first; [] when it cannot be read. Never raises."""
+    """Every release of `name` its registry lists, newest first; [] when it cannot be read. Never raises. Kept an
+    hour for every run and machine (`lookup_service.releases_kept`)."""
+    from app.tools import lookup_service
+
     reader = _READERS.get(ecosystem)
     if reader is None or not re.match(r"^[@A-Za-z0-9][@A-Za-z0-9._/:~+-]{0,213}$", name or "") or ".." in name:
         return []
-    key = (ecosystem, name, fetch)
-    with _LOCK:
-        if key in _CACHE:
-            return _CACHE[key]
-    try:
-        found = _newest_first([r for r in reader(name, fetch or _fetch_default()) if r.version])
-    except Exception as exc:  # noqa: BLE001 - an unreadable registry is no answer, not a crash
-        logger.info("Could not read the releases of %s %s: %s", ecosystem, name, exc)
-        return []
-    with _LOCK:
-        _CACHE[key] = found
-    return found
+
+    def read() -> list[list[Any]] | None:
+        try:
+            found = _newest_first([r for r in reader(name, fetch or _fetch_default()) if r.version])
+        except Exception as exc:  # noqa: BLE001 - an unreadable registry is no answer, not a crash
+            logger.info("Could not read the releases of %s %s: %s", ecosystem, name, exc)
+            return None
+        return [[r.version, r.released, r.needs, r.withdrawn] for r in found]
+
+    listed = lookup_service.releases_kept(ecosystem, name, read, memo=_CACHE, memo_key=(ecosystem, name, fetch),
+                                          shared=fetch is None)
+    return [Release(*entry) for entry in listed or []]
 
 
 def needs_of(ecosystem: str, name: str, version: str, *, fetch: Fetch | None = None) -> Release:
@@ -385,16 +388,16 @@ def needs_of(ecosystem: str, name: str, version: str, *, fetch: Fetch | None = N
     version = str(version or "") if ecosystem == "go" else str(version or "").lstrip("v")
     try:
         if ecosystem in ("go", "nuget"):
-            key = (ecosystem, name, version, fetch)
-            with _LOCK:
-                known = _NEEDS.get(key)
-            if known is None:
+            from app.tools import lookup_service
+
+            def read() -> list[str]:
                 if ecosystem == "go":
-                    known = _go_needs(name, version, fetch or _fetch_default())
-                else:
-                    known = (_nuget_needs(name, version, fetch or _fetch_default()), "")
-                with _LOCK:
-                    _NEEDS[key] = known
+                    return list(_go_needs(name, version, fetch or _fetch_default()))
+                return [_nuget_needs(name, version, fetch or _fetch_default()), ""]
+
+            # What a published release states never changes: kept for every run and machine (plan HK.12).
+            known = lookup_service.release_kept(ecosystem, name, version, read, memo=_NEEDS,
+                                                memo_key=(ecosystem, name, version, fetch), shared=fetch is None)
             return Release(version, needs=known[0], withdrawn=known[1])
         for release in releases(ecosystem, name, fetch=fetch):
             if release.version.lstrip("v") == version:

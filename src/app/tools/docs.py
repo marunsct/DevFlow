@@ -81,7 +81,9 @@ _NPM_README_NAMES = ("README.md", "Readme.md", "readme.md")
 #: Fetches a URL: (status, text, content type). Injected so tests need no network.
 Fetch = Callable[[str], tuple[int, str, str]]
 
-_CACHE: dict[str, tuple[int, str, str]] = {}
+#: What this process keeps that the shared store may not: a run whose lookups are "off", a document too large for it.
+#: Official documentation is kept in the shared store for every run and machine (`lookup_service`, plan HK.12).
+_CACHE: dict[str, list[Any]] = {}
 
 _LINK = re.compile(r"\[([^\]]+)\]\(([^)\s]+)\)(?:\s*:\s*(.*))?")
 _WORD = re.compile(r"[a-z0-9][a-z0-9_.-]{1,}")
@@ -108,12 +110,16 @@ def _allowed(url: str) -> bool:
 
 
 def _fetch(url: str) -> tuple[int, str, str]:
-    import httpx
-
     if not _allowed(url):
         return 403, "", ""
-    if url in _CACHE:
-        return _CACHE[url]
+    from app.tools import lookup_service
+
+    return lookup_service.document_kept(url, lambda: _fetched(url), memo=_CACHE)
+
+
+def _fetched(url: str) -> tuple[int, str, str]:
+    import httpx
+
     headers = {"User-Agent": "software-harness-docs", "Accept": "text/markdown, text/plain;q=0.9, */*;q=0.5"}
     with httpx.Client(timeout=TIMEOUT_SECONDS, follow_redirects=True, headers=headers) as client:
         with client.stream("GET", url) as response:
@@ -124,10 +130,8 @@ def _fetch(url: str) -> tuple[int, str, str]:
                 body.extend(chunk)
                 if len(body) > MAX_DOCUMENT:
                     break
-            found = (response.status_code, bytes(body).decode("utf-8", errors="replace"),
-                     response.headers.get("content-type", ""))
-    _CACHE[url] = found
-    return found
+            return (response.status_code, bytes(body).decode("utf-8", errors="replace"),
+                    response.headers.get("content-type", ""))
 
 
 def _as_text(body: str, content_type: str) -> str:

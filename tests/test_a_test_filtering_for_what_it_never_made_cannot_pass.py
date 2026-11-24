@@ -81,3 +81,19 @@ test('[AC-16] full CRUD cycle works end-to-end', async ({ request }) => {
 def test_a_value_sent_through_a_helper_given_the_fixture_counts(tmp_path):
     """Measured on one run: `createNote(request, 'QA-crud-title', ...)` then `n.title === 'QA-crud-title'` was flagged."""
     assert suite.tests_that_filter_for_what_they_never_made(_suite(tmp_path, THROUGH_A_HELPER)) == []
+
+
+TYPE_TESTED = """import { test, expect } from '@playwright/test';
+test('[AC-7] shape', async ({ request }) => {
+  const prefix = `shape-${Date.now()}`;
+  await request.post('/notes', { data: { title: `${prefix}-note`, body: 'b' } });
+  const notes = await (await request.get('/notes')).json();
+  const found = notes.filter(n => typeof n.title === 'string' && n.title.startsWith(prefix));
+  expect(found.length).toBeGreaterThan(0);
+});
+"""
+
+
+def test_a_type_test_is_not_taken_for_a_value_the_test_looks_for(tmp_path):
+    """Measured on one run: `typeof n.title === 'string'` was read as keeping titles equal to "string"."""
+    assert suite.tests_that_filter_for_what_they_never_made(_suite(tmp_path, TYPE_TESTED)) == []

@@ -4535,6 +4535,8 @@ _DATA_OPENS = re.compile(r"\bdata\s*:\s*\{")
 _A_FIELD_FILTERED = re.compile(
     r"\.(\w+)\s*(?:\.\s*(startsWith|includes|endsWith)\s*\(\s*" + _A_LITERAL + r"\s*\)|===\s*" + _A_LITERAL + r")")
 _INTERPOLATED = re.compile(r"\$\{([^}]*)\}")
+#: `typeof` ending right before a matched field: what is compared is the value's type (`typeof n.title === 'string'`).
+_A_TYPE_TEST_BEFORE = re.compile(r"\btypeof\s+[\w$\]\[.]*$")
 #: A helper called with the fixture first, and the rest of its arguments: `createNote(request, 'a', 'b')`.
 _A_CALL_GIVEN_THE_FIXTURE = re.compile(r"\b[A-Za-z_$][\w$]*\s*\(\s*request\s*,([^;]*?)\)\s*;")
 
@@ -4618,6 +4620,10 @@ def tests_that_filter_for_what_they_never_made(repo_root: str | Path) -> list[st
             if not sent:
                 continue
             for wanted in _A_FIELD_FILTERED.finditer(block):
+                if _A_TYPE_TEST_BEFORE.search(block[max(0, wanted.start() - 80):wanted.start() + 1]):
+                    # `typeof n.title === 'string'` compares the value's type, not the value: measured on one run, it was
+                    # read as keeping titles equal to "string", and a right test was sent back for repair.
+                    continue
                 field, how = wanted.group(1), wanted.group(2) or "==="
                 literal = _literal_of(wanted, 2) if wanted.group(2) else _literal_of(wanted, 5)
                 values = (sent.get(field) or []) + (through_a_helper if sent.get(field) or through_a_helper else [])

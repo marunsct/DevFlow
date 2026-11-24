@@ -14,7 +14,6 @@ from pathlib import Path, PurePosixPath
 import pytest
 
 from app.analysis.installed_packages import missing_in
-from app.graph import stuck_lookup
 from app.tools import lookups
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,7 +40,6 @@ def the_web(monkeypatch, tmp_path):
         return {"query": error, "asked": ["stack exchange"], "found": []}
 
     monkeypatch.setattr(lookups, "look_up", look_up)
-    stuck_lookup._DONE.clear()  # noqa: SLF001
     return asked
 
 

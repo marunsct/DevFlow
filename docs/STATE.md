@@ -42,7 +42,8 @@ Earlier runs (11-22 and before): `reports/product-reviews/`, `reports/status-boa
 ## Next actions
 0. **Scale review (owner 11-24): `reports/audits/2026-11-24-why-medium-briefs-fail.md`** - bundle 1 (seven loop bugs) building; then bundle 2
    (foundation smoke, due-only suite, fair judging of a fix), bundle 3 (input budget, sprint sizing). Owner to decide: per-sprint suite lock, a scored
-   medium benchmark, rerunning the medium brief.
+   medium benchmark. **Owner 11-24: rerun the medium brief once bundles 1 and 2 are deployed** (the same upload, `brief_medium.md`, run name
+   Medium, on :1234 as before; the first run was `thorough` delivery).
 1. Score the live runs when they finish (full run id), update this file, write the end-of-run review to `reports/product-reviews/`,
    start the next family on each port through the gated start (`ready` must print ALL READY).
 2. Internet lookups: WL.3-WL.7 built (`WEB_LOOKUP_WHEN_STUCK`, `WEB_TOOLS_AFTER_TWO_FAILED_FIXES` off, measured per run)

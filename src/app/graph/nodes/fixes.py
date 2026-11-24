@@ -121,6 +121,8 @@ def _the_fix_request(
     parts.extend(shape.split_mixed(left_alone))
     # What this attempt may write: test files only, for a first fix of a failing unit test beside a green suite.
     add(KEPT, defect_fix_modes.briefing(state, config, defect_index))
+    # A failing unit test whose stand-in hides a rule the locked suite shows the product keeps (LF.1312).
+    add(KEPT, _a_stand_in_hides_the_rule(root, defect))
     specification = _the_specification_for_the_fix(state, defect, co_defects)
     add(STANDING, specification, cut=_the_specification_cut(state, specification, brief_args[8], shown))
     add(EVIDENCE, _the_bundled_section(co_defects, root, cycle.defects))
@@ -189,6 +191,19 @@ def _the_fix_request(
             round_=state.get("test_round", 0), index=defect_index, sprint=state.get("current_sprint_index", 0),
         )
     return request, co_defects
+
+
+def _a_stand_in_hides_the_rule(root: Any, defect: Any) -> str:
+    """`stand_in_tests.for_a_fixer` for a defect about the project's own failing unit tests; "" for any other."""
+    try:
+        from app.analysis import stand_in_tests
+        from app.graph import settle_when_green
+
+        if not settle_when_green._a_unit_test_failure(defect, settle_when_green.the_acceptance_command(root)):
+            return ""
+        return stand_in_tests.for_a_fixer(root, defect)
+    except Exception:  # noqa: BLE001 - the request goes without it
+        return ""
 
 
 def _the_specification_cut(state: Any, specification: str, observed: Any, shown: Any) -> str | None:

@@ -124,6 +124,9 @@ classes beside `HealthController.java`), configuration in
 `src/main/resources/application.properties`. Unit tests go in
 `src/test/java/app/{{package}}/`, named `<Name>Test.java`, using JUnit 5 and Spring's
 test support (`@WebMvcTest` with `MockMvc` for a controller, plain JUnit for the rest).
+A `@WebMvcTest` replaces each service with a `@MockitoBean` stand-in, so it checks what the
+controller does itself; a rule the service enforces (a field it refuses) is tested in the
+service's own JUnit test, or in a `@SpringBootTest` with the real service.
 Run them with `mvn -q -B test`. Add a dependency to `pom.xml`."""
 
 DOCKERFILE = """# {{title}}: build with `docker build -t {{project}} .`, run with

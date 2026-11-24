@@ -340,6 +340,14 @@ WRITTEN_BEFORE = (
 )
 
 
+def _what_a_stand_in_leaves_out(path: str) -> str:
+    """The stand-in rule for a test file's draft; "" for any other file."""
+    from app.agents.stand_in_rule import FOR_TEST_WRITERS
+    from app.analysis.file_kinds import classify_file
+
+    return FOR_TEST_WRITERS if classify_file(path) == "test" else ""
+
+
 def draft_request(root: Path, path: str, task: Any, specification: Any, stack: Any,
                   diagnostics: list[str] | None = None, code_under_test: Collection[str] = (),
                   written_before: Collection[str] = ()) -> str:
@@ -374,6 +382,8 @@ def draft_request(root: Path, path: str, task: Any, specification: Any, stack: A
          "signatures, expect its real messages, and set up its data the way it stores it: where the code and "
          "the specification differ, test what the specification asks with the code's own names.")
         if code_under_test else "",
+        # A test file is told what a test with a stand-in can check (LF.1312).
+        _what_a_stand_in_leaves_out(path),
         detail.strip(),
         f"--- The work order it belongs to ---\n{getattr(task, 'task_description', '')}"
         + (f"\nDone when:\n{criteria}" if criteria else ""),

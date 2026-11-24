@@ -23,6 +23,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from app.agents.stand_in_rule import FOR_A_FIXER
 from app.switches import is_on
 
 #: `TESTS_ONLY_WRITES` set to on or off overrides this.
@@ -107,6 +108,8 @@ def briefing(run_id: str | None, stage: str) -> str:
         "whether the test asserts the wrong thing, builds the wrong state or calls the product the wrong way, and "
         "correct it. If the test is right and the product is wrong, name the file and the change in `blockers` and "
         "finish; the next attempt may change the product.\n"
+        # LF.1312: a slice test that replaced the service asserted the service's rule, and tests-only fixes left it.
+        f"{FOR_A_FIXER}\n"
     )
 
 

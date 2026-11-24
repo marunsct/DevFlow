@@ -21,6 +21,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, create_model, field_validator, model_validator
 from pydantic.json_schema import SkipJsonSchema
 
+from app.agents.stand_in_rule import FOR_TEST_WRITERS
 from app.agents.testability import TESTABILITY_RULE
 from app.agents.testing_dependency_rule import RULE_FOR_BUILDERS
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
@@ -147,6 +148,8 @@ _ROLE_DESCRIPTIONS: dict[SpecialistRole, str] = {
         "different test runner: one the stack did not choose fails on its own "
         "setup rather than on the product. If the stack names none, verify with "
         "the runner that ships with the stack's language. "
+        # LF.1312: a controller test that replaced the service asserted the service's rule and could never pass.
+        + FOR_TEST_WRITERS + " "
         "CRITICAL: Do NOT remove, disable or stub out core application logic or "
         "UI logic to satisfy test environment limitations (e.g. headless test errors "
         "or a missing display). You must test the real UI logic end-to-end, "
@@ -1421,6 +1424,8 @@ def _system_prompt(role: SpecialistRole, writing_the_suite: bool = False) -> str
     if writing_the_suite:
         role_description = " ".join(role_description.split()).replace(_REPORT_EVERY_FAILURE, "").rstrip()
         role_description = role_description.replace(_DEFINES_EVERY_KIND_OF_TEST, _WRITES_THE_SUITE)
+        # The suite tests the running product, with no component replaced.
+        role_description = role_description.replace(FOR_TEST_WRITERS + " ", "")
     runs_programs = _RUNS_PROGRAMS_FOR_THE_SUITE if writing_the_suite else _RUNS_PROGRAMS_TO_BUILD
     validation = _VALIDATION_NOTE if role == "testing" else ""
     prove = _PROVE_THE_SUITE if writing_the_suite else _PROVE_THE_WORK

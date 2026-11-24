@@ -87,6 +87,15 @@ class LanguageSupport:
     #: The reader of `app.analysis.resolved_packages` that lists what an install resolved (its lock file, the restore's
     #: assets or the installed packages) with the runtime each needs, for the toolchain-fit check (HK.2).
     resolved: str | Gap = Gap("no reader lists what its install resolved")
+    #: Patterns (regular expressions over a test file's text) of a stand-in the test puts in place of a component - a
+    #: mock, stub, fake or patched name - each with a group naming what it replaces (`name`, or a second spelling's
+    #: own group) and an optional group `attr`, the member replaced on it (`app.analysis.stand_in_tests`, LF.1312).
+    #: Measured: a controller test that replaced the service asserted the service's validation rule, and failed beside
+    #: a product that kept the rule.
+    stand_ins: tuple[str, ...] | Gap = Gap("no stand-in declarations are read in this language")
+    #: Patterns over its runners' failure messages that say a test expected a refusal and got a success: a 4xx status
+    #: expected where a 2xx or 3xx came (groups `expected` and `got`), or an error expected and none raised.
+    refusal_not_given: tuple[str, ...] | Gap = Gap("no runner message is read for a refusal that did not come")
 
 
 _NODE_INSTALLED = ("node_modules",)
@@ -112,6 +121,46 @@ _NO_RESOLVED_SET = Gap("Maven and Gradle resolve while they build and keep no lo
                        "states no runtime a release needs")
 _INSTALLS_INTO_THE_PROJECT = "its packages are installed into the project, which the delivered copy carries"
 
+#: A status the client is refused with, and one it is served with, as numbers (LF.1312).
+_REFUSED = r"(?P<expected>4\d\d)"
+_SERVED = r"(?P<got>[23]\d\d)"
+#: "expected 400, got 201", "want 400 but got 201", "got 201, want 400": the wording many runners and assertion
+#: libraries share, whatever the language.
+_EXPECTED_GOT = (
+    rf"(?i:expected|want(?:ed)?)\W{{0,4}}{_REFUSED}\b[^\n\d]{{0,20}}?(?i:but\s+)?(?i:got|was|received|actual)\W{{0,4}}{_SERVED}\b",
+    rf"(?i:got|actual)\W{{0,4}}{_SERVED}\b[^\n\d]{{0,20}}?(?i:expected|want(?:ed)?)\W{{0,4}}{_REFUSED}\b",
+)
+_JVM_STAND_INS = (
+    # `@MockitoBean private NoteService service;` - Spring's and Mockito's annotations on a field.
+    r"@(?:MockBean|MockitoBean|SpyBean|MockitoSpyBean|Mock|Spy|MockkBean|MockK)\b(?:\s*\([^)]*\))?\s+"
+    r"(?:(?:private|protected|public|final|static|lateinit|val|var)\s+)*(?:(?P<name>[A-Z]\w*)(?:<[^>;]*>)?\s+\w+\s*;"
+    r"|\w+\s*:\s*(?P<kotlin>[A-Z]\w*))",
+    r"\bmock\(\s*(?P<name>[A-Z]\w*)\.class",
+    r"\bmockk<\s*(?P<name>[A-Z]\w*)",
+)
+_JVM_REFUSAL = (
+    rf"(?:Status )?expected:\s*<{_REFUSED}> but was:\s*<{_SERVED}>",
+    r"Expected [\w.$]+ to be thrown, but nothing was thrown",
+    r"Expecting code to raise a throwable",
+    *_EXPECTED_GOT,
+)
+_JS_STAND_INS = (
+    r"\b(?:jest|vi)\.mock\(\s*['\"`](?P<name>[^'\"`]+)['\"`]",
+    r"\b(?:jest|vi)\.spyOn\(\s*(?P<name>[\w.$]+)\s*,\s*['\"`](?P<attr>\w+)['\"`]",
+    r"\bsinon\.(?:stub|replace)\(\s*(?P<name>[\w.$]+)\s*,\s*['\"`](?P<attr>\w+)['\"`]",
+    r"\bmock\.method\(\s*(?P<name>[\w.$]+)\s*,\s*['\"`](?P<attr>\w+)['\"`]",
+)
+_JS_REFUSAL = (
+    rf"Expected:?\s*{_REFUSED}\s+Received:?\s*{_SERVED}",
+    rf"expected {_REFUSED} \"[^\"]*\", got {_SERVED}",
+    rf"expected {_SERVED} to (?:equal|be|eql) {_REFUSED}",
+    rf"{_SERVED} !== {_REFUSED}",
+    r"Received function did not throw",
+    r"Received promise resolved instead of rejected",
+    r"Missing expected (?:exception|rejection)",
+    *_EXPECTED_GOT,
+)
+
 
 def _rows() -> tuple[LanguageSupport, ...]:
     javascript = LanguageSupport(
@@ -134,6 +183,8 @@ def _rows() -> tuple[LanguageSupport, ...]:
         development_server="javascript",
         package_cache=Gap(_INSTALLS_INTO_THE_PROJECT),
         resolved="npm",
+        stand_ins=_JS_STAND_INS,
+        refusal_not_given=_JS_REFUSAL,
     )
     typescript = replace(
         javascript, name="typescript", suffixes=(".ts", ".tsx", ".mts", ".cts"),
@@ -163,6 +214,19 @@ def _rows() -> tuple[LanguageSupport, ...]:
             development_server="python",
             package_cache=Gap(_INSTALLS_INTO_THE_PROJECT),
             resolved="python",
+            stand_ins=(
+                r"\bpatch\(\s*['\"](?P<name>[\w.]+)['\"]",
+                r"\bpatch\.object\(\s*(?P<name>[A-Za-z_][\w.]*)\s*,\s*['\"](?P<attr>\w+)['\"]",
+                r"\bsetattr\(\s*['\"](?P<name>[\w.]+)['\"]",
+                r"\bsetattr\(\s*(?P<name>[A-Za-z_][\w.]*)\s*,\s*['\"](?P<attr>\w+)['\"]",
+                r"\bdependency_overrides\[\s*(?P<name>[\w.]+)\s*\]",
+            ),
+            refusal_not_given=(
+                rf"assert {_SERVED} == {_REFUSED}\b",
+                rf"assert {_REFUSED} == {_SERVED}\b",
+                r"DID NOT RAISE",
+                *_EXPECTED_GOT,
+            ),
         ),
         LanguageSupport(
             name="go",
@@ -184,6 +248,11 @@ def _rows() -> tuple[LanguageSupport, ...]:
             development_server=Gap("Go's standard server is a production server; `go run` is read in no source"),
             package_cache=("GOMODCACHE", "go/pkg/mod"),
             resolved="go",
+            stand_ins=(
+                r"\btype\s+(?P<name>(?:[mM]ock|[fF]ake|[sS]tub)\w*)\s+struct\b",
+                r"\bNewMock(?P<name>[A-Z]\w*)\(",
+            ),
+            refusal_not_given=_EXPECTED_GOT,
         ),
         LanguageSupport(
             name="rust",
@@ -205,6 +274,12 @@ def _rows() -> tuple[LanguageSupport, ...]:
             development_server=Gap("Rust's servers are production servers; `cargo run` is read in no source"),
             package_cache=("CARGO_HOME", ".cargo"),
             resolved="cargo",
+            stand_ins=(r"\b(?P<name>Mock[A-Z]\w*)::(?:new|default)\(",),
+            refusal_not_given=(
+                rf"left:\s*{_SERVED}\s+right:\s*{_REFUSED}\b",
+                r"did not panic as expected",
+                *_EXPECTED_GOT,
+            ),
         ),
         LanguageSupport(
             name="java",
@@ -226,6 +301,8 @@ def _rows() -> tuple[LanguageSupport, ...]:
             development_server=Gap("`spring-boot:run` is a build command, read in no source"),
             package_cache=Gap("the Java pack fetches while it builds and tests, with a network (`fetches_while_building`)"),
             resolved=_NO_RESOLVED_SET,
+            stand_ins=_JVM_STAND_INS,
+            refusal_not_given=_JVM_REFUSAL,
         ),
         LanguageSupport(
             name="kotlin",
@@ -246,6 +323,8 @@ def _rows() -> tuple[LanguageSupport, ...]:
             import_graph=Gap(_NO_IMPORT_GRAPH),
             development_server=Gap("no pack is in Kotlin; its servers are production servers"),
             resolved=_NO_RESOLVED_SET,
+            stand_ins=_JVM_STAND_INS,
+            refusal_not_given=_JVM_REFUSAL,
         ),
         LanguageSupport(
             name="csharp",
@@ -269,6 +348,17 @@ def _rows() -> tuple[LanguageSupport, ...]:
             package_cache=("NUGET_PACKAGES", ".nuget/packages"),
             resolved="nuget",
             restores_when_it_starts=True,
+            stand_ins=(
+                r"\bnew\s+Mock<\s*(?P<name>\w+)\s*>",
+                r"\bSubstitute\.For<\s*(?P<name>\w+)\s*>",
+                r"\bA\.Fake<\s*(?P<name>\w+)\s*>",
+            ),
+            refusal_not_given=(
+                r"Expected:\s*(?P<expected>4\d\d|BadRequest|UnprocessableEntity|UnprocessableContent|Conflict|NotFound"
+                r"|Unauthorized|Forbidden)\s+Actual:\s*(?P<got>[23]\d\d|OK|Created|NoContent|Accepted|Found|Redirect)\b",
+                r"No exception was thrown",
+                *_EXPECTED_GOT,
+            ),
         ),
         LanguageSupport(
             name="ruby",
@@ -290,6 +380,18 @@ def _rows() -> tuple[LanguageSupport, ...]:
             development_server="ruby",
             package_cache=Gap("not measured: where bundler keeps its gems is set by the pack's install"),
             resolved="bundler",
+            stand_ins=(
+                r"\b(?:instance_double|class_double|object_double)\(\s*['\"]?(?P<name>[\w:]+)",
+                r"\ballow(?:_any_instance_of)?\(\s*(?P<name>[\w:.@]+)\s*\)\.to\s+receive\(\s*:(?P<attr>\w+)",
+                r"\b(?P<name>[A-Z][\w:]*)\.stubs?\(?\s*:(?P<attr>\w+)",
+            ),
+            refusal_not_given=(
+                rf"status code\D{{0,40}}{_REFUSED}\D{{0,40}}but it was\D{{0,40}}{_SERVED}",
+                rf"Expected response to be a <{_REFUSED}[^>]*>, but was a <{_SERVED}",
+                rf"expected:\s*{_REFUSED}\s+got:\s*{_SERVED}\b",
+                r"but nothing was raised",
+                *_EXPECTED_GOT,
+            ),
         ),
         LanguageSupport(
             name="php",
@@ -311,6 +413,15 @@ def _rows() -> tuple[LanguageSupport, ...]:
             development_server="php",
             package_cache=Gap("Composer installs into `vendor/` in the project, which the delivered copy carries"),
             resolved="composer",
+            stand_ins=(
+                r"\b(?:createMock|createStub|createPartialMock|getMockBuilder|mock|partialMock|spy)\(\s*\\?(?P<name>[\w\\]+)::class",
+            ),
+            refusal_not_given=(
+                rf"Expected response status code \[{_REFUSED}\] but received {_SERVED}",
+                rf"Failed asserting that {_SERVED} (?:is identical to|matches expected) {_REFUSED}\b",
+                r"Failed asserting that exception of type \"[^\"]+\" is thrown",
+                *_EXPECTED_GOT,
+            ),
         ),
     )
 

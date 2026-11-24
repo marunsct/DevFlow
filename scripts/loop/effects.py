@@ -46,6 +46,9 @@ SIGNALS: list[tuple[str, str, str]] = [
      "Sent back to its builder before the test round"),
     ("LF.1299 a round's not-built defect sent to its builder, not a fixer", "ledger",
      "Not built: sent to the builder of its work order"),
+    # Its words are `app.analysis.stand_in_tests.HEADING`.
+    ("LF.1312 a unit test's stand-in shown hiding a rule the product keeps", "request",
+     "--- A stand-in hides the rule this unit test expects ---"),
 ]
 
 

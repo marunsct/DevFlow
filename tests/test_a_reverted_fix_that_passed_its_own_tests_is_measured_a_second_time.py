@@ -219,7 +219,7 @@ def test_the_fix_step_replays_before_a_fixer_and_keeps_what_it_reverts(tmp_path)
 
     kept = []
 
-    def reverted(root, base, stage, description, contested=None, on_revert=None):
+    def reverted(root, base, stage, description, contested=None, on_revert=None, **_):
         on_revert(["app/server.js"])
         return ["[AC-2] lists notes"]
 

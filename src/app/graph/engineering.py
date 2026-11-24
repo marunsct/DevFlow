@@ -771,7 +771,7 @@ def _its_tests_without_its_product_change(
     if not broken or not all(item.startswith("acceptance:") for item in broken):
         return None
     try:
-        ci.commit(root, f"{stage_name} as written, before it is split")
+        written = ci.commit(root, f"{stage_name} as written, before it is split")
         changed = ci.changed_since(root, base)
         tests = [path for path in changed if classify_file(path) == "test"]
         product = [path for path in changed if path not in tests]
@@ -790,6 +790,11 @@ def _its_tests_without_its_product_change(
                 break
             after = None
         if after is None:
+            # The fix put back as it was written: whatever judges it next - a net gain kept, a forward repair, the
+            # revert - reads the fix that was measured, not its tests alone. Found in building LF.1271: the product
+            # changes stayed put back, and a fix kept on its net gain was committed without them.
+            if written:
+                ci.revert_to(root, written)
             return None
         product = put_back
         logger.warning(
@@ -991,12 +996,16 @@ def the_start_and_end_of(problem: str, limit: int = 600) -> str:
 def after_a_fix(
     root: str, base: str, stage_name: str, description: str, contested: str = "",
     on_revert: Callable[[list[str]], Any] | None = None,
+    repair_forward: Callable[[str], bool] | None = None,
 ) -> list[str]:
     """Measure the fix. A fix that broke what passed before it is reverted; returns what it broke.
 
     `contested`: a passing locked test past judging (`workflow._a_contested_test_past_repair`); a fix whose only
     casualty is that test, and that made others pass, is kept. `on_revert` is called with what the fix broke while
     the fix is still in the workspace, just before it is reverted (`kept_fix_candidates.keep`); its failure reverts nothing differently.
+    `repair_forward` is handed, once, what a fix that stopped the product (or whose broken tests all stop at one new
+    step) broke, before it is reverted (`judged_fixes.what_a_repair_is_given`); when it changed a file the fix is
+    measured and judged again, with no second repair (LF.1271).
     """
     if not base or not ci_applies(root):
         return []
@@ -1087,6 +1096,15 @@ def after_a_fix(
         logger.warning("Kept %s: it made %d test(s) pass and broke only the contested %s", stage_name,
                        len(gained_now), contested)
         broken = []
+    if broken and repair_forward is not None:
+        # Repaired forward before it is reverted (LF.1271): measured on a medium run, two correct fixes were reverted
+        # because each exposed the next fault behind it, and the correct part went with the fault.
+        from app.graph import judged_fixes
+
+        handed = judged_fixes.what_a_repair_is_given(root, before, after, broken)
+        if handed and repair_forward(handed):
+            logger.warning("Repaired %s forward, which broke %d thing(s); measuring it again", stage_name, len(broken))
+            return after_a_fix(root, base, stage_name, description, contested=contested, on_revert=on_revert)
     if broken and on_revert is not None:
         try:
             on_revert(broken)

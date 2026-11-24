@@ -396,6 +396,41 @@ def _fixed_by_rewriting(
         return None
 
 
+def _repaired_forward(
+    state: Any, config: RunnableConfig, defect: Any, fix_model: Any, asked: Any, files: list[str], *, ctx: GraphContext,
+) -> Any:
+    """The fix's own model rewriting only the files its fix changed, handed what the fix broke (LF.1271); None when
+    declined: a run that does not approve its own writes, a mutation finding, or a rewrite that wrote nothing.
+
+    Bounded by the rewrite's own limits (`rewritten_fixes.MOST_FILES` files, `MOST_PASSES` passes), and synchronous:
+    the fix is still in the workspace, unjudged, so it cannot wait on an approval.
+    """
+    from app.graph.workflow import APP_RUN_ID_KEY, _the_run_approves_its_own_writes, mutation_guided
+
+    if (not files or mutation_guided.is_a_finding(defect)
+            or not _the_run_approves_its_own_writes(config["configurable"].get(APP_RUN_ID_KEY))):
+        return None
+    from app.graph.rewritten_fixes import fix_by_rewriting
+    from app.tools.repository import _the_harness_s_own_or_the_locked_suite, just_asking
+
+    root = Path(state["repository"].root_path)
+
+    def may_write(path: str) -> bool:
+        with just_asking():
+            return path in files and _the_harness_s_own_or_the_locked_suite(root, root / path) is None
+
+    try:
+        return fix_by_rewriting(
+            asked, root, fix_model or ctx.model or ctx.building_model,
+            specification=state.get("technical_specification"),
+            stack=getattr(state.get("stack_selection"), "technology_stack", None),
+            may_write=may_write, files=[path for path in files if may_write(path)],
+        )
+    except Exception as error:  # noqa: BLE001 - reverted as before
+        degraded("fix.repair_forward", error)
+        return None
+
+
 def _fix_one(state: Any, config: RunnableConfig, defect_index: int, ctx: GraphContext) -> dict[str, Any]:
     """Route one open defect to its owner, measure the fix, and record what it settled."""
     from app.graph.workflow import (
@@ -451,6 +486,11 @@ def _fix_one(state: Any, config: RunnableConfig, defect_index: int, ctx: GraphCo
         if state.get("pending_inner_thread_id")
         else engineering.before_a_fix(state["repository"].root_path, stage_name)
     )
+    # Where the defect's tests fail as the fix finds them, to read its progress against (LF.1272).
+    from app.graph import judged_fixes
+
+    if not state.get("pending_inner_thread_id"):
+        judged_fixes.remember_before(state["repository"].root_path, stage_name, defect)
     # The mode this fix runs in: what it may write, and what is kept of it (`app.graph.defect_fix_modes`).
     defect_fix_modes.begin(state, config, cycle, defect_index, stage_name)
     # Fast delivery: the harness gathers what failed and the files it points
@@ -526,11 +566,16 @@ def _fix_one(state: Any, config: RunnableConfig, defect_index: int, ctx: GraphCo
             ),
         )
     defect_fix_modes.end(config, stage_name)
+    # A fix that stopped the product is handed back to its own model once before it is reverted (LF.1271).
+    repair = judged_fixes.ForwardRepair(
+        str(repo), fix_base, defect,
+        lambda asked, files: _repaired_forward(state, config, defect, fix_model, asked, files, ctx=ctx))
     broke = engineering.after_a_fix(
         state["repository"].root_path, fix_base, stage_name, defect.description,
         contested=_a_contested_test_past_repair(state, cycle),
         on_revert=lambda lost: kept_fix_candidates.keep(
             repo, fix_base, defect, stage_name, lambda: _the_defect_s_tests_pass(repo, defect), lost),
+        repair_forward=repair.attempt,
     )
     # Ended worse than the best version it reached - reverted, or its own tests failing again: that version, measured
     # in its place (A3).
@@ -545,6 +590,11 @@ def _fix_one(state: Any, config: RunnableConfig, defect_index: int, ctx: GraphCo
     )
     from app.observability import defect_ledger
 
+    if repair.tried:
+        defect_ledger.note(
+            judged_fixes.REPAIRED_FORWARD, stage_name, defect=defect, round_=state.get("test_round", 0),
+            index=defect_index, sprint=state.get("current_sprint_index", 0), detail=repair.said(broke),
+        )
     if instead is not None:
         defect_ledger.note(
             "best checkpoint", stage_name, defect=defect, round_=state.get("test_round", 0), index=defect_index,
@@ -566,7 +616,8 @@ def _fix_one(state: Any, config: RunnableConfig, defect_index: int, ctx: GraphCo
             detail=f"broke {len(broke)} test(s) that passed before it: {'; '.join(broke[:3])}",
         )
         noted = _one_more_failed_fix(_noted_as_reverted(cycle, [defect_index], broke), defect_index)
-        noted = _with_the_attempt(noted, defect_index, stage_name, fix_result, f"reverted: it broke {'; '.join(broke[:3])}",
+        noted = _with_the_attempt(noted, defect_index, stage_name, fix_result,
+                                  repair.outcome(f"reverted: it broke {'; '.join(broke[:3])}", broke),
                                   defect_budget.calls_in(config["configurable"].get(APP_RUN_ID_KEY), stage_name, started),
                                   root=state["repository"].root_path, sprint=state.get("current_sprint_index", 0))
         contested = _a_locked_test_two_fixes_broke(noted)
@@ -608,7 +659,8 @@ def _fix_one(state: Any, config: RunnableConfig, defect_index: int, ctx: GraphCo
         after = settled["remediation"].defects[defect_index]
         settled["remediation"] = _with_the_attempt(
             settled["remediation"], defect_index, stage_name, fix_result,
-            settled_as or ("fixed" if str(getattr(after, "status", "")) == "fixed" else "left open: its tests still fail"),
+            repair.outcome(settled_as or ("fixed" if str(getattr(after, "status", "")) == "fixed"
+                                          else "left open: its tests still fail"), broke),
             defect_budget.calls_in(config["configurable"].get(APP_RUN_ID_KEY), stage_name, started),
             root=state["repository"].root_path, sprint=state.get("current_sprint_index", 0),
         )
@@ -824,6 +876,11 @@ def _the_next_fix_batch(state: Any, config: RunnableConfig, ctx: GraphContext) -
     base = engineering.before_a_fix(
         state["repository"].root_path, f"defect_fix_{state.get('test_round', 0)}_batch"
     )
+    from app.graph import judged_fixes
+
+    for index in chosen:
+        # Where each defect's tests fail as its batch finds them (LF.1272).
+        judged_fixes.remember_before(state["repository"].root_path, name(index), cycle.defects[index])
     logger.info("Fixing %d defects side by side: %s", len(chosen), ", ".join(map(name, chosen)))
     return {"stage": "defect_fix_parallel", "fix_batch": chosen, "fix_base_commit": base,
             "fix_batch_started": defect_budget.now()}

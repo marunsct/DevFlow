@@ -3857,10 +3857,18 @@ def _settle_the_fix(
         # still failed were each recorded as "named no regression test", the
         # lesser reason.
         update["remediation"] = cycle
+        # Unless they fail further on than before it (LF.1272): measured on a medium run, fixes that moved their tests
+        # from 500 to 404, a later step reached, were counted as failed fixes like ones that changed nothing.
+        from app.graph import judged_fixes
+
+        forward = judged_fixes.moved_forward(state["repository"].root_path, stage_name, defect)
+        if forward:
+            update["remediation"] = judged_fixes.with_the_new_evidence(cycle, defect_index, forward)
+            settled_as = f"{judged_fixes.MOVED_FORWARD}: {forward}"
         defect_ledger.note(
             "left open", stage_name, defect=defect, round_=state.get("test_round", 0), index=defect_index,
             sprint=state.get("current_sprint_index", 0),
-            detail="its own tests still fail, measured after the fix",
+            detail=settled_as if forward else "its own tests still fail, measured after the fix",
         )
     elif str(getattr(defect, "source", "") or "") == "language service" and _still_underlined(
         state["repository"].root_path, defect
@@ -3972,7 +3980,10 @@ def _settle_the_fix(
 
     still_open = settled_as != "fixed"
     # Unverified is neither fixed nor failed: the next test round decides, and a defect it closes had no failed fix.
-    if still_open and settled_as != UNVERIFIED:
+    # Nor is a fix that moved its tests forward (LF.1272): it is kept, and what is left is the next fault.
+    from app.graph.judged_fixes import MOVED_FORWARD
+
+    if still_open and settled_as != UNVERIFIED and not settled_as.startswith(MOVED_FORWARD):
         # One more failed try: past `escalate_after()` its next fix runs on
         # the judgement model (`GraphContext.the_build_model`).
         update["remediation"] = _one_more_failed_fix(update["remediation"], defect_index)

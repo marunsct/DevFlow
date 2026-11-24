@@ -38,6 +38,10 @@ SIGNALS: list[tuple[str, str, str]] = [
     ("LF.185 unstable criterion held as a dispute", "ledger", "pass when they run alone"),
     ("LF.1244 the latest round's defects fixed ahead of those carried over", "fix order",
      "Defects the latest test round raised fixed ahead of those carried over"),
+    ("LF.1271 a fix that broke what worked was repaired forward and kept", "ledger",
+     "repaired forward and kept, measured again"),
+    ("LF.1271 a fix reverted after its forward repair failed", "ledger", "reverted after a forward repair failed"),
+    ("LF.1272 a fix kept as progress: its tests moved forward", "ledger", "moved forward:"),
 ]
 
 

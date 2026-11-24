@@ -79,3 +79,31 @@ def test_a_broken_unit_test_still_reverts_the_whole_fix(tmp_path, monkeypatch):
 
     assert broke == ["unit: pytest › tests.test_items"]
     assert "async def test_items" in (root / UNIT_TEST).read_text(), "reverted to before the fix"
+
+
+def test_a_split_that_breaks_too_leaves_the_fix_as_it_was_written(tmp_path, monkeypatch):
+    """Found in building LF.1271: when keeping the tests alone broke the same test, the product change stayed put back,
+    and a fix then kept on its net gain was committed without the change that was measured."""
+    monkeypatch.setenv("KEEP_NET_GAINS", "on")
+    root, base = _workspace(tmp_path)
+
+    def measured(r, label):
+        router, test = (root / ROUTER).read_text(), (root / UNIT_TEST).read_text()
+        as_before = "Depends(signed_in)" in router and test.startswith("def test_items(")
+        return ci.Snapshot(label=label, unit={"pytest › tests.test_items": "passed"}, unit_ran=True, acceptance_ran=True,
+                           acceptance={"a.spec.js › [AC-8] refuses a stranger": "passed" if as_before else "failed",
+                                       **{f"a.spec.js › [AC-9] lists {n}": "passed" if "paged" in router else "failed"
+                                          for n in range(4)}})
+
+    before = measured(root, "before")
+    monkeypatch.setattr(engineering, "ci_applies", lambda root: True)
+    monkeypatch.setattr(ci, "take", measured)
+    monkeypatch.setattr(ci, "load", lambda r, which: before)
+    monkeypatch.setattr(ci, "save", lambda r, snapshot, accepted=False: None)
+    (root / UNIT_TEST).write_text("async def test_items(client):\n    await client.get('/items')\n")
+    (root / ROUTER).write_text("def items(paged=True):\n    return []\n")
+
+    broke = engineering.after_a_fix(str(root), base, "defect_fix_2_4", "lists")
+
+    assert broke == [], "kept on its net gain"
+    assert "paged" in (root / ROUTER).read_text(), "with the product change that gained the four tests"

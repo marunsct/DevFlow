@@ -127,6 +127,25 @@ def where_it_threw(message: Any) -> str:
     return ""
 
 
+def where_the_test_was(message: Any) -> str:
+    """`file:line` of the outermost frame of the test's own code a failure passed through - the line of the test that
+    took the failing step - libraries passed over; or "".
+
+    A script runtime lists the innermost frame first, so its last; Python's traceback the outermost first, so its first.
+    Two failures of one test at different lines of one file failed at different steps of it.
+    """
+    message = _plain(message)
+    script = [m for m in _A_SCRIPT_FRAME.finditer(message) if not _A_LIBRARY.search(m.group(1))]
+    if script:
+        return f"{PurePosixPath(script[-1].group(1)).name}:{script[-1].group(2)}"
+    frames = [(m.group(1), m.group(2)) if m.group(1) else (m.group(3), m.group(4))
+              for m in _A_PYTHON_FRAME.finditer(message)]
+    frames = [(file, line) for file, line in frames if not _A_LIBRARY.search(file)]
+    if frames:
+        return f"{PurePosixPath(frames[0][0]).name}:{frames[0][1]}"
+    return ""
+
+
 def _scrubbed(text: str) -> str:
     """`text` without what varies from one test to the next: numbers, quoted values."""
     text = re.sub(r"([`'\"]).*?\1", "#", text)
@@ -303,5 +322,5 @@ def clusters(failing: Sequence[dict], root: str | Path | None = None, *, total: 
 
 __all__ = [
     "ANY_STATUS", "Cluster", "Failure", "LEAST_CRITERIA", "LEAST_TESTS", "ONE_IN", "RATE_LIMITED", "answers",
-    "clusters", "read", "the_wrong_answer", "what_it_threw", "where_it_threw",
+    "clusters", "read", "the_wrong_answer", "what_it_threw", "where_it_threw", "where_the_test_was",
 ]

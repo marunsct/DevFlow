@@ -88,6 +88,7 @@ def run(
     side_by_side: bool = False,
     during: Any = None,
     real_brief: bool = False,
+    measure: Any = None,
 ) -> tuple[dict[str, Any], Seen]:
     """Run `node` once on `state`.
 
@@ -97,7 +98,9 @@ def run(
     `broke`: what `engineering.after_a_fix` says the fix broke. `printed`: what each failure reader returns, by
     "criteria" / "unit" / "last". `side_by_side`: parallel mode's batches. `during`: called with the stage's name
     while its agent runs; what it returns is kept in `Seen.during`. `real_brief`: the brief and what each failure
-    reader returns are built as they ship, from the workspace and the state.
+    reader returns are built as they ship, from the workspace and the state. `measure`: called as
+    `engineering.after_a_fix` is, in its place, when a test measures a workspace of its own (it may call the real one).
+    A callable `rewrite` is called with the defect and the rewrite's arguments, and what it returns is the rewrite's output.
     """
     from app.graph import workflow
 
@@ -125,7 +128,7 @@ def run(
     def rewriting(defect, root_, model_, **kwargs):
         seen.rewrites.append({"defect": defect, "model": model_, **kwargs})
         seen.events.append("rewrite")
-        return rewrite
+        return rewrite(defect, **kwargs) if callable(rewrite) else rewrite
 
     def candidates(defect, root_, model_, check, **kwargs):
         seen.candidates.append({"defect": defect, "model": model_, "check": check, **kwargs})
@@ -171,7 +174,7 @@ def run(
         "app.graph.workflow._run_gated_agent": {"side_effect": gated},
         "app.graph.acceptance_nodes.done_by_the_definition": {"return_value": []},
         "app.graph.engineering.before_a_fix": {"return_value": "base"},
-        "app.graph.engineering.after_a_fix": {"side_effect": measured},
+        "app.graph.engineering.after_a_fix": {"side_effect": measure or measured},
         "app.graph.rewritten_fixes.fix_by_rewriting": {"side_effect": rewriting},
         "app.graph.rewritten_fixes.fix_by_candidates": {"side_effect": candidates},
         "app.graph.rewritten_fixes.what_failed": {"return_value": "it failed"},

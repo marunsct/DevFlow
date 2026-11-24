@@ -112,12 +112,28 @@ def effects(records: list[dict], decisions: str = "") -> list[str]:
     if defects:
         lines.append("  defects: " + ", ".join(f"{event} {n}" for event, n in sorted(defects.items())))
     lines.extend(budget_lines(records))
+    lines.extend(outbound_lines(records))
     lines.extend(review_reading_lines(records))
     # Beside what fired: a switch that was on, had its chance and did nothing (`CHANCES`).
     from app.observability.switch_firing import chance_lines
 
     lines.extend(chance_lines(records, decisions))
     return lines
+
+
+def outbound_lines(records: list[dict]) -> list[str]:
+    """LF.1291 (HK.5): what left the machine through the one outbound gate (`app.tools.outbound`, records `outbound`):
+    queries sent by way of each channel, how many had the product's words taken out, and names not sent at all."""
+    sent = [r for r in records if isinstance(r, dict) and r.get("kind") == "outbound"]
+    if not sent:
+        return ["     -  LF.1291 outbound queries through the one gate: not reached"]
+    refused = [r for r in sent if r.get("refused")]
+    left = [r for r in sent if not r.get("refused")]
+    by_channel = Counter(str(r.get("channel") or "?") for r in left)
+    cleaned = sum(1 for r in left if int(r.get("removed") or 0) > 0)
+    return [f"  {len(left):>4}  LF.1291 outbound queries through the one gate ("
+            + ", ".join(f"{channel} {n}" for channel, n in by_channel.most_common())
+            + f"); {cleaned} with the product's words taken out; {len(refused)} not sent (the product's own name)"]
 
 
 def budget_lines(records: list[dict]) -> list[str]:

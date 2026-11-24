@@ -22,7 +22,9 @@ The order is `LOOKUP_ORDER` (names, comma-separated; a source not named follows 
 daily request cap (`DAILY_CAPS`, `LOOKUP_DAILY_CAPS` as `name=requests,...`; 0 never asks it), counted per day in
 `DATA_DIR/lookups`. A capped source is skipped and the answer says so, which the ledger record carries.
 
-Only the cleaned error line and the stack's names leave the machine (`cleaned`); what comes back is quoted, defanged
+Only the cleaned error line and the stack's names leave the machine, through the one outbound gate
+(`app.tools.outbound`, LF.1291): the product's own words out, the stack's and the project's package names kept, each
+query sent one `outbound` record on the run's transcript. What comes back is quoted, defanged
 and labelled as leads. Each query's answer is kept for `KEPT_DAYS`, so an error met again costs no request.
 """
 
@@ -83,34 +85,13 @@ def _get(url: str, headers: dict[str, str], body: str | None = None) -> tuple[in
 
 # --- what leaves the machine ----------------------------------------------------------------------------------------
 
-_A_PATH = re.compile(r"(?:[A-Za-z]:)?(?:/[\w.@~+-]+){2,}/?|(?:[\w.@~+-]+/){2,}[\w.@~+-]+")
-#: An address and port - an IP, localhost, or a host of three or more labels - never `store.rs:41`, a file and its line.
-_A_HOST_AND_PORT = re.compile(r"\b(?:\d{1,3}(?:\.\d{1,3}){3}|localhost|[\w-]+(?:\.[\w-]+){2,}):\d{2,5}\b")
-_A_LONG_TOKEN = re.compile(r"\b[A-Za-z0-9_\-]{24,}\b|\b[0-9a-f]{8,}\b|\b[0-9a-f]{8}-[0-9a-f-]{27}\b", re.I)
-_AN_ADDRESS = re.compile(r"\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b")
-_A_QUOTED_VALUE = re.compile(r"(['\"])(?:(?!\1).){41,}\1")
+def cleaned(error_line: str, private_words: list[str] | tuple[str, ...] = (), keep: Any = ()) -> str:
+    """`error_line` as it may leave the machine (`outbound.cleaned`, the one gate's cleaning): no paths (a file's own
+    name stays), no host and port, no long tokens, no addresses, no long quoted values, none of `private_words` (the
+    product's and the project's names) in any spelling, the public names in `keep` untouched."""
+    from app.tools import outbound
 
-
-def cleaned(error_line: str, private_words: list[str] | tuple[str, ...] = ()) -> str:
-    """`error_line` as it may leave the machine: no paths (a file's own name stays), no host and port, no long tokens,
-    no addresses, no long quoted values, none of `private_words` (the product's and the project's names)."""
-    text = " ".join(str(error_line or "").split())
-    text = _A_PATH.sub(lambda m: m.group(0).rstrip("/").rsplit("/", 1)[-1], text)
-    for pattern in (_A_HOST_AND_PORT, _AN_ADDRESS, _A_LONG_TOKEN, _A_QUOTED_VALUE):
-        text = pattern.sub(" ", text)
-    for word in sorted({w for w in private_words if w and len(w) >= 3}, key=len, reverse=True):
-        text = re.sub(re.escape(word), " ", text, flags=re.I)
-    # What the removals left: an emptied quote (`' '`) and the punctuation that stood beside it. Measured: queries went
-    # out as "path to : ' ' does not exist" and "at id ` ` answered 500", which match nothing anyone wrote.
-    text = _AN_EMPTIED_QUOTE.sub(" ", text)
-    text = _A_LONE_MARK.sub(" ", text)
-    return " ".join(text.split())[:MOST_QUERY].strip()
-
-
-#: A pair of quotes with nothing left between them.
-_AN_EMPTIED_QUOTE = re.compile(r"(['\"`])\s*\1")
-#: A comma, colon or semicolon standing alone between spaces, or two of them in a row.
-_A_LONE_MARK = re.compile(r"(?<=\s)[,:;](?=\s|$)|(?<=[,:;])\s*[,:;]")
+    return outbound.cleaned(error_line, private_words, keep, MOST_QUERY)
 
 
 # --- the sources ----------------------------------------------------------------------------------------------------
@@ -404,10 +385,21 @@ def _keep(query: str, answer: dict[str, Any]) -> None:
 # --- the lookup -----------------------------------------------------------------------------------------------------
 
 def look_up(error_line: str, stack_words: str = "", private_words: list[str] | tuple[str, ...] = (), *,
-            fetch: Fetch | None = None) -> dict[str, Any]:
+            fetch: Fetch | None = None, repo_root: str | Path | None = None) -> dict[str, Any]:
     """What others found for `error_line` (cleaned, with `stack_words` such as a framework and its version), from the
-    first sources that answer; {"query": ..., "found": [...]} - `found` empty when none did. Never raises."""
-    query = " ".join(f"{cleaned(error_line, private_words)} {cleaned(stack_words, private_words)}".split())[:MOST_QUERY]
+    first sources that answer; {"query": ..., "found": [...]} - `found` empty when none did. Never raises.
+
+    The query passes the one outbound gate (`app.tools.outbound`): `private_words` and the product's own words (of
+    the workspace at `repo_root`, else of the run in progress) are taken out, the stack's names and the project's
+    packages kept; each query sent to a source is one `outbound` record."""
+    from app.tools import outbound
+
+    keep = set(str(stack_words or "").split())
+    error, removed = outbound.prepared(error_line, repo_root=repo_root, private=private_words, keep=keep,
+                                       most=MOST_QUERY)
+    stack, removed_too = outbound.prepared(stack_words, repo_root=repo_root, private=private_words, keep=keep,
+                                           most=MOST_QUERY)
+    query = " ".join(f"{error} {stack}".split())[:MOST_QUERY]
     if len(query) < 8:
         return {"query": query, "found": []}
     kept = _cached(query)
@@ -416,7 +408,7 @@ def look_up(error_line: str, stack_words: str = "", private_words: list[str] | t
     found: list[dict[str, str]] = []
     asked: list[str] = []
     skipped: list[str] = []
-    library = cleaned(_library(stack_words), private_words)
+    library = cleaned(_library(stack_words), private_words, keep)
     from_the_general_web: set[str] = set()
     for source in ordered_sources():
         if len(found) >= MOST_SOURCES or (source.when_too_few and len(found) >= TOO_FEW):
@@ -437,6 +429,8 @@ def look_up(error_line: str, stack_words: str = "", private_words: list[str] | t
                 found.append({k: defanged(str(v), MOST_EXCERPT if k == "excerpt" else 200) for k, v in item.items()})
                 if source.general_web:
                     from_the_general_web.add(item["url"])
+    if asked:
+        outbound.record(outbound.LOOKUP, query, to=asked, removed=removed + removed_too)
     found = found[:MOST_SOURCES]
     _fill_one_thin_excerpt(found, from_the_general_web, query)
     answer = {"query": query, "asked": asked, "found": found, **({"skipped": skipped} if skipped else {})}

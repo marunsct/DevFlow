@@ -162,7 +162,7 @@ def create_stack_selector_agent(
         # arguing with the model in the prompt did not, twice before.
         can_write=False,
         # Versions move faster than any model's training: see `app.tools.package_registry`.
-        extra_tools=[*lookup_tools(), *docs_tools(), *web_tools(), *mcp_tools_for("stack_selector")],
+        extra_tools=[*lookup_tools(), *docs_tools(), *web_tools(repo_root), *mcp_tools_for("stack_selector")],
     )
 
 

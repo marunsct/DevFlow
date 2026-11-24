@@ -94,7 +94,6 @@ Plan: `reports/research/2026-11-24-agents-that-work-like-a-team.md`. The harness
 | HK.2 toolchain-fit check after the install resolves: a mismatch is a stated cause in the first minute | the general form of LF.1277 / NU1202 | S-M | HK.1 | first-minute cause on a version trap | not built |
 | HK.3 stuck lookup rebuilt: installed package first, short queries, the library's own tracker, the resolution read, ranked, condensed to cause/fix/versions/source, version-checked | 2 of 9 looked-up defects fixed today | M-L | owner | replay set; share closed by the next fix | not built |
 | HK.4 outcome records and a replay set of 15-25 past stuck defects | measures HK.3 without model runs | S-M | none | note names the known fix in >=60% | not built |
-| HK.5 one outbound gate for every outward query, the brief's own nouns removed, recorded on the run page | privacy for production | S | none | no private word leaves (test) | not built |
 Phases 2-3 (HK.6-HK.12: advisories and end-of-life, version-pinned API cards, stack-selection evidence, current security/testing guidance, product research, tools by measured tier, a production lookup service with shared public cache, single-flight, atomic per-tenant limits) are in the report.
 
 ### 3.2 Watch, try and steer a run (Appendix 11, WS). Nothing below is built except the pieces named.

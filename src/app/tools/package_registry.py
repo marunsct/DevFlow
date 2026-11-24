@@ -394,6 +394,9 @@ def look_up(ecosystem: str, name: str, *, fetch: Fetch | None = None) -> dict[st
     key = (which, name, fetch)
     if key in _CACHE:
         return _with_the_version_asked(_CACHE[key], version_asked)
+    from app.tools.outbound import refused_name  # the one outbound gate (HK.5): never the product's own name
+    if refused := refused_name(which, name):
+        return {"error": refused}
     try:
         found = _ECOSYSTEMS[which][1](name, fetch or _fetch)
     except Exception as exc:  # noqa: BLE001 - an unreachable registry is an answer, not a crash

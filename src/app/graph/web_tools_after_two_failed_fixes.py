@@ -121,7 +121,7 @@ def tools_for(cycle: Any, index: int, stage_name: str, *, root: str | Path | Non
             defect_ledger.note(CALL_EVENT, stage_name, defect=defect, index=index,
                                detail=f"{tool} {asked!r}: {outcome}")
 
-        tools = web_search.build_web_tools(on_call=noted)
+        tools = web_search.build_web_tools(on_call=noted, repo_root=root)
         if not resumed:
             defect_ledger.note(OFFERED_EVENT, stage_name, defect=defect, index=index,
                                detail=f"after {failed_fixes(cycle, index, root)} failed fixes")

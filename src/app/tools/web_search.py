@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
 
@@ -166,8 +167,14 @@ def read_page(url: str, topic: str = "", page: int = 0, *, fetch: Any = None, re
             "pages": whole["pages"]}
 
 
-def build_web_tools(on_call: Callable[[str, str, dict[str, Any]], None] | None = None) -> list[Any]:
-    """The two tools; `on_call(tool, what it asked, its answer)` after each call, for a stage that records them."""
+def build_web_tools(on_call: Callable[[str, str, dict[str, Any]], None] | None = None, *,
+                    repo_root: str | Path | None = None) -> list[Any]:
+    """The two tools; `on_call(tool, what it asked, its answer)` after each call, for a stage that records them.
+
+    What a model asks passes the one outbound gate (`app.tools.outbound`, LF.1291) before it leaves: the query and an
+    address's query string without the product's own words (of the workspace at `repo_root`, else of the run in
+    progress), each one an `outbound` record. Measured before it: a model's search went out as it was written, the
+    product's name and its nouns in it, and nothing recorded what had been sent."""
     from langchain_core.tools import tool
 
     def answered(name: str, asked: str, answer: dict[str, Any]) -> dict[str, Any]:
@@ -198,9 +205,14 @@ def build_web_tools(on_call: Callable[[str, str, dict[str, Any]], None] | None =
         refusal = over_its_share("web")
         if refusal:
             return answered("search_the_web", query, {"error": refusal})
-        answer = search(query)
-        found(f"search_the_web {query}", answer)
-        return answered("search_the_web", query, answer)
+        from app.tools import outbound
+
+        sent = outbound.query(query, outbound.WEB_SEARCH, to="private search", repo_root=repo_root)
+        answer = search(sent)
+        if isinstance(answer, dict) and sent != " ".join(str(query or "").split()):
+            answer = {**answer, "searched": sent}
+        found(f"search_the_web {sent}", answer)
+        return answered("search_the_web", sent, answer)
 
     @tool
     def read_web_page(url: str, topic: str = "", page: int = 0) -> dict[str, Any]:
@@ -217,6 +229,9 @@ def build_web_tools(on_call: Callable[[str, str, dict[str, Any]], None] | None =
         refusal = over_its_share("web")
         if refusal:
             return answered("read_web_page", url, {"error": refusal})
+        from app.tools import outbound
+
+        url = outbound.address(url, outbound.WEB_PAGE, repo_root=repo_root)
         answer = read_page(url, topic, page)
         found(f"read_web_page {url}", answer)
         return answered("read_web_page", url, answer)
@@ -257,9 +272,9 @@ def offered() -> bool:
     return web_tools_offered_switch.enabled()
 
 
-def web_tools() -> list[Any]:
+def web_tools(repo_root: str | Path | None = None) -> list[Any]:
     """The web search and page reader for a stage: only with a search service and only when they are offered."""
-    return build_web_tools() if enabled() and offered() else []
+    return build_web_tools(repo_root=repo_root) if enabled() and offered() else []
 
 
 __all__ = ["MOST_RESULTS", "WEB_TOOL_NAMES", "build_web_tools", "enabled", "offered", "read_page", "search", "web_tools",

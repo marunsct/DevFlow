@@ -141,13 +141,14 @@ def _the_stack_s_words(stack: Any) -> str:
 
 
 def _the_private_words(repo_root: str | Path) -> list[str]:
-    """Names that are the product's, never sent: the project's folder and the workspace's name."""
+    """Names that are the product's, never sent: the project's folder and the workspace's name, the contract's project,
+    package and title, the product's name from the intake and the nouns its routes are named by (the one outbound gate's
+    words, `app.tools.outbound.private_words`)."""
     words = [Path(repo_root).name]
     try:
-        from app.stacks import contract
+        from app.tools import outbound
 
-        record = contract.read(repo_root) or {}
-        words += [str(record.get("project") or ""), str(record.get("title") or "")]
+        words += [w for w in outbound.private_words(repo_root) if w not in words]
     except Exception:  # noqa: BLE001 - the folder's name alone
         pass
     return [w for w in words if w]
@@ -214,7 +215,7 @@ def _looked_up(repo_root: str | Path, error: str, stack_words: str, *, trigger: 
         return ""
     if key in _DONE:
         return _DONE[key]
-    answer = lookups.look_up(error, stack_words, private)
+    answer = lookups.look_up(error, stack_words, private, repo_root=repo_root)
     shown = lookups.as_a_section(answer)
     shown = ("\n" + shown) if shown else ""
     _DONE[key] = shown

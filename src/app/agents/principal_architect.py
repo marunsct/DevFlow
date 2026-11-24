@@ -654,7 +654,7 @@ def create_principal_architect_agent(
         # write tool - see `app.agents.artifact_document`.
         can_write=False,
         # Versions move faster than any model's training: see `app.tools.package_registry`.
-        extra_tools=[*lookup_tools(), *docs_tools(), *web_tools(), *mcp_tools_for("principal_architect", repo_root)],
+        extra_tools=[*lookup_tools(), *docs_tools(), *web_tools(repo_root), *mcp_tools_for("principal_architect", repo_root)],
     )
 
 

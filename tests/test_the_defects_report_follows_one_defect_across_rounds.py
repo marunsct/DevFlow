@@ -55,3 +55,27 @@ def test_a_note_about_the_run_is_not_shown_as_a_defect(tmp_path):
     assert "1 defect(s) - 1 acceptance" in shown
     assert "raised before the ledger" not in shown
     assert "notes about the run, not one defect (1)" in shown and "registry versions" in shown
+
+
+def test_an_event_with_only_the_defect_s_id_is_listed_under_that_defect(tmp_path):
+    """Measured: the rewrite path's 'shown' and 'rewrite reply' and each stage's 'attempt calls' carry the id and no
+    index, and were listed as a defect 'raised before the ledger' in sprint '?'."""
+    import json
+    import os
+    import subprocess
+    import sys
+
+    records = [
+        {"at": "2026-11-24T06:00:00", "kind": "defect", "event": "raised", "stage": "test_round_0", "defect_id": "ab12",
+         "index": 0, "sprint": 0, "round": 0, "source": "test round", "description": "The unit tests fail."},
+        {"at": "2026-11-24T06:01:00", "kind": "defect", "event": "rewrite reply", "stage": "defect_fix",
+         "defect_id": "ab12", "index": None, "sprint": None, "detail": "changed: tests/app.test.js"},
+        {"at": "2026-11-24T06:02:00", "kind": "defect", "event": "fixed", "stage": "defect_fix_1_0", "defect_id": "ab12",
+         "index": 0, "sprint": 0, "detail": "rewrote the tests"},
+    ]
+    (tmp_path / "run-y.jsonl").write_text("".join(json.dumps(r) + "\n" for r in records), encoding="utf-8")
+    shown = subprocess.run([sys.executable, str(SCRIPT), "run-y"], capture_output=True, text=True, check=True,
+                           env={**os.environ, "TRANSCRIPTS_DIR": str(tmp_path)}).stdout
+
+    assert "sprint ?" not in shown and "raised before the ledger" not in shown
+    assert shown.index("rewrite reply") < shown.index("fixed - rewrote the tests")

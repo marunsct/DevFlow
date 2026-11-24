@@ -40,6 +40,23 @@ def stories_by_id(events):
     return stories
 
 
+def joined_by_id(events):
+    """Each event with no index but a defect id joins the defect last raised with that id.
+
+    The rewrite path and the attempt-call count write the id alone; read by index, they were listed as a defect
+    "raised before the ledger" in sprint "?" with another defect's description. Events are copied, not changed.
+    """
+    where, joined = {}, []
+    for event in events:
+        if event.get("event") == "raised" and event.get("defect_id") and event.get("index") is not None:
+            where[event["defect_id"]] = (event.get("sprint"), event.get("index"))
+        elif event.get("index") is None and event.get("defect_id") in where:
+            sprint, index = where[event["defect_id"]]
+            event = {**event, "sprint": sprint, "index": index}
+        joined.append(event)
+    return joined
+
+
 def run_notes(events):
     """The ledger's notes about the run, not about one defect (a registry or web lookup): no defect id, no index.
 
@@ -71,7 +88,7 @@ except Exception:
     pass
 events = [record for record in records if record.get("kind") == "defect"]
 notes = run_notes(events)
-events = [event for event in events if event not in notes]
+events = joined_by_id([event for event in events if event not in notes])
 if notes:
     print(f"== notes about the run, not one defect ({len(notes)})")
     for note in notes:

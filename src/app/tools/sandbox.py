@@ -2308,10 +2308,6 @@ def _what_to_do_with_that_argument(
 _SHELL_JOINS = ("&&", "||", ";", "|", ">", "<", "$(", "`")
 
 
-#: A shell variable set before a program: `NAME=value`.
-_AN_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
-
-
 def _a_command_line_in_one_string(argv: list[str], permitted: Sequence[str], role_name: str) -> str:
     """Why a whole command line as the first item is refused, and what to send instead.
 
@@ -2404,21 +2400,20 @@ def validate_command(
         # answered with "'wc -l' is not permitted ... Allowed: ..., wc, ..." -
         # a refusal that lists the very program it is refusing. Three calls
         # went that way across two roles.
-        # A setting written before the program (`NAME=value npx ...`) is a shell's way of giving one command its
-        # environment; with no shell it is read as the program. Measured on one medium run: thirteen calls set a
-        # browser folder that way and were each told the setting's name "is not permitted", with a list of programs.
+        # A setting written before the program (`NAME=value npx ...`): said first, with the program to send, not
+        # after "is not permitted" and the list of programs. Measured on one medium run: thirteen calls set a
+        # browser folder that way, each read the refusal as "pick another program", and tried another folder.
         assignments = 0
-        while assignments < len(argv) and _AN_ASSIGNMENT.match(str(argv[assignments])):
+        while assignments < len(argv) and AN_ASSIGNMENT.match(str(argv[assignments])):
             assignments += 1
         if assignments and assignments < len(argv):
             program = os.path.basename(str(argv[assignments]))
             raise CommandNotAllowed(
-                f"'{argv[0]}' sets a value for one command, the shell's way; there is no shell here, so it is read as "
-                "the program's name. Send the program first, without the setting"
-                + (f": {[*argv[assignments:]]!r}." if program in permitted else f" - though '{program}' is not "
-                   f"permitted for role '{role_name}' either. {_what_can_actually_run(permitted)}")
-                + " A setting the project needs belongs in its own configuration file, which the program reads; "
-                "what this environment already provides (installed tools, browsers, runtimes) needs no setting."
+                f"{ASSIGNMENT_ADVICE} Send the program first, without the setting"
+                + (f": {[*argv[assignments:]]!r}." if program in permitted else
+                   f" - though '{program}' is not permitted for role '{role_name}' either. "
+                   f"{_what_can_actually_run(permitted)}")
+                + " What this environment already provides (installed tools, browsers, runtimes) needs no setting."
             )
         first_word = os.path.basename(argv[0].split()[0]) if argv[0].split() else ""
         if len(argv[0].split()) > 1 and first_word in permitted:

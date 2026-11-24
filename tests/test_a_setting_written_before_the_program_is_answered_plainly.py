@@ -23,7 +23,7 @@ def _refusal(argv: list[str]) -> str:
 def test_the_setting_is_named_and_the_program_is_given_without_it():
     said = _refusal(["PLAYWRIGHT_BROWSERS_PATH=/tmp/x", "npx", "playwright", "install", "chromium"])
 
-    assert "there is no shell here" in said
+    assert "sets nothing" in said
     assert "['npx', 'playwright', 'install', 'chromium']" in said
     assert "is not permitted for role" not in said
     assert not BANNED.search(said)

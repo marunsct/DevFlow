@@ -15,6 +15,13 @@ on, without silences longer than `PAUSE_GAP_SECONDS` (a pause or a dead worker; 
 When an attempt ends past the budget and would otherwise be planned again, `end_of_attempt.decide` stops instead,
 with the reason and the criteria still failing; the escalation then accepts what works or stops the run, as it does
 for a stalled sprint. An efficiency change that can cost a criterion, so a switch, kept only on measured no loss.
+
+Read inside the attempt too (`stops_the_fix_round`): at each test round before its fix round, and before each fixer is
+sent. Measured on one run: read only at an attempt's end, last in order, a sprint ran 891 active minutes against its
+126, because an attempt with defects left kept sending fixers and never reached its end. Once a sprint has run
+`FIX_ROUND_FACTOR` times its budget, the fix round sends no more fixers and the attempt goes to its end-of-attempt
+decision (`end_of_attempt.decide`), which puts the best attempt back if this one is worse and settles or stops. The
+budget is not changed, only where it is read.
 """
 from __future__ import annotations
 
@@ -42,6 +49,16 @@ BASE_MINUTES = 30
 PER_CRITERION_MINUTES = 12
 #: A silence longer than this is not work: a pause, a deploy, or a run left without a worker.
 PAUSE_GAP_SECONDS = 1800
+#: Inside an attempt, how many times its budget a sprint runs before its fix round stops. Twice, not once: the budget
+#: is already the ledger's 90th-percentile pace (about three times the median), and at once over it an attempt in
+#: flight - perhaps a fixer from green - would be cut where its end would have settled it; the end-of-attempt check
+#: keeps stopping re-plans at once over. At twice over (60 minutes plus 24 a criterion, past the 20 a criterion beyond
+#: which runs scored 0.58 of their hidden tests) the time has stopped paying, and a full budget's worth of room has
+#: been given to the attempt in flight; the measured sprint was seven times over.
+FIX_ROUND_FACTOR = 2
+#: The transcript record of a fix round it stopped; the switch-firing check reads its `message`.
+RECORD_KIND = "time_budget"
+
 #: The stage that plans a sprint's work: its first entry after the previous sprint ended starts the sprint's clock.
 SPRINT_START_STAGE = "technical_lead"
 
@@ -81,6 +98,10 @@ class Budget:
 
     def past(self) -> bool:
         return self.minutes > self.limit
+
+    def ends_the_fix_round(self) -> bool:
+        """Whether the sprint is so far past its budget that its fix round sends no more fixers."""
+        return self.minutes > self.limit * FIX_ROUND_FACTOR
 
     def why(self, root: str | Path) -> str:
         failing = still_failing(root, self.due)
@@ -174,5 +195,27 @@ def measure(state: Any, *, run_id: str | None = None, now: datetime | None = Non
         return None
 
 
-__all__ = ["BASE_MINUTES", "Budget", "ON_BY_DEFAULT", "PAUSE_GAP_SECONDS", "PER_CRITERION_MINUTES", "SAID",
-           "active_minutes", "enabled", "limit_for", "measure", "moments_since", "sprint_size", "still_failing"]
+def stops_the_fix_round(state: Any, *, stage: str) -> str:
+    """Why the fix round in flight sends no more fixers, or "" while it may; recorded in the transcript when it stops.
+
+    "" when the switch is off or the sprint's time is not measured, so the round goes on as before. Never raises.
+    """
+    budget = measure(state)
+    if budget is None or not budget.ends_the_fix_round():
+        return ""
+    why = (f"{SAID} {FIX_ROUND_FACTOR} times over ({budget.minutes:.0f} active minutes against {budget.limit:.0f}): "
+           "the fix round sends no more fixers and the attempt ends here")
+    logger.warning("%s: %s", stage, why)
+    try:
+        from app.observability.transcript import _run_id_from_config, record
+
+        record(_run_id_from_config(), stage, RECORD_KIND, message=why, minutes=budget.minutes, limit=budget.limit,
+               size=budget.size, round=state.get("test_round", 0), sprint=state.get("current_sprint_index", 0))
+    except Exception as error:  # noqa: BLE001 - the round stops whether or not it is recorded
+        degraded("record.sprint_time", error)
+    return why
+
+
+__all__ = ["BASE_MINUTES", "Budget", "FIX_ROUND_FACTOR", "ON_BY_DEFAULT", "RECORD_KIND", "PAUSE_GAP_SECONDS", "PER_CRITERION_MINUTES", "SAID",
+           "active_minutes", "enabled", "limit_for", "measure", "moments_since", "sprint_size", "still_failing",
+           "stops_the_fix_round"]

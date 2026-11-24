@@ -511,10 +511,11 @@ def defect_remediation_node(state: WorkflowGraphState, config: RunnableConfig, c
     """Route open defects to the specialists who own them, then re-test.
 
     This is steps 4, 5 and 6 of the plan's loop. In linear mode defects are
-    handled one at a time, `defect_cursor` marking progress, so a pause for
-    approval midway resumes on the same defect instead of restarting the
-    whole round. In parallel mode defects whose files do not meet are fixed
-    side by side, as work orders are built (`_the_next_fix_batch`).
+    handled one at a time, each fix stage recorded as worked this round
+    (`fixes_tried`), so a pause for approval midway resumes on the same defect
+    instead of restarting the whole round. In parallel mode defects whose files
+    do not meet are fixed side by side, as work orders are built
+    (`_the_next_fix_batch`).
 
     A fix is only recorded as fixed when the specialist names a regression
     test (`mark_defect_fixed` enforces this). A fix with no named test
@@ -530,41 +531,85 @@ def defect_remediation_node(state: WorkflowGraphState, config: RunnableConfig, c
         return _the_next_fix_batch(state, config, ctx)
 
     cycle = state["remediation"]
-    cursor = state.get("defect_cursor", 0)
     # While the product does not build or start, only that is fixed (deep review 1.5).
     from app.graph import start_first
 
     waiting = start_first.held_back(cycle.defects)
 
     # The latest test round's defects first, then those carried over (`order_of_fixes`).
-    return _the_next_in_the_fix_order(state, config, ctx, cycle, cursor, waiting)
+    return _the_next_in_the_fix_order(state, config, ctx, cycle, waiting)
+
+
+def _worked_this_round(state: Any, cycle: Any) -> set[str]:
+    """The fix stages this round has worked: those recorded as tried, and those with an attempt recorded on a defect.
+
+    The attempts are the cycle's own record, kept across a deploy: a round resumed from a state that has no record of
+    what it tried does not work again a defect whose attempt this round is on it. A stage's name carries its round and
+    its defect's index, so another round's attempts never match.
+    """
+    worked = {str(name) for name in state.get("fixes_tried") or []}
+    for defect in cycle.defects:
+        worked.update(str(attempt.get("stage") or "") for attempt in getattr(defect, "attempts", None) or []
+                      if isinstance(attempt, dict))
+    return worked
+
+
+def _the_attempt_ends_past_its_budget(state: Any, cycle: Any) -> dict[str, Any] | None:
+    """The end-of-attempt decision, in place of the next fixer, once the sprint has run far past its time budget.
+
+    Measured on one run: the budget was read only when an attempt ended, and a sprint ran 891 active minutes against
+    its 126 because its attempt kept sending fixers. See `sprint_time_budget.stops_the_fix_round`. None while the
+    round may go on, or when the budget is off or not measured.
+    """
+    from app.graph import sprint_time_budget
+
+    why = sprint_time_budget.stops_the_fix_round(state, stage=f"defect_fix_{state.get('test_round', 0)}")
+    if not why:
+        return None
+    from app.graph.nodes.triage import _replan_or_escalate
+
+    return _replan_or_escalate(state, {
+        "remediation": cycle, "pending_approval": None, "pending_inner_thread_id": None, "pending_decision": None,
+        "defect_cursor": 0, "fixes_tried": [], "fixes_one_at_a_time": [], "fix_batch": [], "fix_base_commit": "",
+    }, cycle, why)
 
 
 def _the_next_in_the_fix_order(
-    state: Any, config: RunnableConfig, ctx: GraphContext, cycle: Any, cursor: int, waiting: set[int],
+    state: Any, config: RunnableConfig, ctx: GraphContext, cycle: Any, waiting: set[int],
 ) -> dict[str, Any]:
-    """One at a time: the next open defect after the last one worked, in the order `order_of_fixes.ordered` gives
-    every defect of the round.
+    """One at a time: the first defect in the order `order_of_fixes.ordered` gives that is open, not waiting, and
+    not yet worked in this round; a fix paused for approval resumes on its own defect.
 
-    The cursor still names the defect after the last one worked (`_fix_one` sets it), so a pause resumes where it
-    was. The order is over every defect, open or not, by absolute index - marking one fixed changes which are open,
-    so a position among the open ones would shift and skip one - and a defect's group does not change within a
-    round, so the order is the same at each visit and each open defect is reached once.
+    Measured on one run: the choice was a position - the defect after the last one worked - in an order read again at
+    each visit. A deploy mid-round, or a defect raised again and regrouped, changed the order, and the defects it put
+    ahead of that position were never sent: ten defects of a round, its root cause among them, skipped. What this round
+    has worked is recorded by name instead (`fixes_tried`, as parallel mode records it), so whatever the order reads at
+    a visit, each open defect is reached once a round.
     """
     from app.graph import order_of_fixes
+    from app.graph.workflow import _the_stage_that_paused, _with_tried
 
+    round_ = state.get("test_round", 0)
+
+    def name(index: int) -> str:
+        return f"defect_fix_{round_}_{index}"
+
+    paused = _the_stage_that_paused(state)
+    if paused and paused.startswith("defect_fix_"):
+        # Answered after an approval pause: the paused fixer goes on, whatever the order reads now.
+        return _with_tried(state, _fix_one(state, config, int(paused.rsplit("_", 1)[1]), ctx), paused)
+    worked = _worked_this_round(state, cycle)
     order = order_of_fixes.ordered(cycle.defects, range(len(cycle.defects)))
-    last = cursor - 1
-    if last >= len(cycle.defects):
-        # Past the last defect: every one has been worked this round.
-        return {"stage": "test_and_triage", "defect_cursor": 0}
-    start = order.index(last) + 1 if last >= 0 else 0
-    upcoming = [index for index in order[start:] if cycle.defects[index].status == "open" and index not in waiting]
+    upcoming = [index for index in order
+                if cycle.defects[index].status == "open" and index not in waiting and name(index) not in worked]
     if not upcoming:
-        return {"stage": "test_and_triage", "defect_cursor": 0}
-    stage = f"defect_fix_{state.get('test_round', 0)}_{upcoming[0]}"
-    order_of_fixes.note_the_order(state, cycle, sorted(upcoming), upcoming, stage)
-    return _fix_one(state, config, upcoming[0], ctx)
+        return {"stage": "test_and_triage", "defect_cursor": 0, "fixes_tried": []}
+    # Far past the sprint's time budget, no further fixer is sent: the attempt ends (`sprint_time_budget`).
+    stopped = _the_attempt_ends_past_its_budget(state, cycle)
+    if stopped is not None:
+        return stopped
+    order_of_fixes.note_the_order(state, cycle, sorted(upcoming), upcoming, name(upcoming[0]))
+    return _with_tried(state, _fix_one(state, config, upcoming[0], ctx), name(upcoming[0]))
 
 
 def _the_next_fix_batch(state: Any, config: RunnableConfig, ctx: GraphContext) -> dict[str, Any]:
@@ -630,6 +675,10 @@ def _the_next_fix_batch(state: Any, config: RunnableConfig, ctx: GraphContext) -
         closed = _closed_if_an_earlier_fix_resolved_it(state, cycle, index)
         if closed is not None:
             return _with_tried(state, closed, name(index))
+    # Far past the sprint's time budget, no further fixer is sent: the attempt ends (`sprint_time_budget`).
+    stopped = _the_attempt_ends_past_its_budget(state, cycle)
+    if stopped is not None:
+        return stopped
     # The latest test round's defects first, then those carried over; with `FIX_ORDER_CRITERIA_FIRST` on, failing
     # criteria and release findings first within each. None is left out.
     from app.graph import order_of_fixes

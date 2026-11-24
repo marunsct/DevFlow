@@ -184,3 +184,23 @@ def run(
         graph = workflow.build_workflow_graph(model, checkpointer=MemorySaver(), repo_root=str(root))
         update = graph.nodes[node].bound.invoke(state, CONFIG)
     return update, seen
+
+
+def one_at_a_time(root: Any, defects: list[Defect], *, between: Any = None, **more: Any) -> list[str]:
+    """The fix stage of every defect a linear fix round sends, in order, until it hands back to the test round.
+
+    Each visit is given what the round records between visits (its cursor and the stages it has worked), as the
+    graph's state carries them. `between(visits, defects)` returns the defects as the next visit reads them - as a
+    test round raising one again, or a deploy changing the order, leaves them.
+    """
+    sent: list[str] = []
+    carried: dict[str, Any] = {}
+    for visits in range(4 * len(defects) + 4):
+        if between is not None:
+            defects = between(visits, defects)
+        update, seen = run(root, a_state(root, *defects, **{**more, **carried}))
+        if update.get("stage") == "test_and_triage":
+            return sent
+        sent += [stage for stage, _ in seen.shown]
+        carried = {key: update[key] for key in ("defect_cursor", "fixes_tried") if key in update}
+    raise AssertionError(f"the fix round never ended: it sent {sent}")

@@ -574,6 +574,8 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
         "pending_inner_thread_id": None,
         "pending_decision": None,
         "review_defects": [],
+        # A fix round starts with none of its defects worked: a stage's name repeats in a later attempt's round.
+        "fixes_tried": [],
     }
     if mutation_gaps:
         base_update["mutation_gaps"] = mutation_gaps
@@ -593,6 +595,12 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
         ):
             logger.warning("test_round_%d: %s", test_round, unchanged_fix_round.SAID)
             return _replan_or_escalate(state, base_update, cycle, unchanged_fix_round.SAID)
+        # Far past the sprint's time budget, the round starts no fix round: the attempt ends (`sprint_time_budget`).
+        from app.graph import sprint_time_budget
+
+        past = sprint_time_budget.stops_the_fix_round(state, stage=f"test_round_{test_round}")
+        if past:
+            return _replan_or_escalate(state, base_update, cycle, past)
         if _only_unit_tests_open_beside_a_green_suite(state, cycle):
             # The due criteria pass and only unit tests the model wrote fail: probe now, once an attempt, so
             # its findings join this fix round. Measured on every run of one day: with a failing unit test

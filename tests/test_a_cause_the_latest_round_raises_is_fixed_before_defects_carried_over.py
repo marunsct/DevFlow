@@ -63,14 +63,7 @@ def transcript(monkeypatch, tmp_path):
 
 def _one_at_a_time(root, defects) -> list[int]:
     """Every defect the fix round sends, one at a time, until it hands back to the test round."""
-    sent: list[int] = []
-    cursor = 0
-    while True:
-        update, seen = the_fix_stage.run(root, the_fix_stage.a_state(root, *defects, defect_cursor=cursor))
-        if update.get("stage") == "test_and_triage":
-            return sent
-        sent += [int(stage.rsplit("_", 1)[1]) for stage, _ in seen.shown]
-        cursor = update["defect_cursor"]
+    return [int(stage.rsplit("_", 1)[1]) for stage in the_fix_stage.one_at_a_time(root, defects)]
 
 
 @pytest.mark.parametrize("criteria_first", ["off", "on"])

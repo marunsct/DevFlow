@@ -333,6 +333,8 @@ def a_fix_stage(
         "repository": SimpleNamespace(root_path=str(tmp_path)),
         "remediation": RemediationCycle(sprint_goal="g", defects=list(defects)),
         "defect_cursor": defect_index,
+        # The defects before it worked already this round.
+        "fixes_tried": [f"defect_fix_2_{index}" for index in range(defect_index)],
         "test_round": 2,
         "current_sprint_index": 0,
         "specialist_outputs": {},

@@ -65,7 +65,8 @@ SIGNALS: dict[str, str] = {
 #: text a switch's signal is looked for in.
 HARNESS_RECORDS: dict[str, str] = {"repository_delivery": "message", "prompt_shaped": "message", "fix_order": "message",
                                    "summarised_later": "message",
-                                   "reply_room": "message", "thinking_off_after_a_read": "message"}
+                                   "reply_room": "message", "thinking_off_after_a_read": "message",
+                                   "time_budget": "message"}
 
 
 @dataclass(frozen=True)

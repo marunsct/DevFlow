@@ -115,16 +115,7 @@ def test_a_product_that_does_not_start_is_still_fixed_alone_first(monkeypatch, t
 
 def test_one_at_a_time_the_criteria_come_first_then_the_rest_as_raised(monkeypatch, tmp_path):
     monkeypatch.setenv("FIX_ORDER_CRITERIA_FIRST", "on")
-    defects = _the_round_as_raised()
-    sent: list[str] = []
-    cursor = 0
-
-    while True:
-        update, seen = the_fix_stage.run(tmp_path, the_fix_stage.a_state(tmp_path, *defects, defect_cursor=cursor))
-        if update.get("stage") == "test_and_triage":
-            break
-        sent += [stage for stage, _ in seen.shown]
-        cursor = update["defect_cursor"]
+    sent = the_fix_stage.one_at_a_time(tmp_path, _the_round_as_raised())
 
     assert sent == [f"defect_fix_2_{index}" for index in (10, 11, 12, *range(10))]
 

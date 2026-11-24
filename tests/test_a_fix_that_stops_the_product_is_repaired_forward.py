@@ -248,3 +248,22 @@ def test_the_repair_s_words_avoid_the_words_the_prompts_never_use(tmp_path):
                      judged_fixes.the_new_step([_failed("[AC-1] a", LIST_RAISED)], ["acceptance: s › [AC-1] a"])])
 
     assert not re.search(r"\b(task|tasks|to-do|todo|button|click|checkbox)\b", text, re.I)
+
+
+def test_a_repair_may_rewrite_the_caller_the_start_s_error_names_not_only_what_the_fix_changed(tmp_path):
+    """Measured on a Rust run: a fix changed `src/lib.rs`, its caller in `src/main.rs` stopped compiling, and the repair,
+    let rewrite only `src/lib.rs`, sent it back unchanged twice; a fix with 18 tests passing was reverted."""
+    project = tmp_path / "notes-api" / "src"
+    project.mkdir(parents=True)
+    (project / "lib.rs").write_text("pub fn app() {}\n")
+    (project / "main.rs").write_text("fn main() { notes_api::app(); }\n")
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-qm", "before the fix")
+    (project / "lib.rs").write_text("pub fn app(state: u8) {}\n")
+    said = ("The product did not start: error[E0061]: this function takes 1 argument but 0 arguments were supplied\n"
+            "  --> src/main.rs:1:13\n  --> /home/u/.cargo/registry/src/index/axum-0.8.9/src/routing/mod.rs:408:12")
+
+    _, files = judged_fixes.the_repair_asked(tmp_path, "HEAD", a_defect("The product does not start"), said)
+
+    assert files == ["notes-api/src/main.rs", "notes-api/src/lib.rs"]

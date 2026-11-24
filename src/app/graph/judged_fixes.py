@@ -377,13 +377,46 @@ def _the_diff(root: str | Path, base: str, files: Sequence[str]) -> str:
     return text.strip()
 
 
+#: A file a compiler or a stack trace names: `src/main.rs:50:17`, `app/main.py", line 3`, `(src/x.ts:4:2)`.
+_A_NAMED_FILE = re.compile(r"(?<![\w./-])((?:[\w.-]+/)*[\w.-]+\.[A-Za-z]{1,5})(?=[:\"(,]|\s+line\b)")
+
+
+def the_files_the_error_names(root: str | Path, what: str) -> list[str]:
+    """The project's own files that `what` names, as paths from `root`, in the order named.
+
+    A name is matched as written or as the end of a file's path (a compiler run inside the project directory writes
+    `src/main.rs` for `notes-api/src/main.rs`). Files of the harness, the workflow's documents and the dependencies
+    (a registry's or `node_modules`' sources) are never the product's. Never raises: [] when none is found.
+    """
+    from app.ci import _git
+
+    try:
+        listed = _git(root, "ls-files", "--cached", "--others", "--exclude-standard", "--", ".", *_NOT_THE_PRODUCT)
+        tracked = [line.strip() for line in (listed.stdout.splitlines() if listed is not None and listed.returncode == 0
+                                             else []) if line.strip()]
+        found: list[str] = []
+        for named in dict.fromkeys(_A_NAMED_FILE.findall(str(what or ""))):
+            if named.startswith(("/", "..")) or "node_modules/" in named or "/registry/" in named:
+                continue
+            matches = [path for path in tracked if path == named or path.endswith("/" + named)]
+            if len(matches) == 1 and (Path(root) / matches[0]).is_file():
+                found.append(matches[0])
+        return list(dict.fromkeys(found))
+    except Exception:  # noqa: BLE001 - the fix's own files only
+        return []
+
+
 def the_repair_asked(root: str | Path, base: str, defect: Any, what: str) -> tuple[Any, list[str]]:
-    """The defect as its fix's repair is asked it, and the files the repair may rewrite: those the fix changed, the
-    ones `what` names first, at most the rewrite's own `MOST_FILES`."""
+    """The defect as its fix's repair is asked it, and the files the repair may rewrite: those the start's error names
+    first, then those the fix changed, at most the rewrite's own `MOST_FILES`.
+
+    Measured on a Rust run: a fix changed `src/lib.rs` and its caller in `src/main.rs` stopped compiling; the repair
+    was let rewrite only `src/lib.rs`, sent it back unchanged twice, and a fix that had 18 tests passing was reverted.
+    """
     from app.graph.rewritten_fixes import MOST_FILES
 
-    files = sorted(the_files_it_changed(root, base), key=lambda name: name not in what and Path(name).name not in what)
-    files = files[:MOST_FILES]
+    changed = sorted(the_files_it_changed(root, base), key=lambda name: name not in what and Path(name).name not in what)
+    files = list(dict.fromkeys([*the_files_the_error_names(root, what), *changed]))[:MOST_FILES]
     if not files:
         return defect, []
     asked = defect.model_copy(update={

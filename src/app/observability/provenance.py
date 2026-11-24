@@ -106,6 +106,7 @@ SWITCHES: dict[str, str] = {
     "REVIEWER_SHAPED_PLUGIN_CONTENT": "app.agents.prompt_size:reviewer_shaped_switch",
     "LEAD_REPLAN_REQUEST_SMALLER": "app.agents.prompt_size:lead_replan_smaller_switch",
     "REQUEST_BUDGET_FOR_EVERY_STAGE": "app.agents.request_budget:for_every_stage_switch",
+    "READS_SIZED_TO_THE_ROOM": "app.agents.room_for_reads:reads_sized_switch",
     "INTAKE_ASKS_FIRST": "app.agents.assumptions:intake_asks_first_switch",
     "REASONING_KEPT_AFTER_AN_ANSWER": "app.models.reasoning_kept:reasoning_kept_switch",
     "NAMED_TEST_REWRITE": "app.graph.rewritten_tests:named_test_rewrite_switch",

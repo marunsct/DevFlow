@@ -60,6 +60,8 @@ SIGNALS: dict[str, str] = {
     "REPLY_ROOM_SIZED_PER_ROLE": "The room kept for the reply was sized to the role",
     # Recorded by the harness once per stage visit whose memory it held to the budget (`app.agents.request_budget`).
     "REQUEST_BUDGET_FOR_EVERY_STAGE": "A stage's memory was held to its request's input budget",
+    # In the answer to a whole read the request had no room for (`app.agents.room_for_reads`).
+    "READS_SIZED_TO_THE_ROOM": "more than this request has room left for",
     # Recorded by the harness each time it switches thinking off for it (`app.agents.deliberated_reads`).
     "LONG_REASONING_BEFORE_A_READ": "Thinking switched off for the reply after one that reasoned at length and then only read",
 }

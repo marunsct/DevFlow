@@ -641,6 +641,12 @@ def _fresh_conversation_middleware() -> Any:
     return build_fresh_conversation_middleware()
 
 
+def _room_for_reads_middleware() -> Any:
+    from app.agents.room_for_reads import build_room_for_reads_middleware
+
+    return build_room_for_reads_middleware()
+
+
 def _gathering(model: Any, response_format: Any) -> list[Any]:
     from app.agents.gathering import build_gathering_middleware, gatherer_for
 
@@ -823,6 +829,9 @@ def create_role_agent(
         # A new conversation of the stage holds none of what its reads gave: the read guard's record starts over.
         # See `app.agents.workspace_backend.build_fresh_conversation_middleware`.
         _fresh_conversation_middleware(),
+        # A whole read the request has no room left for is answered with the file's outline (`READS_SIZED_TO_THE_ROOM`,
+        # off until measured). Outside the path rewrite, which fills in a `limit`. See `app.agents.room_for_reads`.
+        _room_for_reads_middleware(),
         *_gathering(model, response_format),
         # Outermost of the model-call wrappers, so a call the server failed to
         # parse becomes a real tool call before anything downstream looks for

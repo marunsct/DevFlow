@@ -1276,6 +1276,22 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
         super().__init__(*args, **kwargs)
         self.hold_notes = hold_notes
 
+    def _outlined_past_the_room(self, file_path: str, result: Any, content: str) -> str | None:
+        """The file's outline in place of a whole read the request has no room for (`READS_SIZED_TO_THE_ROOM`).
+
+        Not remembered as a version read: the stage was not given the text. See `app.agents.room_for_reads`.
+        """
+        try:
+            from app.agents.room_for_reads import an_answer_in_place_of_the_whole
+
+            return an_answer_in_place_of_the_whole(
+                str(file_path), content, self._lines_in_the_file(result, content),
+                lambda: self._resolve_path(file_path).read_text(encoding="utf-8"),
+            )
+        except Exception:  # noqa: BLE001 - the read as it is
+            logger.debug("Could not size a whole read to the room", exc_info=True)
+            return None
+
     def read(self, file_path: str, *args: Any, **kwargs: Any) -> Any:
         _HELD.note = ""
         try:
@@ -1328,6 +1344,9 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
         content = data.get("content") if isinstance(data, dict) else None
         if not isinstance(content, str):
             return result
+        outlined = self._outlined_past_the_room(file_path, result, content)
+        if outlined is not None:
+            return replace(result, file_data={**data, "content": outlined})
         self._remember_the_version_read(file_path)
         if _the_text_is_in_view(content) is False:
             # Whatever the stage was given of this file earlier is no longer in front of the model (summarised or

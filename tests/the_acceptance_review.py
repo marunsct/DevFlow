@@ -69,10 +69,13 @@ def reviewed(
     saved: dict[str, Any] | None = None,
     review: Any = None,
     interface_contract: Sequence[str] = (),
+    specification: Any = None,
+    brief: str = "",
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """`acceptance_review`'s update for round `rounds`, and each request the QA lead was sent.
 
-    `saved` is merged into the suite's own saved state first (what earlier send-backs left there)."""
+    `saved` is merged into the suite's own saved state first (what earlier send-backs left there); `specification`,
+    when given, stands in for one holding only `interface_contract`; `brief` is the brief's text."""
     from app.graph import acceptance_nodes
 
     if saved:
@@ -87,7 +90,9 @@ def reviewed(
     state = {
         "repository": SimpleNamespace(root_path=str(root)),
         "acceptance_round": rounds,
-        "technical_specification": SimpleNamespace(interface_contract=list(interface_contract)),
+        "technical_specification": specification if specification is not None
+        else SimpleNamespace(interface_contract=list(interface_contract)),
+        **({"document": SimpleNamespace(text=brief)} if brief else {}),
     }
     ctx = SimpleNamespace(judgement_model=None, checkpointer=None, repo_root=str(root), allow_subdirectories=True)
     with patch.object(suite, "run", lambda repo_root, **kwargs: result), \

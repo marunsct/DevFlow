@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 #: The Playwright release whose browser build the image installs. A different
@@ -2754,3 +2754,186 @@ def counts_of_every_listed_record(text: str, others: str = "") -> list[tuple[int
             line = code.count("\n", 0, begin + expect.start()) + 1
             found.append((line, title, " ".join(body[expect.start():counted.end()].split()), number))
     return found
+
+
+#: A request a suite makes: a call on the runner's request fixture (or a client named like one), `fetch`, or a page
+#: opened by its address.
+_A_REQUEST_CALL = re.compile(
+    r"(?<![\w$])(?:(?:request|api|client|ctx|context|apiContext|http|agent|axios|page\s*\.\s*request)\s*\.\s*"
+    r"(?:get|post|put|patch|delete|head|fetch)|fetch|page\s*\.\s*goto)\s*\(")
+_A_LITERAL = re.compile(r"'(?:\\.|[^'\\\n])*'|\"(?:\\.|[^\"\\\n])*\"|`(?:\\.|[^`\\])*`")
+_A_NAMED_FUNCTION = re.compile(r"(?<![\w$.])(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)\s*\(")
+_AN_ASSIGNMENT = re.compile(r"(?<![\w$.])(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=;\n]+)?=(?![=>])\s*(?:async\s+)?")
+_A_CONSTANT_STRING = re.compile(r"(?<![\w$.])(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(" + _A_LITERAL.pattern + ")")
+#: A fixture of `test.extend({...})`: `name: async ({ request }, use) => {`.
+_A_FIXTURE = re.compile(
+    r"(?<![\w$.])([A-Za-z_$][\w$]*)\s*:\s*(?:async\s+)?\(\s*\{[^{}]*\}\s*,\s*[A-Za-z_$][\w$]*\s*\)\s*=>\s*\{")
+#: A test declared with its title; `skip` and `fixme` declare one that does not run.
+_A_DECLARED_TEST = re.compile(r"(?<![\w$.])(?:test|it)(?:\s*\.\s*(only|fail|slow|skip|fixme))?\s*\(\s*(['\"`])")
+_A_HOOK = re.compile(r"(?<![\w$.])(?:test\s*\.\s*)?(beforeEach|afterEach|beforeAll|afterAll)\s*\(")
+_A_CALLBACK = re.compile(r"(?:async\s+)?(?:function\s*[\w$]*\s*)?\(([^()]*)\)\s*(?::[^={]+)?(?:=>\s*)?\{")
+#: A loop with literal bounds: `for (let i = 0; i < 12; i++) {`.
+_A_COUNTED_LOOP = re.compile(
+    r"(?<![\w$.])for\s*\(\s*(?:let|var|const)?\s*([A-Za-z_$][\w$]*)\s*=\s*(\d+)\s*;\s*\1\s*(<=?)\s*(\d+)\s*;[^)]*\)\s*\{")
+#: The most a loop is taken to repeat: a bound past it is a stress test, not a count to multiply.
+_MOST_LOOP_REPEATS = 1_000
+
+
+def _the_body_after(code: str, at: int) -> str:
+    """The function body that starts at `at` (just past its arrow): a block, or one expression."""
+    while at < len(code) and code[at] in " \t\r\n":
+        at += 1
+    if code[at:at + 1] == "{":
+        return _the_block(code[at + 1:])
+    depth, end, quote = 0, at, ""
+    while end < len(code):
+        char = code[end]
+        if quote:
+            if char == "\\":
+                end += 1
+            elif char == quote:
+                quote = ""
+        elif char in "'\"`":
+            quote = char
+        elif char in "([{":
+            depth += 1
+        elif char in ")]}":
+            if not depth:
+                break
+            depth -= 1
+        elif char in ";\n" and not depth:
+            break
+        end += 1
+    return code[at:end]
+
+
+def _functions_of(code: str) -> dict[str, str]:
+    """Each function a suite file declares by name - `function f(`, `const f = async (...) => ...`, a fixture - with
+    its body."""
+    found: dict[str, str] = {}
+    for match in _A_NAMED_FUNCTION.finditer(code):
+        close = _the_closing_paren(code, match.end())
+        brace = code.find("{", close) if close >= 0 else -1
+        if brace >= 0:
+            found.setdefault(match.group(1), _the_block(code[brace + 1:]))
+    for match in _AN_ASSIGNMENT.finditer(code):
+        at = match.end()
+        if code.startswith("function", at):
+            opened = code.find("(", at)
+            close = _the_closing_paren(code, opened + 1) if opened >= 0 else -1
+            brace = code.find("{", close) if close >= 0 else -1
+            if brace >= 0:
+                found.setdefault(match.group(1), _the_block(code[brace + 1:]))
+        elif code[at:at + 1] == "(":
+            close = _the_closing_paren(code, at + 1)
+            arrow = re.match(r"\s*(?::[^=;{]+?)?=>", code[close + 1:]) if close >= 0 else None
+            if arrow:
+                found.setdefault(match.group(1), _the_body_after(code, close + 1 + arrow.end()))
+        elif arrow := re.match(r"[A-Za-z_$][\w$]*\s*=>", code[at:]):
+            found.setdefault(match.group(1), _the_body_after(code, at + arrow.end()))
+    for match in _A_FIXTURE.finditer(code):
+        found.setdefault(match.group(1), _the_block(code[match.end():]))
+    return found
+
+
+def _the_callback(code: str, start: int) -> tuple[str, str] | None:
+    """(its parameters, its body) of the callback the call whose arguments start at `start` is given; None if none."""
+    callback = _A_CALLBACK.search(code, start)
+    if callback is None:
+        return None
+    return callback.group(1), _the_block(code[callback.end():])
+
+
+def _past_the_title(code: str, at: int, quote: str) -> int:
+    """Where a title opened by `quote` just before `at` ends."""
+    while at < len(code):
+        if code[at] == "\\":
+            at += 2
+            continue
+        if code[at] == quote:
+            return at + 1
+        at += 1
+    return len(code)
+
+
+def client_calls(texts: Sequence[str], names_the_route: Callable[[str], bool] | None) -> tuple[list[int], int]:
+    """(how many requests to one route each test that runs makes, how many the files' once-a-file hooks make).
+
+    `names_the_route` says whether a string's text is an address of that route; None counts every request the suite
+    makes. A request is counted where the code names the route - a string, or a constant holding one - in the test,
+    in a hook of its file (`beforeEach` once a test, `beforeAll` once a file), in a helper or fixture it calls at any
+    depth, and inside a loop with literal bounds as often as the loop runs. A helper several files declare counts as
+    the costliest of them. Read from the code, not run: what one run of the suite asks of the product, as the code
+    says it. Never raises; ([], 0) on any doubt.
+    """
+    try:
+        codes = [code_only(text) for text in texts]
+        functions: dict[str, list[str]] = {}
+        constants: set[str] = set()
+        for code in codes:
+            for name, body in _functions_of(code).items():
+                functions.setdefault(name, []).append(body)
+            if names_the_route is not None:
+                constants.update(match.group(1) for match in _A_CONSTANT_STRING.finditer(code)
+                                 if names_the_route(match.group(2)[1:-1]))
+        cost: dict[str, int] = {}
+
+        def direct(body: str) -> int:
+            if names_the_route is None:
+                return len(_A_REQUEST_CALL.findall(body))
+            said = sum(1 for literal in _A_LITERAL.findall(body) if names_the_route(literal[1:-1]))
+            return said + sum(len(re.findall(rf"(?<![\w$.]){re.escape(name)}(?![\w$])(?!\s*=(?!=))", body))
+                              for name in constants)
+
+        def calls(body: str, open_: frozenset[str]) -> int:
+            total = direct(body)
+            for name in functions:
+                if name in open_:
+                    continue
+                sites = sum(1 for site in re.finditer(rf"(?<![\w$.]){re.escape(name)}\s*\(", body)
+                            if not re.search(r"function\s*\*?\s*$", body[:site.start()]))
+                if sites:
+                    total += sites * of(name, open_)
+            passed = 0
+            for loop in _A_COUNTED_LOOP.finditer(body):
+                if loop.start() < passed:
+                    continue
+                block = _the_block(body[loop.end():])
+                passed = loop.end() + len(block)
+                repeats = int(loop.group(4)) - int(loop.group(2)) + (1 if loop.group(3) == "<=" else 0)
+                if 1 < repeats <= _MOST_LOOP_REPEATS:
+                    total += (repeats - 1) * calls(block, open_)
+            return total
+
+        def of(name: str, open_: frozenset[str]) -> int:
+            if name not in cost:
+                cost[name] = max(calls(body, open_ | {name}) for body in functions[name])
+            return cost[name]
+
+        def fixtures(parameters: str) -> int:
+            # A fixture runs for a test that names it among its parameters: `async ({ request, account }) => {`.
+            named = re.findall(r"[A-Za-z_$][\w$]*", parameters.split("}")[0]) if "{" in parameters else []
+            return sum(of(name, frozenset()) for name in dict.fromkeys(named) if name in functions)
+
+        per_test: list[int] = []
+        once = 0
+        for code in codes:
+            each_test = 0
+            for hook in _A_HOOK.finditer(code):
+                found = _the_callback(code, hook.end())
+                if found is None:
+                    continue
+                spent = calls(found[1], frozenset()) + fixtures(found[0])
+                if hook.group(1) in ("beforeEach", "afterEach"):
+                    each_test += spent
+                else:
+                    once += spent
+            for declared in _A_DECLARED_TEST.finditer(code):
+                if declared.group(1) in ("skip", "fixme"):
+                    continue
+                found = _the_callback(code, _past_the_title(code, declared.end(), declared.group(2)))
+                if found is not None:
+                    per_test.append(calls(found[1], frozenset()) + fixtures(found[0]) + each_test)
+        return per_test, once
+    except Exception:  # noqa: BLE001 - nothing counted is nothing found
+        return [], 0

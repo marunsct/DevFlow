@@ -159,7 +159,7 @@ def test_the_review_and_the_round_ask_it(tmp_path):
     """The lock's review probes; a test round, red or green, raises what the probe found."""
     from workflow_nodes import a_test_round, reported
 
-    assert "probe_at_the_lock(root)" in inspect.getsource(acceptance_nodes.acceptance_review)
+    assert "probe_at_the_lock(root)" in inspect.getsource(acceptance_nodes)
 
     at_the_lock = reported(f"{ic.SERVER_FAILED} PUT /notes/:id answered 500")
 

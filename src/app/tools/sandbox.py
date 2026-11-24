@@ -1152,6 +1152,25 @@ def _a_fresh_data_directory(workspace: str, category: str) -> Dict[str, str]:
         return {}
 
 
+def _the_acceptance_start_s_environment(workspace: str, category: str) -> Dict[str, str]:
+    """What the acceptance start gives the product when a command tests it: {} unless the harness reconciled a limit.
+
+    Measured on one run: the specification limited sign-ups to ten an hour from one address, the locked suite signed up
+    about 88 times a run from one, and every test past the tenth was refused. The reconciliation before the lock
+    (`app.acceptance.client_limits`) has the limit read its count from the environment; every test command - the
+    harness's runs of the suite and a stage's own - gives it, and the pack's start for the suite passes it on to the
+    product it starts. Never raises.
+    """
+    if category not in ("test", "probe"):
+        return {}
+    try:
+        from app.acceptance.client_limits import environment
+
+        return environment(workspace)
+    except Exception:  # noqa: BLE001 - a command without it is a command as before
+        return {}
+
+
 def _remove_the_fresh_data_directories(fresh: Dict[str, str]) -> None:
     """Delete the data directories `_a_fresh_data_directory` made for a command that has ended. Never raises.
 
@@ -5397,7 +5416,7 @@ class SandboxExecutor:
             result = _run_and_watch_the_tree(
                 [executable, *argv[1:]],
                 cwd=run_in or workspace,
-                env=_child_environment(workspace, {**fresh_data, **(extra_env or {})}),
+                env=_child_environment(workspace, {**_the_acceptance_start_s_environment(workspace, category), **fresh_data, **(extra_env or {})}),
                 timeout=timeout,
                 data_bytes=_process_memory(workspace, argv),
                 ends_at_its_summary=_runs_tests(argv),
@@ -5817,7 +5836,9 @@ class SandboxExecutor:
         # this one command's data directory as in-container, and the empty stand-ins made for it, removed after it.
         fresh_data = _a_fresh_data_directory(workspace, category)
         stand_ins: list[str] = []
-        environment, in_front = _container_environment(workspace, {**fresh_data, **(extra_env or {})}, stand_ins)
+        environment, in_front = _container_environment(
+            workspace, {**_the_acceptance_start_s_environment(workspace, category), **fresh_data, **(extra_env or {})},
+            stand_ins)
         for key, value in environment.items():
             docker_cmd += ["--env", f"{key}={value}"]
         docker_cmd.append(_image_for(os.path.basename(argv[0]), workspace))

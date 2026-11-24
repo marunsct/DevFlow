@@ -369,6 +369,41 @@ def the_setup_s_declarations_stand(state: Any, update: dict[str, Any], found: Se
         return []
 
 
+def the_harness_rules(state: Any, update: dict[str, Any], *, question: str, stands: str, gives_way: str,
+                      why: str) -> dict[str, Any] | None:
+    """A ruling the harness makes from what it measured, with no model asked: recorded as a decision and added to the
+    rulings every later stage is shown, whatever `SETTLE_SPEC_CONTRADICTIONS` says. It replaces an earlier ruling of
+    the harness on the same statements; the ruling added, or None when the same one stands already. Never raises.
+
+    Measured on one run: the specification set a limit on calling that the locked suite called past on every run, and
+    nothing told the builders which of the two gave way (`app.acceptance.client_limits`).
+    """
+    try:
+        from app.decisions import record_decision
+
+        root = state["repository"].root_path
+        path = Path(root) / RULINGS_FILE
+        record_now = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {"rulings": []}
+        rulings = [r for r in record_now.get("rulings") or [] if isinstance(r, dict)]
+        if any(r.get("from_the_harness") and r.get("stands") == stands and r.get("gives_way") == gives_way
+               for r in rulings):
+            return None
+        record = record_decision(
+            state, update, point="technical_specification", question=question,
+            options=[stands, gives_way], decision=stands, rationale=why, decided_by="auto",
+        )
+        added = {"decision": record["id"], "finding": 0, "stands": stands, "gives_way": gives_way, "why": why,
+                 "from_the_harness": True}
+        record_now["rulings"] = [*(r for r in rulings if not (r.get("from_the_harness") and r.get("gives_way") == gives_way)),
+                                 added]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(record_now, indent=2), encoding="utf-8")
+        return added
+    except Exception:  # noqa: BLE001 - the run goes on without the ruling, as it would have
+        logger.warning("Could not record the harness's ruling on the specification", exc_info=True)
+        return None
+
+
 def forget(root: str | Path) -> None:
     """The rulings no longer hold: the architect is revising the specification they quote. The call stays spent. Never raises."""
     try:
@@ -379,7 +414,7 @@ def forget(root: str | Path) -> None:
 
 
 def _kept(root: str | Path | None) -> list[dict[str, Any]]:
-    """The rulings kept: the model's while `SETTLE_SPEC_CONTRADICTIONS` is on, the setup's own always."""
+    """The rulings kept: the model's while `SETTLE_SPEC_CONTRADICTIONS` is on, the setup's and the harness's always."""
     if not root:
         return []
     try:
@@ -387,7 +422,7 @@ def _kept(root: str | Path | None) -> list[dict[str, Any]]:
         if not path.is_file():
             return []
         rulings = [r for r in json.loads(path.read_text(encoding="utf-8")).get("rulings") or [] if isinstance(r, dict)]
-        return rulings if enabled() else [r for r in rulings if r.get("from_the_setup")]
+        return rulings if enabled() else [r for r in rulings if r.get("from_the_setup") or r.get("from_the_harness")]
     except Exception:  # noqa: BLE001 - a request without the rulings is the request as it was
         logger.debug("Could not read the specification's rulings", exc_info=True)
         return []

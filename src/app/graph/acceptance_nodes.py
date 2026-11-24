@@ -976,7 +976,26 @@ def _the_repair_measured(root: str | Path) -> tuple[list[str], Any, str]:
 
 
 def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[str, Any]:
-    """Check the suite mechanically, have a QA lead judge it, then lock it."""
+    """Check the suite mechanically, have a QA lead judge it, then lock it.
+
+    First, before the suite is measured, a limit the specification sets on how often one client may call is reconciled
+    with how often the suite calls (LF.1269, `app.acceptance.client_limits`): when the suite calls past it, the one
+    finding is the specification's - ruled on and recorded as a decision, never sent to the suite's writers - and the
+    measurement below already runs with the environment the ruling names. The lock never comes before it.
+    """
+    from app.acceptance import client_limits
+
+    reconciled: dict[str, Any] = {}
+    client_limits.reconcile_before_the_lock(state, reconciled)
+    if not reconciled.get("decisions"):
+        return _reviewed_and_locked(state, config, ctx)
+    update = _reviewed_and_locked({**state, "decisions": reconciled["decisions"]}, config, ctx)
+    if isinstance(update, dict) and not update.get("decisions"):
+        update["decisions"] = reconciled["decisions"]
+    return update
+
+
+def _reviewed_and_locked(state: Any, config: RunnableConfig, ctx: Context) -> dict[str, Any]:
     from app.agents.acceptance_reviewer import (
         build_acceptance_review_request,
         create_acceptance_reviewer_agent,

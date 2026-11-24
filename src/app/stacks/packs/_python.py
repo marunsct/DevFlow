@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import ast
+from collections.abc import Callable, Sequence
 
 PYTEST_INI = """[pytest]
 pythonpath = .
@@ -223,3 +224,103 @@ PYTHON_KNOWN_ERRORS["operationalerror) index "] = (
     "already made. Declare each index once - `index=True` or an `Index(...)`, not both - and create the tables with "
     "`Base.metadata.create_all(engine)`, which skips what already exists."
 )
+
+
+#: The methods of a request a suite makes through a client: `client.post(...)`, `requests.get(...)`, `session.put(...)`.
+_REQUEST_METHODS = frozenset({"get", "post", "put", "patch", "delete", "head", "request", "urlopen"})
+#: The most a loop is taken to repeat: a bound past it is a stress test, not a count to multiply.
+_MOST_LOOP_REPEATS = 1_000
+
+
+def client_calls(texts: Sequence[str], names_the_route: Callable[[str], bool] | None) -> tuple[list[int], int]:
+    """(how many requests to one route each test that runs makes, how many once-a-session fixtures make).
+
+    The Python reader of `_javascript.client_calls`: `names_the_route` says whether a string's text is an address of
+    that route (None counts every request call). A request is counted where the code names the route - a string, an
+    f-string's text, or a module constant holding one - in a `test_` function or method, in a function it calls at any
+    depth, in a fixture it names among its parameters (a fixture of wider scope than a function once a run), and inside
+    `for _ in range(n)` with a literal `n` as often as the loop runs. Never raises; ([], 0) on any doubt.
+    """
+    try:
+        trees = [ast.parse(text) for text in texts]
+        functions: dict[str, list[ast.AST]] = {}
+        widely_scoped: set[str] = set()
+        constants: set[str] = set()
+        for tree in trees:
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    functions.setdefault(node.name, []).append(node)
+                    for decorator in node.decorator_list:
+                        scope = next((k.value for k in getattr(decorator, "keywords", [])
+                                      if k.arg == "scope" and isinstance(k.value, ast.Constant)), None)
+                        if scope is not None and scope.value != "function":
+                            widely_scoped.add(node.name)
+            if names_the_route is not None:
+                for node in tree.body:
+                    if (isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant)
+                            and isinstance(node.value.value, str) and names_the_route(node.value.value)):
+                        constants.update(t.id for t in node.targets if isinstance(t, ast.Name))
+        cost: dict[str, int] = {}
+
+        def text_of(node: ast.AST) -> str | None:
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                return node.value
+            if isinstance(node, ast.JoinedStr):
+                return "".join(part.value if isinstance(part, ast.Constant) else "{}" for part in node.values)
+            return None
+
+        def direct(node: ast.AST) -> int:
+            if names_the_route is None:
+                return int(isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                           and node.func.attr in _REQUEST_METHODS)
+            said = text_of(node)
+            if said is not None:
+                return int(names_the_route(said))
+            return int(isinstance(node, ast.Name) and node.id in constants and isinstance(node.ctx, ast.Load))
+
+        def calls(node: ast.AST, open_: frozenset[str]) -> int:
+            if isinstance(node, ast.Expr) and text_of(node.value) is not None:
+                return 0  # a docstring says, it does not ask
+            total = direct(node)
+            if isinstance(node, ast.Call):
+                called = node.func.id if isinstance(node.func, ast.Name) else (
+                    node.func.attr if isinstance(node.func, ast.Attribute) else "")
+                if called in functions and called not in open_:
+                    total += of(called, open_)
+            for child in ast.iter_child_nodes(node):
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    continue
+                if isinstance(node, ast.JoinedStr):
+                    continue
+                total += calls(child, open_)
+            if isinstance(node, (ast.For, ast.AsyncFor)) and isinstance(node.iter, ast.Call) \
+                    and isinstance(node.iter.func, ast.Name) and node.iter.func.id == "range" \
+                    and all(isinstance(a, ast.Constant) and isinstance(a.value, int) for a in node.iter.args) \
+                    and 1 <= len(node.iter.args) <= 2:
+                bounds = [a.value for a in node.iter.args]
+                repeats = bounds[-1] - (bounds[0] if len(bounds) == 2 else 0)
+                if 1 < repeats <= _MOST_LOOP_REPEATS:
+                    total += (repeats - 1) * sum(calls(child, open_) for child in node.body)
+            return total
+
+        def body_cost(function: ast.AST, open_: frozenset[str]) -> int:
+            return sum(calls(statement, open_) for statement in function.body)
+
+        def of(name: str, open_: frozenset[str]) -> int:
+            if name not in cost:
+                cost[name] = max(body_cost(function, open_ | {name}) for function in functions[name])
+            return cost[name]
+
+        per_test: list[int] = []
+        once = sum(of(name, frozenset()) for name in widely_scoped)
+        for tree in trees:
+            for node in ast.walk(tree):
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or not node.name.startswith("test"):
+                    continue
+                if any("skip" in ast.unparse(decorator) for decorator in node.decorator_list):
+                    continue
+                named = [a.arg for a in node.args.args if a.arg in functions and a.arg not in widely_scoped]
+                per_test.append(body_cost(node, frozenset({node.name})) + sum(of(n, frozenset()) for n in named))
+        return per_test, once
+    except Exception:  # noqa: BLE001 - nothing counted is nothing found
+        return [], 0

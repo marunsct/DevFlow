@@ -84,8 +84,48 @@ def _get(url: str, params: dict[str, Any] | None = None) -> tuple[int, str, str]
         return response.status_code, response.text[:MAX_PAGE], response.headers.get("content-type", "")
 
 
-def search(query: str, *, fetch: Fetch | None = None) -> dict[str, Any]:
-    """The web's top results for `query`, or {"error": ...}."""
+#: The sources asked through their own APIs beside the private search, under the lookups' counters (plan KS.4).
+API_SOURCES: tuple[str, ...] = ("stack exchange", "github issues")
+
+
+def _from_the_apis(query: str) -> tuple[list[dict[str, Any]], list[str]]:
+    """What Stack Exchange's and GitHub's own APIs found for `query`, as search results, counted against each source's
+    daily cap and held when it refused (`lookups.ask`); and the sources that could not be asked or refused."""
+    from app.tools import lookups, source_breaker
+
+    found: list[dict[str, Any]] = []
+    unasked: list[str] = []
+    for source in lookups.SOURCES:
+        if source.name not in API_SOURCES:
+            continue
+        why = lookups.state(source)
+        if why:
+            unasked.append(f"{source.name}: {why}")
+            continue
+        try:
+            leads = lookups.ask(source, query)
+        except source_breaker.Refused as refused:
+            unasked.append(str(refused))
+            continue
+        except Exception as exc:  # noqa: BLE001 - the private search still answers
+            logger.info("Web search's %s could not be asked for %r: %s", source.name, query,
+                        lookups.without_keys(str(exc)))
+            continue
+        found += [{"title": lead.get("title", ""), "url": lead.get("url", ""), "content": lead.get("excerpt", ""),
+                   **({"publishedDate": lead["date"]} if lead.get("date") else {})} for lead in leads]
+    return found, unasked
+
+
+def search(query: str, *, fetch: Fetch | None = None, with_the_apis: bool = True) -> dict[str, Any]:
+    """The web's top results for `query`, or {"error": ...}.
+
+    One search path (plan KS.4, LF.1294): Stack Exchange and GitHub are asked through their own APIs, counted against
+    the lookups' daily caps and held when they refuse, and the private search asks the rest - its own Stack Exchange
+    and GitHub engines are gone from its settings. Measured before: one query fired three Stack Exchange engines and
+    a GitHub engine inside the private search, keyless and uncounted, on the same per-address quota the harness's own
+    lookups spend. `with_the_apis` false asks the private search alone (the lookups, which ask the APIs themselves).
+    Engines the private search names as not answering (`unresponsive_engines`) are given back as `unresponsive`, so
+    a refusal upstream is not read as "nothing was found"."""
     query = " ".join(str(query or "").split())
     if len(query) < 3:
         return {"error": "Ask for something: a few words, an error message, a library and its version."}
@@ -94,7 +134,11 @@ def search(query: str, *, fetch: Fetch | None = None) -> dict[str, Any]:
     import json
 
     found: list[dict[str, Any]] = []
+    unasked: list[str] = []
+    if with_the_apis:
+        found, unasked = _from_the_apis(query)
     failure = ""
+    unresponsive: list[str] = []
     for category in CATEGORIES:
         try:
             status, body, _ = (fetch or _get)(
@@ -102,15 +146,20 @@ def search(query: str, *, fetch: Fetch | None = None) -> dict[str, Any]:
             if status != 200:
                 failure = f"The search service answered {status}."
                 continue
-            found.extend((json.loads(body or "{}") or {}).get("results") or [])
+            said = json.loads(body or "{}") or {}
+            found.extend(said.get("results") or [])
+            unresponsive += [str(e[0] if isinstance(e, (list, tuple)) and e else e)
+                             for e in said.get("unresponsive_engines") or []]
         except Exception as exc:  # noqa: BLE001 - a search that cannot run is an answer, not a crash
             logger.info("Web search for %r (%s) failed: %s", query, category, exc)
             failure = f"The search service could not be reached ({type(exc).__name__})."
             continue
         if len({str(item.get("url") or "") for item in found}) >= ENOUGH_RESULTS:
             break
-    if not found and failure:
-        return {"error": failure}
+    unresponsive = list(dict.fromkeys(unresponsive))
+    if not found and (failure or unresponsive or unasked):
+        why = failure or ("The search's sources did not answer: " + "; ".join([*unresponsive, *unasked]) + ".")
+        return {"error": why, **({"unresponsive": unresponsive} if unresponsive else {})}
     results = []
     for item in sorted(found, key=_rank):
         url = str(item.get("url") or "")
@@ -126,7 +175,7 @@ def search(query: str, *, fetch: Fetch | None = None) -> dict[str, Any]:
             break
     if not results:
         return {"error": f"Nothing was found for {query!r}. Try fewer or other words, or the exact error text."}
-    return {"note": RESULTS_NOTE, "results": results}
+    return {"note": RESULTS_NOTE, "results": results, **({"unresponsive": unresponsive} if unresponsive else {})}
 
 
 def _rank(item: dict[str, Any]) -> int:
@@ -207,7 +256,8 @@ def build_web_tools(on_call: Callable[[str, str, dict[str, Any]], None] | None =
             return answered("search_the_web", query, {"error": refusal})
         from app.tools import outbound
 
-        sent = outbound.query(query, outbound.WEB_SEARCH, to="private search", repo_root=repo_root)
+        sent = outbound.query(query, outbound.WEB_SEARCH, to=", ".join((*API_SOURCES, "private search")),
+                              repo_root=repo_root)
         answer = search(sent)
         if isinstance(answer, dict) and sent != " ".join(str(query or "").split()):
             answer = {**answer, "searched": sent}
@@ -277,5 +327,5 @@ def web_tools(repo_root: str | Path | None = None) -> list[Any]:
     return build_web_tools(repo_root=repo_root) if enabled() and offered() else []
 
 
-__all__ = ["MOST_RESULTS", "WEB_TOOL_NAMES", "build_web_tools", "enabled", "offered", "read_page", "search", "web_tools",
+__all__ = ["API_SOURCES", "MOST_RESULTS", "WEB_TOOL_NAMES", "build_web_tools", "enabled", "offered", "read_page", "search", "web_tools",
            "web_tools_offered_switch"]

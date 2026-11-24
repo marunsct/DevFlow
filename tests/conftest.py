@@ -135,6 +135,23 @@ def no_research_reaches_the_network():
 
 
 @pytest.fixture(autouse=True)
+def no_lookup_reaches_the_network(monkeypatch):
+    """A lookup source's request fails at once unless a test gives its own fetch.
+
+    The model's web search now asks Stack Exchange and GitHub through their APIs beside the private search, and a
+    page on those sites is read through them (plans KS.1, KS.4): a test of the search or the reader that stubs only
+    the private search or the page fetch would otherwise reach the real APIs from the suite.
+    """
+    from app.tools import lookups
+
+    def offline(url, headers, body=None):
+        raise ConnectionError("no network in the tests")
+
+    monkeypatch.setattr(lookups, "_get", offline)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def no_model_server_is_read(monkeypatch):
     """The model server's `/props` is never read from a test; a test that needs a profile sets one.
 

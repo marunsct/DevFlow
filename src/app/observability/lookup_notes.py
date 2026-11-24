@@ -75,8 +75,10 @@ def _run_id() -> str:
         return ""
 
 
-def record(stage: str, answer: dict[str, Any], *, trigger: str, defect: Any = None, again: bool = False) -> str:
-    """The ledger record of one note shown (`again`: one already found this run, shown once more); its id. Never
+def record(stage: str, answer: dict[str, Any], *, trigger: str, defect: Any = None, again: bool = False,
+           fields: dict[str, Any] | None = None) -> str:
+    """The ledger record of one note shown (`again`: one already found this run, shown once more); its id. `fields`:
+    more of what the note was made of, kept beside them - its queries, sources and verdict (`stuck_research`). Never
     raises."""
     query = str(answer.get("query") or "")
     the_id = note_id(query)
@@ -93,7 +95,7 @@ def record(stage: str, answer: dict[str, Any], *, trigger: str, defect: Any = No
         defect_ledger.note(SHOWN_AGAIN if again else SHOWN, stage, defect=defect, detail=detail, note=the_id,
                            trigger=trigger, **({} if again else {
                                "asked": list(answer.get("asked") or []), "answered": by_source, "found": found,
-                               "cached": bool(answer.get("cached"))}))
+                               "cached": bool(answer.get("cached")), **(fields or {})}))
         if defect is not None and (again or found):
             with _LOCK:
                 _PENDING[(_run_id(), defect_ledger.defect_id(defect))] = (the_id, trigger)

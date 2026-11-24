@@ -1,24 +1,26 @@
 # SearXNG for the harness's stages (`app.tools.web_search`): a private
 # instance on the compose network only, answering the worker in JSON. The
-# engines kept are the general web plus where a developer looks for what a
-# model's training data is too old to know - code hosts, Q&A, the package
-# registries, MDN and Microsoft Learn, and the vulnerability database.
+# engines kept are where a developer looks for what a model's training data is
+# too old to know - code hosts, Q&A forums, the package registries, MDN and
+# Microsoft Learn, the vulnerability database - plus DuckDuckGo and Wikipedia
+# as the general pair.
+#
+# Not kept (plan KS.4, LF.1294):
+# - Google, Bing, Brave, Startpage and Mojeek: they refuse a self-hosted
+#   instance (403, CAPTCHAs, proof-of-work, weeks-long suspensions; measured
+#   here 2026-11-20 and upstream since), and a general query waited on them for
+#   up to 10 seconds each time.
+# - Stack Overflow, Ask Ubuntu, Super User and GitHub: the harness asks Stack
+#   Exchange's and GitHub's own APIs itself, counted and held on a refusal
+#   (`app.tools.lookups`); these engines called the same APIs keyless and
+#   uncounted, on the same per-address quota.
 use_default_settings:
   engines:
     keep_only:
       - duckduckgo
-      - brave
-      - bing
-      - google
-      - startpage
-      - mojeek
       - wikipedia
-      - github
       - gitlab
       - codeberg
-      - stackoverflow
-      - askubuntu
-      - superuser
       - mdn
       - microsoft learn
       - pypi
@@ -50,6 +52,16 @@ search:
   formats:
     - html
     - json
+  # How long an engine that refused is left alone, in seconds, set here rather
+  # than left to defaults that differ between SearXNG's documentation and its
+  # shipped file.
+  suspended_times:
+    SearxEngineAccessDenied: 86400
+    SearxEngineCaptcha: 86400
+    SearxEngineTooManyRequests: 3600
+    cf_SearxEngineCaptcha: 1296000
+    cf_SearxEngineAccessDenied: 86400
+    recaptcha_SearxEngineCaptcha: 604800
 
 server:
   # Only the worker reaches it, so nothing to rate-limit, and no public features.
@@ -63,14 +75,6 @@ outgoing:
   max_request_timeout: 10.0
 
 engines:
-  - name: bing
-    disabled: false
-  - name: google
-    disabled: false
-  - name: startpage
-    disabled: false
-  - name: mojeek
-    disabled: false
   - name: gitlab
     disabled: false
   - name: codeberg

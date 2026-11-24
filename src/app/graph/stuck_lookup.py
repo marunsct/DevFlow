@@ -12,9 +12,12 @@ on three triggers:
 - T3: a build or compile error the round before reported too (`build_errors_in`), looked up with the stack's
   toolchain and the version this project runs.
 
-Each distinct cleaned error is looked up once per run, whichever trigger meets it (`app.tools.lookups` - free official
-sources first, a week's cache, only the cleaned error sent), and what was found goes into the request as quoted
-leads. Each lookup is a ledger record naming its trigger, so the audit can say whether it fired and helped.
+Each distinct cleaned error is looked up once per run, whichever trigger meets it, the way a person does it
+(`app.graph.stuck_research`, plan HK.3): the installed package's own files first, then several short queries to the
+library's own tracker and the free official sources (`app.tools.lookups`), the resolution read rather than the
+question, ranked by source, version and recency - and, behind `STUCK_LOOKUP_CONDENSED`, one note condensed and
+checked against the project's versions instead of raw leads. Each lookup is a note with an id, a ledger record naming
+its trigger, its sources and its defect, so the audit can say whether it fired and helped.
 """
 
 from __future__ import annotations
@@ -205,10 +208,12 @@ def _the_installer_words(repo_root: str | Path, stack: Any) -> str:
 
 
 def _looked_up(repo_root: str | Path, error: str, stack_words: str, *, trigger: str, stage_name: str,
-               defect: Any = None) -> str:
+               defect: Any = None, stack: Any = None, model: Any = None) -> str:
     """`error` looked up once per run - the same cleaned error met by any trigger is asked once - as the section a
-    request carries; "" when nothing was found. Each note shown is a ledger record with its id and the defect it was
-    for, the first as a lookup, each later one as shown again (`app.observability.lookup_notes`, HK.4)."""
+    request carries (`stuck_research.research`, plan HK.3); "" when nothing was found. Each note shown is a ledger
+    record with its id and the defect it was for, the first as a lookup, each later one as shown again
+    (`app.observability.lookup_notes`, HK.4)."""
+    from app.graph import stuck_research
     from app.observability import lookup_notes
     from app.tools import lookups
 
@@ -221,15 +226,14 @@ def _looked_up(repo_root: str | Path, error: str, stack_words: str, *, trigger: 
         if shown:
             lookup_notes.record(stage_name, {"query": query}, trigger=trigger, defect=defect, again=True)
         return shown
-    answer = lookups.look_up(error, stack_words, private, repo_root=repo_root)
-    shown = lookups.as_a_section(answer)
+    shown, query = stuck_research.research(repo_root, error, stack_words, private, stack=stack, defect=defect,
+                                           trigger=trigger, stage_name=stage_name, model=model)
     shown = ("\n" + shown) if shown else ""
-    _DONE[key] = (shown, str(answer.get("query") or ""))
-    lookup_notes.record(stage_name, answer, trigger=trigger, defect=defect)
+    _DONE[key] = (shown, query)
     return shown
 
 
-def section(repo_root: str | Path, defect: Any, stack: Any, stage_name: str = "defect_fix") -> str:
+def section(repo_root: str | Path, defect: Any, stack: Any, stage_name: str = "defect_fix", model: Any = None) -> str:
     """T1: what others found for this stuck defect's error, as its fixer's request carries it; "" when off, not stuck,
     with no concrete error, or when nothing was found. Never raises."""
     try:
@@ -243,7 +247,7 @@ def section(repo_root: str | Path, defect: Any, stack: Any, stage_name: str = "d
         if not error:
             return ""
         return _looked_up(repo_root, error, _the_stack_s_words(stack), trigger=TRIGGER_STUCK, stage_name=stage_name,
-                          defect=defect)
+                          defect=defect, stack=stack, model=model)
     except Exception:  # noqa: BLE001 - the fix goes on without it
         logger.debug("Could not look up a stuck defect's error", exc_info=True)
         return ""
@@ -270,7 +274,8 @@ def _the_installer_s_error(said: str) -> str:
     return max(outright, key=len)[:300] if outright else ""
 
 
-def for_an_install_that_failed(repo_root: str | Path, defect: Any, stack: Any, stage_name: str = "defect_fix") -> str:
+def for_an_install_that_failed(repo_root: str | Path, defect: Any, stack: Any, stage_name: str = "defect_fix",
+                               model: Any = None) -> str:
     """T2: for the defect saying the project's dependencies do not install, what others found for the installer's
     error, from its first fix - unless the registry already explains it (a version or a feature that does not exist,
     for which the note carries the registry's answer). "" when off or not such a defect. Never raises."""
@@ -286,7 +291,7 @@ def for_an_install_that_failed(repo_root: str | Path, defect: Any, stack: Any, s
         if not error:
             return ""
         return _looked_up(repo_root, error, _the_installer_words(repo_root, stack), trigger=TRIGGER_INSTALL,
-                          stage_name=stage_name, defect=defect)
+                          stage_name=stage_name, defect=defect, stack=stack, model=model)
     except Exception:  # noqa: BLE001 - the fix goes on without it
         logger.debug("Could not look up an install's error", exc_info=True)
         return ""
@@ -306,7 +311,7 @@ def for_a_failed_setup(repo_root: str | Path, problem: str, stack: Any, stage_na
         if not error:
             return ""
         return _looked_up(repo_root, error, _the_installer_words(repo_root, stack), trigger=TRIGGER_INSTALL,
-                          stage_name=stage_name)
+                          stage_name=stage_name, stack=stack)
     except Exception:  # noqa: BLE001 - the setup is asked again without it
         logger.debug("Could not look up a setup's error", exc_info=True)
         return ""
@@ -380,7 +385,8 @@ def _the_text_of(defect: Any) -> str:
 
 
 def for_a_recurring_build_error(repo_root: str | Path, defect: Any, defects: list[Any], stack: Any, *, round_: int,
-                                sprint: int = 0, stage_name: str = "defect_fix", look_up: bool = True) -> str:
+                                sprint: int = 0, stage_name: str = "defect_fix", look_up: bool = True,
+                                model: Any = None) -> str:
     """T3: when this defect reports a build or compile error the round before reported too, what others found for it,
     looked up with the stack's toolchain and version; "" when off, when the error is new this round, for a mutation
     finding, or with `look_up` false. Keeps this round's errors (of all `defects`) for the next round. Never raises."""
@@ -399,7 +405,7 @@ def for_a_recurring_build_error(repo_root: str | Path, defect: Any, defects: lis
         for signature, line in build_errors_in(_the_text_of(defect)):
             if signature in before:
                 return _looked_up(repo_root, line, _the_toolchain_words(repo_root, stack), trigger=TRIGGER_RECURRING,
-                                  stage_name=stage_name, defect=defect)
+                                  stage_name=stage_name, defect=defect, stack=stack, model=model)
         return ""
     except Exception:  # noqa: BLE001 - the fix goes on without it
         logger.debug("Could not look up a recurring build error", exc_info=True)
@@ -407,15 +413,16 @@ def for_a_recurring_build_error(repo_root: str | Path, defect: Any, defects: lis
 
 
 def for_a_fixer(repo_root: str | Path, defect: Any, defects: list[Any], stack: Any, *, round_: int, sprint: int = 0,
-                stage_name: str = "defect_fix") -> str:
+                stage_name: str = "defect_fix", model: Any = None) -> str:
     """What others found for one fixer's defect, from the first trigger that applies: an install's error (T2), a build
     error the round before had too (T3), then the error of a defect an attempt left open (T1). One block, so a request
-    carries one; "" when none applies or nothing was found. Never raises."""
-    installing = for_an_install_that_failed(repo_root, defect, stack, stage_name)
+    carries one; "" when none applies or nothing was found. `model` is the fixer's, for the one condensing call
+    (`STUCK_LOOKUP_CONDENSED`). Never raises."""
+    installing = for_an_install_that_failed(repo_root, defect, stack, stage_name, model=model)
     # Called whatever T2 found: it keeps this round's build errors for the next round.
     recurring = for_a_recurring_build_error(repo_root, defect, defects, stack, round_=round_, sprint=sprint,
-                                            stage_name=stage_name, look_up=not installing)
-    return installing or recurring or section(repo_root, defect, stack, stage_name)
+                                            stage_name=stage_name, look_up=not installing, model=model)
+    return installing or recurring or section(repo_root, defect, stack, stage_name, model=model)
 
 
 __all__ = ["LOOKUP_EVENT", "ON_BY_DEFAULT", "ROUNDS_FILE", "TRIGGER_INSTALL", "TRIGGER_RECURRING", "TRIGGER_STUCK",

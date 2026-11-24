@@ -13,7 +13,9 @@ from app.tools import lookups
 
 
 @pytest.fixture(autouse=True)
-def clean_secrets(test_db, monkeypatch):
+def clean_secrets(test_db, monkeypatch, tmp_path):
+    # Each test's own lookup cache: a "nothing found" is now remembered for a day (plan HK.3(h)).
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.delenv("STACKEXCHANGE_KEY", raising=False)
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     monkeypatch.setenv("SWITCH_OVERRIDES_FROM_SETTINGS", "on")

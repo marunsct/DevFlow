@@ -83,6 +83,7 @@ SWITCHES: dict[str, str] = {
     "DRAFTING_IN_WAVES": "app.graph.drafting_waves",
     "DIAGNOSE_A_RECURRING_CAUSE": "app.graph.cause_journal:diagnosis_switch",
     "WEB_LOOKUP_WHEN_STUCK": "app.graph.stuck_lookup",
+    "STUCK_LOOKUP_CONDENSED": "app.graph.stuck_research:condensed_switch",
     "WEB_TOOLS_OFFERED": "app.tools.web_search:web_tools_offered_switch",
     "PRODUCT_PREVIEW": "app.server.preview:preview_switch",
     "WEB_TOOLS_AFTER_TWO_FAILED_FIXES": "app.graph.web_tools_after_two_failed_fixes:web_tools_after_two_failed_fixes_switch",

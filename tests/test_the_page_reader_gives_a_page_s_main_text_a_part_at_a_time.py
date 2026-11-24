@@ -32,7 +32,7 @@ def test_the_main_text_leaves_out_menus_footers_and_scripts():
                          "it are dropped oldest first.</p></main>"
                          "<footer>Copyright</footer><script>track()</script></body></html>"))
 
-    assert answer["text"] == "# Caching\n\nSet the cache size with max_entries; entries past it are dropped oldest first."
+    assert answer["text"] == "# Caching\n\nSet the cache size with `max_entries`; entries past it are dropped oldest first."
     assert (answer["page"], answer["pages"]) == (1, 1)
 
 

@@ -206,8 +206,24 @@ _BLOCKS = {"p", "div", "section", "li", "ul", "ol", "tr", "table", "pre", "block
            "h1", "h2", "h3", "h4", "h5", "h6", "article", "main", "figcaption", "summary", "details"}
 
 
+#: A code block's language as its class names it: `language-python`, `lang-js`, `highlight-source-rust`.
+_A_LANGUAGE = re.compile(r"(?:^|\s)(?:(?:language|lang|highlight-source)-|brush:\s*)([A-Za-z0-9_+#.-]{1,20})")
+#: A fence line: three backquotes, a language after them or none.
+FENCE = "```"
+
+
+def _language(attrs: list[tuple[str, str | None]]) -> str:
+    found = _A_LANGUAGE.search(" " + " ".join(str(v or "") for k, v in attrs if k in {"class", "data-lang"}))
+    return found.group(1).lower() if found else ""
+
+
 class _MainText(HTMLParser):
-    """The visible text of a page outside its chrome, and that of its <main> or <article> when it has one."""
+    """The visible text of a page outside its chrome, and that of its <main> or <article> when it has one.
+
+    Code keeps its shape (plan KS.2): a `<pre>` becomes a fenced block, its lines as they are, with the language its
+    class names; an inline `<code>` is put in backquotes. Measured before: an answer's three-line fix came out as one
+    line run together with the prose around it, and nothing marked where the code began.
+    """
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -218,14 +234,25 @@ class _MainText(HTMLParser):
         self.skip_depth = 0
         self.in_main = 0
         self.in_pre = 0
+        self.in_code = 0
         self.scripts = 0
         self.title = ""
         self._in_title = False
+        #: The open code block's language from its `<pre>`, and whether its fence is written yet.
+        self._fence_language = ""
+        self._fenced = False
+        self._first_in_pre = False
 
     def _put(self, text: str) -> None:
         self.all.append(text)
         if self.in_main:
             self.main.append(text)
+
+    def _open_fence(self, language: str = "") -> None:
+        if not self._fenced:
+            self._put(f"\n{FENCE}{self._fence_language or language}\n")
+            self._fenced = True
+            self._first_in_pre = True
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag == "script":
@@ -246,9 +273,20 @@ class _MainText(HTMLParser):
             self.in_main += 1
         if tag == "pre":
             self.in_pre += 1
-        if tag in _BLOCKS:
+            if self.in_pre == 1:
+                self._put("\n")
+                self._fence_language, self._fenced = _language(attrs), False
+            return
+        if tag == "code":
+            if self.in_pre:
+                self._open_fence(_language(attrs))
+            else:
+                self.in_code += 1
+                self._put("`")
+            return
+        if tag in _BLOCKS and not self.in_pre:
             self._put("\n")
-        if re.fullmatch(r"h[1-6]", tag):
+        if re.fullmatch(r"h[1-6]", tag) and not self.in_pre:
             self._put("#" * int(tag[1]) + " ")
 
     def handle_endtag(self, tag: str) -> None:
@@ -261,12 +299,22 @@ class _MainText(HTMLParser):
             self._in_title = False
         if tag in _VOID:
             return
-        if tag in _BLOCKS:
+        if tag == "pre" and self.in_pre:
+            self.in_pre -= 1
+            if not self.in_pre:
+                if self._fenced:
+                    self._put(("" if self.all and self.all[-1].endswith("\n") else "\n") + f"{FENCE}\n")
+                self._fenced = False
+            return
+        if tag == "code":
+            if not self.in_pre and self.in_code:
+                self.in_code -= 1
+                self._put("`")
+            return
+        if tag in _BLOCKS and not self.in_pre:
             self._put("\n")
         if tag in {"main", "article"} and self.in_main:
             self.in_main -= 1
-        if tag == "pre" and self.in_pre:
-            self.in_pre -= 1
 
     def handle_data(self, data: str) -> None:
         if self._in_title:
@@ -274,12 +322,55 @@ class _MainText(HTMLParser):
             return
         if self.skip_tag:
             return
-        self._put(data if self.in_pre else re.sub(r"[ \t\r\f\v]+", " ", data.replace("\n", " ")))
+        if self.in_pre:
+            if not data:
+                return
+            self._open_fence()
+            if self._first_in_pre:
+                # A newline right after the opening tag is not part of the code (HTML drops it), nor is the one the
+                # fence line already ends with.
+                data = data[1:] if data.startswith("\n") else data
+                self._first_in_pre = False
+            self._put(data)
+            return
+        self._put(re.sub(r"[ \t\r\f\v]+", " ", data.replace("\n", " ")))
 
 
 def _tidy(text: str) -> str:
-    lines = [line.rstrip() for line in text.split("\n")]
-    return re.sub(r"\n{3,}", "\n\n", "\n".join(line if line.strip() else "" for line in lines)).strip()
+    """Lines without trailing spaces and at most one blank line between paragraphs - inside a code block, as written."""
+    lines, kept, blank, in_code = [line.rstrip() for line in text.split("\n")], [], 0, False
+    for line in lines:
+        if line.lstrip().startswith(FENCE):
+            in_code = not in_code
+            line = line.strip()
+        if not line.strip() and not in_code:
+            blank += 1
+            if blank > 1:
+                continue
+            line = ""
+        else:
+            blank = 0
+        kept.append(line)
+    return "\n".join(kept).strip()
+
+
+def cut_at_a_block(text: str, most: int) -> str:
+    """`text` cut to at most `most` characters at the end of a paragraph or a line, never inside a code block: a block
+    the cut would split is left out when it starts late enough, else closed where the cut falls (plan KS.2)."""
+    text = str(text or "")
+    if len(text) <= most:
+        return text
+    piece = text[:most]
+    cut = max(piece.rfind("\n\n"), piece.rfind("\n"))
+    piece = piece[:cut] if cut >= most // 2 else piece
+    fences = [m.start() for m in re.finditer(r"(?m)^\s*```", piece)]
+    if len(fences) % 2:
+        opening = fences[-1]
+        if opening >= most // 3:
+            return piece[:opening].rstrip()
+        closing = "\n" + FENCE
+        return piece[: max(0, most - len(closing))].rstrip() + closing
+    return piece.rstrip()
 
 
 def main_text(page_html: str) -> tuple[str, int]:
@@ -355,7 +446,18 @@ def _pages(text: str) -> list[str]:
 
 
 def _text(url: str, fetch: Fetch, resolve: Resolve, render: Render) -> tuple[str, str, str]:
-    """(final url, the page's main text, "") for `url`, or ("", "", why it could not be read)."""
+    """(final url, the page's main text, "") for `url`, or ("", "", why it could not be read).
+
+    An address its site offers an official channel for - a Stack Exchange question, a GitHub issue, file, release
+    list or repository, a registry's package page - is read through that channel and never as a page
+    (`source_readers`, plan KS.1)."""
+    from app.tools import source_readers
+
+    routed = source_readers.read(url)
+    if isinstance(routed, dict):
+        return "", "", str(routed.get("error") or "The page could not be read through its site's own channel.")
+    if routed is not None:
+        return routed.url, routed.text, ""
     try:
         why = refusal(url, resolve)
         if why:
@@ -425,4 +527,5 @@ def read(url: str, page: int = 1, *, fetch: Fetch | None = None, resolve: Resolv
             "note": NOTE + more}
 
 
-__all__ = ["MOST_HOPS", "NOTE", "PAGE_CHARS", "USER_AGENT", "main_text", "read", "refusal", "text_of"]
+__all__ = ["FENCE", "MOST_HOPS", "NOTE", "PAGE_CHARS", "USER_AGENT", "cut_at_a_block", "main_text", "read", "refusal",
+           "text_of"]

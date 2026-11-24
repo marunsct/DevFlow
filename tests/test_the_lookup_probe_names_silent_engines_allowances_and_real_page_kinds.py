@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from app.tools import page_reader, source_health
+from app.tools import lookups, page_reader, source_health
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -97,6 +97,10 @@ def test_the_page_reader_is_probed_on_each_kind_of_page_a_lookup_reads_and_says_
 
     monkeypatch.setattr(page_reader, "_fetch", fetch)
     monkeypatch.setattr(page_reader, "_resolve", lambda host: ["140.82.112.3"])
+    # A code host's file and a question are read through their sites' own APIs (plan KS.1, LF.1294): the raw file
+    # host answers; Stack Exchange has no such question here.
+    monkeypatch.setattr(lookups, "_get", lambda url, headers, body=None: (
+        (200, "The file's own words.", {}) if "raw.githubusercontent.com" in url else (200, '{"items": []}', {})))
 
     lines = source_health.reader_lines()
 
@@ -104,7 +108,7 @@ def test_the_page_reader_is_probed_on_each_kind_of_page_a_lookup_reads_and_says_
         "LOOKUPS page reader, a file on a code host", "LOOKUPS page reader, a documentation page",
         "LOOKUPS page reader, a question and its answers"]
     assert "answers (1 page(s)" in lines[0] and "answers (1 page(s)" in lines[1]
-    assert "NO ANSWER" in lines[2] and "robots.txt" in lines[2] and "not a block" in lines[2]
+    assert "NO ANSWER" in lines[2] and "no question 11227809" in lines[2] and "not a block" in lines[2]
 
 
 def test_the_ready_probe_prints_the_new_lines_and_example_com_is_no_longer_its_page(monkeypatch, capsys, tmp_path):

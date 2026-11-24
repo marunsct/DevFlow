@@ -143,7 +143,7 @@ def test_a_stuck_lookup_never_carries_the_product_s_nouns(run, monkeypatch):
         monkeypatch, run,
         "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: reading_lists.bookmark_id")
 
-    assert sent and not PRIVATE.search(sent[0]), sent
+    assert sent and not any(PRIVATE.search(query) for query in sent), sent
     assert "sqlalchemy.exc.IntegrityError" in sent[0] and "NOT NULL constraint failed" in sent[0]
 
 
@@ -152,9 +152,13 @@ def test_a_declared_package_spelled_like_a_route_s_noun_and_an_error_code_stay_i
     sent = _looked_up_for_a_stuck_fixer(
         monkeypatch, run, "Error: ERR_UNHANDLED_ERROR unhandled error in events 3.3.0 while saving a Bookmark")
 
-    assert sent and "events 3.3.0" in sent[0] and "ERR_UNHANDLED_ERROR" in sent[0], sent
-    assert not PRIVATE.search(sent[0])
-    assert [r["channel"] for r in _outbound(tmp_path / "data")] == ["lookup"]
+    # Several short queries now (plan HK.3(b)): the code with the library, then the message's own words.
+    assert sent and "ERR_UNHANDLED_ERROR" in sent[0] and "events" in sent[0], sent
+    assert any("events 3.3.0" in query for query in sent), sent
+    assert not any(PRIVATE.search(query) for query in sent), sent
+    records = _outbound(tmp_path / "data")
+    assert [r["sent"] for r in records if r["channel"] == "lookup"] == sent
+    assert {r["channel"] for r in records} <= {"lookup", "registry"} and not PRIVATE.search(json.dumps(records))
 
 
 def test_a_registry_is_never_asked_for_the_product_s_own_name(run):

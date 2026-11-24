@@ -116,7 +116,10 @@ def _the_error_line(defect: Any) -> str:
 _NOT_THE_PRODUCT_S_WORDS = re.compile(
     r"config\.webServer|Requests at the edges of the interface contract|A fix was tried and reverted"
     r"|The product does not start|The product did not start|the acceptance suite says|Distinct causes, most failing first"
-    r"|The unit tests fail\b|The server fails on a request it should|^\s*-\s*\[|^\s*Expected\b|^\s*assert\b",
+    r"|The unit tests fail\b|The server fails on a request it should|^\s*-\s*\[|^\s*Expected\b|^\s*assert\b"
+    # A line that counts the errors is a build's summary, not an error: measured on one run, a stuck Rust fix was
+    # searched as "error: could not compile `notes_api` (lib) due to 17 previous errors", the last line stated.
+    r"|\b\d+ (?:previous )?errors?\b",
     re.I)
 
 

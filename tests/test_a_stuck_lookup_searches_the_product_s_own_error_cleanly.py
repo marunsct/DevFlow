@@ -49,3 +49,13 @@ def test_an_emptied_quote_and_its_punctuation_are_dropped():
 
 def test_a_short_quoted_value_stays():
     assert cleaned("KeyError: 'id'") == "KeyError: 'id'"
+
+
+def test_a_build_s_summary_line_gives_way_to_its_first_error():
+    """Measured on one run: a stuck fix was searched as the compiler's closing count, the last line it stated."""
+    said = ("error[E0277]: the trait bound `fn(Path<u64>) -> Response: Handler<_, _>` is not satisfied\n"
+            "error: could not compile `notes_api` (lib) due to 17 previous errors; 1 warning emitted")
+
+    found = _error_of(said)
+
+    assert "E0277" in found and "previous errors" not in found

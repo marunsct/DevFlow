@@ -326,6 +326,9 @@ _FLAGS_WITH_A_VALUE = frozenset({
     "--groups", "--features", "-F", "--rename", "--branch", "--tag", "--rev", "--git", "--path", "--registry", "--index",
     "--index-url", "--extra-index-url", "--prefix", "-C", "--cwd", "--dir", "--directory", "--root", "--project",
     "--manifest-path", "--target", "--target-dir", "--python", "--filter", "--cache", "--cache-dir", "--config",
+    # An editable install names the project's own folder (or a source address), never a registry's package. Measured on
+    # one run: `pip install -e task-management-dashboard/backend[test]` was refused as a name the registry never had.
+    "-e", "--editable",
 })
 
 

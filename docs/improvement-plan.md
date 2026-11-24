@@ -86,6 +86,17 @@ Size S under a day, M a few days, L a week or more. "Proof" is the measurement t
 | WL.7 answer probe for every outside source in `loop.sh ready` (warning, not a block) and in the built-but-silent audit | the search died silently for a month | S | none | probe fails loudly on a blocked source | not built (nothing for searx or the new sources in scripts/loop) |
 WL.3-WL.7 are built (LF.1159, LF.1161, LF.1166, LF.1170, LF.1172, LF.1173). Next: one page reader for the agents' tool and the lookups, with the connection held to the checked address (building).
 
+### 3.1a Agents that work like a team: outside knowledge at fixed points of the work (HK, research 2026-11-24, awaiting the owner)
+Plan: `reports/research/2026-11-24-agents-that-work-like-a-team.md`. The harness runs a person's routines itself and hands each role a short checked note (the local model called offered web tools 0 times in 24 runs). Phase 1 bundle:
+| Item | Value | Size | Needs | Proof | Verified |
+|---|---|---|---|---|---|
+| HK.1 stack facts sheet (`.harness/stack-facts.json`): toolchain versions, each dependency's newest release that fits it, deprecated/yanked, every ecosystem | training-data defaults vs the real ecosystem (Rust 0/9 for days) | M | owner go-ahead | install failures by cause, never-built runs | not built |
+| HK.2 toolchain-fit check after the install resolves: a mismatch is a stated cause in the first minute | the general form of LF.1277 / NU1202 | S-M | HK.1 | first-minute cause on a version trap | not built |
+| HK.3 stuck lookup rebuilt: installed package first, short queries, the library's own tracker, the resolution read, ranked, condensed to cause/fix/versions/source, version-checked | 2 of 9 looked-up defects fixed today | M-L | owner | replay set; share closed by the next fix | not built |
+| HK.4 outcome records and a replay set of 15-25 past stuck defects | measures HK.3 without model runs | S-M | none | note names the known fix in >=60% | not built |
+| HK.5 one outbound gate for every outward query, the brief's own nouns removed, recorded on the run page | privacy for production | S | none | no private word leaves (test) | not built |
+Phases 2-3 (HK.6-HK.12: advisories and end-of-life, version-pinned API cards, stack-selection evidence, current security/testing guidance, product research, tools by measured tier, a production lookup service with shared public cache, single-flight, atomic per-tenant limits) are in the report.
+
 ### 3.2 Watch, try and steer a run (Appendix 11, WS). Nothing below is built except the pieces named.
 | Item | Value | Size | Needs | Proof | Verified |
 |---|---|---|---|---|---|
@@ -133,6 +144,7 @@ Checked: none of these has a module in src. Each is a candidate only if a measur
 ## 4. Waiting on the owner
 | Decision or action | What starts it |
 |---|---|
+| HK research decisions: a stale-knowledge trap benchmark family; whether "Always" stops offering web tool schemas to a model measured never to call them (HK.11); product research for the product manager (HK.10) at all; a paid search key for production's general-web fallback (HK.12) | the owner |
 | Set `NEAR_GREEN_REPLANNED_ONCE` off by default (it is on through `EXPERIMENTS_ON`; every measuring run is started with it off per run) | the owner's go-ahead |
 | Hosted-model test (owner approved Claude Haiku 5.5, $30, $8 per-run ceiling): enter the Anthropic key and judgement model on the admin Settings page | owner enters the key; then hybrid runs (judgement on Haiku, build local), then full-Haiku, until about $25 is spent. Also decides Rust routing and the strong-model arm of LEAN_PROMPTS_FOR_STRONG_MODELS |
 | Free Stack Apps key and a no-scope GitHub token on the admin page; optional Brave key | owner; starts WL.3 testing end to end |

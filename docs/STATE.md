@@ -80,6 +80,9 @@ Earlier runs (11-22 and before): `reports/product-reviews/`, `reports/status-boa
 - Each run's product review: `reports/product-reviews/`.
 
 ## Next actions
+0a. **HK plan, all phases (owner 23:45 JST 11-24):** `reports/research/2026-11-24-agents-that-work-like-a-team.md` - phase 1 building:
+   HK.5 outbound gate (LF.1291) and HK.1-HK.2 stack facts + toolchain-fit check (LF.1292-1293) in parallel; then HK.4 and HK.3; then
+   phase 2 (HK.6-HK.10) and phase 3 (HK.11-HK.12). Doubtful items behind switches, off until measured.
 0. **Scale review (owner 11-24): `reports/audits/2026-11-24-why-medium-briefs-fail.md`** - bundles 1 and 2 deployed; bundle 3 (input
    budget per request, sprint sizing, shared fixtures, deploy at a stage boundary) next. **Medium rerun live: run-c53e7bd2 ("Medium",
    `tests/brief_medium.md`, thorough, :1234, started 15:10 JST 11-24)** - the first thorough run on bundles 1-2. Owner to decide: a scored

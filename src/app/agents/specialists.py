@@ -74,13 +74,17 @@ _STAGE = "implementation"
 #: refuse - a write with no body, an id that is not a number, JSON that cannot be parsed - each costing fix rounds.
 #: And on five runs of five stacks the brief refused only an empty title, the specification gave the body as
 #: "string (required)", and every product also refused an empty body: a hidden test writing one failed (LF.1273).
+#: And a hidden test writing a 26,000-character body failed in 17 of 95 scored runs; on one the specification alone
+#: added "body max 10000 characters" and the product refused it with 400 (LF.1298).
 REFUSE_WHAT_IT_CANNOT_USE = (
     "A request the service cannot use - no body, a body that is not JSON, a field of the wrong type, an id that is "
     "not of the kind the route takes or names no record - is refused with a 4xx before anything is read or stored; "
     "such a request never makes the server fail. "
     "A text field that neither the brief nor the specification says must not be empty is kept when empty: an empty "
     "string there is stored and answered back as sent, never refused - \"required\" means the field is present, not "
-    "that it is non-empty."
+    "that it is non-empty. "
+    "A length limit the brief does not set is not added: a long text in a field the brief sets no maximum for is "
+    "stored and answered back whole, never refused."
 )
 
 

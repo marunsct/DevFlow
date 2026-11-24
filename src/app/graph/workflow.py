@@ -3284,13 +3284,15 @@ def _with_a_round_trip_defect(state: Any, test_result: Any, milestone: Any) -> A
 
     Measured: a service passed every hidden acceptance test and lost the hidden quality tests of a second delete
     answered 204 where the contract gives 404, and of a long body not read back as written; no probe asked either.
+    The brief decides which refusals of a long value are findings (LF.1298).
     """
     try:
         from app.acceptance import round_trip_probe
 
         if any(str(d.description or "").startswith(round_trip_probe.ROUND_TRIPS_FAILED) for d in test_result.defects):
             return test_result
-        found = round_trip_probe.round_trip_errors(state["repository"].root_path) or []
+        brief = str(getattr(state.get("document"), "text", "") or "")
+        found = round_trip_probe.round_trip_errors(state["repository"].root_path, brief or None) or []
         if not found:
             return test_result
         logger.warning("A green round's round-trip probe: %d round trip(s) did not read back as written", len(found))

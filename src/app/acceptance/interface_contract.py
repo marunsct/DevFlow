@@ -838,6 +838,15 @@ def fields_held_to_a_floor(texts: Any, names: Any) -> list[str]:
     if not wanted:
         return []
     found = set(fields_refused_when_empty([_without_quoted_sentences(str(t)) for t in texts or ()])) & set(wanted)
+    found |= set(_fields_a_rule_names(texts, wanted, _A_FLOOR))
+    return [n for n in wanted if n in found]
+
+
+def _fields_a_rule_names(texts: Any, wanted: list[str], rule: re.Pattern[str]) -> list[str]:
+    """Those of `wanted` whose own words in `texts` - up to the next field named in the same clause - match `rule`."""
+    if not wanted:
+        return []
+    found: set[str] = set()
     named = re.compile(r"(?<![\w-])(" + "|".join(re.escape(n) for n in sorted(wanted, key=len, reverse=True)) + r")(?![\w-])")
     for text in texts or ():
         # A quoted message is what a product says, not a rule: `{"error": "Title must not be empty"}` holds nothing.
@@ -850,9 +859,35 @@ def fields_held_to_a_floor(texts: Any, names: Any) -> list[str]:
                 while j < len(at) and _JOINED.match(clause[at[j - 1].end():at[j].start()]):
                     j += 1
                 end = len(clause) if j >= len(at) else at[j].start()
-                if _A_FLOOR.search(clause[at[j - 1].end():end]):
+                if rule.search(clause[at[j - 1].end():end]):
                     found.add(match.group(1))
     return [n for n in wanted if n in found]
+
+
+_A_LENGTH_UNIT = r"\s*(?:[\w-]+\s+)?(?:char|letter|byte|word|code\s*point)"
+#: A field held to a ceiling where a rule names it - a most length - in the words of a brief or its criteria ("title
+#: at most 200 characters", "max 500", "up to 10,000 characters", "1-200 characters", "maxLength: 200",
+#: "Field(max_length=200)", ".max(200)", "a body that is too long is refused").
+_A_CEILING = re.compile(
+    r"\bat\s+most\s+\d[\d,]*" + _A_LENGTH_UNIT + r"|\bup\s+to\s+\d[\d,]*" + _A_LENGTH_UNIT
+    + r"|\bno\s+(?:more|longer)\s+than\s+\d[\d,]*" + _A_LENGTH_UNIT
+    + r"|\b(?:fewer|less|longer|more)\s+than\s+\d[\d,]*" + _A_LENGTH_UNIT
+    + r"|\bexceed\w*\s+(?:the\s+)?\d[\d,]*" + _A_LENGTH_UNIT
+    + r"|\d[\d,]*\s*(?:char\w*|letters?|bytes?)\s*(?:or\s+(?:fewer|less)|max(?:imum)?\b|at\s+most|long\s+at\s+most)"
+    r"|\bmax(?:imum)?[\s_-]*length|\bmax(?:imum)?\b\.?\s*(?:of\s+|is\s+)?[:=(]?\s*\d"
+    r"|\blimit(?:ed)?\s+(?:of\s+|to\s+)?\d[\d,]*" + _A_LENGTH_UNIT
+    + r"|\b\d+\s*(?:-|–|to|\.\.)\s*\d[\d,]*" + _A_LENGTH_UNIT
+    + r"|\bbetween\s+\d+\s+and\s+\d[\d,]*" + _A_LENGTH_UNIT
+    + r"|\blength\s*(?:<=?|≤)\s*\d|\.max\(\s*\d|\btoo\s+long\b", re.I)
+
+
+def fields_held_to_a_ceiling(texts: Any, names: Any) -> list[str]:
+    """Those of `names` a rule in `texts` holds to a most length: "at most 200 characters", "max 500", "maxLength".
+
+    Read field by field as `fields_held_to_a_floor` reads a floor: "title at most 200 characters; body free" holds only
+    `title`, and fields named together share the rule that follows them.
+    """
+    return _fields_a_rule_names(texts, [str(n) for n in names or () if str(n)], _A_CEILING)
 
 
 def kept_empty_checks(checks: list[Check], bodies: list[Any], brief_texts: Any,
@@ -1652,10 +1687,26 @@ def emptied_field_description(accepted: list[tuple[Check, int]]) -> str:
 EMPTIED_FIELD_ACCEPTED = "A write accepts a field the specification refuses empty:"
 
 
-#: Where the brief's text is kept for the kept-when-empty probe asked again without it (settling, release).
+#: Where the brief's text is kept for the probes that read it (kept-when-empty, round trips) asked again without it
+#: (settling, release).
 KEPT_EMPTY_BRIEF = "interface_contract_kept_empty_brief"
 #: The brief is kept up to this many characters.
 _MOST_BRIEF_KEPT = 40_000
+
+
+def the_brief_kept(repo_root: str | Path, brief: str | None = None) -> str | None:
+    """The brief's text for a probe that reads it: `brief`, kept for the probe asked again without it (settling,
+    release); None reads what the last asking kept, and is None when nothing was kept."""
+    from app.acceptance import suite
+
+    state = suite._state(repo_root)  # noqa: SLF001 - one state file for the suite and its probes
+    if brief is None:
+        kept = state.get(KEPT_EMPTY_BRIEF)
+        return None if kept is None else str(kept)
+    if state.get(KEPT_EMPTY_BRIEF) != str(brief)[:_MOST_BRIEF_KEPT]:
+        state[KEPT_EMPTY_BRIEF] = str(brief)[:_MOST_BRIEF_KEPT]
+        suite._save_state(repo_root, state)  # noqa: SLF001
+    return str(brief)
 
 
 def kept_empty_errors(repo_root: str | Path, brief: str | None = None, *,
@@ -1672,14 +1723,9 @@ def kept_empty_errors(repo_root: str | Path, brief: str | None = None, *,
         from app.stacks import contract
 
         root = Path(repo_root)
-        state = suite._state(root)  # noqa: SLF001 - one state file for the suite and its probes
+        brief = the_brief_kept(root, brief)
         if brief is None:
-            brief = state.get(KEPT_EMPTY_BRIEF)
-            if brief is None:
-                return None
-        else:
-            state[KEPT_EMPTY_BRIEF] = str(brief)[:_MOST_BRIEF_KEPT]
-            suite._save_state(root, state)  # noqa: SLF001
+            return None
         try:
             specification = (root / "docs" / "technical_specification.md").read_text(encoding="utf-8", errors="replace")
         except OSError:

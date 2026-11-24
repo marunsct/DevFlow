@@ -3,7 +3,7 @@
 Measured: a notes service passed every hidden acceptance test and lost two hidden quality tests no harness probe
 asked - a record deleted a second time was answered 204 where the contract gives 404, and a long body of many lines
 was not read back as it was written. The round-trip probe asks both from the locked contract on every green round and
-again at release; a refusal of the long value is the product's choice and is never judged.
+again at release; a refusal of the long value is judged only from the brief (LF.1298; its own tests).
 """
 from __future__ import annotations
 

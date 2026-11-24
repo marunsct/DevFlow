@@ -30,3 +30,14 @@ def test_the_backend_role_is_told_a_field_the_brief_does_not_refuse_empty_is_kep
     assert rule in prompt
     assert "kept when empty" in rule and "never refused" in rule and '"required" means the field is present' in rule
     assert not BANNED.search(rule)
+
+
+def test_the_backend_role_is_told_a_length_limit_the_brief_does_not_set_is_not_added():
+    """LF.1298: a hidden test writing a 26,000-character body failed in 17 of 95 scored runs; on one the specification
+    alone added "body max 10000 characters" and the product refused the long body with 400."""
+    prompt = specialists._ROLE_DESCRIPTIONS["backend"]
+    rule = specialists.REFUSE_WHAT_IT_CANNOT_USE
+
+    assert rule in prompt
+    assert "length limit the brief does not set is not added" in rule and "never refused" in rule
+    assert not BANNED.search(rule)

@@ -11,8 +11,13 @@ value of one line. This probe holds the product to two round trips compiled from
   be a success nor a server error; the contract's `GET` of that record, when it has one, must not read it back.
 - kept whole: for the create line and the example body it takes, each free-text field (not an id, a secret, an
   address or a date) is sent `A_LONG_TEXT` - many lines of ordinary text, under common body-size limits - and the
-  record is read back through the contract's `GET` of one record, else its list. A refusal is the product's choice
-  and never judged; only a value accepted and read back otherwise, or a read that fails, is.
+  record is read back through the contract's `GET` of one record, else its list. A value accepted and read back
+  otherwise, or a read that fails, is a finding; so is a refusal (a 4xx but 401, 403, 413 and 429) of a field whose
+  plain example the create took, when neither the brief nor its criteria hold that field to a most length
+  (`interface_contract.fields_held_to_a_ceiling`). Measured (LF.1298): a hidden test writing a 26,000-character body
+  failed in 17 of 95 scored runs; on one the specification alone added "body max 10000 characters", the product
+  refused the long body with 400, and this probe skipped. A limit the specification adds is what it finds. With no
+  brief known, a refusal is not judged.
 
 Anything it cannot settle is skipped with its reason: no create line, no id in the answer, a sign-in answered first,
 nothing read back. A quality check, so always on: asked at a green round (`workflow`) and again at release
@@ -58,6 +63,9 @@ _NOT_FREE_TEXT = frozenset({
 })
 _WORDS = re.compile(r"[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z])")
 
+#: Refusals of a long value never judged: a sign-in asked first, a whole request too large, too many requests.
+REFUSAL_NOT_JUDGED = (401, 403, 413, 429)
+
 #: Why a test was skipped, as the coverage records it.
 TOOK_NO_EXAMPLE_BODY = "the create line took none of the example bodies"
 NO_FREE_TEXT = "the example body the create line took has no free-text field"
@@ -83,8 +91,13 @@ def _the_examples(bodies: list[Any]) -> list[dict[str, Any]]:
     return [b for b in bodies or [] if isinstance(b, dict) and b and not any(k in b for k in ic._SECRETS)]  # noqa: SLF001
 
 
-def round_trip_cases(lines: list[Any], bodies: list[Any]) -> tuple[list[dict[str, Any]], list[Any], list[tuple[str, str]]]:
-    """(the tests the probe runs, the contract lines they ask, each other line it considered and why it left it)."""
+def round_trip_cases(lines: list[Any], bodies: list[Any], brief_texts: Any = None,
+                     ) -> tuple[list[dict[str, Any]], list[Any], list[tuple[str, str]]]:
+    """(the tests the probe runs, the contract lines they ask, each other line it considered and why it left it).
+
+    `brief_texts` - the brief and its criteria - decide which refusals of a long value are findings: those of a field
+    no rule of theirs holds to a most length. None (no brief known) judges no refusal.
+    """
     from app.acceptance import concurrent_write_probe, edge_probe
     from app.acceptance import interface_contract as ic
 
@@ -139,6 +152,7 @@ def round_trip_cases(lines: list[Any], bodies: list[Any]) -> tuple[list[dict[str
         read = on_one.get(("GET", made_at))
         listed = lists.get(made_at, "")
         given = [{"body": b, "fields": fields} for b in examples if (fields := free_text_fields(b))]
+        held = ic.fields_held_to_a_ceiling(brief_texts, sorted({f for g in given for f in g["fields"]}))
         if not read and not listed:
             left.append((check.line, "no read of one record nor list on its path to read a long value back"))
             continue
@@ -149,7 +163,8 @@ def round_trip_cases(lines: list[Any], bodies: list[Any]) -> tuple[list[dict[str
                     "shown": check.path, "create": made_at, "given": given, "value": A_LONG_TEXT,
                     "parameter": read["parameter"] if read else concurrent_write_probe._the_id_name(check, lines),  # noqa: SLF001
                     "read": read["path"] if read else "", "read_before": read["before"] if read else "",
-                    "read_after": read["after"] if read else "", "list": "" if read else listed})
+                    "read_after": read["after"] if read else "", "list": "" if read else listed,
+                    "judge_refusal": brief_texts is not None, "held": held, "not_judged": list(REFUSAL_NOT_JUDGED)})
     return cases[:MOST_CASES], asked[:MOST_CASES], left
 
 
@@ -250,6 +265,10 @@ def _kept_whole(base_url, case, extra):
     value, lost, read_back = case["value"], [], 0
     for name in body["fields"]:
         status, raw = _ask(base_url, "POST", case["create"], {**body["body"], name: value}, extra)
+        if (case.get("judge_refusal") and 400 <= status < 500 and status not in case["not_judged"]
+                and name not in case["held"]):
+            lost.append({"field": name, "refused": status, "said": _said(raw)})
+            continue
         made = _id_of(_json(raw), case["parameter"]) if 200 <= status < 300 else None
         if made is None:
             continue
@@ -370,6 +389,11 @@ async function keptWhole(request, c, headers) {
   let readBackCount = 0;
   for (const name of body.fields) {
     const made = await ask(request, 'POST', c.create, { ...body.body, [name]: value }, headers);
+    if (c.judge_refusal && made.status >= 400 && made.status < 500 && !c.not_judged.includes(made.status)
+        && !c.held.includes(name)) {
+      lost.push({ field: name, refused: made.status, said: said(made.text) });
+      continue;
+    }
     const id = ok(made.status) ? idOf(parsed(made.text), c.parameter) : null;
     if (id === null) continue;
     const back = await readBack(request, c, id, headers);
@@ -436,8 +460,13 @@ def the_case_of(test: Any, cases: list[dict[str, Any]]) -> dict[str, Any] | None
     return cases[int(number.group(1)) - 1] if number and 0 < int(number.group(1)) <= len(cases) else None
 
 
-def round_trip_errors(repo_root: str | Path, *, runner: Any = None) -> list[tuple[dict[str, Any], dict[str, Any]]] | None:
-    """Each case the product failed, with what the probe found; None when the probe cannot run. Never raises."""
+def round_trip_errors(repo_root: str | Path, brief: str | None = None, *,
+                      runner: Any = None) -> list[tuple[dict[str, Any], dict[str, Any]]] | None:
+    """Each case the product failed, with what the probe found; None when the probe cannot run. Never raises.
+
+    `brief` is the brief's text, kept for the probe asked again without it (`interface_contract.the_brief_kept`);
+    None reads what the last asking kept. With no brief known, a refusal of a long value is not judged.
+    """
     try:
         from app.acceptance import interface_contract as ic
         from app.acceptance import probe_coverage, suite
@@ -446,7 +475,9 @@ def round_trip_errors(repo_root: str | Path, *, runner: Any = None) -> list[tupl
         root = Path(repo_root)
         bodies = ic.bodies_for_the_probes(root)
         lines = ic.the_locked_contract(root)[:ic.MOST_CHECKS]
-        cases, asked, left = round_trip_cases(lines, bodies)
+        kept = ic.the_brief_kept(root, brief)
+        texts = None if kept is None else [kept, *(c.text for c in suite.criteria(root))]
+        cases, asked, left = round_trip_cases(lines, bodies, texts)
         found = contract.the_pack(root)
         name = found[0].probe_runner if found else ""
         probe = ic.PROBE_RUNNERS.get(name)
@@ -511,6 +542,11 @@ def what_came_back(case: dict[str, Any], found: dict[str, Any]) -> str:
     sent = f"{found.get('sent_length')} characters over {found.get('sent_lines')} lines"
     each = []
     for lost in (found.get("lost") or [])[:MOST_FIELDS]:
+        if "refused" in lost:
+            said = f" (it said: {what_went_wrong.the_page_in_words(lost['said'])})" if lost.get("said") else ""
+            each.append(f"`{lost.get('field')}` sent as {sent} was refused with {lost.get('refused')}{said}; the brief "
+                        f"sets no maximum length for `{lost.get('field')}`, so a value that long is kept whole")
+            continue
         made = f"`{lost.get('field')}` sent as {sent} was accepted with {lost.get('created')}"
         read = f"`GET {case.get('read') or case.get('list')}`"
         if "kept_length" not in lost:
@@ -528,8 +564,9 @@ def round_trip_description(found: list[tuple[dict[str, Any], dict[str, Any]]]) -
     return (
         f"{ROUND_TRIPS_FAILED} {each}. Deleting a record that is no longer there answers the contract's not-found "
         "status, and a deleted record is no longer read back. A text field is stored whole - every character and line "
-        "break as it was sent, with no length cut the specification does not state - and read back exactly; a limit "
-        "the specification states is a refusal (400, 413 or 422), never a value cut short."
+        "break as it was sent, with no length limit the brief does not set - and read back exactly; a limit the brief "
+        "sets is a refusal (400, 413 or 422), never a value cut short, and a limit only the specification adds is "
+        "taken out."
     )
 
 
@@ -558,7 +595,8 @@ def a_defect(found: list[tuple[dict[str, Any], dict[str, Any]]], owner: str) -> 
              "send `POST " + case["shown"] + "` with a text of many lines in a field, then read the record back")
             for case, _ in found[:6]),
         expected_behavior=("the second delete answers the contract's not-found status and the record is no longer "
-                           "read; a text accepted is read back exactly as it was sent"),
+                           "read; a long text the brief sets no limit on is taken, and a text taken is read back "
+                           "exactly as it was sent"),
         actual_behavior="; ".join(f"{_the_request(case)}: {what_came_back(case, f)}" for case, f in found[:6]),
         affected_files=[],
         owner=owner,

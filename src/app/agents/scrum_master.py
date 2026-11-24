@@ -403,6 +403,174 @@ def with_capped_sprint_count(plan: Any, criteria_count: int, *, fast: bool = Fal
     return plan.model_copy(update=update_dict), folded
 
 
+#: The most criteria one sprint holds when the delivery allows more than one sprint (LF.1315). The count cap
+#: (`max_sprints_for_criteria_count`) already means about five a sprint at its own steps - 10 criteria in 2
+#: sprints, 15 in 3 - and the medium-brief audit (reports/audits/2026-11-24-why-medium-briefs-fail.md, item 3.3)
+#: sized sprints at about six. Six leaves one of slack, so a plan the cap accepts at those steps is never refused,
+#: while a sprint of 13 criteria and 53 tests - the shape the first medium run failed on - is. Where the allowed
+#: sprints cannot hold the criteria six at a time, the limit is the even share instead (`most_criteria_a_sprint`).
+MOST_CRITERIA_PER_SPRINT = 6
+
+
+def most_criteria_a_sprint(criteria_count: int, *, fast: bool = False) -> int | None:
+    """The most criteria one sprint may hold, or None where the delivery allows a single sprint (no limit then).
+
+    Fast delivery's one sprint for up to 20 criteria is left as it is. Where the allowed sprints cannot hold them
+    six at a time - fast delivery's 2 sprints for 30 criteria - the limit is the even share, so a plan can meet it.
+    """
+    most = max_sprints_for_criteria_count(criteria_count, fast=fast)
+    if most <= 1:
+        return None
+    return max(MOST_CRITERIA_PER_SPRINT, -(-criteria_count // most))
+
+
+def sprints_not_sized_by_work(plan: Any, criteria_count: int, *, fast: bool = False) -> list[str]:
+    """One line per sprint that holds more criteria than `most_criteria_a_sprint`, or none at all; [] when sized.
+
+    Measured on a medium brief in thorough delivery, 13 criteria and up to 3 sprints allowed: the plan put every
+    criterion in sprint 1 and none in sprint 2. Per-sprint locking and per-sprint gates give nothing then: the first
+    sprint is the whole product, and the second has nothing the suite can measure.
+    """
+    limit = most_criteria_a_sprint(criteria_count, fast=fast)
+    sprints = list(getattr(plan, "sprints", None) or [])
+    held = [list(getattr(sprint, "criteria", None) or []) for sprint in sprints]
+    if limit is None or not any(held):
+        return []
+    notes: list[str] = []
+    for number, ids in enumerate(held, 1):
+        if len(ids) > limit:
+            notes.append(
+                f"Sprint {number} holds {len(ids)} criteria ({', '.join(ids)}); a sprint holds at most {limit}."
+            )
+        elif not ids:
+            notes.append(f"Sprint {number} holds no criterion; every sprint makes at least one pass.")
+    return notes
+
+
+def _ids_an_item_names(item: Any, known: list[str]) -> list[str]:
+    from app.acceptance.junit import tags_in
+
+    ids = [tag for tag in tags_in(str(item)) if tag in known]
+    if not ids:
+        bare = _as_a_criterion_id(item, known)
+        ids = [bare] if bare in known else []
+    return ids
+
+
+def _what_goes_with(
+    sprint: Any, moved: list[str], kept: list[str], texts: dict[str, str],
+) -> dict[str, tuple[list[str], list[str]]]:
+    """For each field that describes a sprint's criteria: (the items that go with `moved`, the items that stay).
+
+    An item goes when every criterion it names is moved, or, naming none, when its words meet a moved criterion's
+    and no kept one's. An item that serves both stays: it is built where the earlier criterion needs it.
+    """
+    known = [*moved, *kept]
+    moved_words = set().union(*(_topics(texts.get(item, "")) for item in moved)) if moved else set()
+    kept_words = set().union(*(_topics(texts.get(item, "")) for item in kept)) if kept else set()
+    split: dict[str, tuple[list[str], list[str]]] = {}
+    for field in ("in_scope", "acceptance_criteria", "test_strategy"):
+        going: list[str] = []
+        staying: list[str] = []
+        for item in getattr(sprint, field, None) or []:
+            named = _ids_an_item_names(item, known)
+            words = _topics(str(item))
+            goes = (
+                all(tag in moved for tag in named) if named
+                else bool(words & moved_words) and not words & kept_words
+            )
+            (going if goes else staying).append(item)
+        split[field] = (going, staying)
+    return split
+
+
+def with_sprints_sized_by_work(
+    plan: Any, criteria_count: int, *, fast: bool = False, texts: dict[str, str] | None = None,
+) -> tuple[Any, list[str]]:
+    """`plan` with no sprint over `most_criteria_a_sprint` and none empty, and one line per change made.
+
+    The harness's own answer to a plan still not sized after it was sent back once. In plan order, the criteria past
+    an overloaded sprint's share move to the front of the next sprint - one is added after the last, up to the
+    allowed sprints - with the scope, acceptance criteria and test strategy items that describe only them. Criteria
+    only ever move later and keep their order, so what a criterion needs is still built no later than its sprint. A
+    sprint left with no criterion is folded into the next one (the last into the one before), and sprint numbers in
+    dependencies and coverage lines follow. A plan already sized is returned as it came.
+    """
+    if not sprints_not_sized_by_work(plan, criteria_count, fast=fast):
+        return plan, []
+    texts = dict(texts or {})
+    limit = most_criteria_a_sprint(criteria_count, fast=fast) or MOST_CRITERIA_PER_SPRINT
+    most_sprints = max_sprints_for_criteria_count(criteria_count, fast=fast)
+    sprints = list(plan.sprints)
+    total = sum(len(getattr(sprint, "criteria", None) or []) for sprint in sprints)
+    # The even share over the sprints the criteria need, so a split sprint is not left at six beside one of one.
+    needed = min(most_sprints, max(1, -(-total // limit)))
+    share = max(1, -(-total // needed))
+    coverage = list(getattr(plan, "success_measure_coverage", None) or [])
+    notes: list[str] = []
+    index = 0
+    while index < len(sprints):
+        sprint = sprints[index]
+        ids = list(sprint.criteria)
+        if len(ids) <= limit:
+            index += 1
+            continue
+        if index + 1 == len(sprints):
+            if len(sprints) >= most_sprints:
+                notes.append(f"sprint {index + 1} keeps {len(ids)} criteria: no further sprint is allowed")
+                break
+            sprints.append(type(sprint)(
+                goal=f"Continue sprint {index + 1}: " + "; ".join(
+                    texts.get(item, item) for item in ids[share:]
+                )[:400],
+                user_value=sprint.user_value,
+                dependencies=[f"Sprint {index + 1}"],
+            ))
+        kept, moved = ids[:share], ids[share:]
+        nxt = sprints[index + 1]
+        split = _what_goes_with(sprint, moved, kept, texts)
+        sprints[index] = sprint.model_copy(update={
+            "criteria": kept, **{field: staying for field, (_, staying) in split.items()},
+        })
+        sprints[index + 1] = nxt.model_copy(update={
+            "criteria": [*moved, *nxt.criteria],
+            **{field: [*going, *(item for item in getattr(nxt, field) if item not in going)]
+               for field, (going, _) in split.items()},
+        })
+        notes.append(f"{', '.join(moved)} moved from sprint {index + 1} to sprint {index + 2}")
+        index += 1
+    # Folded from the end, so the numbers of the sprints still to look at do not change.
+    for index in range(len(sprints) - 1, -1, -1):
+        if sprints[index].criteria or len(sprints) == 1:
+            continue
+        gone = sprints.pop(index)
+        into = index if index < len(sprints) else index - 1
+        target = sprints[into]
+        sprints[into] = target.model_copy(update={
+            field: list(dict.fromkeys(
+                [*getattr(gone, field), *getattr(target, field)] if into == index
+                else [*getattr(target, field), *getattr(gone, field)]
+            ))
+            for field in ("in_scope", "acceptance_criteria", "test_strategy", "security_checks",
+                          "documentation_work", "risks")
+        })
+        # Into the next sprint: it takes the folded sprint's number. Into the one before: so does every reference.
+        removed = index + 1 if into == index else index
+        renumber = (lambda text, k=removed: _renumbered(text, k))
+        sprints = [
+            each.model_copy(update={"dependencies": list(dict.fromkeys(
+                item for item in map(renumber, each.dependencies)
+                if position not in [int(n) for n in _NAMES_A_SPRINT.findall(item)]
+            ))})
+            for position, each in enumerate(sprints, 1)
+        ]
+        coverage = [renumber(line) for line in coverage]
+        notes.append(f"sprint {index + 1}, with no criterion, folded into sprint {into + 1}")
+    update: dict[str, Any] = {"sprints": sprints}
+    if hasattr(plan, "success_measure_coverage"):
+        update["success_measure_coverage"] = coverage
+    return plan.model_copy(update=update), notes
+
 
 #: Why a plan is the harness's, as its decision and its gap say.
 THE_HARNESS_S_PLAN = "one sprint for every criterion, written by the harness"
@@ -526,6 +694,7 @@ def build_sprint_planning_request(
     gaps: list[Any] | None = None,
     acceptance_criteria: str = "",
     built_ahead: list[str] | None = None,
+    unsized: list[str] | None = None,
 ) -> dict[str, list[dict[str, str]]]:
     """Build the Deep Agent input from the approved technical specification.
 
@@ -542,7 +711,9 @@ def build_sprint_planning_request(
     each; `gaps` are the numbers a previous attempt left unassigned. See
     `unaccounted_success_measures`. `built_ahead` is what a previous attempt's
     scope built before the sprint whose criteria need it - see
-    `scope_a_later_sprint_delivers`.
+    `scope_a_later_sprint_delivers`. `unsized` is what a previous attempt's
+    sprints held over the size limit, or that one held no criterion - see
+    `sprints_not_sized_by_work`.
     """
     from app.agents.text_budget import excerpt, specification_budget
 
@@ -557,6 +728,7 @@ def build_sprint_planning_request(
         + _the_success_measures(list(success_measures or []), list(gaps or []))
         + _the_acceptance_criteria(acceptance_criteria)
         + _built_ahead(list(built_ahead or []))
+        + _not_sized_by_work(list(unsized or []))
         + PLANNED_PROJECT_DIRECTORY
     )
     return {"messages": [{"role": "user", "content": brief}]}
@@ -598,10 +770,15 @@ def _how_many_sprints(criteria: str) -> str:
     # The same limit the plan is cut by (`with_capped_sprint_count`, given `delivery.fast()`): measured over 30 runs,
     # the request said 3 or 4 sprints, fast delivery then cut 26 plans to 1 after 494k tokens of planning.
     most = max_sprints_for_criteria_count(count, fast=delivery.fast())
+    # Sized by work too where more than one sprint is allowed (LF.1315): see `sprints_not_sized_by_work`.
+    limit = most_criteria_a_sprint(count, fast=delivery.fast())
     return (
         f"Plan at most {most} sprint{'s' if most > 1 else ''} for these {count} criteria - fewer "
         f"when the work is small. A plan with more is cut back to {most}, its later sprints "
-        "folded into the last.\n\n"
+        "folded into the last."
+        + (f" No sprint holds more than {limit} criteria, and every sprint holds at least one."
+           if limit is not None else "")
+        + "\n\n"
     )
 
 
@@ -765,6 +942,20 @@ def _built_ahead(notes: list[str]) -> str:
         "whose criteria need it, or with those criteria moved into the earlier sprint "
         "together with the work. A sprint's scope builds its own criteria and nothing "
         "a later sprint delivers.\n\n"
+    )
+
+
+def _not_sized_by_work(notes: list[str]) -> str:
+    """The section asking for sprints sized by their criteria, or ""."""
+    if not notes:
+        return ""
+    return (
+        "YOUR LAST PLAN'S SPRINTS WERE NOT SIZED BY THEIR WORK:\n"
+        + "\n".join(f"- {note}" for note in notes)
+        + "\nReturn the complete plan again with the criteria spread over the sprints in the order "
+        "they are built: no sprint over the limit named above, at least one criterion in every sprint, "
+        "and what a criterion needs built no later than its own sprint. A plan still over the limit is "
+        "split by the workflow, in plan order.\n\n"
     )
 
 
@@ -948,6 +1139,10 @@ __all__ = [
     "SprintPlanOutput",
     "build_sprint_planning_request",
     "create_scrum_master_agent",
+    "MOST_CRITERIA_PER_SPRINT",
     "max_sprints_for_criteria_count",
+    "most_criteria_a_sprint",
+    "sprints_not_sized_by_work",
+    "with_sprints_sized_by_work",
     "with_capped_sprint_count",
 ]

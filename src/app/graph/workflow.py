@@ -543,6 +543,9 @@ class WorkflowGraphState(TypedDict, total=False):
     # `capabilities_the_plan_never_names`.
     sprint_plan_gaps: list[dict[str, Any]]
     sprint_plan_built_ahead: list[str]
+    # What a sprint plan's sprints held over the size limit, or that one held no criterion, carried into the one
+    # re-plan that asks for sprints sized by work. See `scrum_master.sprints_not_sized_by_work` (LF.1315).
+    sprint_plan_unsized: list[str]
     current_sprint_index: int
     # Every attempt at every sprint, oldest first, each one a mapping of the
     # shape `sprint_summary.render_sprint_summary` documents. A sprint that

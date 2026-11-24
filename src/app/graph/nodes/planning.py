@@ -376,6 +376,7 @@ def scrum_master_node(state: WorkflowGraphState, config: RunnableConfig, ctx: Gr
     measures = _what_the_sprints_must_deliver(state.get("product_intake"))
     gaps_already_asked_about = list(state.get("sprint_plan_gaps") or [])
     built_ahead_asked_about = list(state.get("sprint_plan_built_ahead") or [])
+    unsized_asked_about = list(state.get("sprint_plan_unsized") or [])
     from app.acceptance import by_sprint
     from app.acceptance import suite as acceptance_suite
     from app.acceptance.requests import criteria_text as numbered_criteria
@@ -393,6 +394,7 @@ def scrum_master_node(state: WorkflowGraphState, config: RunnableConfig, ctx: Gr
             else ""
         ),
         built_ahead=built_ahead_asked_about,
+        unsized=unsized_asked_about,
     )
     from app.agents.specification_rulings import with_the_rulings
 
@@ -417,6 +419,8 @@ def scrum_master_node(state: WorkflowGraphState, config: RunnableConfig, ctx: Gr
         )
     except StageGaveNoAnswer as gave_none:
         update = _the_harness_s_sprint_plan(state, measures, root_path, str(gave_none))
+        # The planner spent every way to answer: its plan is sized here, never sent back to it.
+        unsized_asked_about = unsized_asked_about or ["the harness wrote the plan"]
     if not _hand_back(update, "sprint_plan"):
         earlier = state.get("sprint_plan") if gaps_already_asked_about else None
         if earlier is not None and how_much_a_plan_leaves_out(
@@ -530,6 +534,29 @@ def scrum_master_node(state: WorkflowGraphState, config: RunnableConfig, ctx: Gr
         assignment_notes = [*assignment_notes, *moved]
         if assignment_notes:
             logger.info("Sprint plan's criteria adjusted: %s", "; ".join(assignment_notes))
+        # Sprints sized by work (LF.1315): a sprint over the limit, or one with no criterion, is sent back once with
+        # the reason; a second such plan is split by the harness in plan order. A delivery that allows one sprint
+        # has no limit. See `sprints_not_sized_by_work`.
+        from app.agents.scrum_master import (
+            most_criteria_a_sprint, sprints_not_sized_by_work, with_sprints_sized_by_work,
+        )
+
+        unsized = sprints_not_sized_by_work(update["sprint_plan"], criteria_count, fast=delivery.fast())
+        if unsized and not unsized_asked_about:
+            logger.warning("Sprint plan's sprints are not sized by work; asking once more: %s", unsized)
+            return _handing_on(
+                stage="scrum_master",
+                sprint_plan_unsized=unsized,
+                sprint_plan=update["sprint_plan"],
+            )
+        split: list[str] = []
+        if unsized:
+            update["sprint_plan"], split = with_sprints_sized_by_work(
+                update["sprint_plan"], criteria_count, fast=delivery.fast(),
+                texts={c.id: c.text for c in numbered},
+            )
+            logger.warning("Sprint plan still not sized by work; split by the harness: %s", "; ".join(split))
+        update["sprint_plan_unsized"] = []
         # Once, as for the success measures: a sprint whose scope builds a
         # later sprint's criteria has its lead write work orders for them
         # and its builders build every sprint in the first. See
@@ -566,6 +593,8 @@ def scrum_master_node(state: WorkflowGraphState, config: RunnableConfig, ctx: Gr
                 "Planned by the scrum master"
                 + (f"; still unassigned after one re-plan: {missing}" if missing else
                    "; every success measure is assigned a sprint")
+                + (f"; sprints split by the harness to at most {most_criteria_a_sprint(criteria_count, fast=delivery.fast())} "
+                   f"criteria each: {'; '.join(split)}" if split else "")
                 + "."
             )[:1500],
         )

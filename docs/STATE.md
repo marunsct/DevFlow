@@ -54,15 +54,15 @@ Earlier runs (11-22 and before): `reports/product-reviews/`, `reports/status-boa
 - **LF.1280-1281 deployed 18:26 JST (the Rust service pack scaffolds):** axum's `JsonRejection` path; and the general answer - a Rust import the crate does not
   have is answered from the crate's own source (`analysis/rust_crate_exports.py`: where the name is public, or the nearest names).
 - **LF.1282 deployed 19:25 JST** - a forward repair may rewrite the file the start's error names, not only the fix's own.
-- **Held for the medium run's next boundary (pushed, suite green): LF.1283** - a field's name read as a message ("request body") or a
-  quoted sentence no longer holds it to a floor (the kept-when-empty probe asked nothing on Hono).
+- **LF.1283-1285 deployed 21:09 JST:** a message's body or a quoted answer no longer holds a field to a floor (the kept-when-empty
+  probe asked nothing on Hono); a review holds the files it judges in its memory, in any language, and a summary names what was read.
 - **`REQUEST_BUDGET_FOR_EVERY_STAGE` ON for the medium rerun only, from 19:16 JST** (`docs/measuring.md` M17): its code review re-read
   19 files 6-8 times each over 20 minutes; every other run keeps it off.
 - **`REPLY_ROOM_SIZED_PER_ROLE` ON for the medium rerun only, from 19:47 JST:** its security review was summarised after nearly every
   batch of six reads (155 reads of 21 files, 34 calls) even with the memory cut; a review's short reply needs less than the 32K kept.
   **Found since (design review `reports/audits/2026-11-24-review-stages-reread-loop.md`):** neither switch touches the loop - the summary
-  trigger never counts the memory, and doubled review rows hit the 32K cap. Building: LF.1284-1285, a review's files held in its
-  memory (any language - the security review showed no source for Go/Rust/Java) and a summary that names what was read.
+  trigger never counts the memory, and doubled review rows hit the 32K cap. LF.1284-1285 (deployed 21:09) is the fix; judged on
+  the medium run's sprint 2 reviews by `loop.sh effects` (target: at most 1.2 reads a file, no summary in a review).
 - Scored 2026-11-24: **notes-api-hono 11 (9/9, 8/8; delivered, about 51 min active; the empty body kept - LF.1283 for the probe that asked nothing)**, **notes-api-rust 3 (9/9, 8/8; delivered, 74 min - the first local Rust pass, after LF.1277; three fixes reverted, LF.1282)**, **notes-api-rust 2 (0/9, 0/8; failed: never built - rustc 1.85 vs newer crates, then sqlx macros and three one-line faults, LF.1277-1279)**, **notes-api-js 1 (9/9, 7/8; delivered, 50 min, mixed; an empty body refused - the fifth family with that loss, LF.1273 building)**, **web-todo 6 (10/10, 6/6; delivered, 57 min, mixed; a unit test set aside, the sprint accepted at an escalation)**, **textkit-lib 9 (8/8, 7/7; delivered in 18 min)**, **notes-api-go 13 (9/9, 7/8; not deliverable: a false check finding kept a right suite in repair until the budget ran out - LF.1256/1267)**,
   **notes-api-java 11 (9/9, 8/8; delivered with cuts: AC-18; the :8888 server was down 6 h 47 min)**, **wordstats-cli 7 (6/8, 6/6; delivered, 36 min; "The 3" where words are compared in lower case - LF.1255)**,
   **notes-api-ruby 6 (9/9, 6/8; delivered, 72 min; delete-twice and a long body lost - LF.1254 building)**,

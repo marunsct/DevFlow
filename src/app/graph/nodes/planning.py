@@ -353,6 +353,7 @@ def scrum_master_node(state: WorkflowGraphState, config: RunnableConfig, ctx: Gr
     measures = _what_the_sprints_must_deliver(state.get("product_intake"))
     gaps_already_asked_about = list(state.get("sprint_plan_gaps") or [])
     built_ahead_asked_about = list(state.get("sprint_plan_built_ahead") or [])
+    from app.acceptance import by_sprint
     from app.acceptance import suite as acceptance_suite
     from app.acceptance.requests import criteria_text as numbered_criteria
 
@@ -364,7 +365,8 @@ def scrum_master_node(state: WorkflowGraphState, config: RunnableConfig, ctx: Gr
         gaps=gaps_already_asked_about,
         acceptance_criteria=(
             numbered_criteria(acceptance_suite.criteria(root_path), acceptance_suite.deferred(root_path))
-            if acceptance_suite.is_locked(root_path)
+            # Written a sprint at a time, the suite is planned before any test is written (LF.1266).
+            if acceptance_suite.is_locked(root_path) or by_sprint.is_on(root_path)
             else ""
         ),
         built_ahead=built_ahead_asked_about,
@@ -552,4 +554,9 @@ def scrum_master_node(state: WorkflowGraphState, config: RunnableConfig, ctx: Gr
         from app.graph.workflow import SPRINT_PLAN_REVIEW, _review_enabled
 
         update = plan_gate.after_the_plan(update, _review_enabled(state, SPRINT_PLAN_REVIEW), bool(owners_changes))
+        if update.get("stage") == "technical_lead":
+            # Sprint 1's tests are written first where the suite is written a sprint at a time (LF.1266).
+            from app.graph.acceptance_nodes import before_the_lead
+
+            update["stage"] = before_the_lead(state)
     return update

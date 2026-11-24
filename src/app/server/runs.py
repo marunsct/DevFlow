@@ -2047,6 +2047,7 @@ _WIZARD_STAGE_COPY: dict[str, tuple[str, str]] = {
     "user_review_specification": ("Your review", "Paused for you to read the technical plan and say whether to continue."),
     "scrum_master": ("Planning the work", "Splitting the design into sprints small enough to build one at a time."),
     "user_review_sprint_plan": ("Your go", "The sprint plan waits for your go or your direction; with no answer it goes on by itself."),
+    "sprint_acceptance": ("Writing this sprint's acceptance tests", "Writing and locking the tests of this sprint's criteria before it is built."),
     "technical_lead": ("Setting up the next chunk", "Picking what to build first and breaking it into individual tasks."),
     "specialist_dispatch": ("Building it", "Writing the actual code and tests for this piece of the product."),
     "test_and_triage": ("Testing", "Running the tests and writing down anything that failed."),

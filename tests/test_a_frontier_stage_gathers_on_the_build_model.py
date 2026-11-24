@@ -186,7 +186,7 @@ def test_fast_delivery_keeps_the_specification_and_reviews_on_the_frontier_and_m
 
 @pytest.mark.parametrize("fast", [True, False], ids=["fast", "not-fast"])
 def test_the_testing_author_moves_to_the_build_model_in_fast_delivery(fast, tmp_path, monkeypatch):
-    from workflow_node_stubs import run_node
+    from workflow_node_stubs import one_sprint, run_node
 
     _on_two_models(monkeypatch, fast)
     built = []
@@ -197,6 +197,8 @@ def test_the_testing_author_moves_to_the_build_model_in_fast_delivery(fast, tmp_
 
     run_node(monkeypatch, tmp_path, "acceptance_author", two_models=True,
              overrides={"app.agents.specialists.create_specialist_agent": testing_agent},
+             # Planned: a product thorough delivery may split into sprints has its plan before its tests (LF.1266).
+             sprint_plan=one_sprint(),
              document=SimpleNamespace(text="# Brief\n## Features\n- Add a note\n- Delete a note\n"))
 
     assert built == [("testing", "build" if fast else "judge")]

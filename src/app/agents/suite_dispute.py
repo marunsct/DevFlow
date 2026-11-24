@@ -155,6 +155,14 @@ structured_verdict_switch = _StructuredDisputeVerdict()
 
 from app.agents.brief_over_spec import QA_RULE  # the rule the suite's writer was given
 
+#: What decides what a test may expect; the writers of a later sprint's tests are told it too (`by_sprint.note`).
+THE_PRODUCT_S_CODE_IS_NOT_THE_STANDARD = (
+    "The product's code is not the standard: what "
+    "it renders, returns or lacks says nothing about whether a test is right, so never open "
+    "the product's files, even one a test imports, to decide what a test may expect - the criterion and the brief decide, "
+    "and the specification only what the brief leaves open."
+)
+
 _SYSTEM_PROMPT = (
     "You are the QA lead. The acceptance suite you approved is locked: it is the definition "
     "of done, and only QA may change it. A sprint's attempt has failed, and some locked tests "
@@ -165,10 +173,7 @@ _SYSTEM_PROMPT = (
     "records than it created, a state it never brought about, a way of picking out its own records that "
     "does not match every record it made), or it asks for something the "
     "criterion and the brief do not. A test the product fails because the product is wrong is "
-    "not named: that is the product's to fix. The product's code is not the standard: what "
-    "it renders, returns or lacks says nothing about whether a test is right, so never open "
-    "the product's files, even one a test imports, to decide what a test may expect - the criterion and the brief decide, "
-    "and the specification only what the brief leaves open. "
+    "not named: that is the product's to fix. " + THE_PRODUCT_S_CODE_IS_NOT_THE_STANDARD + " "
     + QA_RULE.lstrip("- ").strip() + " "
     "An empty answer is a good answer. You write no code and no files."
     "\n\n" + STRUCTURED_RESPONSE_RULE

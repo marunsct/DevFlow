@@ -336,9 +336,15 @@ def coverage(repo_root: str | Path) -> dict[str, list[str]]:
 
 
 def gaps(repo_root: str | Path) -> list[str]:
-    """Problems with the suite as written: criteria nothing tests, ids nothing defines."""
+    """Problems with the suite as written: criteria nothing tests, ids nothing defines.
+
+    A criterion whose sprint has not started is not yet due, so its missing test is no gap: where the suite is written
+    a sprint at a time it is written at that sprint's start (LF.1266). The release records everything due.
+    """
     known = {c.id for c in criteria(repo_root)}
-    excused = set(deferred(repo_root))
+    from app.acceptance import sprint_scope
+
+    excused = set(deferred(repo_root)) | set(sprint_scope.not_yet_due(repo_root))
     covered = coverage(repo_root)
     problems = [
         f"{c.id} (\"{c.text}\") has no test whose name carries `{c.id}`. "
@@ -379,7 +385,8 @@ def lock(repo_root: str | Path) -> dict[str, str]:
     state["lock"] = checksums
     state["lock_version"] = _keep_this_version(root, snapshot, before)
     # The repair's record goes with the repair (`suite_repair`), and so do the stores it replaced.
-    for key in ("repairing", "before_repair", "repair_bodies", "repair_best", *ONCE_AT_THE_LIMIT):
+    # So does a sprint's addition (`by_sprint`): this version is the base the next one adds to.
+    for key in ("repairing", "before_repair", "repair_bodies", "repair_best", "adding", *ONCE_AT_THE_LIMIT):
         state.pop(key, None)
     (root / BEFORE_THE_SEND_BACK).unlink(missing_ok=True)
     _save_state(repo_root, state)

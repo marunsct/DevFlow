@@ -123,6 +123,7 @@ def test_the_acceptance_author_is_told_the_ruling(tmp_path, on, monkeypatch):
 
     monkeypatch.setattr(workflow, "_run_gated_agent", gated)
     monkeypatch.setattr(specialists, "create_specialist_agent", lambda *a, **k: object())
+    monkeypatch.setenv("DELIVERY_MODE", "fast")  # one criterion: one sprint, the suite written before the plan
     context = SimpleNamespace(model=None, judgement_model=None, checkpointer=None, repo_root=str(tmp_path), allow_subdirectories=True)
     acceptance_nodes.acceptance_author(_stuck(tmp_path), {}, context)
     assert f'"{SAYS_JSON}" stands' in asked["messages"][-1]["content"]

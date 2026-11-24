@@ -256,6 +256,12 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         back_to_qa = naming_back_to_qa(state)
         if back_to_qa is not None:
             return back_to_qa
+        # Written a sprint at a time, every criterion has locked tests by now or is named as a gap (LF.1266).
+        from app.graph.acceptance_nodes import the_rest_written_before_the_release
+
+        the_rest = the_rest_written_before_the_release(state)
+        if the_rest is not None:
+            return the_rest
         # One last try at each deferred criterion with a locked test, before the suite decides (deep review F3).
         from app.graph import last_try_on_deferred
 

@@ -2,6 +2,12 @@
 
     scaffold -> acceptance_author -> acceptance_review -> [user review] -> scrum_master
 
+or, for a product that may be planned as more than one sprint (LF.1266, `app.acceptance.by_sprint`):
+
+    scaffold -> acceptance_author (numbers the criteria) -> scrum_master -> [plan gate] -> sprint_acceptance
+    -> acceptance_author -> acceptance_review -> [user review] -> technical_lead, and `sprint_acceptance` again at
+    each later sprint's start
+
 and the parts of every later stage that read the acceptance suite. Kept out of
 `workflow.py` so the definition of done has one home; the graph builder wraps
 each function in a node with the run's models and checkpointer.
@@ -594,13 +600,30 @@ def acceptance_author(state: Any, config: RunnableConfig, ctx: Context) -> dict[
             logger.warning("No acceptance criteria could be read from the brief or the intake")
             return _handing_on(stage="scrum_master")
         suite.save_criteria(root, criteria)
-    suite.unlock(root)
     round_ = int(state.get("acceptance_round") or 0)
     feedback = [*(state.get("acceptance_feedback") or []), *(state.get("revision_comments") or [])]
+    from app import delivery
+    from app.acceptance import by_sprint
+
+    # A product that may be planned as more than one sprint is planned first, and each sprint's tests are written at
+    # its start (LF.1266): sprint 1's criteria are known when its tests are written.
+    first_writing = round_ == 0 and not feedback and not state.get("acceptance_return_to")
+    if (first_writing and not state.get("sprint_plan") and by_sprint.addition(root) is None
+            and by_sprint.decide(root, fast=delivery.fast())):
+        logger.info("The suite is written a sprint at a time: the sprints are planned before any test is written")
+        return _handing_on(stage="scrum_master")
+    suite.unlock(root)
+    adding = by_sprint.addition(root)
+    if adding is not None:
+        wanted = set(adding.get("criteria") or [])
+        criteria = [criterion for criterion in criteria if criterion.id in wanted] or criteria
+    elif by_sprint.is_on(root):
+        # Not an addition (a change request, a send-back at the acceptance gate): the criteria due now, never a later
+        # sprint's, whose tests are written at its own start.
+        later = by_sprint.criteria_not_yet_due(root)
+        criteria = [criterion for criterion in criteria if criterion.id not in later] or criteria
     # Written by the build model in fast delivery, and reviewed by the
     # judgement model. See `app.delivery`.
-    from app import delivery
-
     agent = create_specialist_agent(
         "testing", model=ctx.model if delivery.fast() else ctx.judgement_model, checkpointer=ctx.checkpointer,
         repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories, writing_the_suite=True,
@@ -615,9 +638,14 @@ def acceptance_author(state: Any, config: RunnableConfig, ctx: Context) -> dict[
             testability=_the_testability_advice(state),
             interface_contract=getattr(state.get("technical_specification"), "interface_contract", None) or (),
             specification=state.get("technical_specification"),
-            batch_note=note,
+            batch_note=sprint_note + note,
+            adding=bool(adding and adding.get("base")),
         ), root)
 
+    # One sprint's part of a suite written a sprint at a time: its writers are told which part, and what is locked.
+    sprint_note = (by_sprint.note(int(adding.get("sprint") or 1), int(adding.get("of") or 1), criteria,
+                                  by_sprint.earlier_files(root))
+                   if adding is not None else "")
     # Only a first writing, in the whole, is split: a repair is small and made against a built product.
     batches = acceptance_batches.plan(criteria) if round_ == 0 and not feedback else [criteria]
     if len(batches) > 1:
@@ -636,6 +664,9 @@ def acceptance_author(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         if "__acceptance_author__" not in update:
             return update
         blockers = getattr(update.pop("__acceptance_author__"), "blockers", None) or []
+    if adding is not None:
+        # Only this sprint's criteria can be named as not automatable here: a later sprint's are written at its start.
+        blockers = blockers_of_its_batch(blockers, criteria)
     from app.graph import product_at_fault
 
     blockers = product_at_fault.take_claims(root, blockers)
@@ -679,6 +710,9 @@ def _scenarios(root: str) -> str:
     """`docs/acceptance_tests.md`: the suite in plain language, grouped by criterion."""
     covered = suite.coverage(root)
     deferred = suite.deferred(root)
+    from app.acceptance import sprint_scope
+
+    later = set(sprint_scope.not_yet_due(root))
     lines = [
         "# Acceptance tests",
         "",
@@ -693,7 +727,7 @@ def _scenarios(root: str) -> str:
         for name in covered.get(criterion.id, []):
             lines.append(f"- {name}")
         if criterion.id not in deferred and criterion.id not in covered:
-            lines.append("- (no test)")
+            lines.append("- (written when its sprint starts)" if criterion.id in later else "- (no test)")
         lines.append("")
     for change_id, text in suite.change_requests(root).items():
         lines.append(f"## {change_id}: {text}")
@@ -1004,6 +1038,11 @@ def _reviewed_and_locked(state: Any, config: RunnableConfig, ctx: Context) -> di
 
     root = _root(state)
     rounds = int(state.get("acceptance_round") or 1)
+    from app.acceptance import by_sprint
+
+    # A sprint's addition only adds (LF.1266): an earlier sprint's locked file it changed goes back as locked first.
+    adding = by_sprint.addition(root)
+    put_back_earlier = by_sprint.put_back_what_the_addition_changed(root)
     # Each test's code as the writers left it, before the harness renames, corrects or puts anything back: a test the
     # harness puts back is never one the writers "have not changed".
     written = suite.test_bodies(root)
@@ -1013,6 +1052,7 @@ def _reviewed_and_locked(state: Any, config: RunnableConfig, ctx: Context) -> di
     suite.correct_reads_of_the_fixture_s_baseurl(root)
     # A repair changes only the tests it was sent for: any other it rewrote goes back as the review approved it.
     problems, result, worse = _the_repair_measured(root)
+    problems = [*put_back_earlier, *problems]
     if worse:
         # The repair's best measured version comes back - or, without one, the suite as it was locked - before anything
         # else reads this one; the writers are told what the repair lost and which version came back, so a worse suite
@@ -1112,25 +1152,30 @@ def _reviewed_and_locked(state: Any, config: RunnableConfig, ctx: Context) -> di
     # charge for them.
     problems.extend(_noted("locators_nobody_sees", suite.locators_nobody_sees(root)))
     problems.extend(_noted("locators_that_pick_one", suite.locators_that_pick_one(root)))
+    # Read against the whole brief only once every criterion is due: while a later sprint's criteria are not, what the
+    # brief names for them is written at that sprint's start (LF.1266).
+    whole_brief = ("" if by_sprint.is_on(root) and by_sprint.criteria_not_yet_due(root)
+                   else getattr(state.get("document"), "text", "") or "")
     problems.extend(_noted("controls_never_found_by_name",
-        suite.controls_never_found_by_name(root, getattr(state.get("document"), "text", "") or "")
+        suite.controls_never_found_by_name(root, whole_brief)
     ))
     problems.extend(_noted("records_never_found_as_the_brief_shows_them",
-        suite.records_never_found_as_the_brief_shows_them(root, getattr(state.get("document"), "text", "") or "")
+        suite.records_never_found_as_the_brief_shows_them(root, whole_brief)
     ))
     partial = _noted("outputs_held_only_in_part",
-                                   suite.outputs_held_only_in_part(root, getattr(state.get("document"), "text", "") or ""))
+                                   suite.outputs_held_only_in_part(root, whole_brief))
     partial = [*partial, *_noted("whitespace_tested_with_spaces_only",
                                                 suite.whitespace_tested_with_spaces_only(root))]
     partial = [*partial, *_noted("words_broken_only_at_spaces",
                                                 suite.words_broken_only_at_spaces(root))]
     problems.extend(partial)
     problems.extend(_noted("views_never_acted_within",
-                                         suite.views_never_acted_within(root, getattr(state.get("document"), "text", "") or "")))
+                                         suite.views_never_acted_within(root, whole_brief)))
     # Plan item 16: at a first writing only; a repair is told to change nothing but the tests it was sent for.
     from app.acceptance import contract_coverage
 
-    if contract_coverage.enabled() and not state.get("acceptance_return_to"):
+    # A line a later sprint's criteria reach has its test written at that sprint's start (LF.1266).
+    if contract_coverage.enabled() and not state.get("acceptance_return_to") and not by_sprint.criteria_not_yet_due(root):
         missing_lines = contract_coverage.lines_with_no_test(
             root, getattr(state.get("technical_specification"), "interface_contract", None) or ())
         if missing_lines:
@@ -1145,12 +1190,21 @@ def _reviewed_and_locked(state: Any, config: RunnableConfig, ctx: Context) -> di
         problems = [p for p in problems if str(p) not in held]
         cannot = [f for f in cannot if str(f) not in held]
         partial = [f for f in partial if str(f) not in held]
+    if adding is not None:
+        # The earlier sprints' tests are locked and put back as locked: what is found in them alone is for the paths
+        # that reopen a locked suite, not for this sprint's writers.
+        problems = [*put_back_earlier, *by_sprint.about_the_addition(
+            root, [p for p in problems if p not in put_back_earlier])]
+        cannot = by_sprint.about_the_addition(root, cannot)
+        partial = by_sprint.about_the_addition(root, partial)
     if not result.ran:
         if rounds < MAX_ACCEPTANCE_ROUNDS + 2:
             logger.warning("Acceptance suite could not run (exit %s); sent back to QA", result.exit_code)
             return _handing_on(stage="acceptance_author", acceptance_feedback=problems)
         if (kept := _kept_as_locked_before(state, root, f"the repaired suite cannot run: {result.problem}")) is not None:
             return kept
+        if (left := _an_addition_left_out(state, root, f"its tests cannot run: {result.problem}")) is not None:
+            return left
         if _put_back_before_the_send_back(root):
             return _handing_on(stage="acceptance_review", acceptance_feedback=[])
         logger.error("Acceptance suite failed to run after %d rounds: %s", rounds, result.problem)
@@ -1168,6 +1222,8 @@ def _reviewed_and_locked(state: Any, config: RunnableConfig, ctx: Context) -> di
             return _handing_on(stage="acceptance_author", acceptance_feedback=problems)
         if (kept := _kept_as_locked_before(state, root, "the repaired suite proves nothing: " + "; ".join(vacuous)[:1200])) is not None:
             return kept
+        if (left := _an_addition_left_out(state, root, "its tests prove nothing: " + "; ".join(vacuous)[:1200])) is not None:
+            return left
         if _put_back_before_the_send_back(root):
             return _handing_on(stage="acceptance_review", acceptance_feedback=[])
         logger.error("Acceptance suite still proves nothing after %d rounds", rounds)
@@ -1240,9 +1296,11 @@ def _reviewed_and_locked(state: Any, config: RunnableConfig, ctx: Context) -> di
             model=the_review_model(ctx.judgement_model), checkpointer=ctx.checkpointer,
             repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories,
         )
+        later = by_sprint.criteria_not_yet_due(root) if by_sprint.is_on(root) else set()
+        earlier = by_sprint.earlier_files(root)
         request = build_acceptance_review_request(
-            acceptance_requests.criteria_text(suite.criteria(root), deferred),
-            acceptance_requests.suite_text(root),
+            acceptance_requests.criteria_text([c for c in suite.criteria(root) if c.id not in later], deferred),
+            acceptance_requests.suite_text(root, earlier=earlier),
             result.summary(),
             already_passing,
             deferred_text,
@@ -1254,6 +1312,9 @@ def _reviewed_and_locked(state: Any, config: RunnableConfig, ctx: Context) -> di
         # What the tests are judged against, whole (see `app.acceptance.api_reference`).
         request["messages"][-1]["content"] += "\n" + api_reference(
             state.get("technical_specification"), getattr(state.get("document"), "text", "") or "")
+        if adding is not None and earlier:
+            request["messages"][-1]["content"] += "\n" + by_sprint.review_note(
+                list(adding.get("criteria") or []), by_sprint.new_files(root), earlier)
         if suspected:
             request["messages"][-1]["content"] += "\n" + check_findings.for_the_qa_lead(suspected)
         # What the harness read in the tests' code that a product may still pass: the QA lead's to weigh, never a
@@ -1274,6 +1335,7 @@ def _reviewed_and_locked(state: Any, config: RunnableConfig, ctx: Context) -> di
         update.pop("stage", None)
         if not review.approved and review.findings:
             findings = suite.findings_about_the_suite([str(item) for item in review.findings])
+            findings = by_sprint.about_the_addition(root, findings)
             # The QA lead is the largest sender of send-backs (240 of 295 items left open at the lock): recorded
             # beside the harness's own checks so its settle rate is measured too (HR2.Q.1).
             check_findings.noted(root, rounds, "qa_lead", findings)
@@ -1332,6 +1394,9 @@ def _reviewed_and_locked(state: Any, config: RunnableConfig, ctx: Context) -> di
     if errors_at_lock := probe_at_the_lock(root):
         logger.warning("The contract's checks at the lock made the server fail on %d line(s)", len(errors_at_lock))
     open_problems = [*problems, *findings]
+    if adding is not None and adding.get("base"):
+        # A sprint's lock adds to the earlier ones: what they were locked with still open stays named.
+        open_problems = list(dict.fromkeys([*(state.get("acceptance_open_problems") or []), *open_problems]))
     _record_document(state, "docs/acceptance_tests.md", _scenarios(root))
     tests = len(result.report.tests)
     _decide(
@@ -1395,7 +1460,7 @@ def _reviewed_and_locked(state: Any, config: RunnableConfig, ctx: Context) -> di
                 else list(state.get("revision_comments") or [])
             ),
         )
-    next_stage = "user_review_acceptance" if _review_enabled(state, ACCEPTANCE_REVIEW) else "scrum_master"
+    next_stage = "user_review_acceptance" if _review_enabled(state, ACCEPTANCE_REVIEW) else after_the_suite_is_locked(state)
     return _handing_on(
         **update,
         stage=next_stage,
@@ -1403,6 +1468,122 @@ def _reviewed_and_locked(state: Any, config: RunnableConfig, ctx: Context) -> di
         acceptance_open_problems=open_problems,
         acceptance_result=result.as_dict(),
     )
+
+
+# --- the suite written a sprint at a time (LF.1266) ------------------------------------
+
+def after_the_suite_is_locked(state: Any) -> str:
+    """Where a locked suite goes on to, past the acceptance gate: the plan, or - where the plan came first and the
+    suite is written a sprint at a time - the sprint's technical lead."""
+    from app.acceptance import by_sprint
+
+    if by_sprint.is_on(_root(state)) and getattr(state.get("sprint_plan"), "sprints", None):
+        return "technical_lead"
+    return "scrum_master"
+
+
+def before_the_lead(state: Any) -> str:
+    """The stage a sprint starts at: its tests written first where the suite is written a sprint at a time, else
+    straight to its technical lead, as always."""
+    from app.acceptance import by_sprint
+
+    try:
+        return "sprint_acceptance" if by_sprint.is_on(_root(state)) else "technical_lead"
+    except Exception:  # noqa: BLE001 - the lead, as before
+        return "technical_lead"
+
+
+def sprint_acceptance(state: Any, config: RunnableConfig, ctx: Context) -> dict[str, Any]:
+    """At a sprint's start: its criteria's tests are written and locked by QA before its technical lead plans it.
+
+    The tests are written against the criteria, the brief, the interface contract and the running product of the
+    earlier sprints, and added to the locked suite as its next version: the earlier sprints' files stay as they were
+    locked. A criterion a re-plan moved here from a later sprint has no test yet and is written now; one moved to a
+    later sprint keeps its locked tests, which run when that sprint comes (`due_tests`).
+    """
+    from app.acceptance import by_sprint
+    from app.graph.workflow import _handing_on
+
+    root = _root(state)
+    # The scope first: the review of these tests runs only what is due now.
+    record_the_sprint_scope(state)
+    due = [item for item in (criteria_due(state) or []) if item.startswith("AC-")]
+    to_write = by_sprint.still_to_write(root, due)
+    if not to_write:
+        return _handing_on(stage="technical_lead")
+    sprints = list(getattr(state.get("sprint_plan"), "sprints", None) or [])
+    index = int(state.get("current_sprint_index") or 0)
+    by_sprint.open_for(root, to_write, sprint=index + 1, of=max(len(sprints), 1))
+    update: dict[str, Any] = {}
+    _decide(
+        state, update, point="acceptance_tests",
+        question=f"Which tests does sprint {index + 1} add to the acceptance suite before it is built?",
+        options=["QA writes them now, against the product built so far", "build without them"],
+        decision="QA writes them now, against the product built so far",
+        rationale=(f"The suite is written a sprint at a time; {', '.join(to_write)} "
+                   f"{'is' if len(to_write) == 1 else 'are'} due now and no locked test names "
+                   f"{'it' if len(to_write) == 1 else 'them'}. The tests locked before stay as they are."),
+        affects=to_write,
+    )
+    logger.info("Sprint %d of %d: QA writes the tests of %s before the build", index + 1, len(sprints),
+                ", ".join(to_write))
+    return _handing_on(**update, stage="acceptance_author", acceptance_round=0, acceptance_feedback=[])
+
+
+def _an_addition_left_out(state: Any, root: str | Path, why: str) -> dict[str, Any] | None:
+    """A later sprint's addition that ran out of rounds unable to run or prove anything is left out, its criteria
+    deferred, and the suite stays as the earlier sprints locked it; None for any other writing (a first writing still
+    fails the run, as before)."""
+    from app.acceptance import by_sprint
+    from app.graph.workflow import _handing_on
+
+    adding = by_sprint.addition(root)
+    if adding is None or not adding.get("base"):
+        return None
+    for relative in by_sprint.new_files(root):
+        (Path(root) / relative).unlink(missing_ok=True)
+    by_sprint.put_back_what_the_addition_changed(root)
+    criteria = list(adding.get("criteria") or [])
+    suite.defer(root, {item: f"its tests could not be written for its sprint: {why}"[:400] for item in criteria})
+    suite.lock(root)
+    logger.warning("A sprint's addition to the suite could not be locked; left out, %s deferred", ", ".join(criteria))
+    result = suite.run(root)
+    return _handing_on(
+        stage="release" if state.get("acceptance_return_to") == "release" else "technical_lead",
+        acceptance_return_to=None,
+        acceptance_feedback=[],
+        acceptance_open_problems=list(state.get("acceptance_open_problems") or []),
+        acceptance_result=result.as_dict(),
+    )
+
+
+def the_rest_written_before_the_release(state: Any) -> dict[str, Any] | None:
+    """At release, where the suite is written a sprint at a time: QA writes, once, the tests of any criterion that has
+    none; a criterion still without one is deferred, named among the release's cuts. None when there is nothing to
+    write. Never raises."""
+    try:
+        from app.acceptance import by_sprint
+        from app.graph.workflow import _handing_on
+
+        root = _root(state)
+        if not by_sprint.is_on(root):
+            return None
+        missing = by_sprint.still_to_write(root, [criterion.id for criterion in suite.criteria(root)])
+        if not missing:
+            return None
+        asked = set(by_sprint.asked_at_release(root))
+        if all(item in asked for item in missing):
+            suite.defer(root, {item: by_sprint.NEVER_WRITTEN for item in missing})
+            logger.warning("No locked test was written for %s before the release; deferred", ", ".join(missing))
+            return None
+        sprints = list(getattr(state.get("sprint_plan"), "sprints", None) or [])
+        by_sprint.open_for(root, missing, sprint=max(len(sprints), 1), of=max(len(sprints), 1), at_release=True)
+        logger.warning("At release %s have no locked test; QA writes them first", ", ".join(missing))
+        return _handing_on(stage="acceptance_author", acceptance_return_to="release", acceptance_round=0,
+                           acceptance_feedback=[])
+    except Exception as error:  # noqa: BLE001 - the release goes on as it would have
+        degraded("release.the_rest_written", error)
+        return None
 
 
 # --- what later stages read --------------------------------------------------------

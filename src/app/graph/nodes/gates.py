@@ -42,6 +42,7 @@ def user_review_specification_node(state: WorkflowGraphState, config: RunnableCo
 
 
 def user_review_acceptance_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+    from app.graph.acceptance_nodes import after_the_suite_is_locked
     from app.graph.workflow import ACCEPTANCE_REVIEW, _run_review_gate
 
     return _run_review_gate(
@@ -49,7 +50,7 @@ def user_review_acceptance_node(state: WorkflowGraphState, config: RunnableConfi
         config,
         review_point=ACCEPTANCE_REVIEW,
         artifact_id="acceptance-tests",
-        approved_next="scrum_master",
+        approved_next=after_the_suite_is_locked(state),
         changes_next="acceptance_author",
     )
 
@@ -60,6 +61,7 @@ def user_review_sprint_plan_node(state: WorkflowGraphState, config: RunnableConf
     Nothing holds a worker while it waits: the run pauses like every review, and the API's sweep answers it once its
     time has passed (`app.server.approval_timeouts`).
     """
+    from app.graph.acceptance_nodes import before_the_lead
     from app.graph.workflow import SPRINT_PLAN_REVIEW, _run_review_gate
 
     return _run_review_gate(
@@ -67,7 +69,7 @@ def user_review_sprint_plan_node(state: WorkflowGraphState, config: RunnableConf
         config,
         review_point=SPRINT_PLAN_REVIEW,
         artifact_id="sprint-plan",
-        approved_next="technical_lead",
+        approved_next=before_the_lead(state),
         changes_next="scrum_master",
     )
 

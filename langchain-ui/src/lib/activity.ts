@@ -122,6 +122,10 @@ const STAGE_COPY: Record<string, StageCopy> = {
     title: 'Writing the acceptance tests',
     blurb: 'Turning each acceptance criterion into a test that proves the product does it.',
   },
+  sprint_acceptance: {
+    title: "Writing this sprint's acceptance tests",
+    blurb: "Writing and locking the tests of this sprint's criteria before it is built, beside the earlier sprints' tests.",
+  },
   acceptance_review: {
     title: 'Checking the acceptance tests',
     blurb: 'Reading the tests against the criteria before they are locked.',

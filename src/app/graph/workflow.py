@@ -388,6 +388,8 @@ _NODE_NAMES = frozenset(
         "user_review_acceptance",
         "scrum_master",
         "user_review_sprint_plan",
+        # A sprint's tests written and locked at its start, where the suite is written a sprint at a time (LF.1266).
+        "sprint_acceptance",
         "technical_lead",
         "specialist_dispatch",
         # Parallel mode's fan-out target. `graph.add_node` registers it and
@@ -10104,6 +10106,7 @@ def build_workflow_graph(
     graph.add_node("user_review_acceptance", gates.user_review_acceptance_node)
     graph.add_node("scrum_master", _a_node(planning.scrum_master_node, ctx), retry_policy=agent_retry_policy)
     graph.add_node("user_review_sprint_plan", gates.user_review_sprint_plan_node)
+    graph.add_node("sprint_acceptance", _a_stage(acceptance_nodes, "sprint_acceptance", ctx))
     graph.add_node("technical_lead", _a_node(building.technical_lead_node, ctx), retry_policy=agent_retry_policy)
     graph.add_node("specialist_dispatch", _a_node(building.specialist_dispatch_node, ctx), retry_policy=agent_retry_policy)
     graph.add_node("specialist_worker", _a_node(building.specialist_worker_node, ctx), retry_policy=agent_retry_policy)
@@ -10158,6 +10161,7 @@ def build_workflow_graph(
         "user_review_acceptance",
         "scrum_master",
         "user_review_sprint_plan",
+        "sprint_acceptance",
         "technical_lead",
         "specialist_dispatch",
         "specialist_gather",

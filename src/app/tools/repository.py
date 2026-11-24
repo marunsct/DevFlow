@@ -1966,6 +1966,26 @@ def put_back_what_a_command_changed(repo_root: str | Path, held: dict[str, bytes
         logger.warning("Could not put back what a command changed", exc_info=True)
     return done
 
+def _locked_with_an_earlier_sprint(root: Path, relative: str) -> str:
+    """The refusal for QA changing a file locked with an earlier sprint's tests while it adds a later sprint's; "".
+
+    The suite written a sprint at a time only adds (LF.1266): an earlier sprint's tests change only through a repair
+    or a dispute, which reopen the suite in their own way. Never raises.
+    """
+    try:
+        from app.acceptance import by_sprint
+
+        if not by_sprint.is_an_earlier_sprint_s(root, relative):
+            return ""
+    except Exception:  # noqa: BLE001 - nothing refused on a record that cannot be read
+        return ""
+    return (
+        f"'{relative}' holds an earlier sprint's tests, locked when that sprint began, and it stays exactly as it was "
+        "locked. Write this sprint's tests, and any helper they need, in a new file of your own beside it; import "
+        "from this one what you want to reuse."
+    )
+
+
 def _the_harness_s_own_or_the_locked_suite(root: Path, target: Path) -> str | None:
     """The refusal for a change to the harness's records or the acceptance suite, or None.
 
@@ -2011,7 +2031,7 @@ def _the_harness_s_own_or_the_locked_suite(root: Path, target: Path) -> str | No
                 "because the product is wrong is right as it is: leave it failing for them. Change a test "
                 "only where it checks something its criterion does not say."
             )
-        return None
+        return (_locked_with_an_earlier_sprint(root, relative) or None) if inside else None
     if not protected:
         return None
     return (

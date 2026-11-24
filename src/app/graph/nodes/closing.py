@@ -30,6 +30,10 @@ def sprint_advance_node(state: WorkflowGraphState, config: RunnableConfig) -> di
     # What this sprint hands the next one's lead: findings it neither fixed
     # nor was blocked by, and what failed repeatedly. See `app.sprint.record`.
     latest = (summary.get("sprint_attempts") or [{}])[-1]
+    # The next sprint's tests are written at its start where the suite is written a sprint at a time (LF.1266).
+    from app.graph.acceptance_nodes import before_the_lead
+
+    next_stage = before_the_lead(state) if state.get("repository") is not None else "technical_lead"
     return {
         **summary,
         "carried_forward": list(latest.get("carried_forward") or []),
@@ -37,7 +41,7 @@ def sprint_advance_node(state: WorkflowGraphState, config: RunnableConfig) -> di
         "sprint_findings": [],
         "review_advice": [],
         "nothing_left_but_carried": None,
-        "stage": "technical_lead",
+        "stage": next_stage,
         "current_sprint_index": state.get("current_sprint_index", 0) + 1,
         # clear previous sprint's milestone state so it doesn't pollute the next sprint
         "milestone_plan": None,

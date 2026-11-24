@@ -62,6 +62,8 @@ def author(tmp_path, monkeypatch):
     monkeypatch.setattr("app.agents.specialists.create_specialist_agent", lambda *a, **k: object())
     monkeypatch.setenv("BATCH_ACCEPTANCE_AUTHOR", "on")
     monkeypatch.setattr(batches, "batch_size", lambda model="": 4)
+    # Planned as one sprint (fast delivery, eleven criteria): the suite is written whole, before the plan.
+    monkeypatch.setenv("DELIVERY_MODE", "fast")
     return fake
 
 

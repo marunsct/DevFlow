@@ -303,8 +303,12 @@ def build_author_request(
     interface_contract: Sequence[str] = (),
     specification: Any = None,
     batch_note: str = "",
+    adding: bool = False,
 ) -> dict[str, list[dict[str, str]]]:
     """The QA stage's brief: write the acceptance suite before anything is built.
+
+    `adding`: a later sprint's tests are added to a suite locked with the earlier sprints' (`by_sprint`), against the
+    product those sprints built: it is not "nothing is built", and it is not a repair.
 
     `testability` is the testing specialist's advice the specification adopted,
     one "TS-n: ..." line each. See `app.agents.specialist_advice`.
@@ -340,8 +344,12 @@ def build_author_request(
     # A suite reopened for repair is repaired against a product that exists.
     not_started = _the_product_does_not_start(repo_root)
     built = bool((suite.last_result(repo_root) or {}).get("passed")) or bool(not_started)
+    from app.acceptance import by_sprint
+
     state_of_the_product = (
-        "The product is partly built and the suite is being repaired: change only what the "
+        by_sprint.EARLIER_SPRINTS_BUILT + NOT_BUILT_SO_IT_FAILS
+        if adding and not feedback
+        else "The product is partly built and the suite is being repaired: change only what the "
         "review names. "
         if built
         else "Nothing of the product's features is built yet. Write its acceptance suite now: "
@@ -407,6 +415,7 @@ def build_author_request(
         "process that never ends, and the whole suite stops there with no result for any test. "
         "A criterion about how it starts is proven by the running product the setup gives you. "
         "A program that runs and exits is run by its tests, as its user runs it.\n"
+        + (by_sprint.RUN_AN_ADDITION_ONCE if adding else
         "- Run the suite once. The tests must RUN and FAIL now, because nothing is built: "
         "what the project holds now is the stack's starting skeleton - a health check, an "
         "empty entry point, a manifest - and the builders write the product after this suite "
@@ -415,8 +424,8 @@ def build_author_request(
         "right. A syntax error, an import that does not resolve, \"no tests found\", or an "
         "error the test's own code throws - a helper called with the wrong arguments, a name "
         "the test never defined - is yours to fix before you finish: read why each test "
-        "failed, not only that it did.\n"
-        "- A criterion no automated test can check - a human judgement, an uptime promise, "
+        "failed, not only that it did.\n")
+        + "- A criterion no automated test can check - a human judgement, an uptime promise, "
         "a third party's approval - gets no test. Put one line in `blockers` for it: "
         "`AC-n: <why no test can check it>`.\n"
         "- Report every test file in `tests`."
@@ -457,11 +466,20 @@ def _where_a_file_left_out_is() -> str:
     return "(not shown - read it with your tools)"
 
 
-def suite_text(repo_root: str | Path) -> str:
+#: In place of a file locked with an earlier sprint, in the review of a later sprint's addition.
+LOCKED_WITH_AN_EARLIER_SPRINT = "(locked with an earlier sprint's tests; not under review)"
+
+
+def suite_text(repo_root: str | Path, earlier: Sequence[str] = ()) -> str:
+    """The suite's files for a review, whole while they fit; `earlier` files (locked with an earlier sprint) by name."""
     root = Path(repo_root)
     parts: list[str] = []
     total = 0
+    left_as_locked = set(earlier or ())
     for path in suite.suite_files(repo_root):
+        if path.relative_to(root).as_posix() in left_as_locked:
+            parts.append(f"### {path.relative_to(root).as_posix()}\n{LOCKED_WITH_AN_EARLIER_SPRINT}\n")
+            continue
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:

@@ -60,6 +60,12 @@ def gated(monkeypatch):
     return SimpleNamespace(answers=answers, asked=asked)
 
 
+@pytest.fixture
+def one_sprint(monkeypatch):
+    """Fast delivery plans a product this small as one sprint, so its suite is written whole before the plan."""
+    monkeypatch.setenv("DELIVERY_MODE", "fast")
+
+
 def _ran(passed_names=(), failed_names=()) -> suite.AcceptanceResult:
     report = junit.Report(found=True, tests=[
         *(junit.TestResult(name=n) for n in passed_names),
@@ -146,7 +152,7 @@ def test_no_pack_and_no_setup_stage_means_no_scaffold(tmp_path, monkeypatch) -> 
     assert update["stage"] == "acceptance_author" and "scaffold_result" not in update
 
 
-def test_the_author_numbers_the_criteria_and_records_what_it_cannot_test(tmp_path, gated) -> None:
+def test_the_author_numbers_the_criteria_and_records_what_it_cannot_test(tmp_path, gated, one_sprint) -> None:
     gated.answers["acceptance_author"] = [SimpleNamespace(blockers=["AC-3: needs a person to judge it"])]
 
     update = nodes.acceptance_author(_state(tmp_path), CONFIG, CTX)
@@ -404,7 +410,7 @@ def test_a_fixer_is_told_when_the_definition_of_done_already_holds(tmp_path, mon
     assert nodes.done_by_the_definition(state) == []
 
 
-def test_a_criterion_the_suite_tests_is_not_deferred_as_not_automatable(tmp_path, gated) -> None:
+def test_a_criterion_the_suite_tests_is_not_deferred_as_not_automatable(tmp_path, gated, one_sprint) -> None:
     """One run's QA, repairing a reopened suite, listed the product's bugs as
     blockers - "AC-5: product bug, the filter buttons never fire" - and four
     criteria with failing tests in the suite left the release gate."""
@@ -425,7 +431,7 @@ def test_a_criterion_the_suite_tests_is_not_deferred_as_not_automatable(tmp_path
     assert suite.deferred(tmp_path) == {"AC-3": "needs a person to judge it"}
 
 
-def test_an_id_that_is_no_criterion_is_never_deferred(tmp_path, gated) -> None:
+def test_an_id_that_is_no_criterion_is_never_deferred(tmp_path, gated, one_sprint) -> None:
     """One run's QA deferred "AC-14" in a product with nine criteria."""
     gated.answers["acceptance_author"] = [SimpleNamespace(blockers=[
         "AC-14: the size limit needs a person to count", "AC-3: needs a person to judge it",

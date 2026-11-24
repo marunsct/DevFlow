@@ -814,6 +814,19 @@ _A_CLAUSE_END = re.compile(r"(?<=[.;!?])\s+|\n")
 _JOINED = re.compile(r"^[\s`\"',]*(?:(?:or|and|/|&)\s+)?(?:(?:a|an|the)\s+)?[\s`\"']*$", re.I)
 
 
+#: A quoted sentence in a rule's text - words with a space between - is a message the product answers, never a rule of
+#: its own; a quoted key (`"body": {"minLength": 1}`) is kept.
+_QUOTED_STRING = re.compile(r'"(?:[^"\\\n]|\\.){0,400}"')
+
+
+def _without_quoted_sentences(text: str) -> str:
+    return _QUOTED_STRING.sub(lambda m: '""' if re.search(r"\s", m.group(0)) else m.group(0), text)
+
+
+#: A field's name read as the message it is part of: "request body", "Response body", "reply body".
+_THE_MESSAGE_S = re.compile(r"\b(?:request|response|reply|answer|error|http)\s*$", re.I)
+
+
 def fields_held_to_a_floor(texts: Any, names: Any) -> list[str]:
     """Those of `names` a rule in `texts` holds to a floor: refused empty, a least length, "must not be empty".
 
@@ -824,11 +837,14 @@ def fields_held_to_a_floor(texts: Any, names: Any) -> list[str]:
     wanted = [str(n) for n in names or () if str(n)]
     if not wanted:
         return []
-    found = set(fields_refused_when_empty(texts)) & set(wanted)
+    found = set(fields_refused_when_empty([_without_quoted_sentences(str(t)) for t in texts or ()])) & set(wanted)
     named = re.compile(r"(?<![\w-])(" + "|".join(re.escape(n) for n in sorted(wanted, key=len, reverse=True)) + r")(?![\w-])")
     for text in texts or ():
-        for clause in _A_CLAUSE_END.split(str(text)):
-            at = list(named.finditer(clause))
+        # A quoted message is what a product says, not a rule: `{"error": "Title must not be empty"}` holds nothing.
+        for clause in _A_CLAUSE_END.split(_without_quoted_sentences(str(text))):
+            # "request body" / "response body" names the message, not a field called `body`: measured on one run,
+            # "Create request body - title: string, required, non-empty" held a free `body` to a floor.
+            at = [m for m in named.finditer(clause) if not _THE_MESSAGE_S.search(clause[:m.start()])]
             for i, match in enumerate(at):
                 j = i + 1
                 while j < len(at) and _JOINED.match(clause[at[j - 1].end():at[j].start()]):

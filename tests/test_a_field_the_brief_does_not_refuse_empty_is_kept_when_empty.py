@@ -272,3 +272,24 @@ def test_the_playwright_probe_wants_the_empty_body_taken_and_given_back(tmp_path
     outcomes = json.loads(done.stdout.strip().splitlines()[-1])
     assert [o for _, o, _ in outcomes] == [outcome, outcome]
     assert all(said in message for _, _, message in outcomes)
+
+
+@pytest.mark.parametrize("line", [
+    "- Create request body — title: string, required, non-empty after trimming;",
+    'Response body: {"error": "Title is required and must not be empty"}.',
+    'Returns 400 with {"error": "Body must not be empty"} when the title is missing.',
+    'Example: {"title": "Note", "body": "Content", "error": "Title is required and must not be empty"}',
+])
+def test_a_message_s_body_or_a_quoted_answer_does_not_hold_the_body_field_to_a_floor(line):
+    """Measured on one run: these lines of a specification that said "body: any string value including empty is
+    accepted" held `body` to a floor, and the probe asked nothing of the field the hidden test empties."""
+    from app.acceptance.interface_contract import fields_held_to_a_floor
+
+    assert "body" not in fields_held_to_a_floor([line], ["title", "body"])
+
+
+def test_a_real_rule_on_the_body_still_holds_it():
+    from app.acceptance.interface_contract import fields_held_to_a_floor
+
+    assert fields_held_to_a_floor(["a title or body that is empty is refused"], ["title", "body"]) == ["title", "body"]
+    assert fields_held_to_a_floor(["body: string, at least 1 character"], ["title", "body"]) == ["body"]

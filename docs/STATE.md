@@ -5,9 +5,9 @@ the block below is written by `loop.sh state`. The map of all documents is `docs
 `docs/improvement-plan.md`; how the product works is `docs/PRODUCT.md`; how to run and test it is `docs/HANDOVER.md`;
 decisions in force are `docs/owner-decisions.md`; old information is found through `docs/ARCHIVE.md`.
 <!-- state:generated -->
-**As of:** 11-25 00:24 JST (written by `loop.sh state`). Harness 5b7ded9d committed; 5b7ded9d deployed.
-**Live, and stopped in the last day:** run-c46d5d9a running at tools_models; run-c53e7bd2 running at defect_fix_1_0; run-df1ac51d failed at failed
-**Last scored:** run-c4fd577a notes-api-rust 9/9 (completed, handoff 1.0; scored 11-25 00:24 JST); run-10b376e2 notes-api-hono 9/9 (completed, mixed, 27 active min, handoff 1.0; scored 11-24 20:03 JST); run-59135d0b notes-api-rust 9/9 (completed, mixed, 67 active min, handoff 1.0; scored 11-24 18:42 JST).
+**As of:** 11-25 01:13 JST (written by `loop.sh state`). Harness 8a3b1b2a committed; 8a3b1b2a deployed.
+**Live, and stopped in the last day:** run-cc265cee running at tools_models; run-c53e7bd2 running at defect_fix_1_3; run-df1ac51d failed at failed
+**Last scored:** run-c46d5d9a notes-api-csharp 9/9 (completed, handoff 1.0; scored 11-25 01:13 JST); run-c4fd577a notes-api-rust 9/9 (completed, 53 active min, handoff 1.0; scored 11-25 00:24 JST); run-10b376e2 notes-api-hono 9/9 (completed, mixed, 27 active min, handoff 1.0; scored 11-24 20:03 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -69,7 +69,7 @@ Earlier runs (11-22 and before): `reports/product-reviews/`, `reports/status-boa
   **Found since (design review `reports/audits/2026-11-24-review-stages-reread-loop.md`):** neither switch touches the loop - the summary
   trigger never counts the memory, and doubled review rows hit the 32K cap. LF.1284-1285 (deployed 21:09) is the fix; judged on
   the medium run's sprint 2 reviews by `loop.sh effects` (target: at most 1.2 reads a file, no summary in a review).
-- Scored 2026-11-25: **notes-api-rust 4 (9/9, 7/8; delivered, 58 min - the second local Rust pass; a body limit the spec added, LF.1298)**.
+- Scored 2026-11-25: **notes-api-csharp 16 (9/9, 8/8; delivered, 40 min - the first with stack facts; the empty-body probe asked 3)**, **notes-api-rust 4 (9/9, 7/8; delivered, 58 min - the second local Rust pass; a body limit the spec added, LF.1298)**.
 - Scored 2026-11-24: **notes-api-hono 11 (9/9, 8/8; delivered, about 51 min active; the empty body kept - LF.1283 for the probe that asked nothing)**, **notes-api-rust 3 (9/9, 8/8; delivered, 74 min - the first local Rust pass, after LF.1277; three fixes reverted, LF.1282)**, **notes-api-rust 2 (0/9, 0/8; failed: never built - rustc 1.85 vs newer crates, then sqlx macros and three one-line faults, LF.1277-1279)**, **notes-api-js 1 (9/9, 7/8; delivered, 50 min, mixed; an empty body refused - the fifth family with that loss, LF.1273 building)**, **web-todo 6 (10/10, 6/6; delivered, 57 min, mixed; a unit test set aside, the sprint accepted at an escalation)**, **textkit-lib 9 (8/8, 7/7; delivered in 18 min)**, **notes-api-go 13 (9/9, 7/8; not deliverable: a false check finding kept a right suite in repair until the budget ran out - LF.1256/1267)**,
   **notes-api-java 11 (9/9, 8/8; delivered with cuts: AC-18; the :8888 server was down 6 h 47 min)**, **wordstats-cli 7 (6/8, 6/6; delivered, 36 min; "The 3" where words are compared in lower case - LF.1255)**,
   **notes-api-ruby 6 (9/9, 6/8; delivered, 72 min; delete-twice and a long body lost - LF.1254 building)**,
@@ -81,10 +81,12 @@ Earlier runs (11-22 and before): `reports/product-reviews/`, `reports/status-boa
 - Each run's product review: `reports/product-reviews/`.
 
 ## Next actions
-0a. **HK plan, all phases (owner 23:45 JST 11-24):** `reports/research/2026-11-24-agents-that-work-like-a-team.md`. Deployed 00:22 JST 11-25:
-   HK.5 outbound gate (LF.1291), HK.1-HK.2 stack facts and toolchain-fit check (LF.1292-1293), with LF.1290. Building: HK.3+KS.1-KS.4 (the
-   stuck lookup and site readers; `reports/research/2026-11-25-open-source-web-search.md`), HK.4+KS.6-KS.7 (replay set, probes, robots);
-   then KS.5, phase 2 (HK.6-HK.10), phase 3 (HK.11-HK.12). Owner action KS.10: a free Stack Exchange key and GitHub token on /admin.
+0a. **HK plan, all phases (owner 23:45 JST 11-24):** `reports/research/2026-11-24-agents-that-work-like-a-team.md` + the keyless search
+   plan `reports/research/2026-11-25-open-source-web-search.md`. Phase 1 deployed by 01:11 JST 11-25: HK.5 gate (LF.1291), HK.1-HK.2 stack facts
+   and fit check (LF.1292-1293), HK.3 + KS.1-KS.4 stuck lookup and site readers (LF.1294-1295; `STUCK_LOOKUP_CONDENSED` off), HK.4 + KS.6-KS.7
+   replay set, probes, robots (LF.1296-1297); also LF.1298 (a long value refused is a finding) and LF.1299 (an unfinished build goes back to
+   its builders). Replay baseline 1-2 of 23 (needs workspace fixtures to score local truth). Next: KS.5, phase 2 (HK.6-HK.10), phase 3.
+   Owner action: a no-scope GitHub token on /admin (the Stack Exchange allowance is already keyed).
 0. **Scale review (owner 11-24): `reports/audits/2026-11-24-why-medium-briefs-fail.md`** - bundles 1 and 2 deployed; bundle 3 (input
    budget per request, sprint sizing, shared fixtures, deploy at a stage boundary) next. **Medium rerun live: run-c53e7bd2 ("Medium",
    `tests/brief_medium.md`, thorough, :1234, started 15:10 JST 11-24)** - the first thorough run on bundles 1-2. Owner to decide: a scored

@@ -25,7 +25,7 @@ from langchain_core.runnables import RunnableConfig
 
 from app.observability.degraded import degraded
 from app.acceptance import requests as acceptance_requests
-from app.acceptance import start_output, suite
+from app.acceptance import first_failing_step, start_output, suite
 from app.acceptance.criteria import number
 from app.graph import acceptance_batches
 from app.agents.shared_facts import with_the_facts
@@ -2139,8 +2139,15 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
     # 201` - the product refused the token its own sign-in issued - and each criterion got a fixer of its own, shown
     # one test, who sent the file back unchanged; round 2 ran ten fixers in three hours. One cause, one defect.
     refused = one_refusal_for_all(failing)
+    # One step many tests stop at with one answer (LF.1259): a shared helper's line, or the requests under one path,
+    # raised once and ahead of the criteria it stops. Measured on one run: beside a rate limit, 8 tests threw a 401 at
+    # the suite's helper and 13 were answered 404 under one prefix; each criterion got its own defect and fixer.
+    steps = first_failing_step.clusters(failing, _root(state))
     if refused is not None:
         code, count = refused
+        # Beside one refusal, only another status is another cause; any other failure is the refusal's symptom.
+        steps = [step for step in steps if step.status and step.status != code]
+        apart = _the_tests_of(steps)
         cause = ("the product refuses the credentials its own sign-in issues, or asks for some no client is given"
                  if code in ("401", "403") else A_LIMIT_THE_SUITE_MEETS if code == RATE_LIMITED else
                  "one thing the routes share answers it for every request - the way a body is read or checked, a field "
@@ -2157,9 +2164,20 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
             affected_files=[],
             owner=_owner_for(state, f"refused {code}"),
             kind="failing_test",
-            evidence=_the_failing_tests_of(failing),
+            # Its own tests: those another status stops at a step of its own are that step's evidence.
+            evidence=_the_failing_tests_of([
+                {**entry, "tests": kept} for entry in failing
+                if (kept := [t for t in entry.get("tests") or [] if id(t) not in apart])
+            ]) if apart else _the_failing_tests_of(failing),
         ))
+        defects.extend(a_step_many_tests_stop_at(state, step, command) for step in steps)
         return [*installs, *defects]
+    defects.extend(a_step_many_tests_stop_at(state, step, command) for step in steps)
+    stopped = _the_tests_of(steps)
+    # A criterion every failing test of which stops at such a step is that step's, not raised again this round.
+    failing = [entry for entry in failing if not (
+        (failed := [t for t in entry.get("tests") or [] if t.get("outcome") == "failed"])
+        and all(id(t) in stopped for t in failed))]
     # A page whose own script did not load, or threw while loading, is dead: every criterion on it fails for that one
     # cause. Measured on one run: the page's script answered 404, all 17 criteria were raised, and each got a fixer of
     # its own (19 calls each) shown only timeouts. As with a product that never starts, the round raises the one cause
@@ -2192,6 +2210,8 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
     for entry in failing:
         tests = entry.get("tests") or []
         failed = [t for t in tests if t.get("outcome") == "failed"] or tests
+        # Its tests a shared step stops are that step's defect's.
+        failed = [t for t in failed if id(t) not in stopped] or failed
         # A locked test that matched nothing through an item found by a text it may have lost to its own action: said
         # once, on the defect the round wrote itself for this criterion or on the one raised below.
         hint = suite.what_a_text_lost_to_an_action_tells_the_fixer(
@@ -2234,7 +2254,7 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
             affected_files=sorted({f for f, _ in where_errors_become_5xx(_root(state))}) if hid else [],
             owner=_owner_for(state, detail),
             kind="failing_test",
-            evidence=_the_failing_tests_of([entry]),
+            evidence=_the_failing_tests_of([{**entry, "tests": failed}] if stopped else [entry]),
         ))
     return [*installs, *defects]
 
@@ -2377,30 +2397,11 @@ _A_SUITE_DEFINITION = r"""(?:^|\n)[ \t]*(?:@pytest\.fixture[^\n]*\n[ \t]*)?(?:as
 _A_QUOTED_NAME = re.compile(r"`([A-Za-z_][A-Za-z0-9_]{2,})`|\b([a-z_][a-z0-9_]*_[a-z0-9_]+)\b")
 
 
-_A_REFUSAL = re.compile(r"assert (4\d\d|5\d\d) (?:==|in) \(?\s*(2\d\d|4\d\d)")
-#: In the description of the one defect raised for one wrong answer behind many tests (`one_refusal_for_all`).
+#: In the description of the one defect raised for one wrong answer behind many tests (`one_refusal_for_all`), and of
+#: the one raised for one step many tests stop at (`a_step_many_tests_stop_at`).
 ONE_CAUSE_MARK = "acceptance tests across"
-_ANY_STATUS = re.compile(r"assert ([1-5]\d\d) (?:==|in|!=)")
-
-
-#: A browser or request runner's failed "answered well" check and the status it got (`toBeOK()` ... `<- 500 ...`).
-_NOT_OK = re.compile(r"toBeOK\(\) failed.*?\u2190\s*([45]\d\d)\b", re.S)
-
-
-#: A JavaScript runner's `toBe` on a status (`Expected: 201` then `Received: 500`). Measured on a Rust run: 14 of 19
-#: failing Playwright tests answered 500 on every route, none was read as one cause, and nine fixers each chased it.
-_EXPECTED_RECEIVED = re.compile(r"Expected:\s*(2\d\d|4\d\d)\s*\n\s*Received:\s*(4\d\d|5\d\d)\b")
-
-
-def _the_wrong_answer(message: str) -> str:
-    """The status a failed test got where it expected another, or ""."""
-    if (m := _A_REFUSAL.search(message)) and m.group(1) != m.group(2):
-        return m.group(1)
-    if m := _NOT_OK.search(message):
-        return m.group(1)
-    if (m := _EXPECTED_RECEIVED.search(message)) and m.group(1) != m.group(2):
-        return m.group(2)
-    return ""
+_ANY_STATUS = first_failing_step.ANY_STATUS
+_the_wrong_answer = first_failing_step.the_wrong_answer
 
 
 def _what_one_of_them_said(state: Any, code: str) -> str:
@@ -2424,7 +2425,7 @@ def _what_one_of_them_said(state: Any, code: str) -> str:
 
 
 #: The status a rate limit answers.
-RATE_LIMITED = "429"
+RATE_LIMITED = first_failing_step.RATE_LIMITED
 #: What a rate limit refusing the suite is, said to the fixer.
 A_LIMIT_THE_SUITE_MEETS = (
     "the product limits how often one client may call it (a sign-up or sign-in limit), and the acceptance suite, like "
@@ -2438,23 +2439,27 @@ def one_refusal_for_all(failing: list[dict]) -> tuple[str, int] | None:
     """(the status, how many tests) when nearly every failing test was refused the same way; None otherwise.
 
     Three criteria at least; three tests at least, and half of the failed tests, answered the same status where they
-    expected another (`assert 401 == 201`, `assert 422 == 201`); and no failed test answered any other status: one
-    cause, not one per criterion. Never raises.
+    expected another (`assert 401 == 201`, `assert 422 == 201`), or threw an error naming it (`first_failing_step`);
+    and no failed test answered any other status: one cause, not one per criterion. Never raises.
     """
     try:
         tests = [t for entry in failing for t in (entry.get("tests") or []) if t.get("outcome") == "failed"]
         if len(failing) < 3 or not tests:
             return None
         # The answer each test got where it wanted another (`assert 422 == 201`, or a browser runner's `toBeOK()`
-        # failing on `<- 500 ...`): the same wrong answer everywhere.
-        codes = [code for t in tests if (code := _the_wrong_answer(str(t.get("message") or "")))]
+        # failing on `<- 500 ...`), or the refusal an error it threw names: the same wrong answer everywhere. Measured
+        # on one run: 37 of 80 failing tests asserted 429 and 18 more threw "Login rate limited" at one line of the
+        # suite's shared helper; read from the assertions alone the limit was under half and never raised.
+        answered = first_failing_step.answers(tests)
+        codes = [code for code in answered if code.isdigit()]
         if not codes:
             return None
         code = max(set(codes), key=codes.count)
         # Another status anywhere is another cause; a failure with none (a body read after a refused call: `KeyError:
         # 'id'`, measured beside 401s on one run) is the refusal's symptom.
-        others = [t for t in tests if (seen := _the_wrong_answer(str(t.get("message") or "")) or
-                                       ((m := _ANY_STATUS.search(str(t.get("message") or ""))) and m.group(1))) and seen != code]
+        others = [t for t, answer in zip(tests, answered)
+                  if (seen := answer or ((m := _ANY_STATUS.search(str(t.get("message") or ""))) and m.group(1)))
+                  and seen != code]
         # Half the failed tests for a client error; a third for a server error, which breaks what every later step
         # reads (measured: every write answered 500 and the page tests, finding nothing saved, outnumbered them).
         share = 3 if code.startswith("5") else 2
@@ -2469,6 +2474,69 @@ def one_refusal_for_all(failing: list[dict]) -> tuple[str, int] | None:
         return code, len(tests)
     except Exception:  # noqa: BLE001 - each criterion keeps its own defect
         return None
+
+
+#: What a 404 on every route under one prefix tells the fixer to do first.
+EVERY_ROUTE_UNDER_ONE_PREFIX = (
+    "Every route the tests call under {prefix} is answered 404, whatever the method: compare the routes the service "
+    "actually serves (its route table, or what it lists at start) with the paths the tests call. A prefix given twice "
+    "(once where the routes are mounted and again in each route), or left out, answers 404 for every route under it."
+)
+
+
+def _what_the_step_means(cluster: Any) -> str:
+    """What one answer at one step means, said to the fixer."""
+    code = cluster.status
+    if code in ("401", "403"):
+        return ("the product refuses the credentials its own sign-in issues, or asks for some no client is given")
+    if code == RATE_LIMITED:
+        return A_LIMIT_THE_SUITE_MEETS
+    if code == "404" and not cluster.helper:
+        return EVERY_ROUTE_UNDER_ONE_PREFIX.format(prefix=cluster.step)
+    if code:
+        return ("one thing these requests share answers it for every one of them - the way a body is read or checked, "
+                "a field every write needs, a lookup every route makes")
+    return ("the suite's shared step fails the same way for each of them before any of their own checks runs: what "
+            "that step needs from the product is missing, or answered otherwise than the step reads it")
+
+
+def a_step_many_tests_stop_at(state: Any, cluster: Any, command: str) -> Any:
+    """The one blocking defect for failing tests of several criteria that stop at one step with one answer.
+
+    Measured on one run: 8 tests threw "Login failed with status 401" at one line of the suite's helper and 13 were
+    answered 404 on every route under one prefix; each criterion got a defect and a fixer of its own, and the one
+    cause of every 404 was raised as eight symptom defects beside it.
+    """
+    from app.agents.specialists import ReportedDefect
+    from app.sprint import cause as _cause
+
+    failures = cluster.failures
+    # Names in backticks, so two steps in one helper file, or under one path, are never read as one cause.
+    where = (f"the suite's shared step `{cluster.step}`" if cluster.helper else
+             f"every request under `{cluster.step}`" if cluster.status == "404" else f"the request `{cluster.step}`")
+    answer = f"answered {cluster.answer}" if cluster.status else "with one error"
+    shown = "; ".join(
+        f"{f.test.get('name')}: " + (f.thrown or " ".join(part for part in (f.request, f"answered {f.answer}") if part))[:200]
+        for f in failures[:3])
+    said = _what_one_of_them_said(state, cluster.status) if cluster.status else ""
+    return ReportedDefect(
+        description=f"{len(failures)} acceptance tests across {len(cluster.criteria)} criteria stop at {where}, {answer}.",
+        severity="blocking",
+        reproduction_steps=f"Run `{command}`: each of these tests stops at {where}, {answer}.",
+        expected_behavior="The step answers as the interface says for a well-formed request, and each test goes on to "
+                          "its own checks.",
+        actual_behavior=(f"{(means := _what_the_step_means(cluster).rstrip('.'))[:1].upper()}{means[1:]}. Fix it in the one place these tests share; each "
+                         f"criterion's own failures are measured again after. Criteria it stops: "
+                         f"{', '.join(cluster.criteria)}. For example: {shown}" + said),
+        affected_files=[],
+        owner=_owner_for(state, f"refused {cluster.answer}" if cluster.status else shown),
+        kind="failing_test",
+        evidence=[_cause.a_failing_test(f.test.get("name"), f.test.get("file"), f.criterion) for f in failures],
+    )
+
+
+def _the_tests_of(clusters: list[Any]) -> set[int]:
+    return {id(f.test) for cluster in clusters for f in cluster.failures}
 
 
 def within_the_cap_by_cause(state: Any, groups: list[list[str]]) -> tuple[list[str], list[str], int]:

@@ -2999,9 +2999,14 @@ def superseded_by_one_cause(cycle: Any, new_defects: list[Any]) -> Any:
 
     if not any(ONE_CAUSE_MARK in str(getattr(item, "description", "")) for item in new_defects):
         return cycle
+    # A criterion this round raises again on its own still fails beside the one cause (LF.1259: one step many tests
+    # stop at leaves the criteria with other failures raised), so its defect stays open.
+    again = {_first_sentence(getattr(item, "description", "")) for item in new_defects
+             if str(getattr(item, "description", "")).startswith("[AC-")}
     closed = [
         defect.model_copy(update={"status": "superseded"})
         if defect.status == "open" and str(defect.description).startswith("[AC-") and ONE_CAUSE_MARK not in defect.description
+        and _first_sentence(defect.description) not in again
         else defect
         for defect in cycle.defects
     ]

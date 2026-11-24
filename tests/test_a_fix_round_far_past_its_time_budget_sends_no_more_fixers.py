@@ -93,3 +93,24 @@ def test_a_test_round_far_past_its_budget_starts_no_fix_round(
     update, _ = a_test_round(tmp_path, [reported("Saving an entry returns 500")], state={"sprint_plan": PLAN})
 
     assert update["stage"] == stage
+
+
+def test_a_thorough_sprint_s_review_stages_are_not_on_its_clock(monkeypatch, tmp_path):
+    """Measured on one medium run: the budget's pace came from runs with no review stages, and a sprint's code,
+    security, advice and milestone reviews (about 75 active minutes) counted against its 66-minute budget."""
+    monkeypatch.setenv("SPRINT_TIME_BUDGET", "on")
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr("app.observability.transcript._run_id_from_config", lambda: "r")
+    (tmp_path / "data" / "transcripts").mkdir(parents=True)
+    now = datetime.now(timezone.utc)
+    stages = ["technical_lead"] + ["specialist_backend_0"] * 3 + ["code_review_0_0"] * 6 + ["security_review"] * 6 \
+        + ["advice_review_backend"] * 3 + ["defect_fix_1_0"] * 2
+    lines = [json.dumps({"at": (now - timedelta(minutes=10 * (len(stages) - n))).isoformat(), "run_id": "r",
+                         "stage": stage, "kind": "model_request"}) for n, stage in enumerate(stages)]
+    (tmp_path / "data" / "transcripts" / "r.jsonl").write_text("\n".join(lines) + "\n")
+    state = the_fix_stage.a_state(tmp_path, the_fix_stage.a_defect(), sprint_plan=PLAN)
+
+    budget = sprint_time_budget.measure(state, run_id="r", now=now)
+
+    # 21 entries 10 minutes apart: 210 minutes in all, 150 of them ending on a review stage's entry.
+    assert budget is not None and budget.minutes == 60.0

@@ -61,6 +61,10 @@ RECORD_KIND = "time_budget"
 
 #: The stage that plans a sprint's work: its first entry after the previous sprint ended starts the sprint's clock.
 SPRINT_START_STAGE = "technical_lead"
+#: The thorough delivery's review stages are not on the clock: the budget's pace was measured on runs with none of them,
+#: and they judge the work rather than do it. Measured on one medium run: a sprint's code, security, four advice and
+#: milestone reviews took about 75 active minutes, against a 66-minute budget for its three criteria.
+_REVIEW_STAGE = re.compile(r"^(?:code_review|security_review|advice_review|milestone_review)")
 
 _HEAD = re.compile(r'"at":\s*"([^"]+)".*?"stage":\s*"([^"]*)"')
 
@@ -147,6 +151,29 @@ def moments_since(path: Path, since: datetime | None) -> list[datetime]:
     return found
 
 
+def review_minutes(path: Path, since: datetime | None) -> float:
+    """The active minutes the sprint spent in its review stages: each gap (at most `PAUSE_GAP_SECONDS`) that ends on a
+    review stage's entry, from the sprint's first plan on. Taken off the sprint's active minutes."""
+    seconds, last, started = 0.0, None, False
+    with path.open("r", encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            head = _HEAD.search(line[:400])
+            if head is None:
+                continue
+            moment = _when(head.group(1))
+            if moment is None or (since is not None and moment < since):
+                continue
+            if not started and head.group(2) != SPRINT_START_STAGE:
+                continue
+            started = True
+            if last is not None and _REVIEW_STAGE.match(head.group(2)):
+                gap = (moment - last).total_seconds()
+                if 0 < gap <= PAUSE_GAP_SECONDS:
+                    seconds += gap
+            last = moment
+    return seconds / 60
+
+
 def sprint_size(state: Any) -> tuple[int, tuple[str, ...]]:
     """The measured size of the current sprint, and the criteria it delivers (none named: all of them)."""
     from app.acceptance import suite
@@ -189,7 +216,8 @@ def measure(state: Any, *, run_id: str | None = None, now: datetime | None = Non
         from app.graph.acceptance_nodes import criteria_due
 
         due = tuple(criteria_due(state) or own)
-        return Budget(round(active_minutes(moments, now or datetime.now(timezone.utc)), 1), limit_for(size), size, due)
+        spent = active_minutes(moments, now or datetime.now(timezone.utc)) - review_minutes(path, _the_sprint_began_after(state))
+        return Budget(round(max(spent, 0.0), 1), limit_for(size), size, due)
     except Exception as error:  # noqa: BLE001 - a sprint with no measured time is planned as before
         degraded("measure.sprint_time", error)
         return None

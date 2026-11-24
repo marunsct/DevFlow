@@ -5,9 +5,9 @@ the block below is written by `loop.sh state`. The map of all documents is `docs
 `docs/improvement-plan.md`; how the product works is `docs/PRODUCT.md`; how to run and test it is `docs/HANDOVER.md`;
 decisions in force are `docs/owner-decisions.md`; old information is found through `docs/ARCHIVE.md`.
 <!-- state:generated -->
-**As of:** 11-24 09:03 JST (written by `loop.sh state`). Harness 47de9074 committed; ca18b724 deployed (not the same).
-**Live, and stopped in the last day:** run-eded4941 failed at awaiting_approval:defect_fix_3_0; run-8f0be29e failed at failed; run-418ca472 failed at awaiting_approval:defect_fix_1_11
-**Last scored:** run-cee2f308 wordstats-cli 6/8 (completed, FALSE ACCEPTANCE, handoff 0.833; scored 11-24 09:03 JST); run-a07ec311 notes-api-ruby 9/9 (completed, mixed, 69 active min, handoff 1.0; scored 11-24 08:13 JST); run-4702bef3 notes-api-php 9/9 (completed, mixed, 113 active min, handoff 1.0; scored 11-24 06:52 JST).
+**As of:** 11-24 14:15 JST (written by `loop.sh state`). Harness 05061a52 committed; d75ddbcf deployed (not the same).
+**Live, and stopped in the last day:** run-88549ebb running at acceptance_author_0; run-972956f5 running at principal_architect; run-8f0be29e failed at failed
+**Last scored:** run-127780fe notes-api-go 9/9 (completed, handoff 0.857; scored 11-24 14:15 JST); run-eded4941 notes-api-java 9/9 (completed, mixed, 0 active min, handoff 1.0; scored 11-24 14:07 JST); run-cee2f308 wordstats-cli 6/8 (completed, FALSE ACCEPTANCE, mixed, 33 active min, handoff 0.833; scored 11-24 09:03 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -26,15 +26,14 @@ runs only when the owner starts them. Everything under measurement: `docs/improv
 
 ## The last three runs (11-20, hidden / quality; local model)
 Earlier runs (11-22 and before): `reports/product-reviews/`, `reports/status-board/`, git history of this file.
-- **Live (11-24 09:45 JST):** run-127780fe `L notes-api-go container 13` on :1234 (started 09:04 JST). run-eded4941 `L notes-api-java container 11`
-  on :8888, resumed 09:44 JST after the server was down 02:57-09:43 JST. The owner's medium-brief run-8f0be29e failed 00:06 JST
-  at 17 of 97 (reports/product-reviews/2026-11-24-medium-brief-task-dashboard.md).
+- **Live (11-24 14:20 JST):** run-88549ebb `L textkit-lib container 9` on :8888 and run-972956f5 `L web-todo container 6` on :1234 (both started 14:04-14:05 JST,
+  after both ports sat idle 10:55-14:04 while the Opus usage limit stopped the audit and the build agents).
 - **Deployed 11-23/24:** LF.1227-LF.1256, each in `docs/archive/plans/fix-log.md`; the largest: builders and reviews on written code hold that code
   (LF.1232/1233/1236), the release probes sign in and read the contract from the criteria (LF.1242/1249), a fix round starts with its round's defects
   (LF.1244), full-stack packs carry their service's known errors (LF.1245), cannot-pass checks for own-record picks and whole-list counts (LF.1237/1246),
   a round-trip probe (LF.1254), `LONG_REASONING_BEFORE_A_READ` on and measured (LF.1238/1247), stale command containers stopped at worker start (LF.1250).
   Web tools on for every run (LF.1234, owner 11-23).
-- Scored 2026-11-24: **wordstats-cli 7 (6/8, 6/6; delivered, 36 min; "The 3" where words are compared in lower case - LF.1255)**, **notes-api-ruby 6 (9/9, 6/8; delivered, 72 min; delete-twice and a long body lost - LF.1254 building)**, **notes-api-php 12 (9/9, 7/8; not deliverable: a blank title answered 500, left open two attempts - LF.1252; 117 min)**, **fullstack-bookmarks 8 (8/8, 7/7; delivered, 66 min, mutation 0.73)**, **tasks-api 15 (10/10, 7/7; delivered, 3 h 7 min, mutation 0.36; the probes signed in and reached every write - LF.1242/1249)**, **web-todo-react 5 (10/10, 6/6; delivered, 66 min, mutation 0.58)**, **notes-api-csharp 15 (9/9, 8/8; delivered, 78 min, mutation 1.0; NU1202 from a lookup offering EF Core 11 on net8.0, LF.1248)**.
+- Scored 2026-11-24: **notes-api-go 13 (9/9, 7/8; not deliverable: a false check finding kept a right suite in repair until the budget ran out - LF.1256/1267)**, **notes-api-java 11 (9/9, 8/8; delivered with cuts: AC-18; the :8888 server was down 6 h 47 min)**, **wordstats-cli 7 (6/8, 6/6; delivered, 36 min; "The 3" where words are compared in lower case - LF.1255)**, **notes-api-ruby 6 (9/9, 6/8; delivered, 72 min; delete-twice and a long body lost - LF.1254 building)**, **notes-api-php 12 (9/9, 7/8; not deliverable: a blank title answered 500, left open two attempts - LF.1252; 117 min)**, **fullstack-bookmarks 8 (8/8, 7/7; delivered, 66 min, mutation 0.73)**, **tasks-api 15 (10/10, 7/7; delivered, 3 h 7 min, mutation 0.36; the probes signed in and reached every write - LF.1242/1249)**, **web-todo-react 5 (10/10, 6/6; delivered, 66 min, mutation 0.58)**, **notes-api-csharp 15 (9/9, 8/8; delivered, 78 min, mutation 1.0; NU1202 from a lookup offering EF Core 11 on net8.0, LF.1248)**.
 - Scored 2026-11-23: **fullstack-bookmarks 7 (8/8, 6/7; not deliverable: AC-8, AC-15, AC-17 deferred on page tests counting a shared list, LF.1246; 186 min)**, **notes-api-go 12 (9/9, 8/8; delivered, 48 min, mutation 0.89; LF.1242's probes reached every write)**, **tasks-api 14 (10/10, 5/7; delivered with cuts: AC-21; 63 min; blank title and concurrent creates lost - the release probes never signed in, LF.1242)**, **textkit-lib 8 (8/8, 7/7; delivered from the first draft in 10 min, mutation 1.0)**, **notes-api-rust 1 (9/9, 8/8; delivered, 97 min, mixed, mutation 0.50; one own unit test shipped failing - the fifth run with that note)**, **fullstack-bookmarks 6 (8/8, 7/7; delivered with cuts: AC-4 deferred on a locked test that could not pass, AC-14; 114 min, mixed, mutation 0.50)**.
 - Every local family scored full hidden marks today except Rust (0/9 in four local runs; Haiku-built 9/9 twice).
 - Each run's product review: `reports/product-reviews/`.

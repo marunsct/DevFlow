@@ -101,8 +101,9 @@ def test_every_pack_says_it_from_its_own_data(pack, tmp_path, monkeypatch):
     # 1,300 since the setup's starter files and runtime dependencies were added (a review blocked on "missing wsgi.py"
     # and "gunicorn not declared" that the setup had written); the largest pack measured 1,211. 1,400 since the Rust
     # pack names how its unit tests call the app (deep review 2026-11-18: three Rust specifications planned tests on a
-    # test client axum does not have); it measured about 1,350.
-    assert len(told) - len("\n".join(layout_facts(pack, "demo", "demo"))) < 1_400
+    # test client axum does not have); it measured about 1,350. 1,600 since it says sqlx's compile-time query macros
+    # need a database at build time (a Rust run never built on them); it measured about 1,510.
+    assert len(told) - len("\n".join(layout_facts(pack, "demo", "demo"))) < 1_600
 
 
 def test_the_builders_requests_do_not_grow(state, monkeypatch):

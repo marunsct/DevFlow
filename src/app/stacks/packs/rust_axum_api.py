@@ -365,9 +365,8 @@ PACK = service_pack(
         "`tower::ServiceExt::oneshot`. Never "
         "`Router<AppState>`: `axum::serve` cannot serve it. axum has no `axum::test` module and no `TestClient`.",
         # Measured on a Rust run: the store's `sqlx::query!` macros needed a database at build time and it never built.
-        "Database queries use a library's plain functions, checked when they run: with sqlx, `sqlx::query(...)."
-        "bind(...)` and `sqlx::query_as::<_, T>(...)`, never the `query!` / `query_as!` macros, which need a live "
-        "database while the crate compiles.",
+        "With sqlx, queries are `sqlx::query(...).bind(...)` or `query_as::<_, T>(...)`, never the `query!` macros: "
+        "those need a live database at build time.",
     ),
     stack={
         "language": "Rust",

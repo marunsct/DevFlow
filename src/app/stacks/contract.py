@@ -66,6 +66,9 @@ def write(
         "acceptance_pattern": pack.acceptance_pattern,
         "evidence_dir": pack.evidence_dir,
         "scaffolded": scaffolded,
+        # The release lines the brief asked for, as written (`app.stacks.stated_releases`, LF.1311): `the_pack` renders
+        # them again, so the scaffold's files read as the scaffold's and kept files are put back as written.
+        **({"releases": dict(pack.releases)} if getattr(pack, "releases", None) else {}),
         **(extra or {}),
     }
     path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
@@ -420,6 +423,10 @@ def the_pack(repo_root: str | Path | None) -> tuple[StackPack, dict[str, Any]] |
         pack = pack_from(record)
     if pack is None:
         return None
+    if isinstance(record.get("releases"), dict) and record["releases"]:
+        from app.stacks.stated_releases import applied
+
+        pack = applied(pack, record["releases"])
     return pack, record
 
 

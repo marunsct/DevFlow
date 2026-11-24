@@ -45,6 +45,43 @@ KIND_MEANINGS = {
 
 
 @dataclass(frozen=True)
+class ReleaseLine:
+    """What a pack writes differently on one release line of a framework it pins (`ReleaseFamily.lines`): files by
+    path, replacing the pack's own (`files`, `smoke_files`, `golden_example`), and known errors added. Each file still
+    holds the family's places, so the release chosen is written into it as into the pack's own."""
+
+    files: Mapping[str, str] = field(default_factory=dict)
+    smoke_files: Mapping[str, str] = field(default_factory=dict)
+    golden_example: Mapping[str, str] = field(default_factory=dict)
+    known_errors: Mapping[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ReleaseFamily:
+    """A framework or library whose release a pack pins, and the pins it keeps in step with it (LF.1311).
+
+    The pack's own pin (the version its files hold) is the known-good default. A brief that states a release line of it
+    ("Spring Boot 4.2", "NestJS 12") has that line written instead: the newest release on the line this toolchain runs,
+    read from the registry, with every other package of `places` at its own newest release on the same line
+    (`app.stacks.stated_releases`). Stack-specific: declared by the pack, never by the harness.
+    """
+
+    #: How a person names it, for reports: "Spring Boot".
+    title: str
+    #: How a brief names it, matched without case, a space also matching a hyphen or nothing: ("spring boot",).
+    names: tuple[str, ...]
+    #: The registry its releases are read from (`app.tools.release_fit`): "maven", "npm" ...
+    ecosystem: str
+    #: The package that leads the line, as its registry names it: the brief's line is read against its releases.
+    package: str
+    #: Where each pin is written: (package, file relative to the project, a pattern whose `version` group is the
+    #: version). The leader's first place holds the pack's own pin; a package other than the leader is kept in step.
+    places: tuple[tuple[str, str, str], ...]
+    #: What differs on a line other than the pack's own, by the line's leading numbers ("4", or "4.2" for one minor).
+    lines: Mapping[str, ReleaseLine] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class StackPack:
     """One kind of product in one language, ready to build on.
 
@@ -342,6 +379,13 @@ class StackPack:
     #: pinned one (`Router<AppState>`, `axum::test`, Slim's `getErrorMiddleware`, `Results.StatusCode(int, obj)`) -
     #: and a scaffold showing only a health route left the first thing the model had to invent to be the trap.
     golden_example: Mapping[str, str] = field(default_factory=dict)
+    #: The frameworks and libraries whose release this pack pins, each with the pins kept in step with it: a release
+    #: line the brief states wins over the pack's own pin (`app.stacks.stated_releases`, LF.1311).
+    release_families: tuple[ReleaseFamily, ...] = ()
+    #: The version written for each package of `release_families` when it is not the pack's own pin, by package: set
+    #: only on a pack the brief's release was applied to, and recorded in the contract (`contract.write`), so every
+    #: later reading of the scaffold's files renders what was written.
+    releases: Mapping[str, str] = field(default_factory=dict)
 
 
     @property

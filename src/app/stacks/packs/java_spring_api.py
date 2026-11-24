@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from app.stacks import ReleaseFamily, ReleaseLine
 from app.stacks.packs._service import service_pack
 from app.stacks.packs import _sandbox as sandbox
 
 JAVA_VERSION = "21"
 SPRING_BOOT = "3.4.5"
 
-POM = """<?xml version="1.0" encoding="UTF-8"?>
+POM_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
@@ -29,11 +30,11 @@ POM = """<?xml version="1.0" encoding="UTF-8"?>
   <dependencies>
     <dependency>
       <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-web</artifactId>
+      <artifactId>%(web)s</artifactId>
     </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-test</artifactId>
+      <artifactId>%(test)s</artifactId>
       <scope>test</scope>
     </dependency>
   </dependencies>
@@ -47,7 +48,15 @@ POM = """<?xml version="1.0" encoding="UTF-8"?>
     </plugins>
   </build>
 </project>
-""" % {"boot": SPRING_BOOT, "java": JAVA_VERSION}
+"""
+POM = POM_TEMPLATE % {"boot": SPRING_BOOT, "java": JAVA_VERSION, "web": "spring-boot-starter-web",
+                      "test": "spring-boot-starter-test"}
+#: On the Spring Boot 4 line (LF.1311): `spring-boot-starter-web` is deprecated for `spring-boot-starter-webmvc`, and
+#: each technology has its own test starter - `@WebMvcTest` comes with `spring-boot-starter-webmvc-test`, which brings
+#: `spring-boot-starter-test` (the 4.0 migration guide; read from the 4.2.0 POMs and jars on Maven Central). The
+#: parent's version is the family's place, so the release chosen is written into it.
+POM_4 = POM_TEMPLATE % {"boot": "4.0.0", "java": JAVA_VERSION, "web": "spring-boot-starter-webmvc",
+                        "test": "spring-boot-starter-webmvc-test"}
 
 APPLICATION = """package app.{{package}};
 
@@ -82,7 +91,7 @@ server.address=${HOST:127.0.0.1}
 spring.main.banner-mode=off
 """
 
-SMOKE_UNIT = """package app.{{package}};
+SMOKE_UNIT_TEMPLATE = """package app.{{package}};
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -90,7 +99,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import %(web_mvc_test)s;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(HealthController.class)
@@ -104,6 +113,10 @@ class ScaffoldSmokeTest {
     }
 }
 """
+SMOKE_UNIT = SMOKE_UNIT_TEMPLATE % {"web_mvc_test": "org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest"}
+#: `@WebMvcTest` moved in Spring Boot 4 (read from the 4.2.0 `spring-boot-webmvc-test` jar).
+SMOKE_UNIT_4 = SMOKE_UNIT_TEMPLATE % {"web_mvc_test": "org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest"}
+SMOKE_UNIT_PATH = "src/test/java/app/{{package}}/ScaffoldSmokeTest.java"
 
 GUIDE = """The service is Java on Spring Boot, built with Maven: code in
 `src/main/java/app/{{package}}/` (`Application.java` starts it; add `@RestController`
@@ -238,6 +251,69 @@ public class ItemStore {
 }
 """
 
+#: The golden example's store on the Spring Boot 4 line (LF.1311): Jackson 3 under `tools.jackson.*`, whose exceptions are
+#: unchecked, so the file is read and written by `Files` (what throws `IOException` here) and the JSON is a string.
+GOLDEN_STORE_4 = r"""package app.{{package}};
+
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.json.JsonMapper;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+/** The items, kept in one JSON file under DATA_DIR; one lock covers each read-change-write. */
+@Component
+public class ItemStore {
+    public record Item(long id, String name) {}
+
+    private final Path file;
+    private final JsonMapper json = JsonMapper.builder().build();
+
+    public ItemStore(@Value("${DATA_DIR:data}") String dataDir) {
+        this.file = Path.of(dataDir, "items.json");
+    }
+
+    public synchronized Item add(String name) {
+        List<Item> items = load();
+        long next = items.stream().mapToLong(Item::id).max().orElse(0) + 1;
+        Item item = new Item(next, name);
+        items.add(item);
+        save(items);
+        return item;
+    }
+
+    public synchronized Optional<Item> find(long id) {
+        return load().stream().filter(item -> item.id() == id).findFirst();
+    }
+
+    private List<Item> load() {
+        try {
+            if (!Files.exists(file)) {
+                return new ArrayList<>();
+            }
+            return new ArrayList<>(json.readValue(Files.readString(file), new TypeReference<List<Item>>() {}));
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    private void save(List<Item> items) {
+        try {
+            Files.createDirectories(file.toAbsolutePath().getParent());
+            Files.writeString(file, json.writeValueAsString(items));
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+}
+"""
+
 GOLDEN_CONTROLLER = r"""package app.{{package}};
 
 import java.util.Map;
@@ -326,12 +402,65 @@ class ItemControllerTest {
 }
 """
 
+#: Errors a Spring Boot 4 service is known to raise (LF.1311), from the 4.0 migration guide and the 4.2.0 jars: code
+#: written from memory of the 3.x line meets these first.
+SPRING_4_KNOWN_ERRORS = {
+    "package jakarta.validation does not exist": (
+        "`jakarta.validation` (`@Valid`, `@NotBlank`) comes with the `spring-boot-starter-validation` dependency, "
+        "which `pom.xml` must declare beside `spring-boot-starter-webmvc`; the version is the parent's."
+    ),
+    "package com.fasterxml.jackson.databind does not exist": (
+        "Spring Boot 4 brings Jackson 3, whose packages are `tools.jackson.*`: `tools.jackson.databind.json.JsonMapper` "
+        "(or `tools.jackson.databind.ObjectMapper`) and `tools.jackson.core.type.TypeReference`; only the annotations "
+        "stay in `com.fasterxml.jackson.annotation`. Jackson 3's exceptions are unchecked, so a `catch (IOException e)` "
+        "must wrap something that still throws it (`Files.readString`, `Files.writeString`)."
+    ),
+    "package com.fasterxml.jackson.core": (
+        "Spring Boot 4 brings Jackson 3: `TypeReference` is `tools.jackson.core.type.TypeReference`, and the rest of "
+        "Jackson is under `tools.jackson.*`; only the annotations stay in `com.fasterxml.jackson.annotation`."
+    ),
+    "package org.springframework.boot.test.autoconfigure.web.servlet does not exist": (
+        "In Spring Boot 4, `@WebMvcTest` and `@AutoConfigureMockMvc` are in "
+        "`org.springframework.boot.webmvc.test.autoconfigure`, from the `spring-boot-starter-webmvc-test` dependency "
+        "(test scope)."
+    ),
+    "package org.springframework.boot.test.web.client does not exist": (
+        "In Spring Boot 4, `TestRestTemplate` is `org.springframework.boot.resttestclient.TestRestTemplate`, and a "
+        "`@SpringBootTest` gets one only with `@AutoConfigureTestRestTemplate` "
+        "(`org.springframework.boot.resttestclient.autoconfigure`)."
+    ),
+    "package org.springframework.boot.test.mock.mockito does not exist": (
+        "Spring Boot 4 removed `@MockBean` and `@SpyBean`: use `@MockitoBean` and `@MockitoSpyBean` from "
+        "`org.springframework.test.context.bean.override.mockito`."
+    ),
+}
+
+#: Spring Boot, the release this pack pins (LF.1311): a brief asking for another line has the parent's version - which
+#: sets the starters', plugins' and BOM's - written at the newest release of that line the toolchain runs. Maven
+#: Central's `spring-boot-starter-parent` leads the line; the 4 line gets its own starters, smoke test, golden store and
+#: known errors.
+SPRING_BOOT_RELEASES = ReleaseFamily(
+    title="Spring Boot",
+    names=("spring boot", "springboot", "spring-boot-starter-parent"),
+    ecosystem="maven",
+    package="org.springframework.boot:spring-boot-starter-parent",
+    places=(("org.springframework.boot:spring-boot-starter-parent", "pom.xml",
+             r"<artifactId>spring-boot-starter-parent</artifactId>\s*<version>(?P<version>[^<\s]+)</version>"),),
+    lines={"4": ReleaseLine(
+        files={"pom.xml": POM_4},
+        smoke_files={SMOKE_UNIT_PATH: SMOKE_UNIT_4},
+        golden_example={"src/main/java/app/{{package}}/ItemStore.java": GOLDEN_STORE_4},
+        known_errors=SPRING_4_KNOWN_ERRORS,
+    )},
+)
+
 #: The build's jar name, held at every round (`StackPack.required_signatures`): the pack's `start.sh` and Dockerfile run
 #: `target/app.jar`. Measured on one Java run: a work order rewrote `pom.xml` without `<finalName>app</finalName>`, the
 #: build made `notes-api-1.0.0.jar`, and every start said "Unable to access jarfile target/app.jar" for a whole attempt.
 JAR_NAME = {"pom.xml": ((r"<finalName>\s*app\s*</finalName>", "<finalName>app</finalName>"),)}
 
 PACK = service_pack(
+    release_families=(SPRING_BOOT_RELEASES,),
     golden_example={
         "src/main/java/app/{{package}}/ItemStore.java": GOLDEN_STORE,
         "src/main/java/app/{{package}}/ItemController.java": GOLDEN_CONTROLLER,
@@ -367,7 +496,7 @@ PACK = service_pack(
     unit_pattern="*Test.java",
     start="mvn -q -B -Dmaven.test.skip=true package && exec java -jar target/app.jar",
     server_timeout_ms=300_000,
-    smoke_unit=("src/test/java/app/{{package}}/ScaffoldSmokeTest.java", SMOKE_UNIT),
+    smoke_unit=(SMOKE_UNIT_PATH, SMOKE_UNIT),
     guide=GUIDE,
     stack={
         "language": "Java",

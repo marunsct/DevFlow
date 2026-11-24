@@ -77,9 +77,10 @@ Today's line, checked 2026-11-25:
   `org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest`, read from the 4.2.0 `spring-boot-webmvc-test` jar);
   Java 17 or later, Jakarta EE 11 and Servlet 6.1.
 
-The harness's Java pack pins Spring Boot 3.4.5 (`stacks/packs/java_spring_api.py`), so until a scaffold takes the
-release a brief asks for, a run on this family is expected to build on 3.4.5 and fail the release check: that, and
-not the hidden score, is what the family shows first.
+The harness's Java pack pins Spring Boot 3.4.5 (`stacks/packs/java_spring_api.py`); since LF.1311 a brief's stated line
+wins at the scaffold (`stacks/stated_releases.py`): this brief is scaffolded on the newest 4.2 release the toolchain
+runs, with the pack's Spring Boot 4 starters, smoke test and golden store, and falls back to 3.4.5, said in the stack
+facts, only when that setup fails its own smoke test.
 
 ## How a benchmark is laid out
 

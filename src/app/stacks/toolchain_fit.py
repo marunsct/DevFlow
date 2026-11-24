@@ -102,6 +102,10 @@ def described(mismatches: list[dict[str, Any]]) -> str:
         return ""
     lines = []
     for m in mismatches[:MOST_NAMED]:
+        if m.get("said"):
+            # Said whole by the check that found it: a release line the brief asks for (`stated_releases`, LF.1311).
+            lines.append(f"- {m['said']}")
+            continue
         line = (f"- `{m['package']}` {m['version']} ({m['source']}) needs {m['needs']}; this environment has "
                 f"{m['toolchain']}.")
         line += (f" {m['fits']} is the newest release that fits: pin it, or a release of the package that brings it"

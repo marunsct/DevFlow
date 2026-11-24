@@ -462,6 +462,80 @@ def newest_that_fits(ecosystem: str, name: str, here: str, *, fetch: Fetch | Non
             "released": released, "withdrawn": withdrawn}
 
 
+_A_POM_PROPERTY = re.compile(r"<(maven\.compiler\.release|maven\.compiler\.target|java\.version)>\s*([^<\s]+)\s*<")
+
+
+def maven_needs(name: str, version: str, *, fetch: Fetch | None = None) -> str:
+    """The Java a Maven release is built for, from its own POM (`maven.compiler.release`, else `.target`, else
+    `java.version`, one `${...}` followed), as a requirement (`>=17`); "" when it states none or cannot be read. Maven
+    Central's release list states no runtime, so this is read one release at a time (LF.1311). Never raises."""
+    group, _, artifact = str(name or "").partition(":")
+    if not group or not artifact or not version:
+        return ""
+    from app.tools import lookup_service
+
+    def read() -> list[str]:
+        status, body = (fetch or _fetch_default())(
+            f"https://repo1.maven.org/maven2/{group.replace('.', '/')}/{artifact}/{quote(version)}/"
+            f"{artifact}-{quote(version)}.pom")
+        if status != 200:
+            return ["", ""]
+        properties = dict(_A_POM_PROPERTY.findall(body.decode("utf-8", "replace")))
+        for key in ("maven.compiler.release", "maven.compiler.target", "java.version"):
+            value = properties.get(key, "")
+            followed = re.fullmatch(r"\$\{([\w.-]+)\}", value)
+            value = properties.get(followed.group(1), "") if followed else value
+            if numbers(value):
+                return [f">={value}", ""]
+        return ["", ""]
+
+    try:
+        # What a published release states never changes: kept for every run and machine (plan HK.12).
+        known = lookup_service.release_kept("maven", name, version, read, memo=_NEEDS,
+                                            memo_key=("maven", name, version, fetch), shared=fetch is None)
+        return str(known[0] or "")
+    except Exception as exc:  # noqa: BLE001 - unknown fits
+        logger.info("Could not read what %s %s needs: %s", name, version, exc)
+        return ""
+
+
+def on_the_line(version: str, line: tuple[int, ...]) -> bool:
+    """Whether `version` is on a release line given by its leading numbers: 4.2.0 is on (4,), (4, 2) and (4, 2, 0)."""
+    return bool(line) and numbers(version)[: len(line)] == tuple(line)
+
+
+def newest_on_line(ecosystem: str, name: str, line: tuple[int, ...], here: str, *,
+                   fetch: Fetch | None = None) -> dict[str, Any]:
+    """The newest stable, not withdrawn release of `name` on `line` (its leading numbers) whose stated need `here`
+    meets: {"version", "needs", "released", "newest"} ("newest": the line's newest). When none on the line fits,
+    "version" is "" and "needs" is what the line's newest needs; when the registry lists no stable release on the
+    line, "version" and "newest" are "" and "latest" is the registry's newest; {} when it cannot be read (LF.1311)."""
+    listed = releases(ecosystem, name, fetch=fetch)
+    if not listed:
+        return {}
+    on_line = [r for r in listed if is_stable(r.version) and on_the_line(r.version, line) and not r.withdrawn]
+    if not on_line:
+        stable = [r for r in listed if is_stable(r.version)] or listed
+        return {"version": "", "newest": "", "latest": stable[0].version}
+    newest_needs = ""
+    for at, release in enumerate(on_line[:MOST_RELEASES_READ_ONE_BY_ONE]):
+        if ecosystem == "maven":
+            needs = maven_needs(name, release.version, fetch=fetch)
+        elif release.needs is None:
+            read = needs_of(ecosystem, name, release.version, fetch=fetch)
+            if read.withdrawn:
+                continue
+            needs = read.needs or ""
+        else:
+            needs = release.needs
+        if at == 0:
+            newest_needs = needs
+        if fits(ecosystem, needs, here):
+            return {"version": release.version, "needs": needs, "released": release.released,
+                    "newest": on_line[0].version}
+    return {"version": "", "needs": newest_needs, "newest": on_line[0].version}
+
+
 #: Why the version offered is not the newest, as `package_registry` words it for crates and NuGet.
 _NEWER_NEEDS_MORE = ("The newest release, {newest}, needs {needs}; this environment has {here}, so {version} is the "
                      "newest it builds - pin that.")
@@ -507,5 +581,5 @@ def fitted(ecosystem: str, name: str, found: dict[str, Any], fetch: Fetch | None
         return found
 
 
-__all__ = ["RUNTIME_OF", "Release", "fits", "fitted", "is_stable", "needs_of", "newest_that_fits", "numbers",
-           "releases", "satisfies", "toolchain"]
+__all__ = ["RUNTIME_OF", "Release", "fits", "fitted", "is_stable", "maven_needs", "needs_of", "newest_on_line",
+           "newest_that_fits", "numbers", "on_the_line", "releases", "satisfies", "toolchain"]

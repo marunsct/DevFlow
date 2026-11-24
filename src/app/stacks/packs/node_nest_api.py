@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+
+from app.stacks import ReleaseFamily
 from app.stacks.packs import _javascript as js
 from app.stacks.packs._service import service_pack
 from app.stacks.packs import _sandbox as sandbox
@@ -166,6 +169,17 @@ EXPOSE 3000
 CMD ["node", "dist/main.js"]
 """ % {"node": js.NODE_MAJOR}
 
+#: The NestJS packages, released together on one line: a brief asking for another line has each written at its own
+#: newest release on that line this toolchain runs, `@nestjs/core` leading (LF.1311).
+NEST_PACKAGES = ("@nestjs/core", "@nestjs/common", "@nestjs/platform-express", "@nestjs/testing")
+NEST_RELEASES = ReleaseFamily(
+    title="NestJS",
+    names=("nestjs", "nest.js", "@nestjs/core"),
+    ecosystem="npm",
+    package="@nestjs/core",
+    places=tuple((name, "package.json", rf'"{re.escape(name)}":\s*"\^(?P<version>[^"]+)"') for name in NEST_PACKAGES),
+)
+
 PACK = service_pack(
     sandbox_image=sandbox.NODE,
     name="node-nest-api",
@@ -200,4 +214,5 @@ PACK = service_pack(
     release_files={"Dockerfile": DOCKERFILE, ".dockerignore": js.DOCKERIGNORE + "dist/\n"},
     gitignore="dist/\n",
     kept_scripts={"test": UNIT_SCRIPT},
+    release_families=(NEST_RELEASES,),
 )

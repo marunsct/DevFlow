@@ -293,7 +293,19 @@ def scaffold(state: Any, config: RunnableConfig, ctx: Context) -> dict[str, Any]
 
             brief = getattr(state.get("document"), "text", "") or ""
             package = stated_module(brief) if pack.language == "python" else None
-            result = scaffold_pack(root, pack, project, title or project, package=package)
+            # The release line the brief asks for wins over the pack's own pin (LF.1311); a brief that asks for none
+            # is scaffolded exactly as before.
+            from app.stacks import stated_releases
+
+            choice = stated_releases.choose(pack, brief, root)
+            result = scaffold_pack(root, choice.pack, project, title or project, package=package)
+            if not result.ok and choice.changed:
+                # The setup on the asked line did not prove itself: set up on the pack's known-good pins, and say so.
+                logger.warning("Scaffold %s on the brief's releases was not kept (%s); setting it up on the pack's "
+                               "own pins", pack.name, result.problem)
+                choice = stated_releases.fall_back(root, project, title or project, package, choice, result.problem)
+                result = scaffold_pack(root, choice.pack, project, title or project, package=package)
+            stated_releases.record(root, choice)
             if not result.ok:
                 # One retry of the whole scaffold: the commands inside a single
                 # attempt are each retried once already, so a second attempt
@@ -303,7 +315,7 @@ def scaffold(state: Any, config: RunnableConfig, ctx: Context) -> dict[str, Any]
                     "Scaffold %s was not kept (%s); trying the whole scaffold once more",
                     pack.name, result.problem,
                 )
-                result = scaffold_pack(root, pack, project, title or project, package=package)
+                result = scaffold_pack(root, choice.pack, project, title or project, package=package)
             update["scaffold_result"] = {
                 "ok": result.ok, "pack": pack.name, "project": project, "problem": result.problem,
             }
@@ -316,7 +328,7 @@ def scaffold(state: Any, config: RunnableConfig, ctx: Context) -> dict[str, Any]
                     decision=pack.title,
                     rationale=(
                         f"The {pack.title} scaffold installed and passed its own unit and acceptance "
-                        "smoke tests."
+                        "smoke tests." + (f" {choice.said}" if choice.said else "")
                     ),
                 )
             else:

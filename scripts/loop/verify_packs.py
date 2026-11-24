@@ -4,7 +4,9 @@ Runs INSIDE the worker (or a container of a candidate image), piped in on stdin:
 
     docker compose exec -T worker python - [pack ...] < scripts/loop/verify_packs.py
 
-With no names, every pack. Each is scaffolded into a throwaway workspace under
+With no names, every pack. `<pack>@<line>` (`java-spring-api@4`) checks the pack on a release line its families
+declare, as a brief asking for that line gets it: the newest release of the line the toolchain here runs, read from
+the registry (`app.stacks.stated_releases`, LF.1311). Each is scaffolded into a throwaway workspace under
 `/app/data/workspaces/default/pack-check/`, with the run's toolchain marker set
 as a run would set it, through exactly the commands a run uses. A pack whose
 smoke tests do not pass here leaves every run built on it "left to the agents";
@@ -47,8 +49,15 @@ def check(names: list[str]) -> list[str]:
     for name in names:
         started = time.time()
         try:
-            pack = pack_named(name)
-            root = base / name
+            pack = pack_named(name.partition("@")[0])
+            if "@" in name:
+                from app.stacks.stated_releases import on_line
+
+                line = tuple(int(part) for part in name.partition("@")[2].split("."))
+                choice = on_line(pack, pack.release_families[0], line)
+                print(f"=== {name}: {choice.said}", flush=True)
+                pack = choice.pack
+            root = base / name.replace("@", "-at-")
             clear(root)
             keys = _toolchain_keys(pack.language, "javascript")
             (root / STACK_MARKER).write_text("\n".join(sorted(keys)) + "\n")

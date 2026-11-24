@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from app.stacks import StackPack
+from app.stacks import ReleaseFamily, StackPack
 from app.stacks.packs import _javascript as js
 
 PACKAGE_JSON = """{
@@ -239,6 +239,7 @@ def service_pack(
     unit_mirrors: tuple[str, str] | tuple[()] = (),
     fetches_while_building: bool = False,
     golden_example: Mapping[str, str] | None = None,
+    release_families: tuple[ReleaseFamily, ...] = (),
 ) -> StackPack:
     """A pack for an HTTP service in its own language, accepted through Playwright's `request` fixture."""
     # The brief names the service by its `start.sh`, and the suite runs that script when the project has one
@@ -310,4 +311,5 @@ def service_pack(
         unit_mirrors=unit_mirrors,
         fetches_while_building=fetches_while_building,
         golden_example=dict(golden_example or {}),
+        release_families=release_families,
     )

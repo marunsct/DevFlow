@@ -14,7 +14,8 @@ is written when the architect's reading is done and after each install resolves,
 - the stack selector: the toolchains this environment runs (`toolchains_section`);
 - the architect: each library's chosen release, date and withdrawal (`library_lines`);
 - the drafting of a manifest: the toolchain beside the registry's releases (`app.graph.registry_versions`);
-- every fixer: the toolchain and the versions resolved, in two lines (`for_a_fixer`);
+- every fixer: the toolchain and the versions resolved, in two lines (`for_a_fixer`), and the release lines the brief
+  asks for with what the scaffold pinned (`app.stacks.stated_releases`, LF.1311);
 - release: a withdrawn dependency or an unresolved mismatch shipped, as a gap (`release_gaps`).
 
 A version the brief or the project pins is never changed here: the sheet records it beside the newest that fits.
@@ -325,11 +326,15 @@ def for_a_fixer(root: str | Path | None) -> str:
     versions += [f"{d.get('package')} {d.get('resolved') or d.get('version')}"
                  + (f" (withdrawn: {d['withdrawn']})" if d.get("withdrawn") else "")
                  for d in sheet.get("dependencies") or [] if isinstance(d, dict)]
-    if not toolchain and not versions:
+    from app.stacks.stated_releases import for_a_fixer as asked_by_the_brief
+
+    asked = asked_by_the_brief(sheet)
+    if not toolchain and not versions and not asked:
         return ""
     shown = ", ".join(versions[:24]) + (f", and {len(versions) - 24} more" if len(versions) > 24 else "")
     return (f"\n\n{TOOLCHAIN_LINE} {toolchain or 'not read'}.\n"
-            f"{VERSIONS_LINE} {shown or 'none read yet'} (`.harness/stack-facts.json`).\n")
+            f"{VERSIONS_LINE} {shown or 'none read yet'} (`.harness/stack-facts.json`).\n"
+            + (f"{asked}\n" if asked else ""))
 
 
 def release_gaps(root: str | Path | None) -> list[str]:

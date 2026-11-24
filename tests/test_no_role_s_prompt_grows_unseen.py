@@ -50,7 +50,9 @@ CEILINGS = {
     # delegate with no tool for it, and that reading widely was its whole job.
     # 6,000 since a test picks out its own records by a marker each one carries whole (LF.1235): a locked test kept the
     # records whose title held "Work <id>", one of its two never did, and it failed a right product for a sprint.
-    "acceptance_reviewer": 6_000,
+    # 6,250 since a value compared in a normal form is tested in another form (LF.1255): three runs of one brief printed
+    # "The 3" where words are compared in lower case, and no locked test gave a capital.
+    "acceptance_reviewer": 6_250,
 }
 # 4,300 for the same read-only wording (LF.967).
 OTHERWISE = 4_300

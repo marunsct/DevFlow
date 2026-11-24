@@ -240,10 +240,28 @@ def findings(
     return errors_in(output, directory, root)
 
 
+def what_the_package_has(workspace: str | Path, project: str, finding: dict) -> str:
+    """For an error about a name a package does not have where the code asks for it: where the package really declares
+    it, or the names it has nearest (`language_service.the_names_the_module_has`); "" when its language cannot say.
+
+    Measured on Rust runs: `axum::extract::JsonRejection`, `sqlx::SqlitePoolOptions` and `rusqlite::JournalMode` cost a
+    compile round each; the compiler names the path asked for, not where the name is, and the crate's source says.
+    """
+    try:
+        from app.analysis.language_service import the_names_the_module_has
+
+        root = Path(workspace)
+        importer = root / str(finding.get("file") or "")
+        return the_names_the_module_has(root / project if project else root, importer, finding)
+    except Exception:  # noqa: BLE001 - the error stands as the compiler said it
+        return ""
+
+
 def toolchain_present(language: str) -> bool:
     """Whether this environment has the compiler for `language`."""
     executable = {"go": "go", "rust": "cargo", "java": "javac", "csharp": "dotnet", "swift": "swift", "php": "php"}
     return shutil.which(executable.get(language, language)) is not None
 
 
-__all__ = ["CHECKERS", "Checker", "SUFFIXES", "checker_for", "errors_in", "findings", "toolchain_present"]
+__all__ = ["CHECKERS", "Checker", "SUFFIXES", "checker_for", "errors_in", "findings", "toolchain_present",
+           "what_the_package_has"]

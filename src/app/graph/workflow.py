@@ -2961,7 +2961,9 @@ def _what_the_compiler_says_of(root: str, touched: set[str], stage_name: str, pr
         degraded("check.compiler_findings_in_touched_files", error)
         return []
     found.sort(key=lambda finding: finding["file"] not in touched)
-    return [f"- In `{f['file']}` line {f['line']}: {f['message']} (the compiler)" for f in found]
+    # Where a package really declares a name the code asked for in the wrong place (PACKAGE_EXPORTS_NAMED).
+    return [f"- In `{f['file']}` line {f['line']}: {f['message']} (the compiler)"
+            f"{compiler_check.what_the_package_has(root, project, f)}" for f in found]
 
 
 #: How much of a failing unit run a defect carries.

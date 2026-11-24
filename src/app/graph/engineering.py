@@ -492,7 +492,8 @@ def _what_the_compiler_says(state: Any, root: str, since: str, project: str) -> 
             description=f"{relative} line {line}: {message}{FAILS_WHEN_IT_RUNS}",
             severity="major",
             reproduction_steps=f"Build the project: the compiler stops at {relative} line {line}.",
-            expected_behavior="The project compiles: every name is defined or imported and every call matches what it calls.",
+            expected_behavior="The project compiles: every name is defined or imported and every call matches what it "
+                              f"calls.{compiler_check.what_the_package_has(root, project, finding)}",
             actual_behavior=f"{message} (the compiler, as an IDE would underline it)",
             affected_files=[relative],
             owner=_owner_of(state, ""),

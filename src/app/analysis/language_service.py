@@ -753,6 +753,17 @@ def what_the_module_defines(project: Path, importer: Path, line: str) -> tuple[P
         return None
 
 
+def _where_a_crate_declares(project: Path, importer: Path, finding: dict) -> str:
+    from app.analysis.rust_crate_exports import where_it_is
+
+    return where_it_is(project, importer, finding)
+
+
+#: For a language whose compiler names the path an import or a path asked for (`unresolved import `a::b::C``), where
+#: the package really declares the name, read from its source: `(project, importer, finding) -> sentence`. A finding
+#: of these carries its line number; the reader reads the importer itself.
+_WHERE_A_PACKAGE_DECLARES: dict[str, Callable[[Path, Path, dict], str]] = {".rs": _where_a_crate_declares}
+
 #: A name an import asks for that the module does not have: Pyright's wording, then TypeScript's.
 _A_MISSING_NAME = __import__("re").compile(
     r"\"([^\"]+)\" is unknown import symbol|has no exported member '([^']+)'|has no default export"
@@ -767,6 +778,14 @@ def the_names_the_module_has(project: Path, importer: Path, finding: dict) -> st
     `app`. The harness can read the module; a model's guess at it is not a fact.
     """
     message = str(finding.get("message") or "")
+    where = _WHERE_A_PACKAGE_DECLARES.get(importer.suffix.lower())
+    if where is not None:
+        from app.analysis import package_exports
+
+        try:
+            return where(project, importer, finding) if package_exports.enabled() else ""
+        except Exception:  # noqa: BLE001 - the finding goes out as it was
+            return ""
     wanted = _A_MISSING_NAME.search(message)
     if wanted is None:
         return _the_paths_the_package_has(project, message)

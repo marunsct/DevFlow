@@ -190,16 +190,19 @@ def limits_in(text: str) -> list[Limit]:
             after = sentence[match.end():matches[index + 1].start() if index + 1 < len(matches) else len(sentence)]
             own = f"{before} {match.group(0)} {after}"
             words = _operation_words(before) or _operation_words(after.split(",")[0])
-            route = next(iter(_A_ROUTE.findall(before) or _A_ROUTE.findall(after)), "")
-            if not words and not route and not _REQUESTS_OF_ANY_KIND.search(own):
+            # Each route the sentence names is limited on its own: "applied to /api/auth/login and /api/auth/register.
+            # 5 requests per minute" limits both. Measured on one run: only the first was read, and the suite's eleven
+            # sign-ups a minute went unseen beside its five sign-ins.
+            routes = tuple(dict.fromkeys(_A_ROUTE.findall(before) or _A_ROUTE.findall(after))) or ("",)
+            if not words and routes == ("",) and not _REQUESTS_OF_ANY_KIND.search(own):
                 continue
-            found.append(Limit(
+            found.extend(Limit(
                 sentence=sentence[:400], count=count, window=span * _UNITS[unit],
                 window_said=(f"{span} {unit}" if span > 1 else unit.rstrip("s") if len(unit) > 1 else
                              {"s": "second", "m": "minute", "h": "hour", "d": "day"}[unit]),
                 per="user" if _PER_A_USER.search(after[:60] + " " + before) else "address",
                 words=words, route=route,
-            ))
+            ) for route in routes)
     return found
 
 

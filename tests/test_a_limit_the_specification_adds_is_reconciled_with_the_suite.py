@@ -82,6 +82,19 @@ def test_the_measured_limits_and_suite_are_one_finding_naming_both_limits():
     assert "`notes/playwright.config.js`" in finding
 
 
+def test_one_sentence_limiting_two_routes_limits_each_of_them():
+    """Measured on a second medium run: "Middleware applied to /api/auth/login and /api/auth/register. 5 requests per
+    minute per IP address." Only the first route was read, so the suite's eleven sign-ups a minute were never
+    compared with it."""
+    spec = ("Rate limiting: Middleware applied to /api/auth/login and /api/auth/register. "
+            "5 requests per minute per IP address.")
+    suite = {"acceptance/helpers.js": HELPERS, "acceptance/items.spec.js": a_spec_file(12)}
+
+    assert sorted(limit.route for limit in client_limits.limits_in(spec)) == ["/api/auth/login", "/api/auth/register"]
+    found = client_limits.collisions(spec, suite)
+    assert "${BASE}/auth/register" in [c.called for c in found]
+
+
 def test_the_review_rules_for_the_specification_and_sends_the_suite_s_writers_nothing_of_it(tmp_path):
     root = a_workspace_with(tmp_path, the_measured_suite())
     spec = SimpleNamespace(security_and_privacy=SECURITY, interface_contract=[])

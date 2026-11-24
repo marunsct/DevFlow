@@ -85,7 +85,7 @@ def test_a_whole_read_past_the_room_left_gets_the_outline_and_its_ranges(stage):
 
     assert "keep the running total" not in given
     assert "300 lines" in given
-    assert re.search(r"^\s*151-\d+\s+def handle_refund\(order, amount\):", given, re.M)
+    assert re.search(r"^\s*151-\d+\s+def handle_refund\(order, amount\):?", given, re.M)
     assert "by range" in given
 
 

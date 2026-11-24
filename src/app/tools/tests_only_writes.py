@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from app.agents.stand_in_rule import FOR_A_FIXER
+from app.agents.own_store_rule import FOR_A_FIXER as OWN_STORE_FOR_A_FIXER
 from app.switches import is_on
 
 #: `TESTS_ONLY_WRITES` set to on or off overrides this.
@@ -110,6 +111,8 @@ def briefing(run_id: str | None, stage: str) -> str:
         "finish; the next attempt may change the product.\n"
         # LF.1312: a slice test that replaced the service asserted the service's rule, and tests-only fixes left it.
         f"{FOR_A_FIXER}\n"
+        # LF.1316: a store's tests shared one store file, and five tests-only rewrites never gave each an empty one.
+        f"{OWN_STORE_FOR_A_FIXER}\n"
     )
 
 

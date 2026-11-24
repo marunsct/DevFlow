@@ -230,8 +230,11 @@ def keep_the_unit_run(
 DISTINCT_CAUSES = "Distinct causes, most failing first:"
 #: Characters of one failure's message shown.
 MOST_MESSAGE = 600
-#: A line of a failure that states the error: `SomeError: ...`, an assertion, what was expected.
-_STATES_THE_ERROR = re.compile(r"\b\w*(?:Error|Exception)\b|\bassert(?:ion)?\b|\bexpected\b", re.I)
+#: A line of a failure that states the error: `SomeError: ...`, an assertion, what was expected and what came instead.
+#: What came is kept too (LF.1316): a long node:assert message was cut to "expected: 1," and its "6 !== 1" and
+#: "actual: 6," were left out, so the fixer of tests that shared one store never saw the count grow.
+_STATES_THE_ERROR = re.compile(r"\b\w*(?:Error|Exception)\b|\bassert(?:ion)?\b|\bexpected\b|\bactual\b|\breceived\b"
+                               r"|\bbut was\b|!==", re.I)
 #: A line that only says where, or what the runner shows of the source: a frame, an argument's value, a source line.
 _ONLY_SAYS_WHERE = re.compile(r'^(?:File "|at\s|\S+:\d+: in\b|>|self\s*=|\w+\s*=\s|_{5,}|\^+$|def\s)')
 

@@ -90,14 +90,14 @@ def expects_a_refusal_it_did_not_get(message: str) -> bool:
     return any(pattern.search(text) for pattern in _patterns("refusal_not_given"))
 
 
-def _row_for(path: str) -> LanguageSupport | None:
+def row_for(path: str) -> LanguageSupport | None:
     suffix = Path(path).suffix.lower()
     return next((row for row in LANGUAGES if suffix in row.suffixes), None)
 
 
 def stand_ins_in(path: str, text: str) -> list[str]:
     """What a test file puts stand-ins in place of, in its language's own spelling; [] when none or unknown."""
-    row = _row_for(path)
+    row = row_for(path)
     if row is None or isinstance(row.stand_ins, Gap):
         return []
     found: dict[str, None] = {}
@@ -136,7 +136,7 @@ def failing_tests(text: str) -> list[Failing]:
             for m in _LISTED.finditer(str(text or ""))]
 
 
-def _failing_in_the_pack_s_report(root: Path) -> list[Failing]:
+def failing_in_the_pack_s_report(root: Path) -> list[Failing]:
     try:
         from app.acceptance import junit
         from app.stacks import contract
@@ -151,7 +151,7 @@ def _failing_in_the_pack_s_report(root: Path) -> list[Failing]:
         return []
 
 
-def _test_files(root: Path) -> list[Path]:
+def test_files(root: Path) -> list[Path]:
     from app.analysis.file_kinds import classify_file
 
     found: list[Path] = []
@@ -159,21 +159,21 @@ def _test_files(root: Path) -> list[Path]:
         folders[:] = sorted(f for f in folders if f not in NOT_THE_PRODUCT and not f.startswith("."))
         for name in sorted(files):
             relative = (Path(folder) / name).relative_to(root).as_posix()
-            if _row_for(name) is not None and classify_file(relative) == "test":
+            if row_for(name) is not None and classify_file(relative) == "test":
                 found.append(Path(folder) / name)
                 if len(found) >= MOST_FILES:
                     return found
     return found
 
 
-def _read(path: Path) -> str:
+def read_text(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8", errors="replace")[:MOST_FILE_CHARACTERS]
     except OSError:
         return ""
 
 
-def _bare_name(name: str) -> str:
+def bare_name(name: str) -> str:
     """A test's own name: the last part of `Class.method`, `file::test`, `suite › test`, without its parameters."""
     name = re.sub(r"\[.*\]$|\(.*\)$", "", str(name or "").strip())
     return re.split(r"::|›|#|\.|/", name)[-1].strip()
@@ -185,18 +185,18 @@ def the_file_of(root: Path, test: Failing, files: list[Path]) -> tuple[Path, str
     if where:
         named = root / where
         if named.is_file():
-            return named, _read(named)
+            return named, read_text(named)
         # A file's path, or a class's qualified name (`app.notes.NotesControllerTest`).
-        stem = Path(where).stem if _row_for(where) else re.split(r"[./]", where.rstrip("/"))[-1]
+        stem = Path(where).stem if row_for(where) else re.split(r"[./]", where.rstrip("/"))[-1]
         for path in files:
             if path.stem == stem or path.as_posix().endswith(where):
-                return path, _read(path)
-    bare = _bare_name(test.name)
+                return path, read_text(path)
+    bare = bare_name(test.name)
     if len(bare) < 3:
         return None
     defined = re.compile(rf"\b{re.escape(bare)}\b")
     for path in files:
-        text = _read(path)
+        text = read_text(path)
         if defined.search(text):
             return path, text
     return None
@@ -259,11 +259,11 @@ def for_a_fixer(root: str | Path, defect: Any) -> str:
 
         root = Path(root)
         text = "\n".join(str(getattr(defect, field, "") or "") for field in ("description", "actual_behavior"))
-        failing = [t for t in [*_failing_in_the_pack_s_report(root), *failing_tests(text)]
+        failing = [t for t in [*failing_in_the_pack_s_report(root), *failing_tests(text)]
                    if expects_a_refusal_it_did_not_get(t.message)]
         if not failing:
             return ""
-        files = _test_files(root)
+        files = test_files(root)
         lines: list[str] = []
         seen: set[str] = set()
         for test in failing:
@@ -282,7 +282,7 @@ def for_a_fixer(root: str | Path, defect: Any) -> str:
                 continue
             lines.append(
                 f"- The product already refuses this: the locked acceptance test `{refusing}` passes. "
-                f"`{_bare_name(test.name)}` in `{path.relative_to(root).as_posix()}` expected a refusal and got a "
+                f"`{bare_name(test.name)}` in `{path.relative_to(root).as_posix()}` expected a refusal and got a "
                 f"success, because this test's stand-in for {_named(stand_ins)} hides the rule: test it where it "
                 "lives (that component's own test) or without the stand-in, and keep this test to what the code "
                 "under test does itself."
@@ -295,6 +295,7 @@ def for_a_fixer(root: str | Path, defect: Any) -> str:
 
 
 __all__ = [
-    "Failing", "HEADING", "expects_a_refusal_it_did_not_get", "failing_tests", "for_a_fixer", "stand_ins_in",
+    "Failing", "HEADING", "bare_name", "expects_a_refusal_it_did_not_get", "failing_in_the_pack_s_report",
+    "failing_tests", "for_a_fixer", "read_text", "row_for", "stand_ins_in", "test_files",
     "the_acceptance_test_that_refuses", "the_file_of",
 ]

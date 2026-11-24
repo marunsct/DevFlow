@@ -19,7 +19,9 @@ CEILINGS = {
     # 13,700 since the builders are told the command tool refuses a service, so its tests prove it starts, and the
     # interface role that a test-only install is not the product's (LR.54): "start it" sent them to a refused command,
     # and "nothing to install" contradicted the testing rule's test-only install.
-    "specialist": 13_700,
+    # 14,000 since the testing role is told a unit test that stores data starts from an empty store of its own
+    # (LF.1316): a store's tests shared one store file, and five tests-only rewrites never gave each its own.
+    "specialist": 14_000,
     # 4,450 since the security review is told which of its words are blocking and major, and which is a suggestion
     # (LR.54): the scope rule's "never a blocking or major finding" named no word of its scale, where high gates.
     "security_reviewer": 4_450,

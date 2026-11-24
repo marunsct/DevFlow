@@ -96,6 +96,17 @@ class LanguageSupport:
     #: Patterns over its runners' failure messages that say a test expected a refusal and got a success: a 4xx status
     #: expected where a 2xx or 3xx came (groups `expected` and `got`), or an error expected and none raised.
     refusal_not_given: tuple[str, ...] | Gap = Gap("no runner message is read for a refusal that did not come")
+    #: Patterns over a test file's text of where one test begins, each with a group `name` (or `id`, a second
+    #: spelling's): the test's name as its runner reports it (`app.analysis.shared_store_tests`, LF.1316). A file is read as the tests between them.
+    test_starts: tuple[str, ...] | Gap = Gap("no test definitions are read in this language")
+    #: Patterns over its runners' failure messages that say a count or a list came back larger than the test expected:
+    #: a count's carry the groups `expected` and `got` (read as numbers, `got` the larger), a list's carry none.
+    #: Measured (LF.1316): unit tests that shared one store file failed with "6 !== 1" and with six records where `[]`
+    #: was expected, and five tests-only rewrites never gave each test an empty store.
+    more_than_expected: tuple[str, ...] | Gap = Gap("no runner message is read for a count larger than expected")
+    #: How a unit test in this language starts from an empty store of its own, in one sentence for a test's writer or
+    #: fixer (LF.1316).
+    fresh_store: str | Gap = Gap("no wording for an empty store per test in this language")
 
 
 _NODE_INSTALLED = ("node_modules",)
@@ -161,6 +172,60 @@ _JS_REFUSAL = (
     *_EXPECTED_GOT,
 )
 
+#: "expected 1, actual 6", "expected 1 but got 6", "got 6, want 1": a count's wording many runners share (LF.1316).
+_COUNT_EXPECTED_GOT = (
+    r"(?i:expected|want(?:ed)?)\W{0,4}(?P<expected>\d+)\b[^\n\d]{0,20}?(?i:but\s+)?(?i:got|was|received|actual)\W{0,4}"
+    r"(?P<got>\d+)\b",
+    r"(?i:got|actual)\W{0,4}(?P<got>\d+)\b[^\n\d]{0,20}?(?i:expected|want(?:ed)?)\W{0,4}(?P<expected>\d+)\b",
+)
+#: `test('name', ...)`, `it("name", ...)`, `t.test(...)`: node:test, Jest, Vitest, Mocha.
+_JS_TEST_STARTS = (r"(?m)^[ \t]*(?:await\s+)?(?:\w+\.)?(?:it|test)\s*\(\s*(?P<q>['\"`])(?P<name>.*?)(?P=q)",)
+_JS_MORE_THAN_EXPECTED = (
+    # node:assert's strictEqual: actual !== expected; its error's own fields.
+    r"(?P<got>\d+) !== (?P<expected>\d+)",
+    r"actual: (?P<got>\d+),\s*expected: (?P<expected>\d+)",
+    # Jest and Vitest.
+    r"Expected(?: length)?:\s*(?P<expected>\d+)\s+Received(?: length)?:\s*(?P<got>\d+)",
+    # Chai.
+    r"expected (?P<got>\d+) to (?:equal|be|eql) (?P<expected>\d+)",
+    r"to have a length of (?P<expected>\d+) but got (?P<got>\d+)",
+    r"to be empty",
+    # node:assert's deepStrictEqual of a list: records added on the actual side, or an empty list expected.
+    r"(?m)\+ actual - expected[\s\S]*^[ \t]*- \[\][ \t]*$",
+    r"(?m)\+ actual - expected[\s\S]*^[ \t]*\+[ \t]+\{",
+    r"expected: \[\]",
+    r"Expected: \[\]\s+Received: \[",
+    *_COUNT_EXPECTED_GOT,
+)
+_JS_FRESH_STORE = (
+    "With `node:test`, Jest or Vitest, point the store at a fresh folder before its module is first loaded "
+    "(`process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'data-'))` above the `require`, or an `await "
+    "import(...)` after it for ES modules) and empty that folder in `beforeEach` (`fs.rmSync(dir, { recursive: true, "
+    "force: true })`, then create it again), building any store that also keeps records in memory again there."
+)
+_JVM_TEST_STARTS = (
+    r"@(?:Test|ParameterizedTest|RepeatedTest)\b(?:\s*\([^)]*\))?(?:\s*@\w+(?:\([^)]*\))?)*\s+"
+    r"(?:(?:public|protected|private|static|final|suspend|internal)\s+)*(?:void\s+|fun\s+)?"
+    r"(?:`(?P<name>[^`]+)`|(?P<id>\w+))\s*\(",
+)
+_JVM_MORE_THAN_EXPECTED = (
+    # JUnit's assertEquals(1, list.size()).
+    r"expected:\s*<(?P<expected>\d+)> but was:\s*<(?P<got>\d+)>",
+    # AssertJ.
+    r"Expected size:\s*<?(?P<expected>\d+)>? but was:\s*<?(?P<got>\d+)",
+    r"Expecting (?:actual )?(?:to be )?empty but was",
+    r"expected: <\[\]> but was: <\[",
+    # Hamcrest.
+    r"Expected: a collection with size <(?P<expected>\d+)>\s+but: collection size was <(?P<got>\d+)>",
+    r"Expected: an empty collection\s+but:",
+    *_COUNT_EXPECTED_GOT,
+)
+_JVM_FRESH_STORE = (
+    "With JUnit 5, each test builds its store on its own folder from `@TempDir` in `@BeforeEach`; a Spring test that "
+    "shares one application context points the store at a temporary folder and clears it in `@BeforeEach`, or marks "
+    "the class `@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)`."
+)
+
 
 def _rows() -> tuple[LanguageSupport, ...]:
     javascript = LanguageSupport(
@@ -185,6 +250,9 @@ def _rows() -> tuple[LanguageSupport, ...]:
         resolved="npm",
         stand_ins=_JS_STAND_INS,
         refusal_not_given=_JS_REFUSAL,
+        test_starts=_JS_TEST_STARTS,
+        more_than_expected=_JS_MORE_THAN_EXPECTED,
+        fresh_store=_JS_FRESH_STORE,
     )
     typescript = replace(
         javascript, name="typescript", suffixes=(".ts", ".tsx", ".mts", ".cts"),
@@ -227,6 +295,23 @@ def _rows() -> tuple[LanguageSupport, ...]:
                 r"DID NOT RAISE",
                 *_EXPECTED_GOT,
             ),
+            test_starts=(r"(?m)^[ \t]*(?:async\s+)?def\s+(?P<name>test\w*)\s*\(",),
+            more_than_expected=(
+                # pytest: `assert len(items) == 1`, `assert items == []`.
+                r"assert (?P<got>\d+) == (?P<expected>\d+)\b",
+                r"Left contains (?:\d+ )?more items?",
+                r"assert \[[^\n]+\] == \[\]",
+                # unittest: `assertEqual(len(items), 1)`, `assertEqual(items, [])`.
+                r"AssertionError: (?P<got>\d+) != (?P<expected>\d+)\b",
+                r"First list contains \d+ additional elements?",
+                r"Lists differ: \[[^\n]+\] != \[\]",
+                *_COUNT_EXPECTED_GOT,
+            ),
+            fresh_store=(
+                "With pytest, a fixture gives each test its own folder (`tmp_path`), sets the setting the store reads "
+                "to it (`monkeypatch.setenv(\"DATA_DIR\", str(tmp_path))`, or the store's own path argument) and only "
+                "then builds the store or the app, so no test reads another's records."
+            ),
         ),
         LanguageSupport(
             name="go",
@@ -253,6 +338,21 @@ def _rows() -> tuple[LanguageSupport, ...]:
                 r"\bNewMock(?P<name>[A-Z]\w*)\(",
             ),
             refusal_not_given=_EXPECTED_GOT,
+            test_starts=(
+                r"(?m)^func\s+(?P<name>Test\w*)\s*\(",
+                r"\bt\.Run\(\s*\"(?P<name>[^\"]*)\"",
+            ),
+            more_than_expected=(
+                # testify: assert.Len, assert.Equal(t, 1, len(items)), assert.Empty.
+                r"should have (?P<expected>\d+) item\(s\), but has (?P<got>\d+)",
+                r"expected:\s*(?P<expected>\d+)\s+actual\s*:\s*(?P<got>\d+)\b",
+                r"Should be empty, but was",
+                *_COUNT_EXPECTED_GOT,
+            ),
+            fresh_store=(
+                "In Go, each test makes its own folder with `t.TempDir()` and builds its store on it (or sets the "
+                "setting the store reads with `t.Setenv(\"DATA_DIR\", dir)` before building it)."
+            ),
         ),
         LanguageSupport(
             name="rust",
@@ -280,6 +380,17 @@ def _rows() -> tuple[LanguageSupport, ...]:
                 r"did not panic as expected",
                 *_EXPECTED_GOT,
             ),
+            test_starts=(r"#\[(?:[\w:]+::)?test\b[^\]]*\](?:\s*#\[[^\]]*\])*\s*(?:pub\s+)?(?:async\s+)?fn\s+(?P<name>\w+)",),
+            more_than_expected=(
+                # assert_eq!(items.len(), 1), assert_eq!(items, vec![]).
+                r"left:\s*(?P<got>\d+)\s+right:\s*(?P<expected>\d+)\b",
+                r"left:\s*\[[^\n]+\]\s+right:\s*\[\]",
+                *_COUNT_EXPECTED_GOT,
+            ),
+            fresh_store=(
+                "In Rust, each test builds its store on its own folder from `tempfile::tempdir()` (a dev-dependency), "
+                "never on a fixed path that tests running side by side share."
+            ),
         ),
         LanguageSupport(
             name="java",
@@ -303,6 +414,9 @@ def _rows() -> tuple[LanguageSupport, ...]:
             resolved=_NO_RESOLVED_SET,
             stand_ins=_JVM_STAND_INS,
             refusal_not_given=_JVM_REFUSAL,
+            test_starts=_JVM_TEST_STARTS,
+            more_than_expected=_JVM_MORE_THAN_EXPECTED,
+            fresh_store=_JVM_FRESH_STORE,
         ),
         LanguageSupport(
             name="kotlin",
@@ -325,6 +439,9 @@ def _rows() -> tuple[LanguageSupport, ...]:
             resolved=_NO_RESOLVED_SET,
             stand_ins=_JVM_STAND_INS,
             refusal_not_given=_JVM_REFUSAL,
+            test_starts=_JVM_TEST_STARTS,
+            more_than_expected=_JVM_MORE_THAN_EXPECTED,
+            fresh_store=_JVM_FRESH_STORE,
         ),
         LanguageSupport(
             name="csharp",
@@ -359,6 +476,25 @@ def _rows() -> tuple[LanguageSupport, ...]:
                 r"No exception was thrown",
                 *_EXPECTED_GOT,
             ),
+            test_starts=(
+                r"\[(?:Fact|Theory|Test|TestMethod|TestCase)\b[^\]]*\](?:\s*\[[^\]]*\])*\s*public\s+"
+                r"(?:async\s+)?(?:void|[A-Z][\w.]*(?:<[^>]*>)?)\s+(?P<name>\w+)\s*\(",
+            ),
+            more_than_expected=(
+                # xUnit and MSTest: Assert.Equal(1, items.Count); NUnit: Assert.That(items.Count, Is.EqualTo(1)).
+                r"Expected:\s*<?(?P<expected>\d+)>?\s+(?:Actual|But was):\s*<?(?P<got>\d+)>?",
+                r"Assert\.(?:Single|Empty)\(\) Failure",
+                r"Expected: <empty>\s+But was:",
+                # FluentAssertions.
+                r"to contain (?P<expected>\d+) item\(s\), but found (?P<got>\d+)",
+                r"to be empty, but found",
+                *_COUNT_EXPECTED_GOT,
+            ),
+            fresh_store=(
+                "With xUnit, the test class's constructor (run before each test) builds the store on a fresh folder "
+                "under `Path.GetTempPath()` and `Dispose` deletes it; NUnit's `[SetUp]` and MSTest's "
+                "`[TestInitialize]` do the same."
+            ),
         ),
         LanguageSupport(
             name="ruby",
@@ -392,6 +528,24 @@ def _rows() -> tuple[LanguageSupport, ...]:
                 r"but nothing was raised",
                 *_EXPECTED_GOT,
             ),
+            test_starts=(
+                r"(?m)^[ \t]*(?:it|specify|scenario|test)\s*\(?\s*(?P<q>['\"])(?P<name>.*?)(?P=q)",
+                r"(?m)^[ \t]*def\s+(?P<id>test_\w+)",
+            ),
+            more_than_expected=(
+                # RSpec's eq and minitest's assert_equal.
+                r"expected:\s*(?P<expected>\d+)\s+got:\s*(?P<got>\d+)\b",
+                r"Expected:\s*(?P<expected>\d+)\s+Actual:\s*(?P<got>\d+)\b",
+                r"expected:\s*\[\]\s+got:\s*\[",
+                r"(?i:expected) \[[^\n]*\] to be empty",
+                r"expected collection contained:",
+                *_COUNT_EXPECTED_GOT,
+            ),
+            fresh_store=(
+                "With RSpec or Minitest, `before` (or `setup`) makes a fresh folder with `Dir.mktmpdir` and points the "
+                "store at it (`ENV[\"DATA_DIR\"]` set before the store is built), and `after` (or `teardown`) "
+                "removes it."
+            ),
         ),
         LanguageSupport(
             name="php",
@@ -421,6 +575,24 @@ def _rows() -> tuple[LanguageSupport, ...]:
                 rf"Failed asserting that {_SERVED} (?:is identical to|matches expected) {_REFUSED}\b",
                 r"Failed asserting that exception of type \"[^\"]+\" is thrown",
                 *_EXPECTED_GOT,
+            ),
+            test_starts=(
+                r"function\s+(?P<name>test\w*)\s*\(",
+                r"(?:#\[Test\]|@test\b)[\s\S]{0,200}?function\s+(?P<id>\w+)\s*\(",
+                r"(?m)^[ \t]*(?:it|test)\(\s*(?P<q>['\"])(?P<name>.*?)(?P=q)",
+            ),
+            more_than_expected=(
+                # PHPUnit's assertCount, assertSame and assertEmpty; Laravel's assertDatabaseCount.
+                r"actual size (?P<got>\d+) matches expected size (?P<expected>\d+)",
+                r"Failed asserting that (?P<got>\d+) (?:is identical to|matches expected) (?P<expected>\d+)\b",
+                r"Failed asserting that an array is empty",
+                r"expected entries count of (?P<expected>\d+)\. Entries found: (?P<got>\d+)",
+                *_COUNT_EXPECTED_GOT,
+            ),
+            fresh_store=(
+                "With PHPUnit, `setUp()` builds the store on a fresh folder under `sys_get_temp_dir()` "
+                "(`putenv(\"DATA_DIR=...\")` before it is built) and `tearDown()` removes it; with Laravel, the "
+                "`RefreshDatabase` trait gives each test an empty database."
             ),
         ),
     )

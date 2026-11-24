@@ -49,6 +49,9 @@ SIGNALS: list[tuple[str, str, str]] = [
     # Its words are `app.analysis.stand_in_tests.HEADING`.
     ("LF.1312 a unit test's stand-in shown hiding a rule the product keeps", "request",
      "--- A stand-in hides the rule this unit test expects ---"),
+    # Its words are `app.analysis.shared_store_tests.HEADING`.
+    ("LF.1316 unit tests shown sharing one store, with the records that leaked", "request",
+     "--- These unit tests share stored data ---"),
 ]
 
 

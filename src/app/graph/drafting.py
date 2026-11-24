@@ -348,6 +348,20 @@ def _what_a_stand_in_leaves_out(path: str) -> str:
     return FOR_TEST_WRITERS if classify_file(path) == "test" else ""
 
 
+def _an_empty_store_of_its_own(path: str) -> str:
+    """The empty-store rule for a test file's draft, with how its language gives a test its own store; "" otherwise."""
+    from app.agents.own_store_rule import FOR_TEST_WRITERS
+    from app.analysis.file_kinds import classify_file
+    from app.analysis.stand_in_tests import row_for
+    from app.stacks.languages import Gap
+
+    if classify_file(path) != "test":
+        return ""
+    row = row_for(path)
+    how = "" if row is None or isinstance(row.fresh_store, Gap) else " " + row.fresh_store
+    return FOR_TEST_WRITERS + how
+
+
 def draft_request(root: Path, path: str, task: Any, specification: Any, stack: Any,
                   diagnostics: list[str] | None = None, code_under_test: Collection[str] = (),
                   written_before: Collection[str] = ()) -> str:
@@ -384,6 +398,8 @@ def draft_request(root: Path, path: str, task: Any, specification: Any, stack: A
         if code_under_test else "",
         # A test file is told what a test with a stand-in can check (LF.1312).
         _what_a_stand_in_leaves_out(path),
+        # A test file is told that a test that stores data starts from an empty store of its own (LF.1316).
+        _an_empty_store_of_its_own(path),
         detail.strip(),
         f"--- The work order it belongs to ---\n{getattr(task, 'task_description', '')}"
         + (f"\nDone when:\n{criteria}" if criteria else ""),

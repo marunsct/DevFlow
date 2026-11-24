@@ -98,6 +98,7 @@ def principal_architect_node(state: WorkflowGraphState, config: RunnableConfig, 
                 getattr(state.get("stack_selection"), "technology_stack", None),
                 getattr(state.get("document"), "text", "") or "",
                 ctx.building_model if isinstance(ctx.building_model, BaseChatModel) else None,
+                root=state["repository"].root_path,
             )
         except Exception:  # noqa: BLE001 - the architect reads for itself, as before
             logger.warning("Could not do the architect's reading before it began", exc_info=True)

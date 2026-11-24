@@ -468,6 +468,10 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
     from app.stacks.known_errors import with_known_causes
 
     reported = with_known_causes(state["repository"].root_path, reported)
+    # A resolved package this toolchain cannot run, as the stated cause (HK.2, `app.stacks.toolchain_fit`).
+    from app.stacks.toolchain_fit import with_fit_causes
+
+    reported = with_fit_causes(state["repository"].root_path, reported)
     # No source queues more fixers a round than the graph can step through, once the one-cause rules above have
     # merged what is one problem (LF.1261).
     capped = at_most_of_each_source(reported)

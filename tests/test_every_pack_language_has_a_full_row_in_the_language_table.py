@@ -14,6 +14,7 @@ import pytest
 
 from app.analysis.compiler_check import CHECKERS
 from app.analysis.reachability import FAMILIES
+from app.analysis.resolved_packages import READERS as RESOLVED_READERS
 from app.plugins.seed import DEVELOPMENT_SERVERS
 from app.stacks.languages import Gap, LanguageSupport, image_of, language
 from app.stacks.packs import ALL_PACKS
@@ -52,6 +53,8 @@ def test_what_a_row_names_is_a_mechanism_that_exists(name):
         assert row.import_graph in FAMILIES
     if not isinstance(row.development_server, Gap):
         assert row.development_server in DEVELOPMENT_SERVERS
+    if not isinstance(row.resolved, Gap):
+        assert row.resolved in RESOLVED_READERS
 
 
 @pytest.mark.parametrize("name", PACK_LANGUAGES)

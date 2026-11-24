@@ -34,6 +34,8 @@ os.environ.setdefault("ENV", "development")
 # No test reaches a package registry: the dependency gate looks up every package an install would fetch
 # (`app.tools.dependency_gate`). Its own tests turn it on with the registry stood in for.
 os.environ.setdefault("DEPENDENCY_GATE", "off")
+# Nor do the stack facts and the toolchain-fit check after an install (`app.stacks.stack_facts`); their tests turn them on.
+os.environ.setdefault("STACK_FACTS", "off")
 # No test reaches a real model. `load_settings` reads `.env` without overriding, so without this the suite took its
 # model server from the operator's file: a run's startup path diagnoses the model, and when the file named a server
 # that needs no key the tests sent it real requests, beside the live runs, and took minutes. Port 9 refuses at once;

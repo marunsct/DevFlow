@@ -126,8 +126,13 @@ def _topics(libraries: list[str], brief: str, model: Any) -> list[tuple[str, str
         return fallback
 
 
-def research_notes(stack: Any, brief: str, model: Any, *, workers: int = 6) -> str:
-    """The registry versions and documentation the specification needs, as text for its request; "" if nothing was found."""
+def research_notes(stack: Any, brief: str, model: Any, *, workers: int = 6, root: Any = None) -> str:
+    """The registry versions and documentation the specification needs, as text for its request; "" if nothing was found.
+
+    `root`: the workspace, where the stack facts are written (`app.stacks.stack_facts`, HK.1); their lines - each
+    library's release this toolchain runs, its date and whether it was withdrawn - replace the registry's raw answers.
+    """
+    from app.stacks import stack_facts
     from app.tools import docs, package_registry
 
     libraries = libraries_of(stack)
@@ -157,11 +162,12 @@ def research_notes(stack: Any, brief: str, model: Any, *, workers: int = 6) -> s
     if not looked_up and not read:
         return ""
     logger.info("Research done before the architect: %d package(s) looked up, %d page(s) read", len(looked_up), len(read))
+    facts = stack_facts.library_lines(root, stack, libraries) if looked_up else ""
     return "\n\n".join(part for part in (
         "--- Research done for this stage: current registry releases and documentation excerpts ---\n"
         "Read for you before this stage, from the registries and the libraries' own documentation. "
         "Write from it; documentation and registry lookups are not offered in this stage.",
-        ("Registry releases:\n" + "\n".join(looked_up)) if looked_up else "",
+        facts or (("Registry releases:\n" + "\n".join(looked_up)) if looked_up else ""),
         "\n\n".join(read),
     ) if part) + "\n"
 

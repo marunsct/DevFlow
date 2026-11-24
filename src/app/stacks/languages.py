@@ -84,6 +84,9 @@ class LanguageSupport:
     #: product started as delivered is given a network, as a stranger starting it has. Measured on one C# run: with
     #: none, NU1301 in every round on a product that started for the suite.
     restores_when_it_starts: bool | Gap = Gap("its usual start command runs what was built or installed")
+    #: The reader of `app.analysis.resolved_packages` that lists what an install resolved (its lock file, the restore's
+    #: assets or the installed packages) with the runtime each needs, for the toolchain-fit check (HK.2).
+    resolved: str | Gap = Gap("no reader lists what its install resolved")
 
 
 _NODE_INSTALLED = ("node_modules",)
@@ -105,6 +108,8 @@ _JVM_TESTS = (r"(^|/)src/test/", r"Test\.(java|kt|scala)$")
 _NO_DOCS_REGISTRY = "the docs tool reads READMEs from npm, PyPI, crates.io and GitHub-hosted Go modules only"
 _NO_RUNTIME_PIN = "runtimes pins node, go, java and python; the pack's sandbox image carries this toolchain's version"
 _NO_IMPORT_GRAPH = "imports are followed for Python and JavaScript/TypeScript only; definitions alone are read"
+_NO_RESOLVED_SET = Gap("Maven and Gradle resolve while they build and keep no lock file read here, and Maven Central "
+                       "states no runtime a release needs")
 _INSTALLS_INTO_THE_PROJECT = "its packages are installed into the project, which the delivered copy carries"
 
 
@@ -128,6 +133,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
         import_graph="script",
         development_server="javascript",
         package_cache=Gap(_INSTALLS_INTO_THE_PROJECT),
+        resolved="npm",
     )
     typescript = replace(
         javascript, name="typescript", suffixes=(".ts", ".tsx", ".mts", ".cts"),
@@ -156,6 +162,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
             import_graph="python",
             development_server="python",
             package_cache=Gap(_INSTALLS_INTO_THE_PROJECT),
+            resolved="python",
         ),
         LanguageSupport(
             name="go",
@@ -176,6 +183,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
             import_graph=Gap(_NO_IMPORT_GRAPH),
             development_server=Gap("Go's standard server is a production server; `go run` is read in no source"),
             package_cache=("GOMODCACHE", "go/pkg/mod"),
+            resolved="go",
         ),
         LanguageSupport(
             name="rust",
@@ -196,6 +204,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
             import_graph=Gap(_NO_IMPORT_GRAPH),
             development_server=Gap("Rust's servers are production servers; `cargo run` is read in no source"),
             package_cache=("CARGO_HOME", ".cargo"),
+            resolved="cargo",
         ),
         LanguageSupport(
             name="java",
@@ -216,6 +225,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
             import_graph=Gap(_NO_IMPORT_GRAPH),
             development_server=Gap("`spring-boot:run` is a build command, read in no source"),
             package_cache=Gap("the Java pack fetches while it builds and tests, with a network (`fetches_while_building`)"),
+            resolved=_NO_RESOLVED_SET,
         ),
         LanguageSupport(
             name="kotlin",
@@ -235,6 +245,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
             executables=("kotlinc", "kotlin"),
             import_graph=Gap(_NO_IMPORT_GRAPH),
             development_server=Gap("no pack is in Kotlin; its servers are production servers"),
+            resolved=_NO_RESOLVED_SET,
         ),
         LanguageSupport(
             name="csharp",
@@ -256,6 +267,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
             import_graph=Gap(_NO_IMPORT_GRAPH),
             development_server=Gap("Kestrel is a production server; `dotnet watch` is read in no source"),
             package_cache=("NUGET_PACKAGES", ".nuget/packages"),
+            resolved="nuget",
             restores_when_it_starts=True,
         ),
         LanguageSupport(
@@ -277,6 +289,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
             import_graph=Gap(_NO_IMPORT_GRAPH),
             development_server="ruby",
             package_cache=Gap("not measured: where bundler keeps its gems is set by the pack's install"),
+            resolved="bundler",
         ),
         LanguageSupport(
             name="php",
@@ -297,6 +310,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
             import_graph=Gap(_NO_IMPORT_GRAPH),
             development_server="php",
             package_cache=Gap("Composer installs into `vendor/` in the project, which the delivered copy carries"),
+            resolved="composer",
         ),
     )
 

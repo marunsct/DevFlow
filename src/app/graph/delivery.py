@@ -444,6 +444,10 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     if shipped_failing_unit_tests:
         gaps.append(release_with_failing_unit_tests.gap(shipped_failing_unit_tests))
     gaps.extend(release_audits.licence_gaps(root))
+    # A withdrawn dependency or a toolchain mismatch shipped (HK.1, `app.stacks.stack_facts`).
+    from app.stacks import stack_facts
+
+    gaps.extend(stack_facts.release_gaps(root))
     gaps.extend(unit_test_quarantine.release_note(root))
     unit_gap = _no_unit_tests_ran(root)
     if unit_gap:

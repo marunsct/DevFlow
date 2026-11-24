@@ -142,6 +142,7 @@ SWITCHES: dict[str, str] = {
     "START_PROBE": "app.acceptance.start_probe",
     "DEPENDENCY_GATE": "app.tools.dependency_gate",
     "REGISTRY_VERSIONS_BEFORE_A_MANIFEST": "app.graph.registry_versions",
+    "STACK_FACTS": "app.stacks.stack_facts",
     "EXTENSIONS_BEFORE_A_RUN": "app.stacks.imports_before_a_run",
     "NAMING_STANDARD": "app.stacks.naming",
     "REFUSALS_FOLDED": "app.agents.refusal_folding",

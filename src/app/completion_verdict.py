@@ -55,6 +55,9 @@ _NOTES = re.compile(
         r"AC-\d+ was deferred during the run; its own locked tests pass at release:",
         r"CR-\d+ was deferred during the run; its own locked tests pass at release:",
         r"Ships \d+ dependenc(y|ies) under a strong-copyleft licence",
+        # What the stack facts hold against what ships (HK.1): the suite that passed at release ran on it.
+        r"A dependency its registry marks withdrawn ships:",
+        r"A resolved package needs a newer toolchain than the one here:",
         r"The judgement model .* could not be built ",
         # What the intake assumed where the brief does not say (deep review C8): the reader is told, nothing failed.
         r"Assumed at intake where the brief does not say:",

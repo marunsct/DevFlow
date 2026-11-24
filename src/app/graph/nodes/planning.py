@@ -209,6 +209,9 @@ def stack_selector_node(state: WorkflowGraphState, config: RunnableConfig, ctx: 
 
     document = state.get("document")
     constraints = constraints_note(getattr(document, "text", "") or "")
+    # The toolchains this environment runs, so a library is chosen whose current release runs here (HK.1).
+    from app.stacks.stack_facts import toolchains_section
+
     request = {
         "messages": [
             {
@@ -216,6 +219,7 @@ def stack_selector_node(state: WorkflowGraphState, config: RunnableConfig, ctx: 
                 "content": (
                     f"{constraints}"
                     f"{supported_stacks_note()}"
+                    f"{toolchains_section()}"
                     f"Product Intake: {state['product_intake']}\n"
                     f"Tools: {state.get('tools_models')}"
                 ),

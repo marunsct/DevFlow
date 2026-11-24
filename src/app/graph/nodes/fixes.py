@@ -137,6 +137,10 @@ def _the_fix_request(
 
     add(KEPT, cause_journal.tried_before(root, defect, shown=(defect.attempts if _ledger.enabled() else ())))
     add(KEPT, _what_others_found(state, defect, defect_index, cycle))  # WL.4, its switch
+    # The toolchain here and the versions the project resolved, mismatches first, in two lines (HK.1, HK.2).
+    from app.stacks import stack_facts
+
+    add(KEPT, stack_facts.for_a_fixer(root))
     # The web tools, for a fixer whose defect failed twice (plan WL.5, its switch): offered with the agent.
     from app.graph import web_tools_after_two_failed_fixes
 

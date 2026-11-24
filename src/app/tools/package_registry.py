@@ -418,6 +418,11 @@ def look_up(ecosystem: str, name: str, *, fetch: Fetch | None = None) -> dict[st
         return {"error": f"The {which} registry answered {status}; go on with what the project already pins."}
     if "error" in found:
         return found
+    # The newest release this environment's toolchain runs, for every registry with a field saying what a release
+    # needs (HK.1, LF.1292; crates and NuGet do it in their readers).
+    from app.tools import release_fit
+
+    found = release_fit.fitted(which, name, found, fetch)
     result = {"ecosystem": which, "package": name, **{k: v for k, v in found.items() if v not in (None, "", {}, [])}}
     result["this_environment_runs"] = runtime_here(which)
     _CACHE[key] = result

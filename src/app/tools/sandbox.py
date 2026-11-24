@@ -5642,6 +5642,7 @@ class SandboxExecutor:
 
         already_timed_out = 0 if harness else timed_out_this_way_before(repo_root, command, working_directory, category)
         later_sprints = ""
+        toolchain_misfit = ""
         # A test command run again with nothing changed since its last result is answered from that result rather
         # than run (see `app.tools.unchanged_rerun`): the answer is the real one, and the run would only repeat it.
         from app.tools import unchanged_rerun
@@ -5673,15 +5674,20 @@ class SandboxExecutor:
             # A peak left from an earlier command on this context is not this one's.
             _MEMORY_PEAK_OF_THE_COMMAND.set(None)
             before = unchanged_rerun.what_the_workspace_holds(repo_root) if kept_as else None
+            # What an install resolved, checked against the toolchain here (HK.2, LF.1293).
+            from app.stacks import toolchain_fit
+
+            locks = toolchain_fit.before_a_command(repo_root, working_directory)
             outcome = cls._run(
                 command, repo_root, role_name, category, extra_env, working_directory
             )
+            toolchain_misfit = toolchain_fit.after_a_command(repo_root, locks, category)
             if not harness and _as_exit_code(outcome.get("returncode")) not in (None, 0):
                 later_sprints = _failures_a_later_sprint_owns(repo_root, began)
         ran = outcome
         notes = [n for n in (redundant_cd, doubled, redirected, _a_missing_path_that_is_here(outcome),
                              _a_relative_path_missing_from_where_it_ran(outcome, repo_root, working_directory),
-                             later_sprints) if n]
+                             later_sprints, toolchain_misfit) if n]
         if notes:
             outcome = {**outcome, "note": " ".join(notes)}
         # An answer from the earlier result already says it is one; the repeat notes would say it again.

@@ -169,8 +169,13 @@ def section(root: str | Path, path: str, specification: Any, stack: Any = None) 
             if answer.get("error") or not answer.get("version"):
                 continue
             note = f" ({answer['note']})" if answer.get("note") else ""
+            note += f" (withdrawn: {answer['withdrawn']}; choose another release)" if answer.get("withdrawn") else ""
             lines.append(f"- `{answer.get('package') or name}`: {answer['version']}{note}")
-        shown = "\n".join([HEADING, NOTE.format(registry=registry), *lines]) if lines else ""
+        # The toolchain the packages must run on, from the stack facts (HK.1).
+        from app.stacks import stack_facts
+
+        toolchain = stack_facts.toolchain_line(root, registry)
+        shown = "\n".join([HEADING, NOTE.format(registry=registry), *([toolchain] if toolchain else []), *lines]) if lines else ""
         _SHOWN[key] = shown
         try:
             from app.observability import defect_ledger

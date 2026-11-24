@@ -355,6 +355,47 @@ def with_paths_inside_the_project(milestone: Any, repo_root: str | Path | None) 
 _OUTPUT_TRIMMING = re.compile(r"(?:\s*2>&1|\s*\|\s*(?:tail|head)(?:\s+-n)?\s+-?\d+)+\s*$")
 
 
+def with_tests_where_the_runner_collects(milestone: Any, repo_root: str | Path | None) -> Any:
+    """The plan with each unit test file its work orders name where the project's unit runner collects it (LF.1263).
+
+    Measured on a full-stack run: the lead's testing work order named the service's unit tests in a test folder
+    inside the service's package, beside its code, while the pack's runner collects only the project's own unit test
+    folder; the two files written there never ran, and the unit gate passed on none. The path is put right here, and
+    in the order's own words (its description and steps) where they name it. Never raises.
+    """
+    try:
+        from app.stacks.unit_test_home import collected_path
+
+        tasks = list(getattr(milestone, "delegated_tasks", None) or [])
+        changed = False
+        rewritten = []
+        for task in tasks:
+            files = [str(f) for f in getattr(task, "files", None) or []]
+            moved = {path: to for path in files if (to := collected_path(repo_root, path))}
+            if moved:
+                changed = True
+
+                def put_right(text: str) -> str:
+                    for old, new in moved.items():
+                        text = text.replace(old, new)
+                    return text
+
+                update: dict[str, Any] = {"files": list(dict.fromkeys(moved.get(path, path) for path in files))}
+                if isinstance(getattr(task, "task_description", None), str):
+                    update["task_description"] = put_right(task.task_description)
+                if isinstance(getattr(task, "steps", None), list):
+                    update["steps"] = [put_right(str(step)) for step in task.steps]
+                logger.info("Unit test files named where the runner collects them: %s",
+                            ", ".join(f"{old} -> {new}" for old, new in moved.items()))
+                task = task.model_copy(update=update)
+            rewritten.append(task)
+        if not changed:
+            return milestone
+        return milestone.model_copy(update={"delegated_tasks": rewritten})
+    except Exception:  # noqa: BLE001 - the write guard still refuses the path and names the right one
+        return milestone
+
+
 def _without_output_trimming(command: str) -> str:
     """`command` without the trailing output trimming a shell would have done; else unchanged.
 
@@ -1100,5 +1141,6 @@ __all__ = ["with_run_only_testing_orders_left_to_the_test_round",
     "readiness_problems",
     "with_borrowed_files_noted",
     "with_paths_inside_the_project",
+    "with_tests_where_the_runner_collects",
     "with_test_cases_from_its_criteria",
 ]

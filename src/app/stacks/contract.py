@@ -825,6 +825,14 @@ def reference_code(repo_root: str | Path | None, path: str | None = None) -> str
         return ""
 
 
+def _the_unit_test_names(pack: StackPack) -> str:
+    """Every name the pack's unit runner collects, quoted: a page's and a service's (LF.1263). Measured on a full-stack
+    run: the setup named the page's `*.test.tsx` alone, and nothing told a stage the service's tests are `test_*.py`."""
+    from app.stacks.unit_test_home import unit_test_names
+
+    return ", ".join(f"`{name}`" for name in unit_test_names(pack)) or f"`{pack.unit_pattern}`"
+
+
 def describe(repo_root: str | Path | None, *, with_reference_code: bool = True) -> str:
     """The contract as a block for every stage that writes code or tests.
 
@@ -846,7 +854,7 @@ def describe(repo_root: str | Path | None, *, with_reference_code: bool = True) 
     return (
         "--- Project setup (already done; the harness owns it) ---\n"
         f"`{project}/` was scaffolded as: {pack.title}. Its tests already run.\n"
-        f"- Unit tests: `{project}/{pack.unit_dir}/`, files named `{pack.unit_pattern}`; "
+        f"- Unit tests: `{project}/{pack.unit_dir}/`, files named {_the_unit_test_names(pack)}; "
         f"run with `{shown(record.get('unit_test'))}` in `{project}/`.\n"
         f"- Acceptance tests: `{project}/{pack.acceptance_dir}/` belongs to QA and is locked; "
         "nothing else may change it. The harness runs it and reports which criteria pass.\n"

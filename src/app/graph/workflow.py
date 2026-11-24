@@ -4161,7 +4161,7 @@ def _run_unit_tests_procedurally(repo_root: str) -> tuple[bool | None, str]:
         # `npm test` four times with no fix between, five minutes each on a unit test that never settled.
         kept = _the_unit_run_kept(repo_root, cmd)
         if kept is not None:
-            return kept
+            return _not_a_pass_on_no_test(repo_root, reports, *kept)
         for report in reports:
             junit.clear(report)
         runner = sandbox_runner(repo_root)
@@ -4192,10 +4192,30 @@ def _run_unit_tests_procedurally(repo_root: str) -> tuple[bool | None, str]:
             output = (output.rstrip() + "\n" + str(outcome["error"])).strip()
         if rc != 0:
             output = (output.rstrip() + "\n" + _what_the_unit_reports_say(reports)).strip()
-        _keep_the_unit_run(repo_root, cmd, rc == 0, output)
-        return rc == 0, output
+        passed, output = _not_a_pass_on_no_test(repo_root, reports, rc == 0, output)
+        _keep_the_unit_run(repo_root, cmd, passed, output)
+        return passed, output
     except Exception as error:  # noqa: BLE001 - procedural test failure falls back to agent triage
         return False, f"The harness could not run the unit tests: {error}"
+
+
+def _not_a_pass_on_no_test(repo_root: str, reports: list[Path], passed: bool, output: str) -> tuple[bool, str]:
+    """A unit run that exited as a pass and collected no test, once unit tests were ordered, as a failing run whose
+    output ends saying where the runner looks and where the test files are (LF.1263).
+
+    Measured on a full-stack run: every test round's unit run printed "No test files found" and "no tests ran", the
+    gate passed it each time, and the service's unit tests - written where the runner does not look - never ran.
+    Before any unit test is written or planned, a run of none passes as it did.
+    """
+    if not passed:
+        return passed, output
+    from app.stacks.unit_test_home import none_collected
+
+    why = none_collected(repo_root, reports, output)
+    if not why:
+        return passed, output
+    logger.warning("The unit run collected no test while unit tests were ordered: %s", why[:300])
+    return False, (str(output or "").rstrip() + "\n" + why).strip()
 
 
 def _the_unit_reports(repo_root: str, record: dict[str, Any], command: list[Any]) -> list[Path]:

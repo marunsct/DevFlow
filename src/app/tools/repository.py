@@ -5955,6 +5955,27 @@ def _tests_outside_the_project(root: Path, relative_parts: tuple[str, ...]) -> s
     )
 
 
+def _a_test_the_runner_does_not_collect(root: Path, target: Path, relative_parts: tuple[str, ...]) -> str | None:
+    """Why a new test file does not belong where it is written inside the project, or None if it does (LF.1263).
+
+    Measured on a full-stack run: the lead's work order put the service's unit tests in a test folder inside the
+    service's package; the pack's runner collects only the project's unit test folder, so both files were never run
+    and the unit gate passed on none. A new file only: a file already there is changed where it is.
+    """
+    if target.exists():
+        return None
+    from app.stacks import contract, unit_test_home
+
+    relative = "/".join(relative_parts)
+    collected = unit_test_home.collected_path(root, relative)
+    if not collected:
+        return None
+    found = contract.the_pack(root)
+    project = str((found[1] if found else {}).get("project") or "").strip("/")
+    unit_dir = str(getattr(found[0], "unit_dir", "") if found else "").strip("/")
+    return unit_test_home.the_refusal(relative, collected, "/".join(part for part in (project, unit_dir) if part))
+
+
 def _code_in_the_documents_directory(
     root: Path, relative_parts: tuple[str, ...]
 ) -> str | None:
@@ -6962,6 +6983,9 @@ def write_approved_artifact(
     stranded = _tests_outside_the_project(artifact_root, relative_parts)
     if stranded is not None:
         raise RepositoryToolError(stranded)
+    uncollected = _a_test_the_runner_does_not_collect(artifact_root, target, relative_parts)
+    if uncollected is not None:
+        raise RepositoryToolError(uncollected)
     if not by_the_workflow:
         returning = _the_response_it_should_be_returning(relative_parts)
         if returning is not None:
@@ -7661,10 +7685,20 @@ def _tests_no_suite_runs(root: Path, project: Path, files: list[Path]) -> list[P
         relative = path.relative_to(project).as_posix()
         if classify_file(relative) != "test" or relative.startswith(homes):
             continue
+        # A test file in a test folder of its own is a suite written in the wrong place, not a probe (LF.1262).
+        # Measured on a full-stack run: the service's unit tests (361 and 708 lines), written where a work order put
+        # them - inside the service's package - were deleted here before each test round, with no stage asking. They
+        # stay, for the unit gate to name with the path the runner collects (`unit_test_home.none_collected`).
+        if any(part.lower() in _A_SUITE_S_OWN_FOLDER for part in Path(relative).parts[:-1]):
+            continue
         if contract.owned_by_the_harness(root, path.relative_to(root).as_posix()):
             continue
         unrun.append(path)
     return unrun
+
+
+#: Folders that hold a suite: a test-named file inside one is a misplaced test, never a throwaway.
+_A_SUITE_S_OWN_FOLDER = frozenset({"tests", "test", "__tests__", "spec", "specs", "e2e"})
 
 
 def _is_the_project_s_own_manifest(root: Path, target: Path) -> bool:

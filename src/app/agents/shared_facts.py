@@ -63,7 +63,10 @@ def layout_facts(pack: Any, project: str, package: str | None) -> list[str]:
         lines.append(f"- The service is imported as `{modules[0]}`, from inside `{prefix}`: the project directory is "
                      f"where it runs from, not part of the name - `{project.replace('-', '_')}.{modules[0]}` "
                      "resolves to nothing.")
-    lines.append(f"- Unit tests: `{pack.unit_pattern}` in `{prefix}{pack.unit_dir}/`; acceptance tests: "
+    from app.stacks.unit_test_home import unit_test_names
+
+    names = ", ".join(f"`{name}`" for name in unit_test_names(pack)) or f"`{pack.unit_pattern}`"
+    lines.append(f"- Unit tests: {names} in `{prefix}{pack.unit_dir}/`; acceptance tests: "
                  f"`{pack.acceptance_pattern}` in `{prefix}{pack.acceptance_dir}/`.")
     mirrors = tuple(getattr(pack, "unit_mirrors", None) or ())
     if len(mirrors) == 2:

@@ -337,6 +337,12 @@ def technical_lead_node(state: WorkflowGraphState, config: RunnableConfig, ctx: 
             if given:
                 logger.info("Test files the sprint names, given to the testing work order the harness added: %s",
                             ", ".join(given))
+    # A unit test file is named where the project's runner collects it (LF.1263): measured, a work order put the
+    # service's tests inside its package, where nothing ran them.
+    from app.analysis.work_orders import with_tests_where_the_runner_collects
+
+    update["milestone_plan"] = with_tests_where_the_runner_collects(update["milestone_plan"],
+                                                                    state["repository"].root_path)
     # The harness's own repairs before the readiness check, not after it (HR2.P.1): 125 of 140 resends since 11-01
     # were for what these then fixed anyway - the locked suite's file on a work order (50), a command the sandbox
     # refuses (30). The check sees only what the harness cannot fix.

@@ -470,15 +470,24 @@ def _where_a_file_left_out_is() -> str:
 LOCKED_WITH_AN_EARLIER_SPRINT = "(locked with an earlier sprint's tests; not under review)"
 
 
-def suite_text(repo_root: str | Path, earlier: Sequence[str] = ()) -> str:
-    """The suite's files for a review, whole while they fit; `earlier` files (locked with an earlier sprint) by name."""
+#: In place of a file the review's memory holds numbered (LF.1286, `review_files.held_section`).
+HELD_IN_THE_MEMORY = "(held numbered in the project memory, named below)"
+
+
+def suite_text(repo_root: str | Path, earlier: Sequence[str] = (), held: Sequence[str] = ()) -> str:
+    """The suite's files for a review, whole while they fit; `earlier` files (locked with an earlier sprint) by name;
+    `held` files (the review's memory holds them numbered, LF.1286) by name."""
     root = Path(repo_root)
     parts: list[str] = []
     total = 0
     left_as_locked = set(earlier or ())
+    in_the_memory = set(held or ())
     for path in suite.suite_files(repo_root):
         if path.relative_to(root).as_posix() in left_as_locked:
             parts.append(f"### {path.relative_to(root).as_posix()}\n{LOCKED_WITH_AN_EARLIER_SPRINT}\n")
+            continue
+        if path.relative_to(root).as_posix() in in_the_memory:
+            parts.append(f"### {path.relative_to(root).as_posix()}\n{HELD_IN_THE_MEMORY}\n")
             continue
         try:
             text = path.read_text(encoding="utf-8", errors="replace")

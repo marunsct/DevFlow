@@ -63,17 +63,22 @@ def test_each_review_stage_s_summaries_and_reads_a_file_are_counted():
         {"kind": "model_request", "stage": "security_review",
          "messages": [{"content": "You are a Context Extraction Assistant ..."}]},
         read("code_review_0_1", "app/a.py"),
+        read("technical_lead", "app/a.py"), read("technical_lead", "app/a.py"),
+        read("acceptance_review_3", "acceptance/a.spec.js"), read("test_round_2", "app/a.py"),
         read("specialist_backend_0", "app/a.py"),
     ]
     lines = "\n".join(effects(records, ""))
 
     assert "   1  security_review: summaries; 3 reads of 2 files, 1.5 a file" in lines
     assert "   0  code_review: summaries; 1 reads of 1 files, 1.0 a file" in lines
+    assert "   0  technical_lead: summaries; 2 reads of 1 files, 2.0 a file" in lines, "LF.1286: the lead too"
+    assert "   0  acceptance_review: summaries; 1 reads of 1 files" in lines
+    assert "   0  test_round: summaries; 1 reads of 1 files" in lines
     assert "specialist_backend" not in lines
 
 
 def test_a_run_with_no_review_yet_says_so():
     effects = runpy.run_path(str(SCRIPT))["effects"]
 
-    assert "LF.1284 review stages: summaries, and reads per distinct file (target <= 1.2, no summary): not reached" \
+    assert "LF.1284/LF.1286 reading stages: summaries, and reads per distinct file (target <= 1.2, no summary): not reached" \
         in "\n".join(effects([], ""))

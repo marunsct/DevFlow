@@ -50,6 +50,31 @@ def _the_specification_s_work_orders(state: Any, goal: str) -> Any:
         return None
 
 
+def _with_the_files_it_reads(state: Any, request: dict[str, Any], model: Any) -> dict[str, Any]:
+    """The lead's request naming the files its memory holds numbered - the product's code and the sprint's due locked
+    tests (`lead_files.for_the_plan`) - when today's request and memory would not show them all; as it is otherwise
+    (`review_files.held_for_review`, the size gate of LF.1284). Never raises: `request` as it is."""
+    try:
+        from app.agents import lead_files, review_files
+        from app.graph import acceptance_nodes
+
+        root = state["repository"].root_path
+        criteria = acceptance_nodes.suite.criteria(root)
+        sprints = list(getattr(state.get("sprint_plan"), "sprints", None) or [])
+        index = int(state.get("current_sprint_index") or 0)
+        due = acceptance_nodes.criteria_due(state)
+        due = [c.id for c in criteria] if due is None else due
+        own = [str(i) for i in (getattr(sprints[index], "criteria", None) or [] if index < len(sprints) else [])
+               if str(i) in due] or list(due)
+        texts = [c.text for c in criteria if c.id in own]
+        held = review_files.held_for_review(lead_files.for_the_plan(root, own, due, texts), root, model,
+                                            "technical_lead", review_files.opening_of(request))
+        return review_files.with_the_files_held(request, held, "technical_lead")
+    except Exception as error:  # noqa: BLE001 - the lead reads for itself, as before
+        degraded("lead_files_held", error)
+        return request
+
+
 def technical_lead_node(state: WorkflowGraphState, config: RunnableConfig, ctx: GraphContext) -> dict[str, Any]:
     from app.graph.workflow import (
         APP_RUN_ID_KEY, MAX_REMEDIATION_ATTEMPTS, _ASSIGNMENT_RETRIES, _READINESS_RETRIES,
@@ -209,6 +234,9 @@ def technical_lead_node(state: WorkflowGraphState, config: RunnableConfig, ctx: 
             logger.debug("Could not narrate the harness-made work orders", exc_info=True)
         update = {"milestone_plan": planned, "stage": "specialist_dispatch", "pending_inner_thread_id": None}
     else:
+        # The code and the sprint's locked tests held in its memory when today's request and memory do not show them
+        # all (LF.1286).
+        request = _with_the_files_it_reads(state, request, ctx.planning_model)
         update = _run_gated_agent(
             state,
             config,

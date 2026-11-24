@@ -467,7 +467,8 @@ def kept_by_the_harness(repo_root: str | Path) -> tuple[str, ...]:
 def render(repo_root: str | Path, budget_characters: int, focus: str = "",
            for_a_fixer: bool = False, kept_out: tuple[str, ...] = (), sliced: bool = False,
            sprint_files: tuple[str, ...] = (), on_code: bool = False,
-           documents_at_most: int = 0, review_files: tuple[str, ...] = ()) -> tuple[str, dict[str, str]]:
+           documents_at_most: int = 0, review_files: tuple[str, ...] = (),
+           numbered_as: str = "") -> tuple[str, dict[str, str]]:
     """The memory as text within `budget_characters`, and the files it holds by path.
 
     `for_a_fixer`: the product's code first, the acceptance criteria, and the specification as its outline and the
@@ -494,6 +495,7 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
     `review_files`: the files a review judges (`review_files.under_review`), held first, numbered, within the budget
     less the room the documents' digests need (`REVIEW_DOCUMENTS_ROOM`); the rest of the memory as before after them.
     Given only when today's request and memory would not show them all (`review_files.fits_as_today`).
+    `numbered_as` heads each of them after its path (`review_files.numbered_heading`; a review's by default).
     """
     files = current(repo_root)
     if not files or budget_characters <= 0:
@@ -581,7 +583,7 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
         if path in under_review:
             from app.agents.review_files import NUMBERED_MARK, numbered
 
-            block = f"=== {path} {NUMBERED_MARK}\n{numbered(text)}\n"
+            block = f"=== {path} {numbered_as or NUMBERED_MARK}\n{numbered(text)}\n"
             if len(text) > LARGEST_FILE_CHARACTERS or used + len(block) > review_room:
                 left_out.append(path)
                 continue
@@ -729,6 +731,10 @@ def _the_sprint_s_files(stage: str, opening: str) -> tuple[str, ...]:
     """A lead's re-plan's sprint files, while `LEAD_REPLAN_REQUEST_SMALLER` is on; () otherwise."""
     if not str(stage or "").startswith("technical_lead"):
         return ()
+    from app.agents import review_files
+
+    if review_files.held_named_in(opening):
+        return ()  # the files it reads are held numbered instead (LF.1286)
     from app.agents import prompt_size
 
     if not prompt_size.lead_replan_smaller_switch.enabled():
@@ -751,13 +757,17 @@ REVIEW_DOCUMENTS_ROOM = 12_000
 
 def render_for_a_review(repo_root: str | Path, model: Any, opening: str, stage: str,
                         review_files: Sequence[str]) -> tuple[str, dict[str, str]]:
-    """A review's memory with `review_files` held first, numbered, and each long document as its digest (LF.1284).
+    """A review's memory with `review_files` held first, numbered, and each long document as its digest (LF.1284);
+    another reading stage's the same way (`review_files.READING_STAGES`, LF.1286).
 
     The budget is the model's share whatever the request's size: the files the request names as held are exactly
     those this holds (`review_files.held_for_review` renders it to find them), so it is not cut again to the input
     budget as other requests are (`_within_its_budget`)."""
+    from app.agents.review_files import numbered_heading
+
     return render(repo_root, budget_for(model), opening, **_arguments_for(repo_root, stage),
-                  documents_at_most=DOCUMENTS_PAST_THE_BUDGET, review_files=tuple(review_files))
+                  documents_at_most=DOCUMENTS_PAST_THE_BUDGET, review_files=tuple(review_files),
+                  numbered_as=numbered_heading(stage))
 
 
 def render_for_a_stage(repo_root: str | Path, model: Any, opening: str, stage: str,
@@ -778,8 +788,8 @@ def render_for_a_stage(repo_root: str | Path, model: Any, opening: str, stage: s
     One `request_budget` record a visit says which, and with the switch off what would have been cut (none with
     `noted` False: the size gate of a review asking what today's memory holds, `review_files.fits_as_today`).
 
-    A review whose request names the files its memory holds (`review_files.held_section`) is given
-    `render_for_a_review` (LF.1284).
+    A review, or another reading stage (`review_files.READING_STAGES`, LF.1286), whose request names the files its
+    memory holds (`review_files.held_section`) is given `render_for_a_review` (LF.1284).
     """
     fixer = str(stage or "").startswith("defect_fix")
     if fixer:
@@ -792,7 +802,7 @@ def render_for_a_stage(repo_root: str | Path, model: Any, opening: str, stage: s
                           fixer_request_shape.the_evidence(opening), for_a_fixer=True, sliced=True)
     from app.agents import review_files
 
-    named = review_files.held_named_in(opening) if not fixer and review_files.is_a_review_stage(stage) else ()
+    named = review_files.held_named_in(opening) if not fixer and review_files.holds_what_it_reads(stage) else ()
     if named:
         memory, held = render_for_a_review(repo_root, model, opening, stage, named)
         if noted:
@@ -803,6 +813,18 @@ def render_for_a_stage(repo_root: str | Path, model: Any, opening: str, stage: s
     if fixer:
         return memory, held  # sized with its request (`nodes.fixes._sized_to_its_target`)
     return _within_its_budget(repo_root, model, opening, stage, memory, held, arguments, noted=noted)
+
+
+def as_the_stage_opens(repo_root: str | Path, model: Any, opening: str, stage: str) -> tuple[str, dict[str, str]]:
+    """The memory a stage's first call is given and the files it holds, as the middleware renders it - a lead's
+    re-plan's (`render_for_a_replan`) or `render_for_a_stage` - without recording it: what a stage is shown today,
+    for the size gate of `review_files.fits_as_today`."""
+    sprint_files = _the_sprint_s_files(stage, opening)
+    if sprint_files:
+        memory, held, _ = render_for_a_replan(repo_root, budget_for(model), opening, sprint_files,
+                                              kept_out=_kept_out_for(stage, repo_root))
+        return memory, held
+    return render_for_a_stage(repo_root, model, opening, stage, noted=False)
 
 
 def _noted_as_built(stage: str, model: Any, opening: str, memory: str) -> None:
@@ -1161,9 +1183,9 @@ def build_project_memory_middleware(repo_root: str) -> Any:
                     answered = visit.setdefault("first_rereads_answered", [])
                     # A file the memory holds numbered (a review's, LF.1284) has its lines there already: its
                     # numbered copy in the conversation is the copy a summary deletes and the review reads again.
-                    from app.agents.review_files import NUMBERED_MARK
+                    from app.agents.review_files import NUMBERED_START
 
-                    numbered_there = f"=== {path} {NUMBERED_MARK}" in str(visit.get("snapshot") or "")
+                    numbered_there = f"=== {path} {NUMBERED_START}" in str(visit.get("snapshot") or "")
                     if (first_reread_switch.enabled() and path not in answered and not numbered_there
                             and held.count("\n") + 1 <= MOST_LINES_A_FIRST_REREAD_GETS):
                         # The first time, the lines themselves: a pointer is a turn that brings nothing back.

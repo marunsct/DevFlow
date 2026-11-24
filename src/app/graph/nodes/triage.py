@@ -289,6 +289,15 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
         )
         # The facts the work is built and judged under (plan CM.1).
         request = with_the_facts(request, state["repository"].root_path)
+        # The milestone's changed files held in its memory, numbered, when today's request and memory do not show
+        # them all (LF.1286): measured on one medium run, each round read the same 13-20 files 3.5-7 times each,
+        # summarised 5-12 times a round.
+        from app.agents import review_files
+
+        root = state["repository"].root_path
+        request = review_files.with_the_files_held(request, review_files.held_for_review(
+            review_files.under_review(root, changed_files), root, ctx.judgement_model, f"test_round_{test_round}",
+            review_files.opening_of(request)), "test_round")
         update = _run_gated_agent(
             state,
             config,

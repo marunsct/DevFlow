@@ -1298,32 +1298,49 @@ def _reviewed_and_locked(state: Any, config: RunnableConfig, ctx: Context) -> di
         )
         later = by_sprint.criteria_not_yet_due(root) if by_sprint.is_on(root) else set()
         earlier = by_sprint.earlier_files(root)
-        request = build_acceptance_review_request(
-            acceptance_requests.criteria_text([c for c in suite.criteria(root) if c.id not in later], deferred),
-            acceptance_requests.suite_text(root, earlier=earlier),
-            result.summary(),
-            already_passing,
-            deferred_text,
-            brief=getattr(state.get("document"), "text", "") or "",
-            testability=_the_testability_advice(state),
-        )
-        # The facts the work is built and judged under (plan CM.1).
-        request = with_the_facts(request, state["repository"].root_path)
-        # What the tests are judged against, whole (see `app.acceptance.api_reference`).
-        request["messages"][-1]["content"] += "\n" + api_reference(
-            state.get("technical_specification"), getattr(state.get("document"), "text", "") or "")
-        if adding is not None and earlier:
-            request["messages"][-1]["content"] += "\n" + by_sprint.review_note(
-                list(adding.get("criteria") or []), by_sprint.new_files(root), earlier)
-        if suspected:
-            request["messages"][-1]["content"] += "\n" + check_findings.for_the_qa_lead(suspected)
-        # What the harness read in the tests' code that a product may still pass: the QA lead's to weigh, never a
-        # send-back by itself.
-        if advice := suite.advice_about_the_suite(root):
-            request["messages"][-1]["content"] += "\n" + ADVICE_HEADING + "\n" + "\n".join(f"- {item}" for item in advice) + "\n"
+
+        def built(held: list[str]) -> dict[str, Any]:
+            request = build_acceptance_review_request(
+                acceptance_requests.criteria_text([c for c in suite.criteria(root) if c.id not in later], deferred),
+                acceptance_requests.suite_text(root, earlier=earlier, held=held),
+                result.summary(),
+                already_passing,
+                deferred_text,
+                brief=getattr(state.get("document"), "text", "") or "",
+                testability=_the_testability_advice(state),
+            )
+            # The facts the work is built and judged under (plan CM.1).
+            request = with_the_facts(request, state["repository"].root_path)
+            # What the tests are judged against, whole (see `app.acceptance.api_reference`).
+            request["messages"][-1]["content"] += "\n" + api_reference(
+                state.get("technical_specification"), getattr(state.get("document"), "text", "") or "")
+            if adding is not None and earlier:
+                request["messages"][-1]["content"] += "\n" + by_sprint.review_note(
+                    list(adding.get("criteria") or []), by_sprint.new_files(root), earlier)
+            if suspected:
+                request["messages"][-1]["content"] += "\n" + check_findings.for_the_qa_lead(suspected)
+            # What the harness read in the tests' code that a product may still pass: the QA lead's to weigh, never a
+            # send-back by itself.
+            if advice := suite.advice_about_the_suite(root):
+                request["messages"][-1]["content"] += ("\n" + ADVICE_HEADING + "\n"
+                                                       + "\n".join(f"- {item}" for item in advice) + "\n")
+            return review_files.with_the_files_held(request, held, stage)
+
+        from app.agents import review_files
+
+        stage = f"acceptance_review_{rounds}"
+        request = built([])
+        # The suite's files held in its memory, numbered, when today's request and memory do not show them all
+        # (LF.1286): measured on one medium run, each review of a 15-file suite read its files about four times each.
+        held = review_files.held_for_review(
+            review_files.under_review(root, [p.relative_to(Path(root)).as_posix() for p in suite.suite_files(root)
+                                             if p.relative_to(Path(root)).as_posix() not in set(earlier)]),
+            root, the_review_model(ctx.judgement_model), stage, review_files.opening_of(request))
+        if held:
+            request = built(held)
         update = _run_gated_agent(
             state, config,
-            stage_name=f"acceptance_review_{rounds}",
+            stage_name=stage,
             agent=agent,
             initial_request=request,
             output_key="__acceptance_review__",

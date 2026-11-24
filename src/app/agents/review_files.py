@@ -30,13 +30,22 @@ from typing import Any, Iterable, Sequence
 logger = logging.getLogger(__name__)
 
 #: The stages whose memory may hold the files under review first.
-REVIEW_STAGES = ("security_review", "advice_review", "code_review", "milestone_review")
+REVIEW_STAGES = ("security_review", "advice_review", "code_review", "milestone_review", "acceptance_review")
+#: The other stages that read the workspace to do their work and hold what they read the same way (LF.1286), each
+#: measured re-reading on one medium run: the technical lead the product's code and the sprint's locked tests (12
+#: reads a file, 21 summaries), a test round the milestone's changed files (3.5-7 a file, 5-12 summaries a round).
+READING_STAGES = ("technical_lead", "test_round")
 
-#: How the memory heads a file it holds numbered, after `=== path `.
+#: How the memory heads a file it holds numbered, after `=== path `: a review's, and another reading stage's.
 NUMBERED_MARK = "(numbered lines, under review) ==="
+NUMBERED_TO_READ = "(numbered lines) ==="
+#: What both headings begin with, after `=== path `.
+NUMBERED_START = "(numbered lines"
 
 #: The line of a review's request that names the files its memory holds; the memory is rendered from it.
 HELD_MARK = "--- Held whole in the project memory for this review, with their line numbers: "
+#: The same line in the request of another reading stage (`READING_STAGES`).
+HELD_TO_READ_MARK = "--- Held whole in the project memory for this work, with their line numbers: "
 _HELD_END = " ---"
 _NAME = re.compile(r"`([^`]+)`")
 
@@ -46,6 +55,16 @@ _DATA_SUFFIXES = (".json",)
 
 def is_a_review_stage(stage: str) -> bool:
     return str(stage or "").startswith(REVIEW_STAGES)
+
+
+def holds_what_it_reads(stage: str) -> bool:
+    """Whether a stage's memory may hold the files it reads first, numbered: a review, or another reading stage."""
+    return str(stage or "").startswith(REVIEW_STAGES + READING_STAGES)
+
+
+def numbered_heading(stage: str) -> str:
+    """How the memory heads a file it holds numbered for `stage`, after `=== path `."""
+    return NUMBERED_MARK if is_a_review_stage(stage) else NUMBERED_TO_READ
 
 
 def numbered(text: str) -> str:
@@ -167,8 +186,7 @@ def fits_as_today(files: Sequence[tuple[str, str]], repo_root: str | Path, model
 
         if not project_memory.enabled():
             return True
-        _, held = project_memory.render_for_a_stage(repo_root, _as_the_agent_sees_it(model), opening, stage,
-                                                    noted=False)
+        _, held = project_memory.as_the_stage_opens(repo_root, _as_the_agent_sees_it(model), opening, stage)
         return all((path in held and path not in told_to_open) or _in_the_request(text, opening)
                    for path, text in files)
     except Exception:  # noqa: BLE001 - as today
@@ -180,7 +198,7 @@ def held_for_review(files: Sequence[tuple[str, str]], repo_root: str | Path, mod
                     opening: str, told_to_open: Sequence[str] = ()) -> list[str] | None:
     """The files under review the memory holds for this review, in its order; None when they fit as today (or the
     memory would hold none of them), and the review is sent as today. Never raises: None."""
-    if not files or not is_a_review_stage(stage) or fits_as_today(files, repo_root, model, stage, opening,
+    if not files or not holds_what_it_reads(stage) or fits_as_today(files, repo_root, model, stage, opening,
                                                                    told_to_open):
         return None
     try:
@@ -197,38 +215,43 @@ def held_for_review(files: Sequence[tuple[str, str]], repo_root: str | Path, mod
         return None
 
 
-def held_section(held: Sequence[str]) -> str:
-    """The request's lines naming the files its memory holds, and how to use them; "" for none."""
+def held_section(held: Sequence[str], stage: str = "") -> str:
+    """The request's lines naming the files its memory holds, and how to use them; "" for none. A review (the
+    default) is told to judge them there; another reading stage (`READING_STAGES`) to work from them there."""
     if not held:
         return ""
+    review = not stage or is_a_review_stage(stage)
     return (
-        HELD_MARK + ", ".join(f"`{name}`" for name in held) + _HELD_END + "\n"
+        (HELD_MARK if review else HELD_TO_READ_MARK) + ", ".join(f"`{name}`" for name in held) + _HELD_END + "\n"
         "Each of these is in the project memory at the start of this message, whole and current, every line "
-        "numbered: judge it there and cite its lines. Reading one of them again returns nothing new.\n"
+        + ("numbered: judge it there and cite its lines." if review else "numbered: work from it there.")
+        + " Reading one of them again returns nothing new.\n"
     )
 
 
 def held_named_in(opening: str) -> tuple[str, ...]:
-    """The files a review's request says its memory holds (`held_section`), or () for a request as today."""
+    """The files a request says its memory holds (`held_section`), or () for a request as today."""
     text = str(opening or "")
-    start = text.find(HELD_MARK)
-    if start < 0:
-        return ()
-    start += len(HELD_MARK)
-    end = text.find(_HELD_END, start)
-    return tuple(dict.fromkeys(_NAME.findall(text[start:end if end >= 0 else len(text)])))
+    for mark in (HELD_MARK, HELD_TO_READ_MARK):
+        start = text.find(mark)
+        if start >= 0:
+            start += len(mark)
+            end = text.find(_HELD_END, start)
+            return tuple(dict.fromkeys(_NAME.findall(text[start:end if end >= 0 else len(text)])))
+    return ()
 
 
-def with_the_files_held(request: dict[str, Any], held: Sequence[str] | None) -> dict[str, Any]:
+def with_the_files_held(request: dict[str, Any], held: Sequence[str] | None, stage: str = "") -> dict[str, Any]:
     """`request` with `held_section` added to its last message; as it is for none."""
     if held:
         last = request["messages"][-1]
         if isinstance(last.get("content"), str):
-            last["content"] += "\n\n" + held_section(held)
+            last["content"] += "\n\n" + held_section(held, stage)
     return request
 
 
 __all__ = [
-    "HELD_MARK", "NUMBERED_MARK", "REVIEW_STAGES", "fits_as_today", "held_for_review", "held_named_in",
-    "held_section", "is_a_review_stage", "numbered", "opening_of", "under_review", "with_the_files_held",
+    "HELD_MARK", "HELD_TO_READ_MARK", "NUMBERED_MARK", "NUMBERED_START", "NUMBERED_TO_READ", "READING_STAGES",
+    "REVIEW_STAGES", "fits_as_today", "held_for_review", "held_named_in", "held_section", "holds_what_it_reads",
+    "is_a_review_stage", "numbered", "numbered_heading", "opening_of", "under_review", "with_the_files_held",
 ]

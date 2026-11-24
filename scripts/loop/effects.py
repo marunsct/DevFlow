@@ -155,16 +155,19 @@ def budget_lines(records: list[dict]) -> list[str]:
     return lines
 
 
-#: The review stages, by the start of their stage names.
-_REVIEW_STAGE = re.compile(r"^(?:security_review|advice_review|code_review|milestone_review)")
+#: The stages whose memory holds what they read (`review_files.REVIEW_STAGES` and `READING_STAGES`), by the start
+#: of their stage names: the reviews (LF.1284), the technical lead, the suite's review and the test rounds (LF.1286).
+_REVIEW_STAGE = re.compile(r"^(?:security_review|advice_review|code_review|milestone_review|acceptance_review"
+                           r"|technical_lead|test_round)")
 #: The words langchain's summariser opens its request with: one such request is one summary of the stage.
 _SUMMARISER = "Context Extraction Assistant"
 
 
 def review_reading_lines(records: list[dict]) -> list[str]:
-    """LF.1284/LF.1285: per review stage, its summaries and its `read_file` calls per distinct file. Measured on one
-    medium run before the files under review were held in the memory: 155 reads of 21 files and 11 summaries in one
-    security review; the target is at most 1.2 reads a file and no summary in a review."""
+    """LF.1284/LF.1285/LF.1286: per review or reading stage, its summaries and its `read_file` calls per distinct file.
+    Measured on one medium run before the files they read were held in the memory: 155 reads of 21 files and 11
+    summaries in one security review, 243 reads of 20 files and 21 summaries in a later sprint's technical lead; the
+    target is at most 1.2 reads a file and no summary."""
     reads: dict[str, Counter] = collections.defaultdict(Counter)
     summaries: Counter = Counter()
     for record in records:
@@ -180,7 +183,7 @@ def review_reading_lines(records: list[dict]) -> list[str]:
                 reads[stage][path] += 1
         elif record.get("kind") == "model_request" and _SUMMARISER in _text(record.get("messages")):
             summaries[stage] += 1
-    label = "LF.1284 review stages: summaries, and reads per distinct file (target <= 1.2, no summary)"
+    label = "LF.1284/LF.1286 reading stages: summaries, and reads per distinct file (target <= 1.2, no summary)"
     stages = sorted(set(reads) | set(summaries))
     if not stages:
         return [f"     -  {label}: not reached"]

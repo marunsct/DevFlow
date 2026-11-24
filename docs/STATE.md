@@ -5,9 +5,9 @@ the block below is written by `loop.sh state`. The map of all documents is `docs
 `docs/improvement-plan.md`; how the product works is `docs/PRODUCT.md`; how to run and test it is `docs/HANDOVER.md`;
 decisions in force are `docs/owner-decisions.md`; old information is found through `docs/ARCHIVE.md`.
 <!-- state:generated -->
-**As of:** 11-24 14:25 JST (written by `loop.sh state`). Harness 23ddd869 committed; d75ddbcf deployed (not the same).
-**Live, and stopped in the last day:** run-972956f5 running at acceptance_author_0; run-8f0be29e failed at failed
-**Last scored:** run-88549ebb textkit-lib 8/8 (completed, handoff 0.833; scored 11-24 14:25 JST); run-127780fe notes-api-go 9/9 (completed, mixed, 108 active min, handoff 0.857; scored 11-24 14:15 JST); run-eded4941 notes-api-java 9/9 (completed, mixed, 0 active min, handoff 1.0; scored 11-24 14:07 JST).
+**As of:** 11-24 15:10 JST (written by `loop.sh state`). Harness 7aa2e979 committed; 7aa2e979 deployed.
+**Live, and stopped in the last day:** run-c53e7bd2 running at tools_models; run-031094d4 running at security_review; run-8f0be29e failed at failed
+**Last scored:** run-972956f5 web-todo 10/10 (completed, handoff 1.0; scored 11-24 15:10 JST); run-88549ebb textkit-lib 8/8 (completed, 16 active min, handoff 0.833; scored 11-24 14:25 JST); run-127780fe notes-api-go 9/9 (completed, mixed, 108 active min, handoff 0.857; scored 11-24 14:15 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -36,6 +36,10 @@ Earlier runs (11-22 and before): `reports/product-reviews/`, `reports/status-boa
 - **Bundle 1 of the scale review deployed 11-24 (LF.1257-1265, LF.1267):** the fix cursor, the time budget read inside the attempt,
   one cause from the first failing step, no closing on a claim, the step limit goes on from its checkpoint, unit tests kept where their runner
   collects them and a zero-test gate, no deferral past a foundation, due-only suite runs, a repair whose finding no longer holds settled.
+- **Bundle 2 deployed 15:09 JST 11-24 (7aa2e97; LF.1266, LF.1268-1272):** a foundation smoke before the suite's failures are
+  fixed, a limit the specification adds reconciled with the suite before the lock, the suite written and locked a sprint at a time
+  (thorough runs and fast runs past 20 criteria), a fixer's request with fresh evidence sized to its defect and its last call kept for a
+  write, a fix that stops the product repaired forward before a revert, progress read from where tests fail.
 - Scored 2026-11-24: **textkit-lib 9 (8/8, 7/7; delivered in 18 min)**, **notes-api-go 13 (9/9, 7/8; not deliverable: a false check finding kept a right suite in repair until the budget ran out - LF.1256/1267)**, **notes-api-java 11 (9/9, 8/8; delivered with cuts: AC-18; the :8888 server was down 6 h 47 min)**, **wordstats-cli 7 (6/8, 6/6; delivered, 36 min; "The 3" where words are compared in lower case - LF.1255)**, **notes-api-ruby 6 (9/9, 6/8; delivered, 72 min; delete-twice and a long body lost - LF.1254 building)**, **notes-api-php 12 (9/9, 7/8; not deliverable: a blank title answered 500, left open two attempts - LF.1252; 117 min)**, **fullstack-bookmarks 8 (8/8, 7/7; delivered, 66 min, mutation 0.73)**, **tasks-api 15 (10/10, 7/7; delivered, 3 h 7 min, mutation 0.36; the probes signed in and reached every write - LF.1242/1249)**,
   **web-todo-react 5 (10/10, 6/6; delivered, 66 min, mutation 0.58)**, **notes-api-csharp 15 (9/9, 8/8; delivered, 78 min, mutation 1.0; NU1202 from a lookup offering EF Core 11 on net8.0, LF.1248)**.
 - Scored 2026-11-23: **fullstack-bookmarks 7 (8/8, 6/7; not deliverable: AC-8, AC-15, AC-17 deferred on page tests counting a shared list, LF.1246; 186 min)**, **notes-api-go 12 (9/9, 8/8; delivered, 48 min, mutation 0.89; LF.1242's probes reached every write)**, **tasks-api 14 (10/10, 5/7; delivered with cuts: AC-21; 63 min; blank title and concurrent creates lost - the release probes never signed in, LF.1242)**, **textkit-lib 8 (8/8, 7/7; delivered from the first draft in 10 min, mutation 1.0)**, **notes-api-rust 1 (9/9, 8/8; delivered, 97 min, mixed, mutation 0.50; one own unit test shipped failing - the fifth run with that note)**, **fullstack-bookmarks 6 (8/8, 7/7; delivered with cuts: AC-4 deferred on a locked test that could not pass, AC-14; 114 min, mixed, mutation 0.50)**.
@@ -43,10 +47,10 @@ Earlier runs (11-22 and before): `reports/product-reviews/`, `reports/status-boa
 - Each run's product review: `reports/product-reviews/`.
 
 ## Next actions
-0. **Scale review (owner 11-24): `reports/audits/2026-11-24-why-medium-briefs-fail.md`** - bundle 1 (seven loop bugs) building; then bundle 2
-   (foundation smoke, due-only suite, fair judging of a fix), bundle 3 (input budget, sprint sizing). Owner to decide: per-sprint suite lock, a scored
-   medium benchmark. **Owner 11-24: rerun the medium brief once bundles 1 and 2 are deployed** (the same upload, `brief_medium.md`, run name
-   Medium, on :1234 as before; the first run was `thorough` delivery).
+0. **Scale review (owner 11-24): `reports/audits/2026-11-24-why-medium-briefs-fail.md`** - bundles 1 and 2 deployed; bundle 3 (input
+   budget per request, sprint sizing, shared fixtures, deploy at a stage boundary) next. **Medium rerun live: run-c53e7bd2 ("Medium",
+   `tests/brief_medium.md`, thorough, :1234, started 15:10 JST 11-24)** - the first thorough run on bundles 1-2. Owner to decide: a scored
+   medium benchmark.
 1. Score the live runs when they finish (full run id), update this file, write the end-of-run review to `reports/product-reviews/`,
    start the next family on each port through the gated start (`ready` must print ALL READY).
 2. Internet lookups: WL.3-WL.7 built (`WEB_LOOKUP_WHEN_STUCK`, `WEB_TOOLS_AFTER_TWO_FAILED_FIXES` off, measured per run)

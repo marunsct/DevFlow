@@ -152,6 +152,19 @@ def no_lookup_reaches_the_network(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def each_test_its_own_lookup_store(monkeypatch):
+    """Each test's lookups keep their answers, counts and holds apart from every other test's.
+
+    The lookups share one store across runs and machines (plan KS.5, `app.tools.lookup_store`), and the suite's Redis
+    is one for all tests and workers: without a name of its own, one test's kept answer or spent cap is another's.
+    """
+    import uuid
+
+    monkeypatch.setenv("LOOKUPS_STORE_PREFIX", f"test-{uuid.uuid4().hex}")
+    yield
+
+
+@pytest.fixture(autouse=True)
 def no_model_server_is_read(monkeypatch):
     """The model server's `/props` is never read from a test; a test that needs a profile sets one.
 

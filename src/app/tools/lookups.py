@@ -38,7 +38,6 @@ closed issues first, within the library's own repository when the caller knows i
 
 from __future__ import annotations
 
-import hashlib
 import html
 import json
 import logging
@@ -367,26 +366,17 @@ def daily_cap(source: Source | str) -> int:
     return DAILY_CAPS.get(name, 100)
 
 
-def _count_path() -> Path:
-    return _cache_dir() / f"requests-{time.strftime('%Y-%m-%d', time.gmtime())}.json"
-
-
 def requests_today() -> dict[str, int]:
-    """Requests sent to each source today (UTC)."""
-    try:
-        return {str(k): int(v) for k, v in json.loads(_count_path().read_text(encoding="utf-8")).items()}
-    except (OSError, ValueError, AttributeError):
-        return {}
+    """Requests sent to each source today (UTC), by every run of the deployment (`lookup_store`, plan KS.5)."""
+    from app.tools import lookup_store
+
+    return lookup_store.requests_today()
 
 
 def _count(name: str, sent: int) -> None:
-    try:
-        counts = requests_today()
-        counts[name] = counts.get(name, 0) + sent
-        _count_path().parent.mkdir(parents=True, exist_ok=True)
-        _count_path().write_text(json.dumps(counts), encoding="utf-8")
-    except OSError:
-        pass
+    from app.tools import lookup_store
+
+    lookup_store.count(name, sent)
 
 
 def state(source: Source) -> str:
@@ -402,6 +392,10 @@ def state(source: Source) -> str:
     cap = daily_cap(source)
     if requests_today().get(source.name, 0) >= cap:
         return f"capped (daily cap of {cap} requests reached)"
+    from app.tools import lookup_store
+
+    if lookup_store.tenant_requests_today() >= lookup_store.tenant_daily_cap():
+        return f"capped (this account's daily budget of {lookup_store.tenant_daily_cap()} lookup requests is spent)"
     return ""
 
 
@@ -411,16 +405,18 @@ class Capped(Exception):
 
 def guarded(name: str, fetch: Fetch | None = None) -> Callable[..., tuple[int, str, dict[str, str]]]:
     """A fetch for the source called `name`: never sent while a refusal holds it (`source_breaker.Refused`) or past its
-    daily cap (`Capped`); each request counted, and a reply that refuses raises `Refused` and holds the source."""
-    from app.tools import source_breaker
+    daily cap or the tenant's daily budget (`Capped`); each request counted against both in one step, so requests sent
+    at once never pass either (`lookup_store.reserve`, plan KS.5); a reply that refuses raises `Refused` and holds the
+    source."""
+    from app.tools import lookup_store, source_breaker
 
     def call(url: str, headers: dict[str, str], body: str | None = None) -> tuple[int, str, dict[str, str]]:
         until = source_breaker.held_until(name)
         if until:
             raise source_breaker.Refused(name, until)
-        if requests_today().get(name, 0) >= daily_cap(name):
-            raise Capped(f"{name}: daily cap of {daily_cap(name)} requests reached")
-        _count(name, 1)
+        refused = lookup_store.reserve(name, daily_cap(name))
+        if refused:
+            raise Capped(refused)
         got = _reply((fetch or _get)(url, headers) if body is None else (fetch or _get)(url, headers, body))
         status, text, headers = got
         source_breaker.after(name, status, headers, text)
@@ -467,37 +463,6 @@ def without_keys(text: str) -> str:
     return out
 
 
-# --- the cache ------------------------------------------------------------------------------------------------------
-
-def _cache_dir() -> Path:
-    return Path(os.environ.get("DATA_DIR") or "data") / "lookups"
-
-
-def _cached(query: str) -> dict[str, Any] | None:
-    """The answer kept for `query`: one that found something for `KEPT_DAYS`, a "nothing found" for
-    `NOTHING_FOUND_DAYS`."""
-    path = _cache_dir() / (hashlib.sha256(query.encode()).hexdigest()[:24] + ".json")
-    try:
-        kept = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    answer = kept.get("answer") if isinstance(kept, dict) else None
-    days = KEPT_DAYS if isinstance(answer, dict) and answer.get("found") else NOTHING_FOUND_DAYS
-    if time.time() - float(kept.get("at") or 0) > days * 86_400:
-        return None
-    return answer
-
-
-def _keep(query: str, answer: dict[str, Any]) -> None:
-    try:
-        folder = _cache_dir()
-        folder.mkdir(parents=True, exist_ok=True)
-        (folder / (hashlib.sha256(query.encode()).hexdigest()[:24] + ".json")).write_text(
-            json.dumps({"at": time.time(), "query": query, "answer": answer}), encoding="utf-8")
-    except OSError:
-        pass
-
-
 # --- the lookup -----------------------------------------------------------------------------------------------------
 
 def look_up(error_line: str, stack_words: str = "", private_words: list[str] | tuple[str, ...] = (), *,
@@ -511,9 +476,8 @@ def look_up(error_line: str, stack_words: str = "", private_words: list[str] | t
     The query passes the one outbound gate (`app.tools.outbound`): `private_words` and the product's own words (of
     the workspace at `repo_root`, else of the run in progress) are taken out, the stack's names and the project's
     packages kept; each query sent to a source is one `outbound` record. `repository` (`owner/name`) keeps the issue
-    search to the library's own tracker; `first` names sources asked before the usual order."""
-    from app.tools import source_breaker
-
+    search to the library's own tracker; `first` names sources asked before the usual order. An answer is kept for
+    every run of the deployment and asked once however many runs ask it at the same moment (`lookup_store`)."""
     from app.tools import outbound
 
     keep = set(str(stack_words or "").split())
@@ -527,9 +491,30 @@ def look_up(error_line: str, stack_words: str = "", private_words: list[str] | t
     repository = repository if re.fullmatch(r"[\w.-]+/[\w.-]+", repository or "") else ""
     phrase = phrase_of(error)
     key = f"{query} repo:{repository}" if repository else query
-    kept = _cached(key)
-    if kept is not None:
-        return {**kept, "cached": True}
+    from app.tools import lookup_store
+
+    # Kept for every run of the deployment, and asked once however many runs ask at the same moment (plan KS.5).
+    answer, kept = lookup_store.remembered(
+        lookup_store.LOOKUP, key, lambda: _asked(query, stack_words, private_words, keep, fetch, repository, phrase,
+                                                 first, removed + removed_too),
+        days=_days_kept, repo_root=repo_root)
+    return {**answer, "cached": True} if kept else answer
+
+
+def _days_kept(answer: dict[str, Any]) -> float | None:
+    """Days an answer is kept: one that found something `KEPT_DAYS`, a true "nothing found" `NOTHING_FOUND_DAYS`, and
+    one with a refusal, a failure or a skipped source not at all."""
+    if answer.get("found"):
+        return KEPT_DAYS
+    return NOTHING_FOUND_DAYS if answer.get("nothing_found") else None
+
+
+def _asked(query: str, stack_words: str, private_words: list[str] | tuple[str, ...], keep: set[str],
+           fetch: Fetch | None, repository: str, phrase: str, first: tuple[str, ...] | list[str],
+           removed: int) -> dict[str, Any]:
+    """What the sources found for the cleaned `query`, asked in order (see `look_up`)."""
+    from app.tools import outbound, source_breaker
+
     found: list[dict[str, str]] = []
     asked: list[str] = []
     skipped: list[str] = []
@@ -574,7 +559,7 @@ def look_up(error_line: str, stack_words: str = "", private_words: list[str] | t
                 if source.general_web:
                     from_the_general_web.add(item["url"])
     if asked:
-        outbound.record(outbound.LOOKUP, query, to=asked, removed=removed + removed_too)
+        outbound.record(outbound.LOOKUP, query, to=asked, removed=removed)
     found = found[:MOST_SOURCES]
     _fill_one_thin_excerpt(found, from_the_general_web, query)
     nothing_found = bool(asked) and not found and not refused and not failed and not skipped
@@ -582,8 +567,6 @@ def look_up(error_line: str, stack_words: str = "", private_words: list[str] | t
               **({"skipped": skipped} if skipped else {}),
               **({"refused": refused} if refused else {}), **({"nothing_found": True} if nothing_found else {}),
               **({"repository": repository} if repository else {})}
-    if found or nothing_found:
-        _keep(key, answer)
     return answer
 
 

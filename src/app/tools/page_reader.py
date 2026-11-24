@@ -194,6 +194,11 @@ def _robots_allow(url: str, fetch: Fetch, resolve: Resolve) -> bool:
             return None
         return response[0], _decoded(response[2], response[1]) if 200 <= response[0] < 300 else ""
 
+    # Through the network's own transport, what a site answered is kept for every process and machine (plan KS.5).
+    if fetch is _fetch:
+        from app.tools import lookup_store
+
+        return robots.allows(url, USER_AGENT, lookup_store.shared_robots(robots_txt), cache_for=fetch)
     return robots.allows(url, USER_AGENT, robots_txt, cache_for=fetch)
 
 

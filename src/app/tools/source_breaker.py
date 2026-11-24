@@ -13,7 +13,8 @@ own rule, and this module reads them:
   error body with `error_id` 502 (throttle violation) is a refusal.
 
 A refusal with no stated time holds the source for an exponential backoff with jitter, capped. An answer clears the
-count. The holds are kept in `DATA_DIR/lookups/holds.json`, so every process on one host respects them; a held
+count. The holds are kept in the lookups' shared store (`lookup_store`, plan KS.5), so every process and machine of
+the deployment respects them (on this machine's `DATA_DIR/lookups/holds.json` when the store does not answer); a held
 source is skipped and the lookup says "refused until ..." - never "0 found" - and a refusal is never remembered as
 "nothing found" (`lookups`).
 """
@@ -22,12 +23,9 @@ from __future__ import annotations
 
 import email.utils
 import json
-import os
 import random
-import threading
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 #: Seconds of the first hold after a refusal that states no time; doubled for each refusal in a row.
@@ -44,9 +42,6 @@ ANSWERED = "answered"
 NOTHING_FOUND = "nothing found"
 REFUSED = "refused"
 FAILED = "failed"
-
-_LOCK = threading.Lock()
-
 
 @dataclass(frozen=True)
 class Verdict:
@@ -116,60 +111,40 @@ def read(status: int, headers: dict[str, str] | None, body: str = "", *, now: fl
     return Verdict(False, max(held) if held else None)
 
 
-# --- the holds, shared by the processes on one host ------------------------------------------------------------------
-
-def _path() -> Path:
-    return Path(os.environ.get("DATA_DIR") or "data") / "lookups" / "holds.json"
-
-
-def _read_holds() -> dict[str, dict[str, float]]:
-    try:
-        data = json.loads(_path().read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return {str(k): v for k, v in data.items() if isinstance(v, dict)} if isinstance(data, dict) else {}
-
-
-def _write_holds(holds: dict[str, dict[str, float]]) -> None:
-    try:
-        _path().parent.mkdir(parents=True, exist_ok=True)
-        temporary = _path().with_suffix(f".{os.getpid()}.tmp")
-        temporary.write_text(json.dumps(holds), encoding="utf-8")
-        temporary.replace(_path())
-    except OSError:
-        pass
-
+# --- the holds, shared by every process and machine of the deployment -----------------------------------------------
 
 def held_until(source: str, *, now: float | None = None) -> float:
     """The Unix time until which `source` is left alone, or 0 when it may be asked now."""
+    from app.tools import lookup_store
+
     now = time.time() if now is None else now
-    until = float((_read_holds().get(source) or {}).get("until") or 0)
+    until = float(lookup_store.hold_of(source).get("until") or 0)
     return until if until > now else 0.0
 
 
 def hold(source: str, seconds: float | None, *, refused: bool, now: float | None = None) -> float:
     """Leave `source` alone for `seconds` (a refusal with 0 earns the backoff); the time it is held until."""
+    from app.tools import lookup_store
+
     now = time.time() if now is None else now
-    with _LOCK:
-        holds = _read_holds()
-        entry = holds.get(source) or {}
+
+    def held(entry: dict[str, float]) -> dict[str, float]:
         refusals = int(entry.get("refusals") or 0) + (1 if refused else 0)
-        if refused and not seconds:
+        wait = seconds
+        if refused and not wait:
             backoff = min(LONGEST_BACKOFF, FIRST_BACKOFF * 2 ** max(0, refusals - 1))
-            seconds = backoff * (1 + random.uniform(-JITTER, JITTER))
-        until = now + min(float(seconds or 0), LONGEST_STATED)
-        holds[source] = {"until": max(until, float(entry.get("until") or 0)), "refusals": refusals}
-        _write_holds(holds)
-        return holds[source]["until"]
+            wait = backoff * (1 + random.uniform(-JITTER, JITTER))
+        until = now + min(float(wait or 0), LONGEST_STATED)
+        return {"until": max(until, float(entry.get("until") or 0)), "refusals": refusals}
+
+    return float(lookup_store.changed_hold(source, held)["until"])
 
 
 def answered(source: str) -> None:
     """`source` answered: the count of refusals in a row starts again (a hold it stated stays)."""
-    with _LOCK:
-        holds = _read_holds()
-        if int((holds.get(source) or {}).get("refusals") or 0):
-            holds[source] = {**holds[source], "refusals": 0}
-            _write_holds(holds)
+    from app.tools import lookup_store
+
+    lookup_store.changed_hold(source, lambda entry: {**entry, "refusals": 0} if entry.get("refusals") else None)
 
 
 def after(source: str, status: int, headers: dict[str, str] | None, body: str = "") -> None:

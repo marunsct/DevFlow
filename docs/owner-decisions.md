@@ -71,3 +71,11 @@ Context: [backing-services plan](backing-services-plan.md) §7 and the
 - **Switch policy:** bug fixes and quality changes are always on, with no switch. Only optional, non-quality improvements go behind switches, and they are measured (owner 2026-11-05).
 - **Docker Desktop:** the agent may restart Docker Desktop when deploys hang, after pausing runs (owner 2026-11-09).
 - **Never commit the owner's uncommitted `docker-compose.yml` edit** (the `127.0.0.1:5433:5432` db port). A pre-commit guard enforces this (LF.789; run `scripts/loop/install_hooks.sh` once per clone).
+
+## 2026-11-23/24 (scale review)
+
+- **Web tools on for every run** and measured from there; the medium and high briefs are not counted in the measuring (owner 2026-11-23, LF.1234).
+- **Deep review of medium-brief failures approved to build** (owner 2026-11-24): `reports/audits/2026-11-24-why-medium-briefs-fail.md`, bundles 1-3.
+- **Per-sprint locking of the acceptance suite: build it** (owner 2026-11-24 10:1x JST). The criteria and the interface contract are fixed up
+  front; each sprint's tests are written and locked by QA at that sprint's start, against the running product of the earlier sprints; a sprint's
+  gate runs only due tests (its own and the earlier, locked ones); the whole suite runs at release. A one-sprint product is unchanged.

@@ -40,6 +40,14 @@ def stories_by_id(events):
     return stories
 
 
+def run_notes(events):
+    """The ledger's notes about the run, not about one defect (a registry or web lookup): no defect id, no index.
+
+    Read as defects, each showed as a defect "raised before the ledger" in sprint "?"; they are listed apart.
+    """
+    return [e for e in events if e.get("event") != "raised" and not e.get("defect_id") and e.get("index") is None]
+
+
 run = sys.argv[1]
 paths = sorted(glob.glob(f"{os.environ.get('TRANSCRIPTS_DIR', '/app/data/transcripts')}/{run}*.jsonl"))
 if not paths:
@@ -62,6 +70,12 @@ try:
 except Exception:
     pass
 events = [record for record in records if record.get("kind") == "defect"]
+notes = run_notes(events)
+events = [event for event in events if event not in notes]
+if notes:
+    print(f"== notes about the run, not one defect ({len(notes)})")
+    for note in notes:
+        print(f"  {note.get('at', '')[11:19]} {note.get('stage')}: {note.get('event')} - {' '.join(str(note.get('detail') or '').split())[:160]}")
 if not events:
     print("no defect records in this run's transcript (it predates the ledger, or no round has run)")
     raise SystemExit(0)

@@ -32,3 +32,26 @@ def test_a_defect_raised_twice_is_one_story_with_its_outcomes_in_order():
     assert list(stories) == ["ab12"]
     assert stories["ab12"]["rounds"] == [0, 1] and stories["ab12"]["outcomes"] == ["left open", "fixed"]
     assert stories["ab12"]["ending"] == "fixed"
+
+
+def test_a_note_about_the_run_is_not_shown_as_a_defect(tmp_path):
+    """Measured: a registry lookup before drafting, written to the ledger with no defect, was listed as a defect
+    'raised before the ledger' in sprint '?'."""
+    import json
+    import os
+    import subprocess
+    import sys
+
+    records = [
+        {"at": "2026-11-24T05:52:37", "kind": "defect", "event": "lookup", "stage": "drafting", "defect_id": "",
+         "index": None, "sprint": None, "detail": "registry versions before drafting: 1 asked, 1 found"},
+        {"at": "2026-11-24T06:10:00", "kind": "defect", "event": "raised", "stage": "test_round_0", "defect_id": "ab12",
+         "index": 0, "sprint": 0, "round": 0, "source": "acceptance", "description": "[AC-1] sign in"},
+    ]
+    (tmp_path / "run-x.jsonl").write_text("".join(json.dumps(r) + "\n" for r in records), encoding="utf-8")
+    shown = subprocess.run([sys.executable, str(SCRIPT), "run-x"], capture_output=True, text=True, check=True,
+                           env={**os.environ, "TRANSCRIPTS_DIR": str(tmp_path)}).stdout
+
+    assert "1 defect(s) - 1 acceptance" in shown
+    assert "raised before the ledger" not in shown
+    assert "notes about the run, not one defect (1)" in shown and "registry versions" in shown

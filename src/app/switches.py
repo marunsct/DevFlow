@@ -179,7 +179,8 @@ GROUPS: dict[str, tuple[str, ...]] = {
                          "REASONING_KEPT_AFTER_AN_ANSWER", "LEAN_TOOL_LISTS", "SLICED_MEMORY",
                          "LEAN_PROMPTS_FOR_STRONG_MODELS", "QA_PROMPT_TRIMMED", "REVIEWER_SHAPED_PLUGIN_CONTENT",
                          "LEAD_REPLAN_REQUEST_SMALLER", "REQUEST_BUDGET_FOR_EVERY_STAGE",
-                         "READS_SIZED_TO_THE_ROOM"),
+                         "READS_SIZED_TO_THE_ROOM", "DOCUMENTATION_EXCERPTS_BOUNDED",
+                         "OPENING_ROOM_FOR_REVIEWS"),
     # Fewer calls on mutation findings: time, not what the run proves.
     "Efficiency": ("EQUIVALENT_MUTANTS_REMEMBERED", "MUTANT_CHECK_IN_THE_FIX_STAGE", "REVIEWS_WITHOUT_REASONING",
                    "HARNESS_FINDINGS_RECHECKED", "NEAR_GREEN_REPLANNED_ONCE", "STABLE_MEMORY_ORDER",

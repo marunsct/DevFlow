@@ -45,6 +45,10 @@ SUMMARIES = "harness_summaries"
 #: The files the replaced messages read, each with how often, the latest read last (LF.1288): what the project memory
 #: holds whole after this summary is chosen from it (`review_files.chosen_again`).
 READS = "harness_reads"
+#: The ledger the harness keeps of the stage's work from its tool calls (`work_note_ledger`, LF.1466): each refusal
+#: the tools gave, and each command run with how it ended.
+REFUSALS = "harness_refusals"
+COMMANDS = "harness_commands"
 
 #: The tools that change a file, and the argument naming it.
 _WRITING_TOOLS = frozenset({
@@ -117,7 +121,7 @@ Messages to summarize:
 
 #: The most of the stage's role (its system prompt's opening) and of its request's opening the summariser is shown.
 MOST_ROLE_CHARACTERS = 600
-MOST_AIM_CHARACTERS = 1_500
+MOST_AIM_CHARACTERS = 2_000
 #: A tool result or a call's argument longer than this is shown to the summariser as its start and its end: what a
 #: command ended with is at its end, and a read file's text is the workspace's, not the note's.
 MOST_RESULT_CHARACTERS = 1_200
@@ -142,12 +146,48 @@ def role_of(system_prompt: str) -> str:
     return cut[:end + 1] if end > MOST_ROLE_CHARACTERS // 3 else cut.rstrip() + " ..."
 
 
-def aim_of(request: str) -> str:
-    """The opening of a stage's request, as its aim is said there, within `MOST_AIM_CHARACTERS`; "" for none."""
-    text = _THE_WORKSPACE_ROOT.sub("", str(request or "").strip()).strip()
-    if len(text) <= MOST_AIM_CHARACTERS:
+#: The headings under which a request says what its stage is to do (LF.1466): the work order's ask and the files it
+#: owns, the milestone a test round checks and what it changed, a review's work orders, a fixer's defect. Measured on
+#: one medium run: the summariser of 6 of 9 stage families was shown the opening of the request as its aim - the
+#: builders' "where things stand" and the stack, a test round's stack, a review's brief - and the ask itself, 6,000
+#: characters in, never.
+_ASK_HEADING = re.compile(
+    r"^--- (?:Delegated\b|Files you own\b|Milestone under test\b|Files changed in this milestone\b"
+    r"|Work orders in this batch\b|Defect ---)[^\n]*$", re.M)
+#: Text before a request's first heading that is this long says the ask itself (a suite writer's "Write its suite").
+_AN_OPENING_ASK = 200
+
+
+def _within(text: str, most: int) -> str:
+    text = text.strip()
+    if len(text) <= most:
         return text
-    return text[:MOST_AIM_CHARACTERS].rsplit("\n", 1)[0].rstrip() + "\n..."
+    return text[:most].rsplit("\n", 1)[0].rstrip() + "\n..."
+
+
+def aim_of(request: str) -> str:
+    """What a stage's request asks of it, within `MOST_AIM_CHARACTERS`; "" for none.
+
+    The sections the request says its ask under (`_ASK_HEADING`), else the text before its first heading when that
+    is an ask of its own, else its opening as before."""
+    from app.agents.request_budget import sections
+
+    text = _THE_WORKSPACE_ROOT.sub("", str(request or "").strip()).strip()
+    parts = sections(text)
+    asks = [part.strip() for part in parts if _ASK_HEADING.match(part.strip())]
+    if asks:
+        shown: list[str] = []
+        room = MOST_AIM_CHARACTERS
+        for ask in asks:
+            if room <= 200:
+                break
+            shown.append(_within(ask, room))
+            room -= len(shown[-1]) + 2
+        return "\n\n".join(shown)
+    before = parts[0].strip() if parts and not parts[0].lstrip().startswith("--- ") else ""
+    if len(before) >= _AN_OPENING_ASK:
+        return _within(before, MOST_AIM_CHARACTERS)
+    return _within(text, MOST_AIM_CHARACTERS)
 
 
 def _shortened(text: str) -> str:
@@ -368,6 +408,8 @@ class RequestKeepingSummarization(SummarizationMiddleware):
         # Set while one summary is made, read when its message is built: the
         # two run in turn within one model call.
         self._kept: tuple[str, list[str], int, int, dict[str, list[list[int]]], int, list[list[Any]]] | None = None
+        # (refusals, commands) of the whole stage so far, set with `_kept` (`work_note_ledger`, LF.1466).
+        self._ledger: tuple[list[str], list[str]] = ([], [])
 
     def _prepare(self, messages: list[AnyMessage]) -> list[AnyMessage]:
         """What the summariser is handed; records the request and the files for the message."""
@@ -376,6 +418,8 @@ class RequestKeepingSummarization(SummarizationMiddleware):
         calls = lost = summaries = 0
         read: dict[str, list[list[int]]] = {}
         reads: list[list[Any]] = []
+        refused: list[str] = []
+        ran: list[str] = []
         if rest and getattr(rest[0], "type", None) == "human" and self._is_summary_message(rest[0]):
             kwargs = rest[0].additional_kwargs or {}
             request = str(kwargs.get(KEPT_REQUEST) or "")
@@ -386,6 +430,8 @@ class RequestKeepingSummarization(SummarizationMiddleware):
             summaries = int(kwargs.get(SUMMARIES) or 0)
             read = dict(kwargs.get(FILES_READ) or {})
             reads = list(kwargs.get(READS) or [])
+            refused = list(kwargs.get(REFUSALS) or [])
+            ran = list(kwargs.get(COMMANDS) or [])
             rest = rest[1:]
         else:
             # The stage's whole opening turn, every message of it before the
@@ -403,9 +449,16 @@ class RequestKeepingSummarization(SummarizationMiddleware):
                 carried.insert(0, text)
             request = "\n\n".join(carried)
             rest = rest[turn:]
-        for path in _files_written(rest):
+        written_now = _files_written(rest)
+        for path in written_now:
             if path not in files:
                 files.append(path)
+        from app.agents import work_note_ledger
+
+        refused = work_note_ledger.merged(work_note_ledger.settled(refused, written_now), work_note_ledger.refusals(rest),
+                                          work_note_ledger.MOST_REFUSALS)
+        ran = work_note_ledger.merged(ran, work_note_ledger.commands(rest), work_note_ledger.MOST_COMMANDS)
+        self._ledger = (refused, ran)
         calls += sum(1 for message in rest if getattr(message, "type", None) == "ai")
         from app.agents.settled_answer import _replies_that_were_all_reasoning
 
@@ -424,6 +477,11 @@ class RequestKeepingSummarization(SummarizationMiddleware):
                         + aim)
         if earlier:
             said.append(f"The stage's work note before this part of its work:\n{earlier}")
+        # What the harness knows from the tool calls (LF.1466): the note names every file written and keeps what the
+        # tools refused, whatever this part of the conversation shows.
+        ledger = work_note_ledger.for_the_summariser(files[-MOST_FILES_NAMED:], written_now, refused, ran)
+        if ledger:
+            said.append(ledger)
         said.append(_THE_WORK_SO_FAR)
         opening = HumanMessage(content="\n\n".join(said))
         shown = [_as_the_summariser_sees_it(message) for message in rest]
@@ -480,7 +538,14 @@ class RequestKeepingSummarization(SummarizationMiddleware):
             messages, stubbed = self._with_old_reads_stubbed(messages, total_tokens)
         if not self._should_truncate_args(messages, total_tokens):
             return messages, stubbed
-        cutoff = observation_folding.boundary(min(self._determine_truncate_cutoff_index(messages), len(messages)))
+        # deepagents' "every message is recent, shorten nothing" (LF.1465): a conversation of at most its kept count
+        # gets `len(messages)` back, and the boundary of that is not a cutoff. Measured on one medium run: from 10 to
+        # 15 messages - where every stage sits after a summary on a 93K slot - the first ten were folded, and 294
+        # reads in four runs reached the model as their first six lines before it had seen them once.
+        kept_from = self._determine_truncate_cutoff_index(messages)
+        if kept_from >= len(messages):
+            return messages, stubbed
+        cutoff = observation_folding.boundary(kept_from)
         if cutoff <= 0:
             return messages, stubbed
         shortened: list[AnyMessage] = []
@@ -496,7 +561,9 @@ class RequestKeepingSummarization(SummarizationMiddleware):
             shortened.append(message)
         modified = modified or stubbed
         if observation_folding.enabled() and not stubbing:
-            shortened, folded = observation_folding.fold(shortened, cutoff)
+            # Never a result no model reply follows: the model has not seen it yet (LF.1465).
+            last_reply = max((i for i, m in enumerate(shortened) if isinstance(m, AIMessage)), default=0)
+            shortened, folded = observation_folding.fold(shortened, min(cutoff, last_reply))
             if folded:
                 modified = True
                 observation_folding.a_read_was_folded(sum(
@@ -572,8 +639,15 @@ class RequestKeepingSummarization(SummarizationMiddleware):
             forget(*WHAT_THE_CONVERSATION_WAS_GIVEN)
         except Exception:  # noqa: BLE001 - the summary is made either way
             pass
+        if self._kept:
+            # The note checked against the tool calls and the workspace before it is kept (LF.1466).
+            from app.agents import work_note_ledger
+
+            summary = work_note_ledger.checked(work_note_ledger.with_every_file_written(summary, self._kept[1]),
+                                               self._repo_root)
         built = super()._build_new_messages_with_path(summary, file_path)
         kept, self._kept = self._kept, None
+        refused, ran = self._ledger
         if not kept or not built:
             return built
         request, files, calls, lost, read, summaries, reads = kept
@@ -599,6 +673,11 @@ class RequestKeepingSummarization(SummarizationMiddleware):
         if read:
             # What it covered, so a stage that still reads past its room is told so (LF.1285).
             parts.append(files_read_line(read))
+        from app.agents import work_note_ledger
+
+        ledger = work_note_ledger.for_the_stage(refused, ran)
+        if ledger:
+            parts.append(ledger)
         return [HumanMessage(
             content="\n\n".join(parts),
             additional_kwargs={
@@ -611,11 +690,13 @@ class RequestKeepingSummarization(SummarizationMiddleware):
                 FILES_READ: read,
                 SUMMARIES: summaries,
                 READS: reads,
+                REFUSALS: refused,
+                COMMANDS: ran,
             },
         )]
 
 
-__all__ = ["CALLS_BEFORE", "FILES_READ", "READS", "LOST_BEFORE", "SUMMARIES", "files_read_line", "KEPT_TAIL_SHARE",
+__all__ = ["CALLS_BEFORE", "COMMANDS", "FILES_READ", "READS", "REFUSALS", "LOST_BEFORE", "SUMMARIES", "files_read_line", "KEPT_TAIL_SHARE",
            "HELD_READS", "with_held_reads_named",
            "RequestKeepingSummarization", "KEPT_REQUEST", "FILES_WRITTEN", "WORK_NOTE", "WORK_NOTE_PROMPT", "aim_of",
            "role_of"]

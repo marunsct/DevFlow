@@ -82,4 +82,32 @@ def leaves_no_room(characters: int, model: Any = None) -> float | None:
     return share if share >= OPENING_SHARE else None
 
 
-__all__ = ["OPENING_SHARE", "SAID", "framing_of", "leaves_no_room", "share_of_the_trigger"]
+class _ForReviews:
+    """`OPENING_ROOM_FOR_REVIEWS` as the switch registry reads one: off in code until measured (LF.1472)."""
+
+    ON_BY_DEFAULT = False
+    #: What the admin page says this switch does.
+    explanation = ("A review or another reading stage whose request names the files its memory holds (the technical "
+                   "lead, the code review, the test round, the QA lead) is held to the same opening rule as every "
+                   "other stage: when its system prompt, tool descriptions, request and memory fill 0.8 of its summary "
+                   "trigger, its memory is rendered within what its input budget leaves beside the request, the files "
+                   "under review first, and the request's line of held files names what is held. Off: such a memory "
+                   "is the model's share whatever the request's size. Measured on one medium run: the lead opened at "
+                   "173,770 characters and the code review at 158,000, both uncut.")
+
+    @staticmethod
+    def enabled() -> bool:
+        from app.switches import is_on
+
+        return is_on("OPENING_ROOM_FOR_REVIEWS", _ForReviews.ON_BY_DEFAULT)
+
+
+#: Doubtful (LF.1284 measured that a review holding the files it judges read each of them far fewer times), so the
+#: reviews' cut is measured before it is trusted.
+for_reviews_switch = _ForReviews()
+#: What a review's record says when its memory was cut by this rule: the switch-firing signal.
+SAID_FOR_A_REVIEW = "A review's opening filled {share:.2f} of its summary trigger, so the files it holds were cut to its budget"
+
+
+__all__ = ["OPENING_SHARE", "SAID", "SAID_FOR_A_REVIEW", "for_reviews_switch", "framing_of", "leaves_no_room",
+           "share_of_the_trigger"]

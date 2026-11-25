@@ -84,6 +84,8 @@ SWITCHES: dict[str, str] = {
     "DIAGNOSE_A_RECURRING_CAUSE": "app.graph.cause_journal:diagnosis_switch",
     "WEB_LOOKUP_WHEN_STUCK": "app.graph.stuck_lookup",
     "STUCK_LOOKUP_CONDENSED": "app.graph.stuck_research:condensed_switch",
+    "DOCUMENTATION_EXCERPTS_BOUNDED": "app.agents.research_brief:bounded_excerpts_switch",
+    "OPENING_ROOM_FOR_REVIEWS": "app.agents.opening_room:for_reviews_switch",
     "INTERFACE_STATES_AS_CRITERIA": "app.agents.interface_states:interface_states_switch",
     "PRODUCT_RESEARCH": "app.agents.product_research:research_switch",
     "API_CARDS_FOR_NEWER_RELEASES": "app.stacks.api_cards:cards_switch",

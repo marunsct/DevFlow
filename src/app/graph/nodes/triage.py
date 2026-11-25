@@ -645,6 +645,11 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
         "review_defects": [],
         # A fix round starts with none of its defects worked: a stage's name repeats in a later attempt's round.
         "fixes_tried": [],
+        # The round answered: its restart's note and retry count are spent (LF.1467). Measured on one medium run: the
+        # update was built without them, the note stayed in the state, and the same round's next visit after a
+        # re-plan opened on "your previous attempt ended without a structured response" and a work note written
+        # before two builders changed the code.
+        **{key: update[key] for key in ("stage_carry_over", "structured_retries") if key in update},
     }
     if mutation_gaps:
         base_update["mutation_gaps"] = mutation_gaps

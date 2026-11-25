@@ -545,21 +545,29 @@ _CONTRACT_SECTIONS = (
 )
 
 
-def _the_contracts(specification: Any) -> str:
-    """The specification's contract sections, for the lead to copy into work orders."""
+def _the_contracts(specification: Any, sprint_plan_text: str = "", goal: str = "",
+                   repository_root: str = "") -> str:
+    """The specification's contract sections, for the lead to copy into work orders: whole within the document
+    budget; past it, fitted entry by entry to the selected sprint (`contracts_fitted`, LF.1470), never cut."""
     if specification is None:
         return ""
-    blocks: list[str] = []
+    sections: list[tuple[str, list[str]]] = []
     for field, heading in _CONTRACT_SECTIONS:
         items = [str(item).strip() for item in getattr(specification, field, None) or [] if str(item).strip()]
         if items:
-            blocks.append(f"{heading}:\n" + "\n".join(f"- {item}" for item in items))
-    if not blocks:
+            sections.append((heading, items))
+    if not sections:
         return ""
+    from app.agents import contracts_fitted
+    from app.agents.context_budget import ContextBudget
+
+    words, outside = contracts_fitted.the_sprint_s_words(sprint_plan_text, goal)
+    text = contracts_fitted.fitted(sections, ContextBudget.resolve().document_budget_chars, words, outside,
+                                   contracts_fitted.the_specification_document(repository_root))
     return (
         "--- From the approved technical specification: the contracts your work orders "
         "copy from (/docs/technical_specification.md has the rest) ---\n"
-        + _truncate("\n\n".join(blocks)) + "\n\n"
+        + text + "\n\n"
     )
 
 
@@ -704,7 +712,7 @@ def build_milestone_planning_request(
     brief = (
         WORKSPACE_ROOT_NOTE
         + f"--- Approved sprint plan (/docs/sprint_plan.md) ---\n{_truncate(sprint_plan_text)}\n\n"
-        + _the_contracts(specification)
+        + _the_contracts(specification, sprint_plan_text, selected_sprint_goal, repository_root)
         + (
             "--- Carried forward from earlier sprints ---\n"
             + "\n".join(f"- {item}" for item in carried)

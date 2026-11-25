@@ -174,18 +174,86 @@ def current(repo_root: str | Path) -> dict[str, str]:
     return files
 
 
-def _ranked(files: dict[str, str], focus: str, unserved: tuple[str, ...] = ()) -> list[str]:
+#: The section a request names later sprints' criteria under: their tests are not this work's.
+_LATER_SPRINTS = "--- What later sprints build"
+#: A section of a request naming more product files than this is a listing of the project, not what its work is on.
+MOST_FILES_AN_ASK_NAMES = 8
+#: A file defining at least this many of the names a request's ask uses is one its work is written against.
+LEAST_NAMES_DEFINED = 2
+#: The name a definition line defines (`_DEFINES`).
+_DEFINED_NAME = re.compile(r"\b(?:class|interface|type|enum|struct|trait|def|func|fn|function\*?|const|let|var)\s+"
+                           r"([A-Za-z_][A-Za-z0-9_]*)")
+
+
+def the_work_s_files(repo_root: str | Path, focus: str, files: dict[str, str]) -> dict[str, int]:
+    """The product files a request's own work bears on, each with its place: those its ask names (0), what they
+    import by the harness's code graph (1), and the tests of the criteria it names (2). Never raises: {}.
+
+    Measured on one medium run (LF.1468): under `CANONICAL_MEMORY` the request no longer ranked anything, a builder's
+    memory was chosen by path, and its work order's `schemas.py` and due acceptance tests were left out while the
+    harness's own files were held."""
+    try:
+        from app.agents import memory_slices
+        from app.analysis.file_kinds import classify_file
+
+        from app.agents.request_budget import sections
+
+        ask = memory_slices.the_ask(focus)
+        parts = [part for part in sections(ask) if not part.lstrip().startswith(_LATER_SPRINTS)]
+        product = [path for path in files if not path.startswith(("docs/", "."))]
+        # Named by a section of the ask that names a few files: one that names many is a listing of the project
+        # (who owns what, the neighbours, the setup's facts), not what this work is on.
+        named: list[str] = []
+        for part in parts:
+            in_it = [path for path in product if memory_slices.named(part, path, product)]
+            if len(in_it) <= MOST_FILES_AN_ASK_NAMES:
+                named.extend(path for path in in_it if path not in named)
+        found: dict[str, int] = {path: 0 for path in named}
+        for path in sorted(memory_slices.imports_of(repo_root, named) & set(product)):
+            found.setdefault(path, 1)
+        # A file defining the names the ask uses: the shapes and functions its interfaces are written in.
+        words = set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]{4,}\b", "\n".join(parts)))
+        for path in product:
+            if path not in found and classify_file(path) == "application":
+                defined = {m.group(1) for line in _definitions(files[path]) if (m := _DEFINED_NAME.search(line))}
+                if len(defined & words) >= LEAST_NAMES_DEFINED:
+                    found[path] = 1
+        # The tests of the criteria this work is for.
+        ids = {i for part in parts for i in _MEASURE.findall(part)}
+        if ids:
+            for path in product:
+                if path not in found and classify_file(path) == "test" and any(
+                        re.search(rf"(?<![\w-]){re.escape(i)}(?![\w-])", files[path]) for i in ids):
+                    found[path] = 2
+        return found
+    except Exception:  # noqa: BLE001 - the order by path
+        logger.debug("Could not tell which files a request's work bears on", exc_info=True)
+        return {}
+
+
+def _ranked(files: dict[str, str], focus: str, unserved: tuple[str, ...] = (),
+            wanted: dict[str, int] | None = None, last: Sequence[str] = ()) -> list[str]:
+    """The memory's order: the documents, the files the work bears on (`wanted`, `the_work_s_files`), the product's
+    code and configuration, the rest; the harness's own files (`last`) after the product's (LF.1468)."""
     from app.agents.canonical_memory import enabled as canonical_order
     from app.analysis.file_kinds import classify_file
 
-    # The order no request changes, under `CANONICAL_MEMORY` (plan PX.3).
+    # The order no request changes, under `CANONICAL_MEMORY` (plan PX.3): the documents first, the same for every
+    # stage; the files a visit's request bears on next, fixed for the visit.
     canonical = canonical_order()
+    wanted = wanted or {}
+    harness_s = set(last)
 
     def rank(path: str) -> tuple[int, int, str]:
         name = path.rsplit("/", 1)[-1]
+        if path in harness_s:
+            # The harness writes and keeps these; no work order changes them.
+            return (4, 2, path)
         named = not canonical and (path in focus or (len(name) > 4 and name in focus))
         if named and not path.startswith("docs/"):
             return (-1, 0, path)
+        if path in wanted and not path.startswith("docs/"):
+            return (1, wanted[path], path)
         # A copy nothing serves comes after everything that is the product, so
         # a limited memory holds the served files first (Initiative AQ).
         if any(path.startswith(folder + "/") for folder in unserved):
@@ -427,6 +495,29 @@ def _without_the_quoted_sections(document: str, request: str) -> tuple[str, list
     return "".join(kept), dropped
 
 
+#: A request's heading for a workflow document it quotes whole: `--- Approved sprint plan (/docs/sprint_plan.md) ---`.
+#: One quoting part of a document says so in the parenthesis (`(/docs/technical_specification.md has the rest)`).
+_QUOTED_WHOLE = re.compile(r"^--- [^\n]*\((/?docs/[\w./-]+\.md)\) ---[ \t]*$", re.M)
+#: How the memory names a document the request quotes whole, and how a read of one is answered (LF.1469).
+QUOTED_WHOLE_SAID = ("Not included because your request quotes it whole, under its heading: use it from there, and to "
+                     "cite a line number read just those lines by range (`offset` and `limit`): ")
+
+
+def quoted_whole_in(request: str) -> tuple[str, ...]:
+    """The workflow documents `request` quotes whole, by workspace path (LF.1469).
+
+    Measured on one medium run: the architecture review's request held the specification whole while its memory held
+    it again as an outline headed "read others by line"; the reviewer read the file 46 times in 51 calls."""
+    return tuple(dict.fromkeys(m.group(1).lstrip("/") for m in _QUOTED_WHOLE.finditer(str(request or ""))))
+
+
+def quoted_whole_pointer(path: str) -> str:
+    """The answer to a read of a document the request quotes whole."""
+    return (f"`{path}` is quoted whole in your request, under the heading that names it; it has not changed since. "
+            "Use it from there. To cite a line number, read just those lines with `offset` and `limit`, up to "
+            f"{MOST_WINDOW_LINES} of them: those are read from the file.")
+
+
 #: The stages that plan the work and write no file: the harness's kept files are named to them, not held.
 _PLANNING_STAGES = ("technical_lead", "scrum_master")
 
@@ -518,7 +609,8 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
            sprint_files: tuple[str, ...] = (), on_code: bool = False,
            documents_at_most: int = 0, review_files: tuple[str, ...] = (),
            numbered_as: str = "", outlined: bool = False,
-           interface_only: tuple[str, ...] = (), localised: tuple[str, ...] = ()) -> tuple[str, dict[str, str]]:
+           interface_only: tuple[str, ...] = (), localised: tuple[str, ...] = (),
+           quoted_whole: tuple[str, ...] = ()) -> tuple[str, dict[str, str]]:
     """The memory as text within `budget_characters`, and the files it holds by path.
 
     `for_a_fixer`: the product's code first, the acceptance criteria, and the specification as its outline and the
@@ -557,6 +649,9 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
 
     `localised`: where a sliced fixer's failure is handled (`app.graph.localised_fix`, FX.2): those files and what they
     import are held whole first, and the locked suite's files its tests' output alone named are not held.
+
+    `quoted_whole`: the workflow documents the request quotes whole (`quoted_whole_in`): neither held nor digested,
+    named as in the request (LF.1469).
     """
     files = current(repo_root)
     if not files or budget_characters <= 0:
@@ -608,7 +703,11 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
     from app.agents.stable_prefix import document_limit
 
     shorter_documents = document_limit(files)
-    ranked = _ranked(files, focus, unserved)
+    # The files this request's work bears on first, once the project is past the memory's room (LF.1468): within it
+    # every file is held whatever the order, and under `CANONICAL_MEMORY` siblings keep sharing the same bytes.
+    past_its_room = sum(map(len, files.values())) > budget_characters
+    wanted = the_work_s_files(repo_root, focus, files) if past_its_room or not canonical else {}
+    ranked = _ranked(files, focus, unserved, wanted=wanted, last=kept_by_the_harness(repo_root))
     if localised:
         # Where the failure is handled first, before the other files its evidence names (FX.2).
         first_of_all = [path for path in localised if path in files]
@@ -642,8 +741,12 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
         # The documents first, each held to a digest's size, then the code with the rest of the budget.
         ranked = ([p for p in ranked if p.startswith("docs/")] + [p for p in ranked if p in first]
                   + [p for p in ranked if not p.startswith("docs/") and p not in first])
+    in_the_request: list[str] = []
     for path in ranked:
         text = files[path]
+        if path in quoted_whole:
+            in_the_request.append(path)
+            continue
         if for_a_fixer and path.startswith("docs/"):
             if path not in FIXER_DOCUMENTS:
                 left_out.append(path)
@@ -752,6 +855,8 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
     more = len(left_out) - len(named)
     tail = ("\nNot included here (read when needed): " + ", ".join(named)
             + (f", and {more:,} more (list a folder or search to find them)" if more else "") + "\n") if left_out else ""
+    if in_the_request:
+        tail += "\n" + QUOTED_WHOLE_SAID + ", ".join(in_the_request) + "\n"
     if kept_named:
         tail += ("\nNot included because the harness writes and keeps them, and no work order changes them: "
                  + ", ".join(kept_named) + "\n")
@@ -893,7 +998,8 @@ REVIEW_DOCUMENTS_ROOM = 12_000
 
 
 def render_for_a_review(repo_root: str | Path, model: Any, opening: str, stage: str,
-                        review_files: Sequence[str], budget: int | None = None) -> tuple[str, dict[str, str]]:
+                        review_files: Sequence[str], budget: int | None = None,
+                        quoted_whole: tuple[str, ...] = ()) -> tuple[str, dict[str, str]]:
     """A review's memory with `review_files` held first, numbered, and each long document as its digest (LF.1284);
     another reading stage's the same way (`review_files.READING_STAGES`, LF.1286).
 
@@ -905,11 +1011,12 @@ def render_for_a_review(repo_root: str | Path, model: Any, opening: str, stage: 
 
     return render(repo_root, budget or budget_for(model), opening, **_arguments_for(repo_root, stage),
                   documents_at_most=DOCUMENTS_PAST_THE_BUDGET, review_files=tuple(review_files),
-                  numbered_as=numbered_heading(stage))
+                  numbered_as=numbered_heading(stage), quoted_whole=tuple(quoted_whole))
 
 
 def render_for_a_stage(repo_root: str | Path, model: Any, opening: str, stage: str,
-                       noted: bool = True, framing: int = 0) -> tuple[str, dict[str, str]]:
+                       noted: bool = True, framing: int = 0,
+                       quoted_whole: tuple[str, ...] = ()) -> tuple[str, dict[str, str]]:
     """The memory a stage's opening request is given, and the files it holds (not a lead's re-plan's).
 
     A fixer whose request was cut to its size target (`fixer_request_shape.reshaped`) is given the memory cut the same
@@ -950,11 +1057,17 @@ def render_for_a_stage(repo_root: str | Path, model: Any, opening: str, stage: s
 
     named = review_files.held_named_in(opening) if not fixer and review_files.holds_what_it_reads(stage) else ()
     if named:
-        memory, held = render_for_a_review(repo_root, model, opening, stage, named)
+        memory, held = render_for_a_review(repo_root, model, opening, stage, named, quoted_whole=quoted_whole)
+        cut = _a_review_within_its_room(repo_root, model, opening, stage, named, memory, held, framing,
+                                        quoted_whole, noted)
+        if cut is not None:
+            return cut
         if noted:
             _noted_as_built(stage, model, opening, memory)
         return memory, held
     arguments = _arguments_for(repo_root, stage)
+    if quoted_whole:
+        arguments = {**arguments, "quoted_whole": tuple(quoted_whole)}
     if fixer:
         from app.graph import localised_fix
 
@@ -968,6 +1081,39 @@ def render_for_a_stage(repo_root: str | Path, model: Any, opening: str, stage: s
         memory, held = render(repo_root, budget_for(model), opening, **arguments)
     return _within_its_budget(repo_root, model, opening, stage, memory, held, arguments, noted=noted,
                               framing=framing)
+
+
+def _a_review_within_its_room(repo_root: str | Path, model: Any, opening: str, stage: str, named: Sequence[str],
+                              memory: str, held: dict[str, str], framing: int, quoted_whole: tuple[str, ...],
+                              noted: bool) -> tuple[str, dict[str, str]] | None:
+    """A review's memory rendered within the room its opening leaves, under `OPENING_ROOM_FOR_REVIEWS` when its
+    framing, request and memory fill `opening_room.OPENING_SHARE` of its summary trigger (LF.1472); None to keep
+    `memory`. Never raises: None."""
+    try:
+        from app.agents import opening_room, request_budget
+
+        if not opening_room.for_reviews_switch.enabled():
+            return None
+        built = len(opening) + len(memory) + 2
+        share = opening_room.leaves_no_room(framing + built, model)
+        target = request_budget.opening_target(model)
+        if share is None or built <= target:
+            return None
+        room = min(budget_for(model), max(int(target * request_budget.MEMORY_LEAST_SHARE), target - len(opening) - 2))
+        smaller, smaller_held = render_for_a_review(repo_root, model, opening, stage, named, budget=room,
+                                                    quoted_whole=quoted_whole)
+        if not smaller or len(smaller) >= len(memory):
+            return None
+        if noted:
+            request_budget.noted(stage, built=built, sent=len(opening) + len(smaller) + 2, target=target,
+                                 fitted=request_budget.Fitted(
+                                     text=smaller, built=len(memory), target=target,
+                                     left_out=[p for p in held if p not in smaller_held]),
+                                 applied=True, message=opening_room.SAID_FOR_A_REVIEW.format(share=share))
+        return smaller, smaller_held
+    except Exception:  # noqa: BLE001 - the memory as rendered
+        logger.debug("Could not hold a review's memory to its room", exc_info=True)
+        return None
 
 
 def as_the_stage_opens(repo_root: str | Path, model: Any, opening: str, stage: str) -> tuple[str, dict[str, str]]:
@@ -1294,11 +1440,13 @@ def _chosen_again_at_a_summary(repo_root: str | Path, visit: dict[str, Any], mar
         if not named and _every_code_file_fits(repo_root, model, opening, stage, now):
             return
         chosen = review_files.chosen_again(named, written, reads, repo_root)
-        memory, now_held = render_for_a_review(repo_root, model, opening, stage, chosen)
+        quoted = tuple(visit.get("quoted_whole") or ())
+        memory, now_held = render_for_a_review(repo_root, model, opening, stage, chosen, quoted_whole=quoted)
         room = _room_the_opening_leaves(model, opening, memory, int(visit.get("framing") or 0))
         if room is not None and memory and len(memory) > room:
             # Held to the room its opening was given: rendered whole, the stage opened past its trigger again (PA.1).
-            memory, now_held = render_for_a_review(repo_root, model, opening, stage, chosen, budget=room)
+            memory, now_held = render_for_a_review(repo_root, model, opening, stage, chosen, budget=room,
+                                                   quoted_whole=quoted)
         if not memory or not now_held:
             return
         visit["snapshot"], visit["held"] = memory, now_held
@@ -1379,6 +1527,18 @@ def _naming_the_held(messages: list[Any], held: Sequence[str]) -> list[Any]:
     return changed
 
 
+def _the_opening_turn(messages: list[Any]) -> str:
+    """The text of every message before the model's first reply: a stage's request may follow a note of its own."""
+    texts: list[str] = []
+    for message in messages:
+        if getattr(message, "type", None) == "ai" or (isinstance(message, dict) and message.get("role") == "assistant"):
+            break
+        content = getattr(message, "content", None) if not isinstance(message, dict) else message.get("content")
+        if isinstance(content, str):
+            texts.append(content)
+    return "\n".join(texts)
+
+
 def build_project_memory_middleware(repo_root: str) -> Any:
     """Middleware that hands each call the project memory, and answers a read of what it already holds."""
     from langchain.agents.middleware import AgentMiddleware
@@ -1432,10 +1592,19 @@ def build_project_memory_middleware(repo_root: str) -> Any:
 
                         # The call's system prompt and tool descriptions, for the room its opening leaves (PA.1).
                         visit["framing"] = framing_of(request)
+                        # The documents the opening turn quotes whole: not held again, a read pointed there (LF.1469).
+                        visit["quoted_whole"] = list(quoted_whole_in(_the_opening_turn(messages)))
                         visit["snapshot"], visit["held"] = render_for_a_stage(
-                            repo_root, getattr(request, "model", None), opening, stage, framing=visit["framing"])
+                            repo_root, getattr(request, "model", None), opening, stage, framing=visit["framing"],
+                            quoted_whole=tuple(visit["quoted_whole"]))
                     visit["files"] = dict(current(repo_root))
                     visit["stage"], visit["opened_on"] = stage, opening
+                    from app.agents import review_files as _review_files
+
+                    said_held = _review_files.held_named_in(opening)
+                    if said_held and any(path not in (visit.get("held") or {}) for path in said_held):
+                        # The request's line of held files names what the memory holds (LF.1472).
+                        visit["held_line"] = [path for path in said_held if path in (visit.get("held") or {})]
                 mark = visit.pop(_SUMMARISED, None)
                 if mark is not None:
                     _chosen_again_at_a_summary(repo_root, visit, mark, getattr(request, "model", None))
@@ -1480,6 +1649,16 @@ def build_project_memory_middleware(repo_root: str) -> Any:
             # third of all reads were windows (`offset`), and every one went
             # to disk for lines already in the conversation.
             visit = self._visit()
+            if call.get("name") == "read_file" and visit.get("quoted_whole"):
+                from app.agents.settled_answer import withheld_now
+
+                path = str(args.get("file_path") or args.get("path") or "").strip().lstrip("/")
+                if (path in visit["quoted_whole"] and "read_file" not in withheld_now()
+                        and not _a_narrow_window(args, current(repo_root).get(path, ""))):
+                    from langchain_core.messages import ToolMessage
+
+                    return ToolMessage(content=quoted_whole_pointer(path), tool_call_id=call.get("id") or "",
+                                       name="read_file")
             if call.get("name") == "read_file" and visit.get("held"):
                 from app.agents.settled_answer import withheld_now
 

@@ -126,6 +126,118 @@ def _topics(libraries: list[str], brief: str, model: Any) -> list[tuple[str, str
         return fallback
 
 
+#: A line that is page furniture, not documentation: markup alone, a badge, a link alone, a rule, a comment.
+_FURNITURE = re.compile(
+    r"^\s*(?:</?[a-z][^>]*>\s*)+$"                      # markup alone: `<p align="center">`, `<a ...><img ...></a>`
+    r"|^\s*(?:\[!\[[^\]]*\]\([^)]*\)\]\([^)]*\)\s*)+$"   # badges alone
+    r"|^\s*(?:\*\*[^*]+\*\*:?\s*)?\[[^\]]*\]\([^)]*\)\s*$"  # a link alone, or `**Documentation**: [url](url)`
+    r"|^\s*(?:-{3,}|\*{3,}|_{3,})\s*$"                   # a rule
+    r"|^\s*<!--.*-->\s*$",
+    re.I)
+#: A badge or markup inside a line of text, kept as the text.
+_BADGE = re.compile(r"\[!\[[^\]]*\]\([^)]*\)\]\([^)]*\)")
+_TAG = re.compile(r"</?[a-z][^>]*>", re.I)
+#: A heading over what is not the library's documentation: its sponsors, backers, contributors, licence, community.
+_NOT_DOCUMENTATION = re.compile(r"^(#{1,6})\s+.*\b(?:sponsors?|backers?|contributors?|licen[cs]e|community|"
+                                r"support us|donat\w*|star history)\b", re.I)
+_A_HEADING = re.compile(r"^(#{1,6})\s")
+
+
+def without_page_furniture(text: str) -> str:
+    """A documentation page as its documentation: markup, badges, lone links, rules and sponsor sections left out
+    (LF.1471). Measured on one medium run: the architect's evidence was 19,354 characters in all 17 of its calls -
+    a README's "Gold Sponsors" list, logo and badge markup, "Join Discord" - beside the version table it was asked
+    to cite. Code blocks are kept as they are."""
+    out: list[str] = []
+    skipping_below: int | None = None
+    in_code = False
+    for line in str(text or "").splitlines():
+        if line.lstrip().startswith("```"):
+            in_code = not in_code
+            if skipping_below is None:
+                out.append(line)
+            continue
+        if in_code:
+            if skipping_below is None:
+                out.append(line)
+            continue
+        heading = _A_HEADING.match(line)
+        if heading and skipping_below is not None and len(heading.group(1)) <= skipping_below:
+            skipping_below = None
+        if skipping_below is not None:
+            continue
+        if _NOT_DOCUMENTATION.match(line):
+            skipping_below = len(_A_HEADING.match(line).group(1))
+            continue
+        if _FURNITURE.match(line):
+            continue
+        cleaned = _TAG.sub("", _BADGE.sub("", line)).rstrip()
+        if line.strip() and not cleaned.strip():
+            continue
+        if not cleaned.strip() and out and not out[-1].strip():
+            continue
+        out.append(cleaned)
+    return "\n".join(out).strip()
+
+
+#: The most of one library's page kept under `DOCUMENTATION_EXCERPTS_BOUNDED`, in characters.
+MOST_BOUNDED_CHARACTERS = 1_200
+#: How a bounded page says so: the firing signal of `DOCUMENTATION_EXCERPTS_BOUNDED`.
+BOUNDED_SAID = "the passages of its page that bear on the brief"
+_A_TERM = re.compile(r"[a-z][a-z0-9_]{4,}")
+
+
+class _BoundedExcerpts:
+    """`DOCUMENTATION_EXCERPTS_BOUNDED` as the switch registry reads one: off in code until measured (LF.1471).
+
+    Doubtful: it changes what the architect knows of each library, so it is measured on the specification review's
+    findings before it is trusted."""
+
+    ON_BY_DEFAULT = False
+    #: What the admin page says this switch does.
+    explanation = ("The documentation excerpts the architect is handed beside the version table keep, for each "
+                   "library, only the passages of its page that use a word of the brief or of the topic read, at most "
+                   f"{MOST_BOUNDED_CHARACTERS:,} characters a library. Measured on one medium run: 19,354 characters "
+                   "of landing pages in each of the architect's 17 calls.")
+
+    @staticmethod
+    def enabled() -> bool:
+        from app.switches import is_on
+
+        return is_on("DOCUMENTATION_EXCERPTS_BOUNDED", _BoundedExcerpts.ON_BY_DEFAULT)
+
+
+bounded_excerpts_switch = _BoundedExcerpts()
+
+
+def bounded(page: str, terms: set[str], most: int = MOST_BOUNDED_CHARACTERS) -> str:
+    """`page`'s passages (paragraphs and code blocks, in order) that use one of `terms`, within `most`; "" for none."""
+    passages: list[str] = []
+    current: list[str] = []
+    in_code = False
+    for line in str(page or "").splitlines():
+        if line.lstrip().startswith("```"):
+            in_code = not in_code
+        if not in_code and not line.strip() and not line.lstrip().startswith("```"):
+            if current:
+                passages.append("\n".join(current))
+                current = []
+            continue
+        current.append(line)
+    if current:
+        passages.append("\n".join(current))
+    kept: list[str] = []
+    used = 0
+    for passage in passages:
+        if not set(_A_TERM.findall(passage.lower())) & terms:
+            continue
+        if used + len(passage) > most:
+            continue
+        kept.append(passage)
+        used += len(passage) + 2
+    return "\n\n".join(kept)
+
+
 def research_notes(stack: Any, brief: str, model: Any, *, workers: int = 6, root: Any = None) -> str:
     """The registry versions and documentation the specification needs, as text for its request; "" if nothing was found.
 
@@ -156,8 +268,14 @@ def research_notes(stack: Any, brief: str, model: Any, *, workers: int = 6, root
             topics = _topics(known if package_registry.enabled() and ecosystem and looked_up else libraries, brief, model)
             pages = pool.map(lambda pair: _safely(docs.read, pair[0], pair[1], ecosystem), topics)
             for (name, topic), answer in zip(topics, pages):
-                excerpt = str((answer or {}).get("excerpt") or "") if isinstance(answer, dict) else ""
-                if excerpt.strip():
+                excerpt = without_page_furniture(
+                    str((answer or {}).get("excerpt") or "") if isinstance(answer, dict) else "")
+                if excerpt.strip() and bounded_excerpts_switch.enabled():
+                    # Only what bears on the brief and the topic read (`DOCUMENTATION_EXCERPTS_BOUNDED`, LF.1471).
+                    excerpt = bounded(excerpt, set(_A_TERM.findall(f"{brief} {topic}".lower())))
+                    if excerpt:
+                        read.append(f"### {name}: {topic} ({BOUNDED_SAID})\n{excerpt}")
+                elif excerpt.strip():
                     read.append(f"### {name}: {topic}\n{excerpt[:MOST_PAGE_CHARACTERS].strip()}")
     if not looked_up and not read:
         return ""

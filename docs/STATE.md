@@ -74,8 +74,10 @@ Earlier runs (11-22 and before): `reports/product-reviews/`, `reports/status-boa
 0b. **Owner 11-25:** thorough delivery resolves every blocking/major/critical/high design finding before development (LF.1318, a person
    decides past 6 revisions, even on benchmark runs); review findings organised into waves A-E (`docs/improvement-plan.md` 3.0), A and B
    built 11-25. **Medium 3 (run-bc3cbd00) failed 10:27 JST** in sprint 3's suite authoring (no answer, no fallback; LF.1365 builds one),
-   9 of 13 criteria, quality 31: `reports/product-reviews/2026-11-25-medium-3.md`. **Next: Medium 4** (`tests/brief_medium.md`, thorough,
-   :1234) once the bundle is live; check its decision log for the design gate and `earlier_findings` answers, and PA.2/PA.12's reads.
+   9 of 13 criteria, quality 31: `reports/product-reviews/2026-11-25-medium-3.md`. **Medium 4 live: run-32362f3b** (thorough, :1234,
+   started 11:25 JST): design approved at review 6 (13:0x JST), all 17 gating findings resolved in the review rounds (DR-7 to DR-23),
+   criteria 13 -> 16 (interface, migrations, Docker; DR-26), 3 sprints with every adopted item placed (2 declined). Watch: sprint 1
+   carries 29 adopted items; PA.2/PA.12's reads in the later suite writers.
 1. Score the live runs when they finish (full run id), update this file, write the end-of-run review to `reports/product-reviews/`,
    start the next family on each port through the gated start (`ready` must print ALL READY).
 2. Internet lookups: WL.3-WL.7 built (`WEB_LOOKUP_WHEN_STUCK`, `WEB_TOOLS_AFTER_TWO_FAILED_FIXES` off, measured per run)

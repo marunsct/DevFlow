@@ -84,6 +84,8 @@ x-app-env: &app-env
   WEB_TOOLS_OFFERED: ${WEB_TOOLS_OFFERED:-on}
   WEB_TOOLS_AFTER_TWO_FAILED_FIXES: ${WEB_TOOLS_AFTER_TWO_FAILED_FIXES:-on}
   STUCK_LOOKUP_CONDENSED: ${STUCK_LOOKUP_CONDENSED:-off}
+  # Plan PQ.8: a page's empty, busy and failed states as lines a test can find (off until measured).
+  INTERFACE_STATES_AS_CRITERIA: ${INTERFACE_STATES_AS_CRITERIA:-off}
   # Plan HK.10: cited suggestions from comparable products for the intake, only with the run owner's consent.
   PRODUCT_RESEARCH: ${PRODUCT_RESEARCH:-off}
   API_CARDS_FOR_NEWER_RELEASES: ${API_CARDS_FOR_NEWER_RELEASES:-off}

@@ -189,7 +189,9 @@ GROUPS: dict[str, tuple[str, ...]] = {
     # What a stack's setup stage may write (docs/measuring.md M6): measured off and on before it is kept.
     "Setup scope": ("SETUP_SCOPE_GUARD",),
     # Which review findings may send a sprint back (docs/measuring.md M7).
-    "Review gates": ("MILESTONE_EVIDENCE_GATE", "DESIGN_REVISION_CROSS_CHECKED", "INTAKE_ASKS_FIRST"),
+    # Each consulted specialist also reviews its own domain in the sprint's changed files (plan SP.3): off until measured.
+    "Review gates": ("MILESTONE_EVIDENCE_GATE", "DESIGN_REVISION_CROSS_CHECKED", "INTAKE_ASKS_FIRST",
+                     "SPECIALIST_DOMAIN_REVIEW"),
     # Contract probes the release adds to a green round: what a product must survive that no locked test asks.
     "Contract probes": ("CONCURRENT_WRITE_PROBE", "WRONG_SHAPE_BODY_PROBE", "EDGE_PROBE", "PAGE_PROBE"),
     # Which of the product's own unit tests may hold a run: one that keeps failing beside a green suite is set aside.

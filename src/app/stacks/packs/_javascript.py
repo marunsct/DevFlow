@@ -111,6 +111,198 @@ acceptance/
 #: Where the page check writes what the page reported, relative to the project.
 PAGE_LOAD_REPORT = "test-results/page-load.json"
 
+#: What the page check measures of the rendered page at the width it is at, for a reviewer that cannot see it (plan
+#: SP.4, `app.agents.page_facts`): the text colours on their backgrounds with their contrast ratios, what sticks out
+#: past the viewport, the stylesheet rules that match no element, the rules that take the focus outline away and the
+#: form fields with no label. A browser function, run by `page.evaluate`; it names no product and no framework.
+PAGE_FACTS = r"""() => {
+  const width = window.innerWidth;
+  const clip = (value, most) => String(value || '').replace(/\s+/g, ' ').trim().slice(0, most);
+  const named = (el) => {
+    let what = el.tagName.toLowerCase();
+    if (el.id) what += '#' + el.id;
+    else if (typeof el.className === 'string' && el.className.trim()) {
+      what += '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.');
+    }
+    const text = clip(el.getAttribute('aria-label') || el.textContent, 30);
+    return text ? `${what} "${text}"` : what;
+  };
+  const shown = (el) => {
+    const box = el.getBoundingClientRect();
+    const style = getComputedStyle(el);
+    return box.width > 1 && box.height > 1 && style.visibility !== 'hidden' && style.display !== 'none';
+  };
+  // Any colour the browser computes - rgb, oklch, color() - read back as sRGB through a one-pixel canvas.
+  const canvas = document.createElement('canvas');
+  canvas.width = 1;
+  canvas.height = 1;
+  const pen = canvas.getContext('2d', { willReadFrequently: true });
+  const rgba = (colour) => {
+    pen.clearRect(0, 0, 1, 1);
+    pen.fillStyle = 'rgba(0, 0, 0, 0)';
+    pen.fillStyle = colour;
+    pen.fillRect(0, 0, 1, 1);
+    const [r, g, b, a] = pen.getImageData(0, 0, 1, 1).data;
+    return [r, g, b, a / 255];
+  };
+  const over = (top, bottom) => [0, 1, 2].map((i) => top[i] * top[3] + bottom[i] * (1 - top[3]));
+  const backdrop = (el) => {
+    const layers = [];
+    for (let node = el; node && node.nodeType === 1; node = node.parentElement) {
+      const style = getComputedStyle(node);
+      if (style.backgroundImage && style.backgroundImage !== 'none') return null;
+      const colour = rgba(style.backgroundColor);
+      if (colour[3] > 0) layers.push(colour);
+      if (colour[3] >= 1) break;
+    }
+    let base = [255, 255, 255];
+    for (const layer of layers.reverse()) base = over(layer, base);
+    return base;
+  };
+  const luminance = (rgb) => {
+    const [r, g, b] = rgb.map((c) => {
+      const s = c / 255;
+      return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const hex = (rgb) => '#' + rgb.map((c) => Math.round(c).toString(16).padStart(2, '0')).join('');
+  const everything = [...document.body.querySelectorAll('*')];
+  const pairs = new Map();
+  const withText = everything.filter((el) => [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()));
+  for (const el of withText.slice(0, 600)) {
+    if (!shown(el)) continue;
+    const style = getComputedStyle(el);
+    const back = backdrop(el);
+    if (!back) continue;
+    const fore = over(rgba(style.color), back);
+    const one = luminance(fore);
+    const two = luminance(back);
+    const ratio = (Math.max(one, two) + 0.05) / (Math.min(one, two) + 0.05);
+    const size = parseFloat(style.fontSize) || 16;
+    const large = size >= 24 || (Number(style.fontWeight) >= 700 && size >= 18.66);
+    const needed = large ? 3 : 4.5;
+    const key = `${hex(fore)} on ${hex(back)}`;
+    const pair = pairs.get(key) || {
+      text: hex(fore), background: hex(back), ratio: Math.round(ratio * 100) / 100, count: 0, below: 0, example: named(el),
+    };
+    pair.count += 1;
+    if (ratio < needed && needed > pair.below) {
+      pair.below = needed;
+      pair.example = named(el);
+    }
+    pairs.set(key, pair);
+  }
+  const colours = [...pairs.values()]
+    .sort((a, b) => (b.below > 0) - (a.below > 0) || b.count - a.count)
+    .slice(0, 8);
+  // What sticks out past the viewport: the outermost element that does, not everything inside it.
+  const fits = (el) => {
+    const box = el.getBoundingClientRect();
+    return box.right <= width + 1 && box.left >= -1;
+  };
+  const scrolledInside = (el) => {
+    for (let node = el.parentElement; node && node !== document.body; node = node.parentElement) {
+      if (getComputedStyle(node).overflowX !== 'visible') return true;
+    }
+    return false;
+  };
+  const overflowing = [document.body, ...everything]
+    .filter((el) => shown(el) && !fits(el) && el.getBoundingClientRect().right > 0
+      && (!el.parentElement || fits(el.parentElement)) && !scrolledInside(el))
+    .slice(0, 5)
+    .map((el) => `${named(el)} reaches ${Math.round(el.getBoundingClientRect().right)}px`);
+  // Stylesheet rules that match no element as the page first loads, and those that take the focus outline away.
+  const rules = [];
+  const walk = (list) => {
+    for (const rule of list) {
+      if (rule.selectorText !== undefined && rule.style) rules.push(rule);
+      else if (rule.cssRules) walk(rule.cssRules);
+    }
+  };
+  for (const sheet of document.styleSheets) {
+    try {
+      walk(sheet.cssRules);
+    } catch (error) {
+      // Another origin's stylesheet cannot be read.
+    }
+  }
+  const parts = (selector) => {
+    const out = [];
+    let depth = 0;
+    let start = 0;
+    for (let i = 0; i < selector.length; i += 1) {
+      const c = selector[i];
+      if (c === '(') depth += 1;
+      else if (c === ')') depth -= 1;
+      else if (c === ',' && depth === 0) {
+        out.push(selector.slice(start, i));
+        start = i + 1;
+      }
+    }
+    out.push(selector.slice(start));
+    return out;
+  };
+  const bare = (selector) => selector.replace(/::?[a-zA-Z-]+(\((?:[^()]|\([^()]*\))*\))?/g, '').trim();
+  const matches = (selector) => {
+    const plain = bare(selector);
+    if (!plain || /^[>+~]|[>+~]$/.test(plain)) return true;
+    try {
+      return Boolean(document.querySelector(plain));
+    } catch (error) {
+      return true;
+    }
+  };
+  const unmatched = rules.filter((rule) => !parts(rule.selectorText).some(matches));
+  const outlineRemoved = rules
+    .filter((rule) => rule.style.outlineStyle === 'none' || /^(none|0(px)?)$/.test(String(rule.style.outline || '').trim())
+      || /^0(px)?$/.test(String(rule.style.outlineWidth || '').trim()))
+    .map((rule) => clip(rule.selectorText, 80))
+    .slice(0, 5);
+  // Form fields a screen reader cannot name: no label, no aria-label or aria-labelledby, no title.
+  const field = (el) => {
+    const type = el.getAttribute('type');
+    const name = el.getAttribute('name') || el.id;
+    return `${el.tagName.toLowerCase()}${type ? `[type=${type}]` : ''}${name ? ` "${clip(name, 30)}"` : ''}`;
+  };
+  const unlabelled = [...document.querySelectorAll('input, select, textarea')]
+    .filter((el) => shown(el) && !['hidden', 'submit', 'reset', 'image'].includes(
+      String(el.getAttribute('type') || '').toLowerCase()))
+    .filter((el) => !(el.labels && [...el.labels].some((label) => label.textContent.trim()))
+      && !clip(el.getAttribute('aria-label'), 80) && !clip(el.getAttribute('title'), 80)
+      && !String(el.getAttribute('aria-labelledby') || '').split(/\s+/)
+        .some((id) => id && document.getElementById(id) && document.getElementById(id).textContent.trim()))
+    .slice(0, 6)
+    .map((el) => {
+      const placeholder = clip(el.getAttribute('placeholder'), 40);
+      return placeholder ? `${field(el)} has only its placeholder "${placeholder}"` : `${field(el)} has no label`;
+    });
+  return {
+    width,
+    pageWider: Math.max(0, document.documentElement.scrollWidth - width),
+    colours,
+    overflowing,
+    rules: rules.length,
+    unmatched: unmatched.length,
+    unmatchedExamples: unmatched.slice(0, 8).map((rule) => clip(rule.selectorText, 80)),
+    outlineRemoved,
+    unlabelled,
+  };
+}"""
+
+#: The control the Tab key has just reached, and whether it shows an outline or a ring; null when focus left the
+#: page's controls. Run after each press of Tab by the page check (plan SP.4).
+FOCUSED = r"""() => {
+  const el = document.activeElement;
+  if (!el || el === document.body || el === document.documentElement) return null;
+  const style = getComputedStyle(el);
+  const outline = style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) > 0;
+  const ring = Boolean(style.boxShadow) && style.boxShadow !== 'none';
+  const text = String(el.getAttribute('aria-label') || el.textContent || el.getAttribute('placeholder')
+    || el.getAttribute('name') || el.id || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+  return { control: `${el.tagName.toLowerCase()} "${text}"`, seen: outline || ring };
+}"""
+
 #: The kept global setup of a pack whose product is a page. `%(page)s` is the
 #: page's path. See `page_check`.
 _PAGE_CHECK = """// Kept by the harness. Before any test runs, the page is loaded once with
@@ -133,6 +325,8 @@ export default async function pageCheck(config) {
   // How the page sits on a phone, and how it looks: measured once here, so
   // every run of the suite records it. See `app.analysis.interface_checks`.
   const layout = {};
+  // The page as text facts at each width, for a reviewer that cannot see it (`app.agents.page_facts`).
+  const facts = {};
   const root = config.configFile ? dirname(config.configFile) : process.cwd();
   mkdirSync(join(root, 'test-results'), { recursive: true });
   const note = (text) => {
@@ -201,6 +395,11 @@ export default async function pageCheck(config) {
     try {
       await page.setViewportSize({ width: 1280, height: 800 });
       await page.screenshot({ path: join(root, 'test-results/page-desktop.png'), fullPage: true });
+      try {
+        facts.desktop = await page.evaluate(%(facts)s);
+      } catch (error) {
+        // A fact that cannot be measured says nothing.
+      }
       await page.setViewportSize({ width: 375, height: 740 });
       await page.waitForTimeout(200);
       layout.phoneOverflow = await page.evaluate(
@@ -236,6 +435,25 @@ export default async function pageCheck(config) {
         return { smallTargets, overlaps };
       }));
       await page.screenshot({ path: join(root, 'test-results/page-phone.png'), fullPage: true });
+      try {
+        facts.phone = await page.evaluate(%(facts)s);
+        facts.phone.shows = (await page.locator('body').ariaSnapshot({ timeout: 3_000 })).slice(0, 1_000);
+      } catch (error) {
+        // A fact that cannot be measured says nothing.
+      }
+      try {
+        // Keyboard focus as a person moving through the page with Tab meets it.
+        await page.setViewportSize({ width: 1280, height: 800 });
+        facts.focus = [];
+        for (let press = 0; press < 8; press += 1) {
+          await page.keyboard.press('Tab');
+          const reached = await page.evaluate(%(focused)s);
+          if (!reached) break;
+          if (!facts.focus.some((seen) => seen.control === reached.control)) facts.focus.push(reached);
+        }
+      } catch (error) {
+        // A fact that cannot be measured says nothing.
+      }
     } catch (error) {
       // A measurement that cannot be taken says nothing; the tests still run.
     }
@@ -244,7 +462,7 @@ export default async function pageCheck(config) {
   } finally {
     await browser.close();
   }
-  writeFileSync(join(root, '%(report)s'), JSON.stringify({ problems, shows, layout }, null, 2));
+  writeFileSync(join(root, '%(report)s'), JSON.stringify({ problems, shows, layout, facts }, null, 2));
   if (problems.length) {
     console.log(
       '\\nThe page reported these problems when it loaded, before any test touched it:\\n'
@@ -298,7 +516,7 @@ def page_check(page_path: str = "/") -> str:
     setup instead, because "element not found" cannot tell an absent control
     from a misnamed one, and the page's own tree tells both at a glance.
     """
-    return _PAGE_CHECK % {"page": page_path, "report": PAGE_LOAD_REPORT}
+    return _PAGE_CHECK % {"page": page_path, "report": PAGE_LOAD_REPORT, "facts": PAGE_FACTS, "focused": FOCUSED}
 
 
 

@@ -154,7 +154,10 @@ def _one_advice_review(state: Any, config: RunnableConfig, role: str, ctx: Graph
         # The facts the work is built and judged under (plan CM.1).
         request = with_the_facts(request, root)
         request["messages"][-1]["content"] += _fixes_a_review_must_not_undo(state)
-        return request
+        # Its own domain in the changed files too, behind `SPECIALIST_DOMAIN_REVIEW` (plan SP.3).
+        from app.agents.specialist_domain_review import with_the_domain_review
+
+        return with_the_domain_review(request, role, specification)
 
     from app.agents import review_files
 
@@ -176,6 +179,11 @@ def _one_advice_review(state: Any, config: RunnableConfig, role: str, ctx: Graph
                 state["repository"].root_path,
                 getattr(specification, "interface_design", None) or [],
             )
+        else:
+            # A reviewer that cannot see is given the page as measured facts (plan SP.4).
+            from app.agents.page_facts import with_the_page_facts
+
+            request = with_the_page_facts(request, root, getattr(specification, "interface_design", None) or [])
     agent = create_advice_reviewer_agent(
         role, model=ctx.judgement_model, checkpointer=ctx.checkpointer,
         repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories,
@@ -215,13 +223,13 @@ def advice_review_node(state: WorkflowGraphState, config: RunnableConfig, ctx: G
     if handed_back is not None:
         return handed_back
     found[role] = findings
-    from app.agents.advice_review import as_sprint_findings
+    from app.agents.specialist_domain_review import sprint_findings
 
     return _handing_on(**{
         "advice_findings": found,
         "advice_review_cycle": cycle,
         "sprint_findings": list(state.get("sprint_findings") or [])
-        + as_sprint_findings(found[role], state.get("milestone_revision_count", 0) + 1),
+        + sprint_findings(found[role], state.get("milestone_revision_count", 0) + 1),
         "stage": "advice_review" if len(pending) > 1 else "milestone_review",
     })
 
@@ -271,7 +279,7 @@ def review_gather_node(state: WorkflowGraphState, config: RunnableConfig) -> dic
             "pending_approval": None,
             "queued_decisions": {},
         }
-    from app.agents.advice_review import as_sprint_findings
+    from app.agents.specialist_domain_review import sprint_findings
     from app.sprint.record import findings_of
 
     results = state.get("review_results") or {}
@@ -285,7 +293,7 @@ def review_gather_node(state: WorkflowGraphState, config: RunnableConfig) -> dic
     for item in state.get("reviews_in_flight") or []:
         if item != "security":
             found[item] = list((results.get(item) or {}).get("advice") or [])
-            findings += as_sprint_findings(found[item], revision)
+            findings += sprint_findings(found[item], revision)
     return _handing_on(
         stage="milestone_review",
         security_review=review if review is not None else state.get("security_review"),

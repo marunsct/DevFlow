@@ -54,8 +54,8 @@ class AdviceReview(BaseModel):
     design_problems: list[str] = Field(
         default_factory=list,
         description=(
-            "Only when you were shown screenshots: each thing a person sees that "
-            "contradicts the interface design, and which screenshot shows it."
+            "Only when you were shown screenshots or measured facts of the page: each thing a person "
+            "sees that contradicts the interface design, and which screenshot or fact shows it."
         ),
     )
 
@@ -75,10 +75,15 @@ _SYSTEM_PROMPT = (
 
 
 def roles_to_review(advice: dict[str, list[str]] | None, specification: Any) -> list[str]:
-    """The consulted roles with advice the specification adopted, in the order they were asked."""
-    from app.agents.specialist_advice import adopted
+    """The consulted roles with advice the specification adopted, in the order they were asked.
 
-    return [role for role in REVIEWED_ROLES if adopted(advice, specification, role)]
+    With `SPECIALIST_DOMAIN_REVIEW` on, every consulted role: each also reviews its own domain
+    (`app.agents.specialist_domain_review`)."""
+    from app.agents.specialist_advice import adopted
+    from app.agents.specialist_domain_review import roles_consulted
+
+    reviewing = set(roles_consulted(advice, REVIEWED_ROLES))
+    return [role for role in REVIEWED_ROLES if role in reviewing or adopted(advice, specification, role)]
 
 
 def build_advice_review_request(
@@ -102,7 +107,7 @@ def build_advice_review_request(
     content = (
         f"The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
         f"--- Your advice the specification adopted ---\n"
-        + "\n".join(f"- {item}" for item in adopted_items)
+        + ("\n".join(f"- {item}" for item in adopted_items) or "- (none)")
         + f"\n\n--- The sprint just finished ---\n{sprint_goal}\n\n"
         f"{sprint_scope}"
         f"--- The files it changed ---\n{files}\n\n"
@@ -129,12 +134,16 @@ def create_advice_reviewer_agent(
     repo_root: str | Path | None = None,
     allow_subdirectories: bool = True,
 ) -> Any:
-    """The agent that checks one role's adopted advice. It reads; it writes nothing."""
+    """The agent that checks one role's adopted advice - and its own domain, behind `SPECIALIST_DOMAIN_REVIEW`.
+
+    It reads; it writes nothing."""
+    from app.agents import specialist_domain_review
+
     return create_role_agent(
         name=f"{role}_advice_reviewer",
         stage="advice_review",
-        system_prompt=_SYSTEM_PROMPT,
-        response_format=AdviceReview,
+        system_prompt=_SYSTEM_PROMPT + specialist_domain_review.system_rule(),
+        response_format=specialist_domain_review.response_format(),
         model=model,
         checkpointer=checkpointer,
         repo_root=repo_root,
@@ -144,15 +153,16 @@ def create_advice_reviewer_agent(
 
 
 def findings_from(role: str, answer: Any) -> list[str]:
-    """A review's findings as lines naming the specialist, at most `MOST_FINDINGS`."""
+    """A review's findings as lines naming the specialist, at most `MOST_FINDINGS`; then its own-domain defects."""
     from app.agents.specialist_advice import ROLE_TITLE
+    from app.agents.specialist_domain_review import lines_of
 
     title = ROLE_TITLE.get(role, role)
     lines = [
         *(f"[{title}] not built: {' '.join(str(item).split())}" for item in getattr(answer, "not_built", None) or []),
         *(f"[{title}] design: {' '.join(str(item).split())}" for item in getattr(answer, "design_problems", None) or []),
     ]
-    return [line for line in lines if line.split(": ", 1)[-1].strip()][:MOST_FINDINGS]
+    return [line for line in lines if line.split(": ", 1)[-1].strip()][:MOST_FINDINGS] + lines_of(role, answer)
 
 
 def as_sprint_findings(lines: Sequence[str], round_number: int) -> list[dict[str, Any]]:
@@ -194,9 +204,12 @@ def as_sprint_findings(lines: Sequence[str], round_number: int) -> list[dict[str
 
 def findings_block(findings: dict[str, list[str]] | None) -> str:
     """The specialists' findings for the milestone reviewer, or "" when there are none."""
-    lines = [line for role in REVIEWED_ROLES for line in (findings or {}).get(role) or []]
+    from app.agents.specialist_domain_review import block, is_defect_line
+
+    lines = [line for role in REVIEWED_ROLES for line in (findings or {}).get(role) or [] if not is_defect_line(line)]
+    domain = block(findings, REVIEWED_ROLES)
     if not lines:
-        return ""
+        return domain
     return (
         "--- What the specialists found of their adopted advice not built ---\n"
         + "\n".join(f"- {line}" for line in lines)
@@ -204,6 +217,7 @@ def findings_block(findings: dict[str, list[str]] | None) -> str:
         "holds is a finding of yours - blocking or major when this sprint's work goes against "
         "what the specification adopted, minor when it is polish; one the code shows built is "
         "not.\n\n"
+        + domain
     )
 
 

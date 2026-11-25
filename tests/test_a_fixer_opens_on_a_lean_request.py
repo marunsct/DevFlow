@@ -58,8 +58,9 @@ def _opened(root, monkeypatch, role: str = "backend", **kwargs) -> tuple[str, se
 def test_a_fixer_is_offered_its_few_tools_and_its_answer(tmp_path, monkeypatch):
     _, offered = _opened(tmp_path, monkeypatch)
 
-    assert offered == {"read_file", "grep", "edit_artifact", "write_artifact", "delete_artifact",
-                       "run_terminal_command", "read_command_output", "SpecialistOutput"}
+    # `module_exports` joins only where the run offers it (`lean_fixer.WHEN_OFFERED`): on with the production defaults.
+    assert offered - {"module_exports"} == {"read_file", "grep", "edit_artifact", "write_artifact", "delete_artifact",
+                                            "run_terminal_command", "read_command_output", "SpecialistOutput"}
 
 
 def test_a_fixer_whose_defect_failed_twice_keeps_the_web_tools_it_is_given(tmp_path, monkeypatch):

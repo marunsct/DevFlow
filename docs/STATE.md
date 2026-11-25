@@ -15,10 +15,10 @@ decisions in force are `docs/owner-decisions.md`; old information is found throu
 |---|---|
 | Phase | **Learning runs, fixes deployed at once** (deep-review plan, owner 11-18: implement all; frozen-version measuring for Measure batches). The release-candidate count starts only when a full audit cycle finds nothing to fix. |
 | Models | :8888 `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` (key); :1234 `qwen3.6-35b-a3b-mtp@iq4_nl` (no key). Both the owner's; both take runs; each run is pinned to its port. |
-| Harness | Deployed 11-25 17:0x JST: bc9e5df - the 11-25 review bundle, waves A-C (`docs/improvement-plan.md` 3.0; LF.1318-1391); all 13 page packs scaffold after the page-check and stylesheet change. |
+| Harness | Deploying 11-26 ~07:3x JST: the FX bundle (fixers, context and lookups: LF.1410-1427) and every deep-review fix (`reports/audits/2026-11-25-deep-review-*.md`: LF.1430-1497). New switches, off until measured: FIX_STAGES_STUB_OLD_READS, LOOKUP_AT_FIRST_SIGHT, USAGE_NOTES_FROM_THE_INSTALLED_PACKAGE, DOCUMENTATION_EXCERPTS_BOUNDED, OPENING_ROOM_FOR_REVIEWS, MEASURED_ROUND_WHEN_RED, FIXERS_HOLD_WHAT_THEY_READ. Runtime `model_reads_images=no` (the served build has no vision part). |
 | Switches | 53 fixes built in (always on). 29 optional switches (9 groups, `docs/measuring.md`); `WEB_LOOKUP_WHEN_STUCK` is off and set per run. Measure arms use `SWITCHES_OFF` per run. |
 | Operations | Nightly backups (`loop.sh backup --check`). **One model endpoint since 11-25 ~17:45 JST** (owner): olla `host.docker.internal:4001/olla/openai/v1` over two llama.cpp instances, model `qwen3.6-35b-a3b`, 4 requests at once; **at most 2 runs, each in parallel execution mode** (owner 17:54: test the parallel mode; `.env` `MAX_CONCURRENT_RUNS=2`). :8888 and :1234 are gone. Audit cron `0a7ebf80` every 15 minutes. |
-| Suites | `loop.sh suite` and `loop.sh suite-production` both green at 21,273 passed (11-25 21:2x JST). |
+| Suites | `loop.sh suite` and `loop.sh suite-production` both green at 21,840 passed (11-26 07:2x JST). |
 
 ## Off until measured
 BATCH_ACCEPTANCE_AUTHOR (web tools are on since 11-23, measured from there). Hosted-model

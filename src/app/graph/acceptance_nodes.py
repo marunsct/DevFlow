@@ -540,7 +540,7 @@ def blockers_of_its_batch(blockers: list, group: list) -> list:
     for line in blockers:
         text = str(line)
         named = [tag for tag in tags_in(text) if tag.startswith("AC-")]
-        if not named:
+        if not named or acceptance_requests.the_harness_s_no_answer_line(text):
             kept.append(line)
             continue
         mine = [tag for tag in dict.fromkeys(named) if tag in own]

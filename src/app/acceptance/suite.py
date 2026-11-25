@@ -882,6 +882,24 @@ def is_as_last_locked(repo_root: str | Path) -> bool:
         return False
 
 
+def changed_since_the_lock(repo_root: str | Path) -> list[str]:
+    """The suite's files (workspace-relative) new or changed since its last lock; every one with no lock kept.
+
+    What a writing of the suite did, read from disk, whatever conversation did it. Never raises.
+    """
+    try:
+        root = Path(repo_root)
+        locked = _the_files_of(root / SNAPSHOT_DIR)
+        changed = []
+        for path in suite_files(repo_root):
+            relative = path.relative_to(root).as_posix()
+            if locked.get(relative) != path.read_text(encoding="utf-8", errors="replace"):
+                changed.append(relative)
+        return changed
+    except Exception:  # noqa: BLE001 - then no file is named
+        return []
+
+
 def only_the_repaired_tests_changed(repo_root: str | Path) -> bool:
     """Whether a reopened suite differs from its last lock only in the tests sent for repair, each still a check.
 

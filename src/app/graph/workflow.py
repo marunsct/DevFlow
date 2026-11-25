@@ -4585,17 +4585,53 @@ def _blocked_when_retries_exhausted(stage_name: str, result: dict[str, Any] | No
     """
     if not str(stage_name or "").startswith(_STAGES_THAT_MAY_FALLBACK_ON_EXHAUSTION):
         return None
+    words = _where_its_last_attempt_ended(result)
+    try:
+        from app.agents.specialists import SpecialistOutput
+
+        return SpecialistOutput(blockers=[_EXHAUSTED_BLOCKER + words])
+    except Exception:  # noqa: BLE001 - then the run fails, as before
+        return None
+
+
+def _where_its_last_attempt_ended(result: dict[str, Any] | None) -> str:
+    """" Where its last attempt ended: <its last message>", or "" when it said nothing."""
     last = next(
         (m for m in reversed((result or {}).get("messages") or []) if getattr(m, "type", None) == "ai"),
         None,
     )
     words = " ".join(str(getattr(last, "content", "") or "").split())[:_LAST_WORDS_CHARS]
+    return f" Where its last attempt ended: {words}" if words else ""
+
+
+#: Stages whose work is the acceptance suite's files: its first writing, a later sprint's addition, a batch of either,
+#: and a repair sent back to it all run under these names.
+_STAGES_THE_SUITE_ON_DISK_ANSWERS = ("acceptance_author_",)
+
+
+def _the_suite_on_disk_as_its_answer(stage_name: str, result: dict[str, Any] | None, root: str | None) -> Any | None:
+    """The suite writer's answer built from the suite's files, when it gave none; None when it has no file at all.
+
+    Measured on a medium run, seventeen hours in: a later sprint's suite writer spent three fresh conversations, 128
+    model calls, on four failing tests of its sprint, never answered, and the run failed with its files on disk. A
+    writing of the suite has its checks after it - the review, the dry run, the lock's rules, the put-back of an
+    earlier sprint's locked files - and they judge files, not an answer. So the answer names the suite's files new or
+    changed since the last lock (whichever conversation wrote them) and a blocker says it gave none and where it
+    stopped. This writes nothing: an earlier sprint's locked files stay as they are, for the review to hold them so.
+    """
+    if not root or not str(stage_name or "").startswith(_STAGES_THE_SUITE_ON_DISK_ANSWERS):
+        return None
     try:
+        from app.acceptance import suite
+        from app.acceptance.requests import THE_WRITER_GAVE_NO_ANSWER
         from app.agents.specialists import SpecialistOutput
 
-        return SpecialistOutput(blockers=[
-            _EXHAUSTED_BLOCKER + (f" Where its last attempt ended: {words}" if words else "")
-        ])
+        if not suite.suite_files(root):
+            return None
+        return SpecialistOutput(
+            changed_files=suite.changed_since_the_lock(root),
+            blockers=[THE_WRITER_GAVE_NO_ANSWER + _where_its_last_attempt_ended(result)],
+        )
     except Exception:  # noqa: BLE001 - then the run fails, as before
         return None
 
@@ -5259,6 +5295,8 @@ def _run_gated_agent(
             config["configurable"].get(APP_RUN_ID_KEY), stage_name, agent, initial_request, result,
         )
 
+    # An answer the harness built from the suite's files: its files are not a model's claim (LF.1365).
+    recorded_from_the_disk = False
     if structured_response is None:
         # One failure is not worth restarting for: a reply cut off at the output
         # ceiling before it produced anything. The ceiling is per reply, so a
@@ -5303,6 +5341,9 @@ def _run_gated_agent(
         if blocked is None:
             blocked = _blocked_when_retries_exhausted(stage_name, result)
         if blocked is None:
+            blocked = _the_suite_on_disk_as_its_answer(stage_name, result, _repository_root(state))
+            recorded_from_the_disk = blocked is not None
+        if blocked is None:
             attempted = (state.get("structured_retries") or {}).get(stage_name, 0)
             raise StageGaveNoAnswer(
                 _missing_structured_response(stage_name, result, attempts=attempted + 1)
@@ -5330,7 +5371,7 @@ def _run_gated_agent(
     # counts as a receipt.
     from app.agents.settled_answer import was_stopped_by_the_budget as _stopped_by_the_budget
 
-    never_wrote = _files_it_claims_but_never_wrote(result, structured_response)
+    never_wrote = [] if recorded_from_the_disk else _files_it_claims_but_never_wrote(result, structured_response)
     if never_wrote:
         logger.warning(
             "Stage %s claimed %d file(s) nothing in it wrote: %s; dropped from the record, "
@@ -5339,7 +5380,8 @@ def _run_gated_agent(
         structured_response = _claims_dropped_from_the_record(structured_response, never_wrote)
 
     kept_as_blockers: list[str] = []
-    if not never_wrote and not _stopped_by_the_budget(result):
+    # Not put to a stage whose answer the harness built: it has given up answering, and the suite's checks follow.
+    if not never_wrote and not recorded_from_the_disk and not _stopped_by_the_budget(result):
         diagnostics = _diagnostics_in_files_touched(state, result, structured_response, stage_name)
         # Only what the stage may write is put to it; an error in another's file is its answer's blocker (PA.8).
         from app.graph import its_own_to_fix

@@ -439,13 +439,31 @@ def build_author_request(
     return {"messages": [{"role": "user", "content": content}]}
 
 
+#: How the harness's blocker begins when the suite's writer gave no answer and its files on disk stand for it (LF.1365).
+THE_WRITER_GAVE_NO_ANSWER = (
+    "The suite's writer gave no structured response across all its attempts; the harness recorded its answer from "
+    "the suite's files on disk, which the suite's review and checks judge as they stand."
+)
+
+
+def the_harness_s_no_answer_line(line: Any) -> bool:
+    """Whether a blocker is the harness's note that the suite's writer gave no answer: never a ruling on a criterion."""
+    return str(line).startswith(THE_WRITER_GAVE_NO_ANSWER)
+
+
 def not_automatable(blockers: Sequence[str]) -> dict[str, str]:
-    """`AC-n: reason` lines from the QA stage's blockers."""
+    """`AC-n: reason` lines from the QA stage's blockers.
+
+    Not the harness's no-answer line: the criteria the writer's last words name are where it stopped, not ones no
+    test can check.
+    """
     from app.acceptance.junit import tags_in
 
     found: dict[str, str] = {}
     for line in blockers or ():
         text = str(line)
+        if the_harness_s_no_answer_line(text):
+            continue
         ids = [tag for tag in tags_in(text) if tag.startswith("AC-")]
         if not ids:
             continue

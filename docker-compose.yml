@@ -96,6 +96,9 @@ x-app-env: &app-env
   MEASURED_ROUND_WHEN_RED: ${MEASURED_ROUND_WHEN_RED:-off}
   # LF.1406: fix stages keep the files they were reading after a summary (off until measured).
   FIXERS_HOLD_WHAT_THEY_READ: ${FIXERS_HOLD_WHAT_THEY_READ:-off}
+  # FX.9 / FX.10: a library's error looked up when first seen; usage notes from the installed package (off until measured).
+  LOOKUP_AT_FIRST_SIGHT: ${LOOKUP_AT_FIRST_SIGHT:-off}
+  USAGE_NOTES_FROM_THE_INSTALLED_PACKAGE: ${USAGE_NOTES_FROM_THE_INSTALLED_PACKAGE:-off}
   # Plan HK.10: cited suggestions from comparable products for the intake, only with the run owner's consent.
   PRODUCT_RESEARCH: ${PRODUCT_RESEARCH:-off}
   API_CARDS_FOR_NEWER_RELEASES: ${API_CARDS_FOR_NEWER_RELEASES:-off}

@@ -2256,7 +2256,12 @@ def the_server_hid_the_cause(messages: list[str], logged: str, root: str | Path 
     With `root`, the product's lines that answer 5xx from a `catch` are named: measured on one run, told only that
     the handler hid the cause, the next fixers rewrote other files and the log stayed empty.
     """
-    if str(logged or "").strip():
+    from app.acceptance.what_went_wrong import states_a_cause
+
+    # Whether the log states a cause, not whether it is empty: measured on a medium run, the saved log was five access
+    # lines (`"POST /api/register HTTP/1.1" 500 Internal Server Error`) and this note was silenced for three fixers,
+    # 77 minutes with no change kept (LF.1410).
+    if states_a_cause(logged):
         return ""
     if not any(_A_5XX_RECEIVED.search(str(m or "")) for m in messages):
         return ""
@@ -2268,7 +2273,11 @@ def the_server_hid_the_cause(messages: list[str], logged: str, root: str | Path 
 
 
 #: A line answering a 5xx status, and a `catch`/`except`/`rescue` opening a few lines above it.
-_A_5XX_ANSWER = re.compile(r"(?<![\w.])5\d\d(?![\w.])")
+#: The status as a number, or as a named constant (`status.HTTP_500_INTERNAL_SERVER_ERROR`, `INTERNAL_SERVER_ERROR`,
+#: `StatusCodes.Status500InternalServerError`): measured on a medium run, every handler answered the named constant and
+#: none was found (LF.1410).
+_A_5XX_ANSWER = re.compile(r"(?<![\w.])5\d\d(?![\w.])|\b\w*(?<![0-9])5\d\d(?:_?[A-Za-z]\w*)\b|\bINTERNAL_SERVER_ERROR\b"
+                           r"|\bInternalServerError\b")
 _A_CATCH = re.compile(r"\b(?:catch|except|rescue|recover)\b")
 _A_LOG_CALL = re.compile(r"\b(?:console\.\w+|logger\.\w+|logging\.\w+|log\.\w+|print|eprintln!?|fmt\.Fprint\w*)\s*\(")
 _SOURCE_SUFFIXES = (".ts", ".tsx", ".js", ".mjs", ".cjs", ".py", ".rb", ".go", ".rs", ".java", ".kt", ".php")

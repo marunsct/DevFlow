@@ -15,10 +15,12 @@ _A_FRAME = re.compile(
     r"|\d+:\s+0x[0-9a-f]+|\S+\.(?:go|rs):\d+(?:\s+\+0x[0-9a-f]+)?\s*$|goroutine\s+\d+\s+\[)"
 )
 #: A line that states an error: an exception or error type with its message (a JavaScript runtime's bare `Error:` too),
-#: a root cause, a panic, a fatal line.
+#: a dotted exception name standing alone (`sqlalchemy.exc.InvalidRequestError.` - measured on one run, a test round's
+#: defect named the error that way, with no message, and no lookup found an error in it; LF.1412), a root cause, a
+#: panic, a fatal line.
 _AN_ERROR = re.compile(
-    r"(?:\b[A-Z]\w*(?:Exception|Error)\b\s*[:(]|^\s*Caused by:|\bpanic(?:ked)?\b|\bFATAL\b|^\s*fatal:|^\s*[Ee]rror(?:\[\w+\])?:"
-    r"|\bERROR\b)"
+    r"(?:\b[A-Z]\w*(?:Exception|Error)\b\s*[:(]|(?<![\w.])[A-Za-z_]\w*(?:\.\w+)*\.[A-Z]\w*(?:Exception|Error)\b"
+    r"|^\s*Caused by:|\bpanic(?:ked)?\b|\bFATAL\b|^\s*fatal:|^\s*[Ee]rror(?:\[\w+\])?:|\bERROR\b)"
 )
 #: Characters of the stated errors shown.
 MOST_STATED = 900
@@ -225,3 +227,85 @@ def shown(output: str, most: int) -> str:
         return end
     head = "The errors it stated:\n" + "\n".join(missing) + "\nThe end of its output:\n"
     return head + without_frames[-max(most - len(head), 300):]
+
+
+# --- what a server logged: its errors and their frames in the product's own files (LF.1410) ------------------------
+
+#: An access line: a request with the status it was answered (`"POST /api/x HTTP/1.1" 500 Internal Server Error`,
+#: `POST /api/x 500 12ms`). It says a request failed, never why: measured on two runs, five such lines filled what a
+#: failing criterion's defect carried of the log, the traceback behind them was dropped, and the note that the
+#: handler hid the cause was silenced because the log was "not empty".
+_AN_ACCESS_LINE = re.compile(r"\b(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+/\S*(?:\s+HTTP/[\d.]+)?\"?\s+[1-5]\d\d\b")
+#: Lines stating an error in the shapes servers log them beyond `_AN_ERROR`: PHP's `Fatal error:`, .NET's `fail:`,
+#: `level=error`, an unhandled exception's header.
+_LOGGED_AN_ERROR = re.compile(r"\bFatal error:|^\s*fail:|\blevel=(?:error|fatal)\b|\bUnhandled exception\b|\bpanicked at\b",
+                              re.I)
+#: A frame of a stack trace, in the shapes the common runtimes log: Python's `File "...", line N`, `at ...` (JavaScript,
+#: Java, .NET, Rust's backtrace), PHP's `#0 /path(12): ...`, Rust's numbered `12: name`.
+_A_LOGGED_FRAME = re.compile(r"^\s*(?:File\s+\"[^\"]+\",\s+line\s+\d+|at\s+\S|#\d+\s+\S|\d+:\s+\S)")
+#: A frame in a runtime's, a framework's or a library's own code, never the product's.
+_A_LIBRARY_FRAME = re.compile(
+    r"site-packages|dist-packages|/lib/python\d|<frozen|node_modules|node:internal|/vendor/|\.cargo/registry|/rustc/"
+    r"|\bat\s+(?:java|javax|jdk|sun|kotlin|org\.springframework|org\.apache|org\.hibernate|System|Microsoft)\.")
+#: The opening of a Python traceback, whose frames come before the error they lead to.
+_A_TRACEBACK = re.compile(r"^\s*Traceback \(most recent call last\):")
+#: What differs between two loggings of one error: times, numbers, addresses.
+_VARYING_IN_A_LOG = re.compile(r"0x[0-9a-fA-F]+|\d+")
+#: Product frames kept with one error, at most.
+MOST_FRAMES_PER_ERROR = 3
+
+
+def is_an_access_line(line: str) -> bool:
+    """Whether `line` is a server's access line: a request and the status it was answered."""
+    return bool(_AN_ACCESS_LINE.search(str(line or "")))
+
+
+def _states_a_logged_error(line: str) -> bool:
+    return bool(_AN_ERROR.search(line) or _LOGGED_AN_ERROR.search(line))
+
+
+def the_errors_logged(lines: list[str], *, most_lines: int, most_characters: int) -> list[str]:
+    """The errors a server logged in `lines` - no access line among them - each with up to `MOST_FRAMES_PER_ERROR` of
+    its frames in the product's own files, each error once (compared without its numbers), the latest last; within
+    `most_lines` and `most_characters`, taken from the end, so a chain's root cause is the one kept."""
+    entries: dict[str, list[str]] = {}
+    current: list[str] | None = None
+    waiting: list[str] = []  # a Python traceback's product frames, before the error they lead to
+    in_a_traceback = False
+    for raw in lines:
+        line = _STAMPS.sub("", str(raw or "").rstrip())
+        if not line.strip() or is_an_access_line(line):
+            continue
+        if _A_TRACEBACK.match(line):
+            in_a_traceback, waiting, current = True, [], None
+            continue
+        if _A_LOGGED_FRAME.match(line):
+            if _A_LIBRARY_FRAME.search(line):
+                continue
+            if in_a_traceback:
+                waiting.append(line)
+            elif current is not None and len(current) <= MOST_FRAMES_PER_ERROR:
+                current.append(line)
+            continue
+        if not line.startswith((" ", "\t")) and _states_a_logged_error(line):
+            said = " ".join(line.split())[:300]
+            key = _VARYING_IN_A_LOG.sub("#", said)
+            entries.pop(key, None)
+            current = [said, *waiting[-MOST_FRAMES_PER_ERROR:]]
+            entries[key] = current
+            waiting, in_a_traceback = [], False
+            continue
+        if in_a_traceback and not line.startswith((" ", "\t")):
+            in_a_traceback = False
+    kept: list[str] = []
+    for entry in reversed(list(entries.values())):
+        if kept and (len(kept) + len(entry) > most_lines
+                     or sum(len(k) + 1 for k in kept) + sum(len(e) + 1 for e in entry) > most_characters):
+            break
+        kept[:0] = entry
+    return kept
+
+
+def states_a_cause(logged: str) -> bool:
+    """Whether a server's log states an error, not only requests answered with an error status."""
+    return bool(the_errors_logged(str(logged or "").splitlines(), most_lines=1_000, most_characters=1_000_000))

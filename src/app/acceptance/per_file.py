@@ -83,11 +83,15 @@ def _its_own_tests(report: Path, naming: set[str]) -> str:
     return "finished" if any(t.outcome == "passed" for t in own) else "skipped"
 
 
-def each_file(repo_root: str | Path, record: dict[str, Any], run: Runner, *, naming: set[str] | None = None) -> list[dict[str, str]]:
+def each_file(repo_root: str | Path, record: dict[str, Any], run: Runner, *, naming: set[str] | None = None,
+              with_tests: bool = False) -> list[dict[str, Any]]:
     """Each acceptance file's own run: its path, `finished`/`failed`/`hung`, and the end of its output.
 
     `naming`: only the files whose text names one of these (criterion ids, for one defect's check),
     each judged by its tests that carry one of them (`_its_own_tests`) when its report says.
+    `with_tests`: each run also carries `tests` - its report's tests that carry one of `naming`, each with its outcome
+    and message, in the file's order - and `server_log`, what the product's server logged in the whole of its output
+    (`suite.what_the_server_logged`), for a fixer shown what its tests do now (`app.graph.first_failure`).
     """
     project = str(record.get("project") or "")
     directory = str(record.get("acceptance_dir") or "")
@@ -106,7 +110,8 @@ def each_file(repo_root: str | Path, record: dict[str, Any], run: Runner, *, nam
     kept = _the_report_as_it_is(report)
     product = _the_product(repo_root)
     try:
-        return _each(repo_root, project, directory, pattern, argv, base, naming, report, never_started, run, product)
+        return _each(repo_root, project, directory, pattern, argv, base, naming, report, never_started, run, product,
+                     with_tests)
     finally:
         _put_back(report, kept)
 
@@ -139,7 +144,7 @@ def _put_back(report: Path | None, kept: dict[Path, bytes]) -> None:
 
 def _each(repo_root: str | Path, project: str, directory: str, pattern: str, argv: list[Any], base: Path,
           naming: set[str] | None, report: Path | None, never_started: dict[str, str], run: Runner,
-          product: str = "") -> list[dict[str, str]]:
+          product: str = "", with_tests: bool = False) -> list[dict[str, Any]]:
     """`each_file`'s runs, one file at a time."""
     found: list[dict[str, str]] = []
     from app.analysis.walk import files_under
@@ -187,12 +192,28 @@ def _each(repo_root: str | Path, project: str, directory: str, pattern: str, arg
             "file": f"{project}/{relative}" if project else relative,
             "outcome": "hung" if hung else verdict,
             "output": output.strip()[-MOST_OUTPUT_CHARACTERS:],
+            **(_its_tests_and_log(report, naming, output) if with_tests else {}),
         })
         if the_product_did_not_start(output):
             never_started = {"outcome": found[-1]["outcome"],
                              "output": f"Not run: the product did not start for {found[-1]['file']}, so it would "
                                        "not start for this file either."}
     return found
+
+
+def _its_tests_and_log(report: Path | None, naming: set[str] | None, output: str) -> dict[str, Any]:
+    """A file run's own tests, as its report has them, and what the server logged in its whole output."""
+    from app.acceptance import junit
+    from app.acceptance.suite import what_the_server_logged
+
+    tests: list[dict[str, str]] = []
+    if report is not None and naming:
+        try:
+            tests = [{"name": t.name, "outcome": t.outcome, "message": t.message, "file": t.file}
+                     for t in junit.read(report).tests if set(junit.tags_in(t.name)) & naming]
+        except Exception:  # noqa: BLE001 - a report that cannot be read holds no tests
+            tests = []
+    return {"tests": tests, "server_log": what_the_server_logged(output)}
 
 
 def defects_from(runs: list[dict[str, str]], owner: str, limit_seconds: int) -> list[Any]:

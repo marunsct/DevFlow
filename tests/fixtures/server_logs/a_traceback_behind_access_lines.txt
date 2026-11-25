@@ -1,0 +1,263 @@
+
+> task-management-dashboard@0.1.0 test:acceptance
+> playwright test
+
+[WebServer] INFO:     127.0.0.1:60734 - "GET /api/health HTTP/1.1" 200 OK
+[WebServer] INFO:     127.0.0.1:60738 - "GET / HTTP/1.1" 200 OK
+[WebServer] INFO:     127.0.0.1:60738 - "GET /assets/index-D9jTJFBw.js HTTP/1.1" 200 OK
+[WebServer] INFO:     127.0.0.1:60748 - "GET /assets/index-BjvV7hZB.css HTTP/1.1" 200 OK
+
+The page, loaded with nothing driving it, shows:
+- main:
+  - heading "Create Your Account" [level=1]
+  - text: Username
+  - textbox "Username"
+  - text: Email
+  - textbox "Email"
+  - text: Password
+  - textbox "Password"
+  - button "Register"
+  - paragraph:
+    - text: Already have an account?
+    - link "Log in":
+      - /url: /login
+
+
+Running 97 tests using 1 worker
+
+[WebServer] INFO:     127.0.0.1:41792 - "POST /api/register HTTP/1.1" 500 Internal Server Error
+  ✘   1 acceptance/analytics.spec.js:52:1 › [AC-11] analytics returns all required fields with correct types (27ms)
+[WebServer] INFO:     127.0.0.1:41804 - "POST /api/register HTTP/1.1" 500 Internal Server Error
+[WebServer] INFO:     127.0.0.1:41820 - "POST /api/login HTTP/1.1" 500 Internal Server Error
+  ✘   2 acceptance/analytics.spec.js:91:1 › [AC-11] total_tasks reflects the actual number of tasks owned by the user (20ms)
+[WebServer] INFO:     127.0.0.1:41832 - "POST /api/register HTTP/1.1" 500 Internal Server Error
+[WebServer] INFO:     127.0.0.1:41842 - "POST /api/login HTTP/1.1" 500 Internal Server Error
+  ✘   3 acceptance/analytics.spec.js:112:1 › [AC-11] tasks_by_priority returns accurate counts per priority level (19ms)
+[WebServer] INFO:     127.0.0.1:41856 - "POST /api/register HTTP/1.1" 500 Internal Server Error
+[WebServer] INFO:     127.0.0.1:41872 - "POST /api/login HTTP/1.1" 500 Internal Server Error
+  ✘   4 acceptance/analytics.spec.js:138:1 › [AC-11] tasks_by_status returns accurate counts per status (25ms)
+[WebServer] INFO:     127.0.0.1:41882 - "POST /api/register HTTP/1.1" 500 Internal Server Error
+[WebServer] INFO:     127.0.0.1:41898 - "POST /api/login HTTP/1.1" 500 Internal Server Error
+  ✘   5 acceptance/analytics.spec.js:160:1 › [AC-11] overdue_count counts tasks past due_date where status is not done (19ms)
+[WebServer] INFO:     127.0.0.1:41910 - "POST /api/register HTTP/1.1" 500 Internal Server Error
+[WebServer] INFO:     127.0.0.1:41914 - "POST /api/login HTTP/1.1" 500 Internal Server Error
+  ✘   6 acceptance/analytics.spec.js:183:1 › [AC-11] completion_rate reflects percentage of completed tasks (21ms)
+[WebServer] INFO:     127.0.0.1:41924 - "POST /api/register HTTP/1.1" 500 Internal Server Error
+[WebServer] INFO:     127.0.0.1:41932 - "POST /api/login HTTP/1.1" 429 Too Many Requests
+  ✘   7 acceptance/analytics.spec.js:206:1 › [AC-11] analytics returns zeros when user has no tasks (18ms)
+[WebServer] INFO:     127.0.0.1:41938 - "POST /api/register HTTP/1.1" 500 Internal Server Error
+[WebServer] INFO:     127.0.0.1:41940 - "POST /api/register HTTP/1.1" 500 Internal Server Error
+  ✘   8 acceptance/analytics.spec.js:231:1 › [AC-11] analytics only returns statistics for the authenticated user (18ms)
+[WebServer] INFO:     127.0.0.1:41944 - "GET /docs HTTP/1.1" 200 OK
+  ✓   9 acceptance/api_docs.spec.js:13:1 › [AC-12] GET /docs returns HTTP 200 with HTML (13ms)
+[WebServer] INFO:     127.0.0.1:41960 - "GET /docs HTTP/1.1" 200 OK
+  ✘  10 acceptance/api_docs.spec.js:21:1 › [AC-12] GET /docs contains registered API endpoints (7ms)
+[WebServer] INFO:     127.0.0.1:41972 - "GET /openapi.json HTTP/1.1" 200 OK
+  ✓  11 acceptance/api_docs.spec.js:33:1 › [AC-12] GET /openapi.json returns valid JSON (19ms)
+[WebServer] INFO:     127.0.0.1:41982 - "GET /openapi.json HTTP/1.1" 200 OK
+  ✓  12 acceptance/api_docs.spec.js:41:1 › [AC-12] GET /openapi.json returns valid OpenAPI 3.x specification (10ms)
+[WebServer] INFO:     127.0.0.1:41998 - "GET /openapi.json HTTP/1.1" 200 OK
+  ✘  13 acceptance/api_docs.spec.js:54:1 › [AC-12] OpenAPI spec includes all registered endpoints (7ms)
+[WebServer] INFO:     127.0.0.1:42006 - "GET /openapi.json HTTP/1.1" 200 OK
+  ✘  14 acceptance/api_docs.spec.js:79:1 › [AC-12] OpenAPI spec defines request and response schemas for tasks (14ms)
+[WebServer] INFO:     127.0.0.1:42022 - "POST /api/register HTTP/1.1" 500 Internal Server Error
+[WebServer] INFO:     127.0.0.1:42028 - "POST /api/register HTTP/1.1" 429 Too Many Requests
+[WebServer] INFO:     127.0.0.1:42028 - "POST /api/login HTTP/1.1" 429 Too Many Requests
+  ✘  15 acceptance/assign.spec.js:73:1 › [AC-3] assign a task via PUT and verify assigned_to is set (26ms)
+[WebServer] INFO:     127.0.0.1:42040 - "POST /api/register HTTP/1.1" 429 Too Many Requests
+[WebServer] INFO:     127.0.0.1:42040 - "POST /api/register HTTP/1.1" 429 Too Many Requests
+[WebServer] INFO:     127.0.0.1:42040 - "POST /api/login HTTP/1.1" 429 Too Many Requests
+  ✘  16 acceptance/assign.spec.js:111:1 › [AC-10] assignee sees assigned task in their filtered list (33ms)
+[WebServer] INFO:     127.0.0.1:42044 - "POST /api/register HTTP/1.1" 429 Too Many Requests
+[WebServer] INFO:     127.0.0.1:42044 - "POST /api/login HTTP/1.1" 429 Too Many Requests
+  ✘  17 acceptance/assign.spec.js:150:1 › [AC-3] assigning to a non-existent user returns 404 (19ms)
+[WebServer] INFO:     127.0.0.1:42046 - "POST /api/register HTTP/1.1" 429 Too Many Requests
+  ✘  18 acceptance/auth.spec.js:45:1 › [AC-1][AC-8] user can register with valid credentials (16ms)
+[WebServer] INFO:     127.0.0.1:42058 - "POST /api/register HTTP/1.1" 429 Too Many Requests
+  ✘  19 acceptance/auth.spec.js:52:1 › [AC-1][AC-8] registration rejects duplicat
+
+
+ing provided 
+    acceptance/categories_tags.spec.js:91:1 › [AC-6] tags stores and returns the exact array of strings provided 
+    acceptance/categories_tags.spec.js:121:1 › [AC-6] updating category via PUT persists correctly ─
+    acceptance/categories_tags.spec.js:151:1 › [AC-6] updating tags via PUT persists correctly ─────
+    acceptance/categories_tags.spec.js:183:1 › [AC-6] tags with strings exceeding 50 characters returns 422 
+    acceptance/categories_tags.spec.js:195:1 › [AC-6] multiple valid tags are all stored correctly ─
+    acceptance/due_dates.spec.js:38:1 › [AC-5] creating a task with a valid future due_date stores it in ISO 8601 format 
+    acceptance/due_dates.spec.js:68:1 › [AC-5] creating a task with null due_date is accepted ──────
+    acceptance/due_dates.spec.js:88:1 › [AC-5] updating a task to set a due_date persists correctly 
+    acceptance/due_dates.spec.js:119:1 › [AC-5] updating a task to clear its due_date stores null ──
+    acceptance/due_dates.spec.js:149:1 › [AC-5] due_date is returned consistently across all API responses 
+    acceptance/error_handling.spec.js:38:1 › [AC-13] unauthenticated GET /api/tasks returns 401 ────
+    acceptance/error_handling.spec.js:43:1 › [AC-13] unauthenticated POST /api/tasks returns 401 ───
+    acceptance/error_handling.spec.js:48:1 › [AC-13] unauthenticated PUT /api/tasks/{id} returns 401 
+    acceptance/error_handling.spec.js:55:1 › [AC-13] unauthenticated DELETE /api/tasks/{id} returns 401 
+    acceptance/error_handling.spec.js:60:1 › [AC-13] unauthenticated GET /api/analytics returns 401 
+    acceptance/error_handling.spec.js:72:1 › [AC-13] GET non-existent task returns 404 ─────────────
+    acceptance/error_handling.spec.js:81:1 › [AC-13] PUT non-existent task returns 404 ─────────────
+    acceptance/error_handling.spec.js:91:1 › [AC-13] DELETE non-existent task returns 404 ──────────
+    acceptance/error_handling.spec.js:147:1 › [AC-13] POST /api/tasks with missing title returns 422 
+    acceptance/error_handling.spec.js:159:1 › [AC-13] POST /api/tasks with missing priority returns 422 
+    acceptance/error_handling.spec.js:171:1 › [AC-13] PUT /api/tasks/{id} with missing version returns 422 
+    acceptance/error_handling.spec.js:217:1 › [AC-13] task creation with invalid priority includes validation error 
+    acceptance/error_handling.spec.js:231:1 › [AC-13] all 401 responses have consistent structure ──
+    acceptance/error_handling.spec.js:251:1 › [AC-13] all 422 responses have consistent structure ──
+    acceptance/error_handling.spec.js:270:1 › [AC-13] all 404 responses have consistent structure ──
+    acceptance/error_handling.spec.js:305:1 › [AC-13] request with invalid access token returns 401 
+    acceptance/priorities.spec.js:31:1 › [AC-4] creating a task with priority "low" succeeds ───────
+    acceptance/priorities.spec.js:43:1 › [AC-4] creating a task with priority "medium" succeeds ────
+    acceptance/priorities.spec.js:55:1 › [AC-4] creating a task with priority "high" succeeds ──────
+    acceptance/priorities.spec.js:67:1 › [AC-4] creating a task with priority "urgent" succeeds ────
+    acceptance/priorities.spec.js:81:1 › [AC-4] creating a task with invalid priority returns 422 ──
+    acceptance/priorities.spec.js:91:1 › [AC-4] creating a task with numeric priority returns 422 ──
+    acceptance/priorities.spec.js:101:1 › [AC-4] creating a task with empty string priority returns 422 
+    acceptance/priorities.spec.js:111:1 › [AC-4] creating a task with missing priority returns 422 ─
+    acceptance/priorities.spec.js:121:1 › [AC-4] updating a task with invalid priority returns 422 ─
+    acceptance/priorities.spec.js:143:1 › [AC-4] each valid priority is stored and returned correctly 
+    acceptance/search_filter.spec.js:50:1 › [AC-7] search matches task title case-insensitively ────
+    acceptance/search_filter.spec.js:73:1 › [AC-7] search matches task description case-insensitively 
+    acceptance/search_filter.spec.js:92:1 › [AC-7] search with no results returns empty list ───────
+    acceptance/search_filter.spec.js:110:1 › [AC-7] filter by priority returns only matching tasks ─
+    acceptance/search_filter.spec.js:143:1 › [AC-7] filter by status returns only matching tasks ───
+    acceptance/search_filter.spec.js:189:1 › [AC-7] filter by assignee_id returns only assigned tasks 
+    acceptance/search_filter.spec.js:250:1 › [AC-7] filter by due_date_before returns only matching tasks 
+    acceptance/search_filter.spec.js:272:1 › [AC-7] combining search and priority filter narrows results 
+    acceptance/search_filter.spec.js:294:1 › [AC-7] pagination works correctly with filtered results 
+    acceptance/tasks.spec.js:58:1 › [AC-2][AC-9] create a task returns 201 with the created object ─
+    acceptance/tasks.spec.js:75:1 › [AC-2][AC-9] created task fields match the creation payload ────
+    acceptance/tasks.spec.js:94:1 › [AC-2][AC-9] GET task by id returns all fields ─────────────────
+    acceptance/tasks.spec.js:114:1 › [AC-2][AC-9] GET a non-existent task returns 404 ──────────────
+    acceptance/tasks.spec.js:125:1 › [AC-2][AC-9] update a task via PUT returns the updated object ─
+    acceptance/tasks.spec.js:151:1 › [AC-2][AC-9] PUT with wrong version returns 409 conflict ──────
+    acceptance/tasks.spec.js:167:1 › [AC-2][AC-9] delete a task returns 204 and subsequent GET returns 404 
+    acceptance/tasks.spec.js:187:1 › [AC-2][AC-9] GET /api/tasks returns paginated task list ───────
+    acceptance/tasks.spec.js:210:1 › [AC-9] unauthenticated requests to /api/tasks return 401 ──────
+  17 passed (24.2s)
+
+[WebServer] INFO:     Started server process [49]
+[WebServer] INFO:     Waiting for application startup.
+[WebServer] INFO:     Application startup complete.
+[WebServer] INFO:     Uvicorn running on http://127.0.0.1:58663 (Press CTRL+C to quit)
+[WebServer] ERROR:    Exception in ASGI application
+[WebServer] Traceback (most recent call last):
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1977, in _exec_single_context
+[WebServer]     self.dialect.do_execute(
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 1192, in do_execute
+[WebServer]     cursor.execute(statement, parameters)
+[WebServer] sqlite3.OperationalError: no such table: users
+[WebServer] 
+[WebServer] The above exception was the direct cause of the following exception:
+[WebServer] 
+[WebServer] Traceback (most recent call last):
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/uvicorn/protocols/http/h11_impl.py", line 411, in run_asgi
+[WebServer]     result = await app(  # type: ignore[func-returns-value]
+[WebServer]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/uvicorn/middleware/proxy_headers.py", line 63, in __call__
+[WebServer]     return await self.app(scope, receive, send)
+[WebServer]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/fastapi/applications.py", line 1224, in __call__
+[WebServer]     await super().__call__(scope, receive, send)
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/starlette/applications.py", line 96, in __call__
+[WebServer]     await self.middleware_stack(scope, receive, send)
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/starlette/middleware/errors.py", line 186, in __call__
+[WebServer]     raise exc
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/starlette/middleware/errors.py", line 164, in __call__
+[WebServer]     await self.app(scope, receive, _send)
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/fastapi/telemetry/_asgi.py", line 151, in __call__
+[WebServer]     await self.app(scope, receive, send)
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/fastapi/_body_limit.py", line 80, in __call__
+[WebServer]     await self.app(scope, receive, send)
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/starlette/middleware/base.py", line 203, in __call__
+[WebServer]     response = await self.dispatch_func(request, call_next)
+[WebServer]                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[WebServer]   File "/workspace/task-management-dashboard/task_management_dashboard/main.py", line 66, in the_page
+[WebServer]     response = await call_next(request)
+[WebServer]                ^^^^^^^^^^^^^^^^^^^^^^^^
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/starlette/middleware/base.py", line 179, in call_next
+[WebServer]     raise app_exc from app_exc.__cause__ or app_exc.__context__
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/starlette/middleware/base.py", line 149, in coro
+[WebServer]     await self.app(scope, receive_or_disconnect, send_no_error)
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/starlette/middleware/cors.py", line 91, in __call__
+[WebServer]     await self.simple_response(scope, receive, send, request_headers=headers)
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/starlette/middleware/cors.py", line 149, in simple_response
+[WebServer]     await self.app(scope, receive, send)
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+[WebServer]     await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+[WebServer]     raise exc
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+[WebServer]     await app(scope, receive, sender)
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+[WebServer]     await self.app(scope, receive, send)
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/starlette/routing.py", line 683, in __call__
+[WebServer]     await self.middleware_stack(scope, receive, send)
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 2929, in app
+[WebServer]     await route.handle(scope, receive, send)
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 1916, in handle
+[WebServer]     await self.original_router.handle(scope, receive, send)
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/fastapi/routing
+
+
+ in _handle_selected
+[WebServer]     await original_route.handle(scope, receive, send)
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 1373, in handle
+[WebServer]     await effective_context.app(scope, receive, send)
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 175, in app
+[WebServer]     await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+[WebServer]     raise exc
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+[WebServer]     await app(scope, receive, sender)
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 161, in app
+[WebServer]     response = await f(request)
+[WebServer]                ^^^^^^^^^^^^^^^^
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 762, in app
+[WebServer]     raw_response = await run_endpoint_function(
+[WebServer]                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 381, in run_endpoint_function
+[WebServer]     return await dependant.call(**values)
+[WebServer]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[WebServer]   File "/workspace/task-management-dashboard/task_management_dashboard/routers/users.py", line 91, in register
+[WebServer]     existing_user = db.query(User).filter(User.username == user_create.username).first()
+[WebServer]                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/sqlalchemy/orm/query.py", line 2823, in first
+[WebServer]     return self.limit(1)._iter().first()  # type: ignore[return-value]
+[WebServer]            ^^^^^^^^^^^^^^^^^^^^^
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/sqlalchemy/orm/query.py", line 2921, in _iter
+[WebServer]     result: Union[ScalarResult[_T], Result[_T]] = self.session.execute(
+[WebServer]                                                   ^^^^^^^^^^^^^^^^^^^^^
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 2555, in execute
+[WebServer]     return self._execute_internal(
+[WebServer]            ^^^^^^^^^^^^^^^^^^^^^^^
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 2445, in _execute_internal
+[WebServer]     compile_state_cls.orm_execute_statement(
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/sqlalchemy/orm/context.py", line 357, in orm_execute_statement
+[WebServer]     result = conn.execute(
+[WebServer]              ^^^^^^^^^^^^^
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1494, in execute
+[WebServer]     return meth(
+[WebServer]            ^^^^^
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py", line 534, in _execute_on_connection
+[WebServer]     return connection._execute_clauseelement(
+[WebServer]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1714, in _execute_clauseelement
+[WebServer]     ret = self._execute_context(
+[WebServer]           ^^^^^^^^^^^^^^^^^^^^^^
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1868, in _execute_context
+[WebServer]     return self._exec_single_context(
+[WebServer]            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1996, in _exec_single_context
+[WebServer]     self._handle_dbapi_exception(
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 2351, in _handle_dbapi_exception
+[WebServer]     raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1977, in _exec_single_context
+[WebServer]     self.dialect.do_execute(
+[WebServer]   File "/workspace/task-management-dashboard/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 1192, in do_execute
+[WebServer]     cursor.execute(statement, parameters)
+[WebServer] sqlalchemy.exc.OperationalError: (sqlite3.OperationalError) no such table: users
+[WebServer] [SQL: SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.full_name AS users_full_name, users.is_active AS users_is_active, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+[WebServer] FROM users 
+[WebServer] WHERE users.username = ?
+[WebServer]  LIMIT ? OFFSET ?]
+[WebServer] [parameters: ('testuser-owner', 1, 0)]
+[WebServer] (Background on this error at: https://sqlalche.me/e/21/e3q8)

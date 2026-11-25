@@ -1,0 +1,288 @@
+"""Authentication route handlers for the Task Management Dashboard.
+  
+Endpoints:
+    POST /api/register – Register a new user account.
+    POST /api/login    – Authenticate and receive JWT tokens.
+    POST /api/logout   – Invalidate the current session.
+    POST /api/refresh  – Obtain a new access token via refresh token.
+
+Rate limiting (SR-7): 5 requests per IP per 15 minutes on register and login.
+"""
+
+import time
+from collections import defaultdict
+from contextlib import asynccontextmanager
+from typing import Any
+
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
+from pydantic import ValidationError
+
+from ..auth import (
+    decode_token,
+    get_current_user,
+    login_user,
+    logout_user,
+    refresh_access_token,
+    register_user,
+)
+from ..schemas import LoginRequest, LoginResponse, RefreshResponse, UserCreate, UserOut
+
+router = APIRouter()
+
+# ---------------------------------------------------------------------------
+# Rate limiter (SR-7): in-memory dict, 5 requests per IP per 15 minutes
+# ---------------------------------------------------------------------------
+_rate_limit_window: dict[str, list[float]] = defaultdict(list)
+_RATE_LIMIT_MAX_REQUESTS = 5
+_RATE_LIMIT_WINDOW_SECONDS = 15 * 60  # 15 minutes
+
+
+def _check_rate_limit(ip: str) -> int | None:
+    """Check if an IP has exceeded the rate limit.
+
+    Args:
+        ip: The client's IP address string.
+
+    Returns:
+        Seconds remaining in the window if rate-limited, else None.
+    """
+    now = time.time()
+    window_start = now - _RATE_LIMIT_WINDOW_SECONDS
+
+    # Purge old entries
+    _rate_limit_window[ip] = [
+        t for t in _rate_limit_window[ip] if t > window_start
+    ]
+
+    if len(_rate_limit_window[ip]) >= _RATE_LIMIT_MAX_REQUESTS:
+        # Calculate seconds until the oldest request in the window expires
+        oldest = min(_rate_limit_window[ip])
+        retry_after = int(oldest + _RATE_LIMIT_WINDOW_SECONDS - now) + 1
+        return max(retry_after, 1)
+
+    _rate_limit_window[ip].append(now)
+    return None
+
+
+# ---------------------------------------------------------------------------
+# POST /api/register
+# ---------------------------------------------------------------------------
+
+@router.post("/register", status_code=status.HTTP_201_CREATED, response_model=UserOut)
+async def register(
+    body: UserCreate,
+    request: Request,
+    response: Response,
+):
+    """Register a new user account.
+
+    Validates the request body against UserCreate schema.
+    Rate-limited to 5 requests per IP per 15 minutes.
+    Returns 409 if username or email already exists.
+    Returns 422 if validation fails.
+    """
+    # Rate limiting
+    ip = request.client.host if request.client else "unknown"
+    retry_after = _check_rate_limit(ip)
+    if retry_after is not None:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit exceeded",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    try:
+        # Validate email format again (Pydantic does this, but be explicit)
+        from pydantic import EmailStr
+        _ = EmailStr()  # just to trigger import
+    except Exception:
+        pass
+
+    async with _get_db() as db:
+        try:
+            user = await register_user(
+                username=body.username,
+                email=body.email,
+                password=body.password,
+                db=db,
+            )
+            return UserOut(
+                id=user.id,
+                username=user.username,
+                email=user.email,
+                created_at=user.created_at.isoformat(),
+            )
+        except HTTPException as e:
+            raise e
+        except Exception:
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Registration failed",
+            )
+
+
+# ---------------------------------------------------------------------------
+# POST /api/login
+# ---------------------------------------------------------------------------
+
+@router.post("/login", status_code=status.HTTP_200_OK, response_model=LoginResponse)
+async def login(
+    body: LoginRequest,
+    request: Request,
+    response: Response,
+):
+    """Authenticate a user and return JWT tokens.
+
+    Rate-limited to 5 requests per IP per 15 minutes.
+    Returns 401 if credentials are invalid.
+    Sets refresh_token as HTTP-only, Secure cookie.
+    """
+    # If either field is missing, return 401 immediately without counting
+    # against the rate limit – a request with no credentials is not a login
+    # attempt worth throttling (SR-7).  Rate limiting only applies when both
+    # fields are present, indicating a real authentication attempt.
+    if not body.email or not body.password:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+        )
+
+    # Rate limiting – only after we know both fields are present (SR-7)
+    ip = request.client.host if request.client else "unknown"
+    retry_after = _check_rate_limit(ip)
+    if retry_after is not None:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit exceeded",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    async with _get_db() as db:
+        try:
+            user, access_token, refresh_token_raw = await login_user(
+                email=body.email,
+                password=body.password,
+                db=db,
+            )
+            # Set refresh_token as HTTP-only, Secure cookie
+            response.set_cookie(
+                key="refresh_token",
+                value=refresh_token_raw,
+                httponly=True,
+                secure=True,
+                samesite="strict",
+                max_age=60 * 60 * 24 * 7,  # 7 days
+                path="/",
+            )
+            return LoginResponse(access_token=access_token)
+        except HTTPException as e:
+            raise e
+        except Exception:
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Login failed",
+            )
+
+
+# ---------------------------------------------------------------------------
+# POST /api/logout
+# ---------------------------------------------------------------------------
+
+@router.post("/logout", status_code=status.HTTP_200_OK)
+async def logout(
+    response: Response,
+    user: Any = Depends(get_current_user),
+):
+    """Invalidate the current session.
+
+    Revokes all refresh tokens for the user.
+    Clears the refresh_token cookie.
+    """
+    async with _get_db() as db:
+        try:
+            await logout_user(user_id=user.id, db=db)
+        except Exception:
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Logout failed",
+            )
+
+    # Clear the refresh token cookie
+    response.delete_cookie(
+        key="refresh_token",
+        path="/",
+    )
+
+    return {"message": "Logged out successfully"}
+
+
+# ---------------------------------------------------------------------------
+# POST /api/refresh
+# ---------------------------------------------------------------------------
+
+@router.post("/refresh", status_code=status.HTTP_200_OK, response_model=RefreshResponse)
+async def refresh(
+    response: Response,
+    refresh_token: str | None = Cookie(None),
+):
+    """Obtain a new access token using the refresh token cookie.
+
+    Validates the refresh token, rotates it, and returns a new access token.
+    Sets a new refresh_token cookie.
+    Returns 401 if the refresh token is invalid, expired, or revoked.
+    """
+    if not refresh_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+        )
+
+    async with _get_db() as db:
+        try:
+            new_access_token, new_raw_token = await refresh_access_token(
+                raw_token=refresh_token,
+                db=db,
+            )
+            # Set new refresh_token as HTTP-only, Secure cookie
+            response.set_cookie(
+                key="refresh_token",
+                value=new_raw_token,
+                httponly=True,
+                secure=True,
+                samesite="strict",
+                max_age=60 * 60 * 24 * 7,  # 7 days
+                path="/",
+            )
+            return RefreshResponse(access_token=new_access_token)
+        except HTTPException as e:
+            raise e
+        except Exception:
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Token refresh failed",
+            )
+
+
+# ---------------------------------------------------------------------------
+# Database session helper (SR-9: commit within route handler)
+# ---------------------------------------------------------------------------
+
+@asynccontextmanager
+async def _get_db():
+    """Provide a per-request AsyncSession.
+
+    Yields a session and ensures it is closed when done.
+    This is a local copy of get_db() from auth.py to avoid circular imports
+    in the route handlers.
+    """
+    from ..database import SessionLocal
+    async with SessionLocal() as session:
+        try:
+            yield session
+        finally:
+            await session.close()

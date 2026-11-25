@@ -1320,9 +1320,6 @@ def _sandbox_runner(repo_root: str | Path) -> Runner:
 
 #: How a suite runner marks what the product's server printed: Playwright's `webServer` prefix.
 _A_SERVER_LINE = re.compile(r"^\[WebServer\] ?(.*)$")
-#: A server line that states an error, and a stack frame.
-_STATES_AN_ERROR = re.compile(r"\b(?:\w*Error|Exception|Traceback|panic|FATAL)\b")
-_A_FRAME = re.compile(r"^\s*at\s")
 #: Lines of the server's log a defect carries, at most.
 MOST_SERVER_LINES = 12
 
@@ -1332,24 +1329,17 @@ def what_the_server_logged(output: str) -> str:
 
     Measured on one run: `POST /notes` answered 500 and the server logged `Error: Internal server error at
     NotesRepository.save (src/services/persistence.ts:44)` under Playwright's `[WebServer]` prefix; no fixer was
-    shown it, and five in a row changed nothing or chased the tests.
+    shown it, and five in a row changed nothing or chased the tests. Read by `what_went_wrong.the_errors_logged`, the
+    one reader of a server's errors: measured on two medium runs, access lines (`"POST /api/register HTTP/1.1" 500
+    Internal Server Error`) were kept as errors, twelve of them filled the room, and the traceback behind them -
+    `no such table: users` - was dropped (LF.1410).
     """
-    kept: list[str] = []
-    for line in str(output or "").splitlines():
-        match = _A_SERVER_LINE.match(line.strip())
-        if match is None:
-            continue
-        text = match.group(1).rstrip()
-        if _A_FRAME.match(text):
-            if "node_modules" in text or "node:internal" in text or not kept:
-                continue
-        elif not _STATES_AN_ERROR.search(text):
-            continue
-        if text not in kept:
-            kept.append(text)
-        if len(kept) >= MOST_SERVER_LINES:
-            break
-    return "\n".join(part for part in ("\n".join(kept)[:1_500], what_a_stopped_service_wrote(output)) if part)
+    from app.acceptance.what_went_wrong import the_errors_logged
+
+    lines = [match.group(1) for line in str(output or "").splitlines()
+             if (match := _A_SERVER_LINE.match(line.strip())) is not None]
+    kept = the_errors_logged(lines, most_lines=MOST_SERVER_LINES, most_characters=1_500)
+    return "\n".join(part for part in ("\n".join(kept), what_a_stopped_service_wrote(output)) if part)
 
 
 #: The most of a stopped service's report a defect carries: its own 2,000 characters of output and the line before them.

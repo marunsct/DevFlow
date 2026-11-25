@@ -714,6 +714,13 @@ def code_review(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         for finding, why in shown
         if not why
     ]
+    # A finding in the review's own words carries the error its commands printed (FX.8, LF.1412).
+    from app.acceptance import errors_as_printed
+    from app.graph.workflow import APP_RUN_ID_KEY
+
+    found = errors_as_printed.attached(raised_by("code review", found),
+                                       (config.get("configurable") or {}).get(APP_RUN_ID_KEY), stage_name,
+                                       source="code review")
     if found:
         logger.info("Code review found %d problem(s) a test or check shows; to fix", len(found))
     if advice:

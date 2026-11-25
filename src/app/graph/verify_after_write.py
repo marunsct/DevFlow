@@ -55,6 +55,7 @@ def enabled() -> bool:
 def watching(
     run_id: str | None, stage: str, check: Callable[[], bool | None], *,
     says: tuple[str, str] | None = None, most: int | None = None, checkpoints_in: str | Path | None = None,
+    then: Callable[[], str] | None = None,
 ) -> Iterator[None]:
     """While inside, a write in `stage` of `run_id` runs `check`. Nothing when off.
 
@@ -62,11 +63,14 @@ def watching(
     tests (a deliberate change the new tests must notice); `most` is the checks the stage gets, for one that costs more.
     `checkpoints_in`, a fix made alone's workspace: a write the check passes is kept there as the fix's best so far
     (`best_checkpoint`).
+    `then`, after a check that does not pass: what the tests do now - their first failure and the server's error
+    (`first_failure.after_a_write`, FX.7) - added below the line that says they still fail.
     """
     key = (str(run_id or ""), stage)
     if enabled():
         with _lock:
-            _watched[key] = [check, 0, says or (PASSED, FAILING), MOST_CHECKS if most is None else most, checkpoints_in]
+            _watched[key] = [check, 0, says or (PASSED, FAILING), MOST_CHECKS if most is None else most, checkpoints_in,
+                             then]
     try:
         yield
     finally:
@@ -76,13 +80,13 @@ def watching(
 
 def _the_check(
     run_id: str | None, stage: str,
-) -> tuple[Callable[[], bool | None], tuple[str, str], str | Path | None] | None:
+) -> tuple[Callable[[], bool | None], tuple[str, str], str | Path | None, Callable[[], str] | None] | None:
     with _lock:
         entry = _watched.get((str(run_id or ""), stage))
         if entry is None or entry[1] >= entry[3]:
             return None
         entry[1] += 1
-        return entry[0], entry[2], entry[4]
+        return entry[0], entry[2], entry[4], entry[5]
 
 
 def after_a_write(tool: str, result: Any, run_id: str | None, stage: str) -> Any:
@@ -96,7 +100,7 @@ def after_a_write(tool: str, result: Any, run_id: str | None, stage: str) -> Any
     found = _the_check(run_id, stage)
     if found is None:
         return result
-    check, says, checkpoints_in = found
+    check, says, checkpoints_in, then = found
     try:
         outcome = check()
     except Exception as failure:  # noqa: BLE001 - the write stands as it was
@@ -108,7 +112,16 @@ def after_a_write(tool: str, result: Any, run_id: str | None, stage: str) -> Any
         from app.graph import best_checkpoint
 
         best_checkpoint.record(checkpoints_in, run_id, stage)
-    result.content = result.content.rstrip() + "\n" + (says[0] if outcome else says[1])
+    said = says[0] if outcome else says[1]
+    if not outcome and then is not None:
+        try:
+            now = then()
+        except Exception as failure:  # noqa: BLE001 - the line alone, as before
+            degraded("verify_after_write.then", failure)
+            now = ""
+        if now:
+            said += "\n" + now
+    result.content = result.content.rstrip() + "\n" + said
     return result
 
 

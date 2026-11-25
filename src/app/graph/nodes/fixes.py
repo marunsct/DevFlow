@@ -127,6 +127,11 @@ def _the_fix_request(
     specification = _the_specification_for_the_fix(state, defect, co_defects)
     add(STANDING, specification, cut=_the_specification_cut(state, specification, brief_args[8], shown))
     add(EVIDENCE, _the_bundled_section(co_defects, root, cycle.defects))
+    # Its criterion's tests run on their own now, a server error nothing logged, the tests held for the QA lead (FX.1,
+    # FX.7, FX.11).
+    from app.graph import first_failure
+
+    add(EVIDENCE, first_failure.for_a_fixer(state, defect))
     # A defect on its last permitted attempt gets a different shape of
     # work, not a third variation of the instruction that failed twice.
     # See `_the_last_attempt_section`.
@@ -553,6 +558,12 @@ def _fix_one(state: Any, config: RunnableConfig, defect_index: int, ctx: GraphCo
     closed = _closed_if_an_earlier_fix_resolved_it(state, cycle, defect_index)
     if closed is not None:
         return closed
+    # A failing test no fix in this sprint can make pass goes to the QA lead before the fixer (FX.11, LF.1413).
+    from app.graph import first_failure
+
+    held = first_failure.held_as_a_dispute(state, cycle, defect_index)
+    if held is not None:
+        return held
     # A defect that has spent its calls across attempts is not fixed again
     # (plan AY step 4, off until measured).
     from app.graph import defect_budget
@@ -634,7 +645,9 @@ def _fix_one(state: Any, config: RunnableConfig, defect_index: int, ctx: GraphCo
             mutant_check_in_stage.check_for(root, defect, lambda: _the_defect_s_tests_pass(root, defect)),
             # A fix alone keeps the version its own tests passed at (A3, `best_checkpoint`); not a mutation finding's,
             # whose check is of its own change.
-            **(mutant_check_in_stage.how_for(defect) or {"checkpoints_in": root}),
+            # Still failing, the write's reply says how, and what the server printed (FX.7).
+            **(mutant_check_in_stage.how_for(defect) or {
+                "checkpoints_in": root, "then": lambda: first_failure.after_a_write(root, defect)}),
         ):
             update = _run_gated_agent(
                 state,
@@ -941,6 +954,14 @@ def _the_next_fix_batch(state: Any, config: RunnableConfig, ctx: GraphContext) -
         closed = _closed_if_an_earlier_fix_resolved_it(state, cycle, index)
         if closed is not None:
             return _with_tried(state, closed, name(index))
+    # A failing test no fix in this sprint can make pass goes to the QA lead before any fixer (FX.11, LF.1413); the
+    # round comes back to its defect after the dispute.
+    from app.graph import first_failure
+
+    for index in candidates:
+        held = first_failure.held_as_a_dispute(state, cycle, index)
+        if held is not None:
+            return held
     # Far past the sprint's time budget, no further fixer is sent: the attempt ends (`sprint_time_budget`).
     stopped = _the_attempt_ends_past_its_budget(state, cycle)
     if stopped is not None:
@@ -1010,8 +1031,12 @@ def defect_fix_worker_node(state: dict, config: RunnableConfig, ctx: GraphContex
     from app.graph import batch_file_claims
 
     run_id = config["configurable"].get(APP_RUN_ID_KEY)
+    from app.graph import first_failure
+
     with verify_after_write.watching(
         run_id, stage_name, lambda: _the_defect_s_tests_pass(root, defect),
+        # Still failing, the write's reply says how, and what the server printed (FX.7).
+        then=lambda: first_failure.after_a_write(root, defect),
     ), batch_file_claims.holding(run_id, stage_name):
         update = _run_gated_agent(
             temp_state, config, stage_name=stage_name, agent=agent, initial_request=request,

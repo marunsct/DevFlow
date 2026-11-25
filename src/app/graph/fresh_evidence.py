@@ -80,7 +80,8 @@ def _ends_of_a_log_block() -> tuple[str, ...]:
 
     return ("\n" + acceptance_nodes.THE_PAGE_REPORTED_WHILE_LOADING, acceptance_nodes.WHAT_THE_PRODUCT_SHOWS,
             "\nA fix was tried and reverted", "\nA batch of fixes including this one", "\nFixes of this defect reverted",
-            "\nIf the behaviour this sprint delivers", "\nThe product before this fix passed", "\n" + KNOWN_CAUSE)
+            "\nIf the behaviour this sprint delivers", "\nThe product before this fix passed", "\n" + KNOWN_CAUSE,
+            acceptance_nodes.THE_SERVER_HID_THE_CAUSE[:60])
 
 
 def with_the_log_now(text: str, root: str | Path, logged: str, *, add: bool = False) -> str:
@@ -102,6 +103,17 @@ def with_the_log_now(text: str, root: str | Path, logged: str, *, add: bool = Fa
     found = [i for i in (text.find(end, after) for end in ends) if i >= 0]
     end = min(found) if found else len(text)
     return text[:at] + block + text[end:]
+
+
+def without_a_hidden_cause_since_logged(text: str, logged: str) -> str:
+    """`text` less the note that the server hid a 5xx's cause, once the latest measurement's log states one (LF.1410);
+    `text` as it is while the log states none."""
+    from app.acceptance.what_went_wrong import states_a_cause
+    from app.graph import acceptance_nodes
+
+    if acceptance_nodes.THE_SERVER_HID_THE_CAUSE not in text or not states_a_cause(logged):
+        return text
+    return re.sub(re.escape(acceptance_nodes.THE_SERVER_HID_THE_CAUSE) + r"(?: It is answered here[^\n]*)?", "", text)
 
 
 def _the_product_starts_now(root: str | Path) -> bool:
@@ -173,7 +185,8 @@ def actual_behavior_now(root: str | Path | None, defect: Any, others: Iterable[A
             return text
         text = with_the_tests_now(text, defect, saved, others)
         criterion = bool(_A_CRITERION_S_DEFECT.match(_plain(getattr(defect, "description", ""))))
-        return with_the_log_now(text, root, _the_log_in(saved), add=criterion)
+        logged = _the_log_in(saved)
+        return without_a_hidden_cause_since_logged(with_the_log_now(text, root, logged, add=criterion), logged)
     except Exception:  # noqa: BLE001 - the stored text stands
         logger.debug("Could not read a defect against the latest measurement", exc_info=True)
         return _plain(getattr(defect, "actual_behavior", ""))
@@ -234,5 +247,5 @@ def what_its_tests_printed_now(root: str | Path | None, defect: Any) -> dict[str
 
 __all__ = [
     "START_FAILURES", "actual_behavior_now", "as_shown", "latest", "what_its_tests_printed_now",
-    "with_the_log_now", "with_the_tests_now", "without_a_start_fault_since_gone",
+    "with_the_log_now", "with_the_tests_now", "without_a_hidden_cause_since_logged", "without_a_start_fault_since_gone",
 ]

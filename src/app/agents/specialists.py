@@ -26,6 +26,7 @@ from app.agents.own_store_rule import FOR_TEST_WRITERS as OWN_STORE_FOR_TEST_WRI
 from app.agents.testability import TESTABILITY_RULE
 from app.agents.testing_dependency_rule import RULE_FOR_BUILDERS
 from app.agents.normal_form import A_GROUP_IN_ITS_NORMAL_FORM
+from app.agents.server_errors_logged import A_SERVER_ERROR_IS_LOGGED
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 from app.agents.role_agent import create_role_agent, default_repo_root
 from app.agents.severity import validator_for as severity_in
@@ -143,7 +144,9 @@ _ROLE_DESCRIPTIONS: dict[SpecialistRole, str] = {
         "implement the logic in the code the page loads instead. "
         + REFUSE_WHAT_IT_CANNOT_USE + " "
         # LF.1317: a count of words compared in lower case printed each as first read ("The 3").
-        + A_GROUP_IN_ITS_NORMAL_FORM
+        + A_GROUP_IN_ITS_NORMAL_FORM + " "
+        # LF.1410: handlers answered 500 with no log line, and no fixer ever saw the exception.
+        + A_SERVER_ERROR_IS_LOGGED
     ),
     "testing": (
         "You are the Testing and Quality Engineering specialist. You define and "

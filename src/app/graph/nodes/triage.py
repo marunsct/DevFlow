@@ -339,6 +339,12 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
     reported: list[ReportedDefect] = _each_defect_once(
         [*raised_by("test round", test_result.defects), *(state.get("review_defects") or [])]
     )
+    # A defect the round wrote in its own words carries the error its commands printed (FX.8, LF.1412).
+    from app.acceptance import errors_as_printed
+    from app.graph.workflow import APP_RUN_ID_KEY
+
+    reported = errors_as_printed.attached(
+        reported, (config.get("configurable") or {}).get(APP_RUN_ID_KEY), f"test_round_{test_round}", source="test round")
     if len(reported) < len(test_result.defects):
         logger.warning(
             "test_round_%d reported %d defect(s), %d of them repeats; keeping %d",
@@ -543,7 +549,8 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
                             detail="the same check's open defect was refreshed with this round's output")
     for position, item in enumerate(new_defects, start=len(cycle.defects)):
         defect_ledger.note("raised", f"test_round_{test_round}", defect=item, round_=test_round, index=position,
-                            sprint=state.get("current_sprint_index", 0))
+                            sprint=state.get("current_sprint_index", 0),
+                            error_as_printed=errors_as_printed.the_error_it_carries(item))
     if not measured and not not_measured:
         # A fix nothing could measure was left open, unverified, for this round to decide: it measured the product and
         # found nothing wrong. A round that raised anything leaves them open, to be measured or fixed again.

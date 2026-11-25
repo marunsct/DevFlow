@@ -578,6 +578,11 @@ def after_a_failed_call(
     be an answer. A failure that came back at once is tried again unchanged a
     few times, as the client's own retry did. Anything else is raised.
     """
+    from app.models.image_refusal import says_images_are_refused
+
+    if says_images_are_refused(error):
+        # The same images would be refused again: the request goes again without them instead (`_generate_once`).
+        return None
     status = getattr(error, "status_code", None)
     timed_out = "timeout" in type(error).__name__.lower()
     if elapsed >= SLOW_FAILURE_SECONDS and (status in _PROXY_GAVE_UP or timed_out):
@@ -790,13 +795,22 @@ class CompatibleChatOpenAI(ChatOpenAI):
             return self._generate_once(messages, stop=stop, run_manager=run_manager, **kwargs)
 
     def _generate_once(self, messages, stop=None, run_manager=None, **kwargs):
+        from app.models import image_refusal
         from app.models.tool_arguments import decode_structured_arguments
 
         server = self._served_by()
+        # A server found to take no images is sent none: a stage's later calls carry its first call's pictures.
+        messages = image_refusal.as_the_server_takes(server, messages)
         try:
             result = self._generate_paced(messages, stop=stop, run_manager=run_manager, **kwargs)
         except Exception as error:  # noqa: BLE001 - re-raised unless this is the refusal
-            if server not in _NAMED_CHOICE_BECOMES_REQUIRED and takes_only_string_tool_choices(error):
+            if image_refusal.says_images_are_refused(error) and image_refusal.has_images(messages):
+                # Refused for its pictures: once more without them, and the model kept as reading none
+                # (`app.models.image_refusal`).
+                image_refusal.remember(server, error)
+                messages = image_refusal.without_images(messages)
+                result = self._generate_paced(messages, stop=stop, run_manager=run_manager, **kwargs)
+            elif server not in _NAMED_CHOICE_BECOMES_REQUIRED and takes_only_string_tool_choices(error):
                 _NAMED_CHOICE_BECOMES_REQUIRED.add(server)
                 logger.warning(
                     "%s takes only string tool choices; a named choice is sent as `required` from now on",
@@ -809,14 +823,15 @@ class CompatibleChatOpenAI(ChatOpenAI):
                 from app.models.tool_arguments import decode_structured_arguments as _decoded
 
                 return _decoded(result, kwargs.get("tools"))
-            if server in _NO_FORCED_TOOL_WHILE_THINKING or not refuses_a_forced_tool_while_thinking(error):
+            elif server in _NO_FORCED_TOOL_WHILE_THINKING or not refuses_a_forced_tool_while_thinking(error):
                 raise
-            _remember_the_refusal(server)
-            logger.warning(
-                "%s refuses a forced tool call while the model reasons; its tools are "
-                "offered instead of forced from now on", server[1] or server[0],
-            )
-            result = self._generate_paced(messages, stop=stop, run_manager=run_manager, **kwargs)
+            else:
+                _remember_the_refusal(server)
+                logger.warning(
+                    "%s refuses a forced tool call while the model reasons; its tools are "
+                    "offered instead of forced from now on", server[1] or server[0],
+                )
+                result = self._generate_paced(messages, stop=stop, run_manager=run_manager, **kwargs)
         # A reply cut off by the cap, salvaged from its own reasoning where
         # this model's server was measured to allow it (`app.models.reply_salvage`).
         from app.models.reply_salvage import salvaged

@@ -395,6 +395,12 @@ def _refused(error: Exception) -> bool:
     a dropped connection, and each was kept as "cannot": forcing, JSON-schema
     answers. A server that did not answer says nothing about the model.
     """
+    from app.models.image_refusal import says_images_are_refused
+
+    # A server that says it takes no images refuses, whatever its status: measured, llama.cpp without a projector
+    # answers a 500, which was kept as "did not answer", and the model card's "reads images" stood.
+    if says_images_are_refused(error):
+        return True
     status = getattr(error, "status_code", None) or getattr(getattr(error, "response", None), "status_code", None)
     if isinstance(status, int):
         return 400 <= status < 500
@@ -582,6 +588,20 @@ def reasoning_tag_if_missing(name: str, base_url: str, key: str | None = None) -
         return False
 
 
+def _a_card_s_yes_not_taken_alone(reads_images: dict | None) -> dict[str, dict]:
+    """A model card's "reads images", when nothing nearer the served model confirmed it, kept as unknown.
+
+    The card names the model's weights; a served build may hold no vision part. Measured on one run: the card's
+    task (image-text-to-text) stood while the server held no projector and refused the image probe with a 500, so
+    fixers were sent screenshots and every request was refused. A model nothing places is shown no pictures
+    (`app.models.vision`); the server, the probe or the owner can still say yes.
+    """
+    if not reads_images or reads_images.get("source") != "model card" or reads_images.get("value") is not True:
+        return {}
+    return {"reads_images": _found(None, "model card", f"{reads_images.get('note') or 'the card says it reads images'}"
+                                   "; not taken until the server or the model shows it")}
+
+
 def fill(model: Any, name: str, configured: str = "") -> dict[str, dict]:
     """Find every field not set by the owner, measured over looked-up over the server's; keep it. Never raises."""
     from app.models.diagnostics import the_model_answers
@@ -595,6 +615,7 @@ def fill(model: Any, name: str, configured: str = "") -> dict[str, dict]:
     asked = measure(model, no_images=server_says_no) if the_model_answers(model) else {}
     for source in (look_up([configured, name]), from_server, from_what_was_measured(name), asked):
         found.update(source)  # later, more direct sources win
+    found.update(_a_card_s_yes_not_taken_alone(found.get("reads_images")))
     if "recommended_sampling" in found:
         # What would be sent, should the owner turn sampling on; the owner may edit it.
         found["sampling_to_send"] = _found(found["recommended_sampling"]["value"], found["recommended_sampling"]["source"],

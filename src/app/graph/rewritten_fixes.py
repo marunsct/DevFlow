@@ -113,8 +113,30 @@ def what_failed(defect: Any, repo_root: str | Path, last_failure: Any = None) ->
     return text[:MOST_FAILURE_CHARACTERS]
 
 
-def files_to_fix(defect: Any, failure: str, repo_root: str | Path, may_write: Callable[[str], bool]) -> list[str]:
-    """The workspace files a fix rewrites: the ones the defect names, then the ones its failure points at."""
+def files_mentioned_in(text: str) -> list[str]:
+    """The file names `text` gives, in its order, with a line or without - but not where a line only warns.
+
+    Measured live: a service failed at start-up in the module that opens its database, the one product file its
+    output named was a deprecation warning's, and the rewrite fixed that.
+    """
+    return [name.lstrip("./") for _, name in sorted(
+        (m.start(), m.group(1))
+        for pattern in (_AN_ERROR_LOCATION, _A_FILE_NAMED)
+        for m in pattern.finditer(text)
+        if not _only_warns(text, m.start())
+    )]
+
+
+def files_to_fix(
+    defect: Any, failure: str, repo_root: str | Path, may_write: Callable[[str], bool], *,
+    aimed_at: Sequence[str] = (), refused: dict[str, str] | None = None,
+) -> list[str]:
+    """The workspace files a fix rewrites: the ones the defect names, then the ones its failure points at.
+
+    `aimed_at`: the files a fixer that gave up wrote, tried to write or named (`surrender_evidence.aimed_at`), taken
+    after the defect's own evidence and under the same rules. `refused`, when given, is told each file left out and the
+    rule that left it out (LF.1402).
+    """
     from app.acceptance.junit import tags_in
 
     root = Path(repo_root)
@@ -136,8 +158,8 @@ def files_to_fix(defect: Any, failure: str, repo_root: str | Path, may_write: Ca
     )
     named = [str(f).strip().lstrip("./") for f in getattr(defect, "affected_files", None) or [] if str(f).strip()]
     # A trace that prints absolute paths - most runtimes but Python's - names
-    # the workspace's files under its root.
-    failure = failure.replace(str(root).rstrip("/") + "/", "")
+    # the workspace's files under its root, or under the sandbox's mount.
+    failure = _relative_to_the_workspace(failure, root)
     # The defect's own evidence first; the run's last failing command only when
     # that names no file. Measured live: a page check's "the interface is not
     # styled" was rewritten as its stylesheet and `tests/test_tasks.py` - named
@@ -145,20 +167,12 @@ def files_to_fix(defect: Any, failure: str, repo_root: str | Path, may_write: Ca
     # broke 17 tests, and the revert took the stylesheet with it.
     own, _, last = failure.partition(THE_LAST_FAILING_COMMAND)
 
-    def mentioned_in(text: str) -> list[str]:
-        # In the order the text names them, with a line or without - but not
-        # where a line only warns. Measured live: a service failed at start-up
-        # in the module that opens its database, the one product file its
-        # output named was a deprecation warning's, and the rewrite fixed that.
-        return [name.lstrip("./") for _, name in sorted(
-            (m.start(), m.group(1))
-            for pattern in (_AN_ERROR_LOCATION, _A_FILE_NAMED)
-            for m in pattern.finditer(text)
-            if not _only_warns(text, m.start())
-        )]
+    mentioned_in = files_mentioned_in
+    # What the fixer aimed at, as the workspace spells it: a write's path, or a name its answer gave.
+    aimed = [_relative_to_the_workspace(str(name), root).lstrip("./") for name in aimed_at if str(name).strip()]
 
     def files(mentioned: list[str]) -> list[str]:
-        return _the_files(root, named, mentioned, judged_by_the_suite, tests_from_the_text, may_write)
+        return _the_files(root, named, mentioned, judged_by_the_suite, tests_from_the_text, may_write, refused)
 
     # The defect's own words name files too, the words other checks merged into it not. Measured on one run: a failing
     # unit run named its test file only in the description, a cross-file finding merged into the defect brought the
@@ -166,17 +180,35 @@ def files_to_fix(defect: Any, failure: str, repo_root: str | Path, may_write: Ca
     from app.graph.engineering import SAME_PROBLEM_ELSEWHERE
 
     described = str(getattr(defect, "description", "") or "").partition(SAME_PROBLEM_ELSEWHERE)[0]
-    own_words = mentioned_in(described.replace(str(root).rstrip("/") + "/", ""))
-    found = files(own_words + mentioned_in(own))
+    own_words = mentioned_in(_relative_to_the_workspace(described, root))
+    found = files(own_words + mentioned_in(own) + aimed)
     if last and len(found) == len(files([])):
-        found = files(own_words + mentioned_in(own) + mentioned_in(last))
+        found = files(own_words + mentioned_in(own) + aimed + mentioned_in(last))
     owing = [name for name in _modules_missing_an_export(own, root) if may_write(name)]
     if owing:
         # The module that should export it is the file to write; the test that imports it is left as it is.
         from app.analysis.file_kinds import classify_file
 
         found = [*owing, *(name for name in found if name not in owing and classify_file(name) != "test")][:MOST_FILES]
-    return _without_other_ecosystems_manifests(root, found)
+    kept = _without_other_ecosystems_manifests(root, found)
+    if refused is not None:
+        for name in found:
+            if name not in kept:
+                refused.setdefault(name, "a manifest of an ecosystem the project does not build its product with")
+    return kept
+
+
+def _relative_to_the_workspace(text: str, root: Path) -> str:
+    """`text` with the workspace's absolute paths made relative: under its root, or under the sandbox's mount.
+
+    Measured over 45 runs (LF.1402): a command run in the sandbox prints `/workspace/<project>/...`, and every such
+    path was read as `workspace/<project>/...`, which names no file - the failing test of each criterion the
+    acceptance suite judges was "not in the workspace", and so was any product file a trace named that way.
+    """
+    from app.agents.workspace_paths import THE_SANDBOX_S_MOUNT
+
+    text = text.replace(str(root).rstrip("/") + "/", "")
+    return re.sub(rf"(?<![\w./@-]){re.escape(THE_SANDBOX_S_MOUNT)}/", "", text)
 
 
 def _without_other_ecosystems_manifests(root: Path, files: list[str]) -> list[str]:
@@ -299,11 +331,18 @@ def _a_manifest(relative: str) -> bool:
 
 def _the_files(
     root: Path, named: list[str], mentioned: list[str], judged_by_the_suite: bool, tests_from_the_text: bool,
-    may_write: Callable[[str], bool],
+    may_write: Callable[[str], bool], refused: dict[str, str] | None = None,
 ) -> list[str]:
-    """The workspace files to rewrite: those the defect names, then those its failure text mentions."""
+    """The workspace files to rewrite: those the defect names, then those its failure text mentions.
+
+    `refused`, when given, is told each name left out and the rule that left it out.
+    """
     from app.analysis.file_kinds import classify_file, is_scratch
     from app.tools.repository import IGNORED_DIRECTORIES
+
+    def left_out(name: str, why: str) -> None:
+        if refused is not None:
+            refused.setdefault(name, why)
 
     own = set(named)
     found: list[str] = []
@@ -319,7 +358,11 @@ def _the_files(
                 target = the_file_ending(root, spelling, IGNORED_DIRECTORIES)
             if target is not None:
                 break
-        if target is None or any(part in IGNORED_DIRECTORIES for part in target.parts):
+        if target is None:
+            left_out(name, "no such file in the workspace")
+            continue
+        if any(part in IGNORED_DIRECTORIES for part in target.parts):
+            left_out(name, "in a folder of built or installed files")
             continue
         relative = target.relative_to(root).as_posix()
         # A stage's throwaway probe is no part of the product. Measured live:
@@ -327,18 +370,27 @@ def _the_files(
         # fixes as what failed, and each rewrote the probe and was recorded
         # as having fixed its defect.
         is_a_test = classify_file(relative) == "test"
-        if (is_scratch(relative) or (judged_by_the_suite and is_a_test) or _the_project_ignores(root, relative)
-                or _a_test_report(root, relative, target)):
-            continue
+        why = ("a stage's scratch file" if is_scratch(relative)
+               else "a test, and the acceptance suite judges this criterion" if judged_by_the_suite and is_a_test
+               else "the project's ignore rules leave it out" if _the_project_ignores(root, relative)
+               else "a test runner's report" if _a_test_report(root, relative, target)
+               else "")
         # Nor data or a document, for a criterion the suite judges, unless the defect names it (HR2.fix.3): a rewrite
         # was aimed at `input.txt`, the product's data, which no change fixes.
-        if judged_by_the_suite and name not in own and not _a_manifest(relative) and (
+        if not why and judged_by_the_suite and name not in own and not _a_manifest(relative) and (
                 classify_file(relative) == "document" or relative.lower().endswith(_DATA_A_FIX_LEAVES)):
+            why = "data or a document the defect does not name"
+        if not why and is_a_test and name not in own and not tests_from_the_text:
+            why = "a test the defect does not name as its own"
+        if why:
+            left_out(relative, why)
             continue
-        if is_a_test and name not in own and not tests_from_the_text:
+        if relative in found:
             continue
-        if relative not in found and may_write(relative):
+        if may_write(relative):
             found.append(relative)
+        else:
+            left_out(relative, "this stage may not write it")
         if len(found) >= MOST_FILES:
             break
     return found
@@ -611,10 +663,12 @@ def fix_by_rewriting(
     write: Callable[[str, str, str], Any] | None = None,
     diagnose: Callable[[list[str]], list[str]] | None = None,
     files: list[str] | None = None, co_defects: Sequence[Any] = (), kept: str = "",
+    why: dict[str, str] | None = None,
 ) -> Any | None:
     """The fix stage's output for a defect fixed by rewriting its files, or None for the agent loop.
 
     `co_defects`: the other open defects, whose failures that point at a file go into its rewrite (`co_defect_failures`).
+    `why`, when given, is told under "why" what each file's rewrite came to when it returns None (LF.1403).
 
     `files`, when given, is used as the files to rewrite and no localisation
     call is made: a retry that already asked `fix_by_candidates` where the
@@ -627,6 +681,15 @@ def fix_by_rewriting(
     from app.tools.repository import RepositoryToolError
 
     root = Path(repo_root)
+    # What each file's rewrite came to, said when nothing is written (LF.1403).
+    came_to: dict[str, str] = {}
+
+    def nothing(reason: str = "") -> None:
+        if why is not None:
+            why["why"] = reason or ("the rewrite wrote nothing: " + "; ".join(
+                f"`{path}` {outcome}" for path, outcome in came_to.items()) if came_to else "the rewrite wrote nothing")
+        return None
+
     if write is None:
         from app.tools.repository import write_approved_artifact
 
@@ -641,7 +704,7 @@ def fix_by_rewriting(
 
         files = localised(defect, failure, root, model, files, may_write or (lambda _: True))
     if not files:
-        return None
+        return nothing("the rewrite found no file it may write")
     if _the_last_rewrite_changed_nothing(defect, files):
         # Not the same rewrite again (HR2.fix.4): rewrite after rewrite fixed 16%, a rewrite then the agent loop 33%.
         logger.info("The last whole-file rewrite of %s judged no change needed; this attempt goes to the agent loop",
@@ -654,7 +717,7 @@ def fix_by_rewriting(
                                detail="the last rewrite sent every file back unchanged: " + ", ".join(files))
         except Exception:  # noqa: BLE001 - a ledger must never fail the fix it records
             pass
-        return None
+        return nothing("the last rewrite sent every file back unchanged, so it is not asked again: " + ", ".join(files))
     from app.graph import co_defect_failures, repeated_rewrite_prompts
 
     co_failures = co_defect_failures.failures_by_file(co_defects, root, may_write or (lambda _: True))
@@ -684,7 +747,7 @@ def fix_by_rewriting(
                 if active_model is None or not hasattr(active_model, "invoke"):
                     logger.info("Rewrite of %s skipped: no chat model available for rewriting", path)
                     if not changed:
-                        return None
+                        return nothing("no chat model to rewrite with")
                     break
                 current = (root / path).read_text(encoding="utf-8", errors="replace")
                 asked = fix_request(root, path, defect, failure, specification, stack,
@@ -693,8 +756,9 @@ def fix_by_rewriting(
                 if repeated_rewrite_prompts.exhausted(root, asked):
                     logger.info("Rewrite of %s not sent: the same request has failed %d times", path,
                                 repeated_rewrite_prompts.MOST_IDENTICAL)
+                    came_to[path] = f"not asked: the same request failed {repeated_rewrite_prompts.MOST_IDENTICAL} times"
                     if not changed:
-                        return None
+                        return nothing()
                     continue
                 # Counted as failed when sent: a rewrite that holds closes its defect and is not asked again.
                 repeated_rewrite_prompts.failed(root, asked)
@@ -710,13 +774,16 @@ def fix_by_rewriting(
                     # the file stays as it was and the next pass is told why.
                     diagnostics = [*diagnostics, f"- In `{path}`: {unapplied}"]
                     _note_the_reply(defect, path, "edit not applied")
+                    came_to[path] = "came back as an edit that matched nowhere or more than once"
                     continue
                 if not content.strip():
                     _note_the_reply(defect, path, "no block")
+                    came_to[path] = "came back with no file in the reply"
                     continue
                 _note_the_reply(defect, path, "changed" if content != current else "unchanged")
                 if content == current:
                     unchanged.add(path)
+                    came_to[path] = "came back unchanged"
                 if content != current:
                     try:
                         write(str(root), path, content)
@@ -724,6 +791,7 @@ def fix_by_rewriting(
                         if "language service is sure of" not in str(refused):
                             raise
                         diagnostics = [*diagnostics, f"- In `{path}`: {refused}"]
+                        came_to[path] = "was refused: it would add errors the language service is sure of"
                         continue
                     if path not in changed:
                         changed.append(path)
@@ -734,15 +802,16 @@ def fix_by_rewriting(
 
                 raise_if_the_run_stopped(error)  # a paused run fixes again on resume, not by the loop
                 logger.info("Rewrite of %s for a fix failed: %s", path, str(error)[:200])
+                came_to[path] = f"failed: {type(error).__name__}: {str(error)[:120]}"
                 if not changed:
-                    return None
+                    return nothing()
         refused = [line for line in diagnostics if "language service is sure of" in line or AN_EDIT_NOT_APPLIED in line]
         diagnostics = [*refused, *(diagnose(changed) if diagnose and changed else [])]
         best.offer_as_they_are(root, changed, diagnostics)
         if not diagnostics:
             break
     if not changed:
-        return None
+        return nothing()
     # The pass the compiler found fewest errors in is kept, not the last (A2): measured, a third pass broke what the
     # second had made compile and was kept with "The compiler still reports ...".
     if best.put_back(root, write):

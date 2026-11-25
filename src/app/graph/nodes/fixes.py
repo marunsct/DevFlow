@@ -320,12 +320,17 @@ def _diagnosed_if_it_keeps_failing(state: Any, defect: Any, ctx: GraphContext) -
 def _fixed_by_rewriting(
     state: Any, config: RunnableConfig, defect: Any, fix_model: Any, failed_tries: int = 0,
     after_a_surrender: bool = False, why: dict[str, str] | None = None, *, ctx: GraphContext,
+    surrendered: Any = None, stage: str = "", since: str = "",
 ) -> Any:
     """A fast-delivery fix by rewriting the defect's files, or None for the agent loop.
 
     After a failed fix, and with a judgement model of its own, several
     candidates are asked of the judgement model at once and the first the
     defect's tests pass is kept (`rewritten_fixes.fix_by_candidates`).
+
+    After a surrender, `surrendered` is the answer of the stage `stage` that began at `since`: the files it wrote,
+    tried to write or named are the rewrite's too (`surrender_evidence`, LF.1401), and a rewrite that finds no file
+    says which rule left out which file (LF.1402).
     """
     from app.graph.workflow import (
         APP_RUN_ID_KEY, MOST_DIAGNOSTICS_FOR_A_PASS, _diagnostics_in_files_touched, _fast_delivery,
@@ -355,10 +360,18 @@ def _fixed_by_rewriting(
     from app.graph.bounded_fixes import the_candidate_model
 
     root = Path(state["repository"].root_path)
+    # The rule that refused each file this stage may not write, for a decline to name (LF.1402).
+    not_writable: dict[str, str] = {}
+
     def may_write(path: str) -> bool:
         with just_asking():
-            return (_the_harness_s_own_or_the_locked_suite(root, root / path) is None
-                    and defect_fix_modes.may_write(state, config, defect, root, path))
+            if _the_harness_s_own_or_the_locked_suite(root, root / path) is not None:
+                not_writable[path] = "the harness keeps it: the locked acceptance suite or the harness's own record"
+                return False
+            if not defect_fix_modes.may_write(state, config, defect, root, path):
+                not_writable[path] = "this attempt may write tests only"
+                return False
+            return True
 
     # The defect's own failing tests first, as the agent loop's request does (HR F3).
     from app.graph import fresh_evidence
@@ -407,15 +420,35 @@ def _fixed_by_rewriting(
     # fast delivery's.
     if not _fast_delivery() and not after_a_surrender:
         return None
-    # Read only when nothing is written: the rewrite found no file it may write, or wrote none.
+    if after_a_surrender and located is None:
+        # The files the fixer that gave up was aiming at are the rewrite's too, after the defect's own (LF.1401).
+        from app.graph import surrender_evidence
+        from app.graph.localisation import localised
+
+        refused: dict[str, str] = {}
+        try:
+            failure = what_failed(defect, root, last_failure)
+            aimed = surrender_evidence.aimed_at(config["configurable"].get(APP_RUN_ID_KEY), stage, since, surrendered)
+            located = localised(
+                defect, failure, root, fix_model or ctx.model or ctx.building_model,
+                files_to_fix(defect, failure, root, may_write, aimed_at=aimed, refused=refused), may_write,
+            )
+        except Exception as error:  # noqa: BLE001 - the rewrite gathers for itself, as before
+            degraded("fix.rewrite_after_surrender", error)
+            located = None
+        if located is not None and not located:
+            declined(surrender_evidence.why_none({**refused, **{p: r for p, r in not_writable.items() if p in refused}}))
+            return None
+    # Read only when nothing is written; the rewrite says what each file came to (LF.1403).
     declined("the rewrite found no file it may write, or wrote none")
+    told: dict[str, str] = {}
     try:
-        return fix_by_rewriting(
+        rewritten = fix_by_rewriting(
             defect, root, fix_model or ctx.model or ctx.building_model,
             specification=state.get("technical_specification"),
             stack=getattr(state.get("stack_selection"), "technology_stack", None),
             last_failure=last_failure, may_write=may_write, files=located, co_defects=co_defects,
-            kept=_the_fixes_to_keep_for(state, defect),
+            kept=_the_fixes_to_keep_for(state, defect), why=told,
             diagnose=lambda files: _diagnostics_in_files_touched(
                 state, {"messages": []}, SimpleNamespace(changed_files=files), most=MOST_DIAGNOSTICS_FOR_A_PASS,
             ),
@@ -424,6 +457,9 @@ def _fixed_by_rewriting(
         degraded("fix.rewrite", error)
         declined(f"the rewrite raised {type(error).__name__}")
         return None
+    if rewritten is None and told.get("why"):
+        declined(told["why"])
+    return rewritten
 
 
 def _repaired_forward(
@@ -586,9 +622,11 @@ def _fix_one(state: Any, config: RunnableConfig, defect_index: int, ctx: GraphCo
         from app.observability import defect_ledger as _surrender_ledger
 
         why: dict[str, str] = {}
+        gave_up = fix_result
         fix_result = after_a_surrender(fix_result,
             lambda: _fixed_by_rewriting(state, config, defect, fix_model, failed_fix_tries(cycle, defect_index),
-                                        after_a_surrender=True, why=why, ctx=ctx),
+                                        after_a_surrender=True, why=why, ctx=ctx,
+                                        surrendered=gave_up, stage=stage_name, since=started),
             note=lambda outcome: _surrender_ledger.note(
                 "rewrite after surrender", stage_name, defect=defect, index=defect_index,
                 round_=state.get("test_round", 0),

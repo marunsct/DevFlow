@@ -89,6 +89,7 @@ def run(
     during: Any = None,
     real_brief: bool = False,
     measure: Any = None,
+    real_files: bool = False,
 ) -> tuple[dict[str, Any], Seen]:
     """Run `node` once on `state`.
 
@@ -100,6 +101,7 @@ def run(
     while its agent runs; what it returns is kept in `Seen.during`. `real_brief`: the brief and what each failure
     reader returns are built as they ship, from the workspace and the state. `measure`: called as
     `engineering.after_a_fix` is, in its place, when a test measures a workspace of its own (it may call the real one).
+    `real_files`: the files a rewrite is given, and what failed, are found in the workspace as they ship.
     A callable `rewrite` is called with the defect and the rewrite's arguments, and what it returns is the rewrite's output.
     """
     from app.graph import workflow
@@ -178,7 +180,7 @@ def run(
         "app.graph.rewritten_fixes.fix_by_rewriting": {"side_effect": rewriting},
         "app.graph.rewritten_fixes.fix_by_candidates": {"side_effect": candidates},
         "app.graph.rewritten_fixes.what_failed": {"return_value": "it failed"},
-        "app.graph.rewritten_fixes.files_to_fix": {"side_effect": lambda d, f, r, m: list(d.affected_files)},
+        "app.graph.rewritten_fixes.files_to_fix": {"side_effect": lambda d, f, r, m, **_: list(d.affected_files)},
         "app.graph.localisation.localised": {"side_effect": localising},
         "app.graph.bounded_fixes.the_candidate_model": {"return_value": candidate_model},
         "app.observability.defect_ledger.shown": {"side_effect": shown},
@@ -187,6 +189,9 @@ def run(
         for built in ("build_defect_fix_request", "_what_the_criteria_s_tests_printed", "_what_the_unit_tests_printed",
                       "_what_the_last_failure_printed"):
             stubs.pop(f"app.graph.workflow.{built}")
+    if real_files:
+        for found in ("files_to_fix", "what_failed"):
+            stubs.pop(f"app.graph.rewritten_fixes.{found}")
     with ExitStack() as stack:
         for target, how in stubs.items():
             stack.enter_context(patch(target, **how))

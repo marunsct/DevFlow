@@ -137,6 +137,36 @@ def no_research_reaches_the_network():
     yield
 
 
+#: The modules that test the memory reading itself; every other test is given an undetermined memory state.
+_TESTS_OF_THE_MEMORY_READING = frozenset({"test_resource_budget", "test_page_cache_is_not_counted_as_memory_in_use"})
+
+
+@pytest.fixture(autouse=True)
+def the_host_s_free_memory_is_not_the_test_s(request, monkeypatch):
+    """A test does not read the developer machine's free memory, except the tests of that reading.
+
+    The sandbox refuses to start a command when memory is short (`resources.enough_headroom`). Measured on a host
+    whose local model servers held most of its memory (11 GB of 93 GB available, swap full): a dozen sandbox tests
+    were refused before the behaviour they pin, and passed or failed with the host's load. The state is kept as read
+    (CPUs, processes) with its memory left undetermined, which is what the sandbox already treats as "do not restrict"
+    on a machine with no cgroup limits; a test that wants a full container sets its own state.
+    """
+    if request.module.__name__.rsplit(".", 1)[-1] in _TESTS_OF_THE_MEMORY_READING:
+        yield
+        return
+    import dataclasses
+
+    from app.tools import resources
+
+    read = resources.read_resource_state
+
+    def undetermined():
+        return dataclasses.replace(read(), memory_limit=None, memory_in_use=None, memory_peak=None)
+
+    monkeypatch.setattr(resources, "read_resource_state", undetermined)
+    yield
+
+
 @pytest.fixture(autouse=True)
 def no_lookup_reaches_the_network(monkeypatch):
     """A lookup source's request fails at once unless a test gives its own fetch.

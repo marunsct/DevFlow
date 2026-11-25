@@ -80,6 +80,27 @@ PREMIUM_MODEL_TUNING (guides, reply caps, thinking-off rules), PREMIUM_PROJECT_I
 ## 3. To build, in priority order
 Size S under a day, M a few days, L a week or more. "Proof" is the measurement that keeps it.
 
+### 3.0 The 11-25 review bundle (owner 11-25: organise all review findings, build in parallel)
+Sources: `reports/audits/2026-11-25-product-quality-ui-db-api.md` (PQ), `reports/audits/2026-11-25-per-agent-audit.md` (PA),
+`reports/research/2026-11-25-preview-and-workspace-ux.md` (UX), the owner's thorough-mode rule (TG) and the specialist
+questions (SP, SK). Waves group items by the files they touch, so each wave's builds run in parallel without clashes.
+Merged duplicates: PQ.3 is SP.1; PQ.6 and PQ.9 go into SK.2; PQ.11's text path is SP.4; PA.10 and PQ.12 are one item.
+| Wave | Items (one worktree build each line) | Always on / switch |
+|---|---|---|
+| A (building) | TG thorough mode: every blocking/major/critical/high pre-development finding resolved before development, plus the brief-deferral false positive | on |
+| A | SP.1 a due adopted item not built is major and gating; SP.2 every adopted item placed in a sprint or declined | on |
+| A | SP.3 specialists review their own domain (`SPECIALIST_DOMAIN_REVIEW`); SP.4 page facts for a UI/UX reviewer that cannot see | SP.3 switch, SP.4 on |
+| B | PQ.1 every brief requirement and constraint becomes a criterion or a recorded exclusion; PQ.8 interface states as criteria | PQ.1 on, PQ.8 switch |
+| B | SK.1 a work order carries its files' domain advice and goes to the role owning the domain; SK.2 short craft checklists by file kind, stack specifics in packs (with PQ.6, PQ.9) | SK.1 on, SK.2 switch |
+| B | PQ.10 a quality score per run from the stored product; PQ.2 mechanical schema conformance | on |
+| B | PA.8 a stage is asked to fix only files it may write; PA.3 the product builds before the testing work order | on |
+| B | UX.1-UX.8 full-window preview and workspace, own-window routes, preview toolbar, VS Code-style shell with Monaco, search, diff (app and read routes only) | on |
+| C | PQ.4 review findings survive an escalation; PQ.5 mechanical interface checks; PQ.7 fuller pack stylesheet; PA.2 the summary is the stage's work note; PA.6 mechanical plan repairs; PA.7 specification consistency pass; PA.9 advice sized to the brief; PA.11 custom setup from a drafted file; PA.14, PA.16, PA.17 | on (PA.9 switch) |
+| D | PA.10/PQ.12 full-stack packs (service + page); PA.4 suite written a file at a time past the room; PA.12 later suite writers given the live routes; PA.13 per-role scoreboard; PA.15 unit-test fix side by failure (switch); PA.18 tool lists by measured use (switch); PA.1, PA.5 (measure the existing switches first); UX.9-UX.11 preview fidelity (`PRODUCT_PREVIEW`) | as marked |
+| E | UX.12-UX.16 co-development turn-taking for brownfield (`CO_DEVELOPMENT`, off until one supervised brownfield run loses no edit); replaces WS.6 | switch |
+Medium 4 (thorough, :1234) starts when waves A and B's run-side items are deployed. Each wave: targeted fail-on-old tests
+per item, both suites once after the merge, one deploy at a stage boundary.
+
 ### 3.1 Internet lookups (Appendix 10, WL). WL.1, WL.2 and WL.4's trigger T1 are built.
 | Item | Value | Size | Needs | Proof | Verified |
 |---|---|---|---|---|---|
@@ -98,7 +119,7 @@ Plan: `reports/research/2026-11-25-open-source-web-search.md`. Building with HK.
 ### 3.2 Watch, try and steer a run (Appendix 11, WS). Nothing below is built except the pieces named.
 | Item | Value | Size | Needs | Proof | Verified |
 |---|---|---|---|---|---|
-| WS.6 take over and hand back (token-protected code-server on a paused run; hand back commits the edit and tells the next stage the diff) | person edits safely | L | WS.4 | no edit conflicts; locked suites read-only | not built; last |
+| WS.6 take over and hand back: replaced by UX.12-UX.16 (section 3.0, wave E) | person edits safely | L | UX.6 | no edit conflicts; locked suites read-only | not built; last |
 UI-only steps keep the release-candidate count; WS.4 and WS.6 add a service and are measured.
 
 ### 3.3 Backlog from the latest runs (STATE and audits)
@@ -177,7 +198,7 @@ Checked: none of these has a module in src. Each is a candidate only if a measur
 - A peer mailbox, specialist debate rounds, broadcasting builders' reasoning, parallel builders coordinating by message: no effect or harm in the research; the write guards do it deterministically. Kill rule: an item that raises tokens per accepted criterion by more than 5% without lowering a defect metric goes off.
 - Batching plan WB.3 (fixer bundle size by capacity: already capped at three) and WB.5 (plan batching: not supported by the data); WB.2 on Ornith (refuted for that model).
 - Q3 Python dry run, Q4 stub leg, F6, E4: dropped in HR2 for evidence or superseded forms.
-- A full editable IDE beside agents that write the same files (WS): conflicts and insecure defaults; a read-only view plus a take-over mode only (WS.6).
+- Live co-editing beside agents that write the same files (CRDT, locks): conflicts; editing is turn-taking on a paused run only (UX.12-UX.16).
 - In-browser runtimes (WebContainers) for the preview: JS and WASM only; the harness builds seven languages.
 - Cross-run memory without approval: dropped once for prompt injection; lessons need approval.
 - Any change to the owner's models or settings by the agent.

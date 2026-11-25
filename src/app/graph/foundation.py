@@ -52,7 +52,10 @@ def failure_step(message: str) -> str:
     status = _the_wrong_answer(text)
     if status:
         return "" if status in NOT_BUILT_YET else f"answered {status}"
-    first = next((line.strip() for line in text.splitlines() if line.strip()), "")
+    # A runner's heading (`auth.spec.js:23:1 › [AC-1] ... ───`) is not what the test threw (LF.1461).
+    from app.acceptance.failure_said import first_line_said
+
+    first = " ".join(first_line_said(text).split())
     if not first or _NOT_BUILT_WORDS.search(first):
         return ""
     return " ".join(first.split())[:160]

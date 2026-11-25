@@ -52,6 +52,8 @@ SIGNALS: dict[str, str] = {
     "PRODUCT_RESEARCH": "Comparable products: suggestions the brief does not require",
     "API_CARDS_FOR_NEWER_RELEASES": "Libraries whose installed release line is newer than this model's training data",
     "FRAMEWORK_GUIDANCE_FOR_ADVISERS": "its own guidance, for the release this project uses",
+    "LOOKUP_AT_FIRST_SIGHT": "Looked up when first seen: this error comes from the installed package",
+    "USAGE_NOTES_FROM_THE_INSTALLED_PACKAGE": "How the installed libraries define the names this code calls",
     "SPECIALIST_DOMAIN_REVIEW": "Your own domain: defects in this sprint's changed files",
     "PULL_REQUEST_DELIVERY": "Delivered to the seeded repository",
     "DOMAIN_CRAFT_CHECKLISTS": "Craft checklist for your files",

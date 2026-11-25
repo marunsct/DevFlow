@@ -172,6 +172,46 @@ def _the_library(repo_root: str | Path, error: str, stack: Any) -> tuple[str, st
     return "", ""
 
 
+#: Where each ecosystem installs a package, as a trace's frames write its path: (the pattern whose group is the
+#: package, its registry). A frame under one of these is code of an installed package, not the product's.
+_INSTALLED_AT: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"site-packages/([A-Za-z][\w]*)/"), "pypi"),
+    (re.compile(r"node_modules/((?:@[\w.-]+/)?[A-Za-z0-9][\w.-]*)/"), "npm"),
+    (re.compile(r"\.cargo/registry/src/[^/\s]+/([A-Za-z][\w-]*?)-\d[\w.+-]*/"), "crates"),
+    (re.compile(r"/gems/([A-Za-z][\w-]*?)-\d[\w.]*/"), "rubygems"),
+    (re.compile(r"/pkg/mod/((?:[\w.-]+/){1,2}[\w.-]+)@v"), "go"),
+    (re.compile(r"(?<![\w/])vendor/([a-z0-9_.-]+/[a-z0-9_.-]+)/"), "packagist"),
+)
+
+
+def installed_package_named(repo_root: str | Path, error: str, text: str = "") -> tuple[str, str]:
+    """(the installed third-party package `error` or its trace names, its registry), or ("", ""): a package of the
+    project's own that the error line writes (`sqlalchemy.exc.InvalidRequestError`), else the package whose installed
+    files hold the trace frame nearest the error in `text` - the innermost frame, in a trace printed either way round
+    (FX.9). A frame of the product's own code names nothing."""
+    error = " ".join(str(error or "").split())
+    if error:
+        declared = _declared(repo_root)
+        for word in _A_PACKAGE_WORD.findall(error):
+            for candidate in (word.split(".")[0], word if word.startswith("@") else word.split("/")[0]):
+                if _normal(candidate) in declared:
+                    ecosystem, name = declared[_normal(candidate)]
+                    return name, ecosystem
+    text = str(text or "")
+    if not text:
+        return "", ""
+    at = text.find(error[:60]) if error else -1
+    frames = [(found.start(), found.group(1), ecosystem) for pattern, ecosystem in _INSTALLED_AT
+              for found in pattern.finditer(text)]
+    if not frames:
+        return "", ""
+    if at < 0:
+        _, name, ecosystem = frames[-1]
+        return name, ecosystem
+    _, name, ecosystem = min(frames, key=lambda frame: abs(frame[0] - at))
+    return name, ecosystem
+
+
 def _registry_fetch(url: str) -> tuple[int, bytes]:
     """A registry request made the way the lookups make theirs (`lookups._get`), for the repository of a library."""
     from app.tools import lookups
@@ -239,15 +279,16 @@ def _symptom(error: str, code: str) -> str:
     return " ".join(words.split()[:SYMPTOM_WORDS])
 
 
-def evidence(repo_root: str | Path, error: str, stack: Any) -> Evidence:
+def evidence(repo_root: str | Path, error: str, stack: Any, library: tuple[str, str] = ("", "")) -> Evidence:
     """What `error`, the project and its stack say: the code, the library and the version this project runs, its
-    repository and release date, and the queries to try, shortest-route first."""
+    repository and release date, and the queries to try, shortest-route first. `library`: (name, ecosystem) of the
+    installed package a trace already named (`installed_package_named`), used in place of a guess from the words."""
     from app.analysis import installed_packages
 
     found = Evidence(error=" ".join(str(error or "").split()))
     code = _A_CODE.search(found.error)
     found.code = code.group(1) if code else ""
-    found.library, found.ecosystem = _the_library(repo_root, found.error, stack)
+    found.library, found.ecosystem = library if library[0] else _the_library(repo_root, found.error, stack)
     if found.library:
         found.version = installed_packages.installed_version(repo_root, found.library)
         found.released = installed_packages.released(repo_root, found.library)
@@ -480,6 +521,16 @@ def research(repo_root: str | Path, error: str, stack_words: str, private: list[
     The note is one ledger record (`lookup_notes.record`: its id, its defect, the sources asked and what each gave,
     the queries, the sources shown and the verdict) and one line of `NOTES_FILE`, either way. `always_condensed`: the
     leads are condensed whatever `STUCK_LOOKUP_CONDENSED` says (the `research` tool, plan HK.11). Never raises."""
+    shown, query, _ = researched(repo_root, error, stack_words, private, stack=stack, defect=defect, trigger=trigger,
+                                 stage_name=stage_name, model=model, always_condensed=always_condensed)
+    return shown, query
+
+
+def researched(repo_root: str | Path, error: str, stack_words: str, private: list[str], *, stack: Any = None,
+               defect: Any = None, trigger: str = "", stage_name: str = "defect_fix", model: Any = None,
+               always_condensed: bool = False, library: tuple[str, str] = ("", "")) -> tuple[str, str, str]:
+    """`research`, with its verdict third (local, leads, applies, does not apply, nothing found, refused, failed), so
+    a caller can say why nothing was shown (FX.11); `library`, the installed package a trace named (FX.9)."""
     from app.observability import lookup_notes
     from app.tools import lookups
 
@@ -504,7 +555,7 @@ def research(repo_root: str | Path, error: str, stack_words: str, private: list[
         if local is not None:
             record.update(verdict="local", package=local.package, version=local.version)
         else:
-            found = evidence(repo_root, error, stack)
+            found = evidence(repo_root, error, stack, library)
             record.update(library=found.library, version=found.version, repository=found.repository)
             first = ("github issues",) if tracker_first(found) else ()
             for number, query in enumerate(found.queries):
@@ -550,9 +601,9 @@ def research(repo_root: str | Path, error: str, stack_words: str, private: list[
     lookup_notes.record(stage_name, answer, trigger=trigger, defect=defect, fields={
         "verdict": record.get("verdict"), "queries": record["queries"],
         "sources": [s["url"] for s in record["sources"]]})
-    return shown, str(answer.get("query") or "")
+    return shown, str(answer.get("query") or ""), str(record.get("verdict") or "")
 
 
 __all__ = ["CONDENSED_HEADING", "Evidence", "LOCAL_HEADING", "NOTES_FILE", "ON_BY_DEFAULT", "another_line",
-           "condense", "condensed", "condensed_switch", "evidence", "ranked", "research", "stable_words",
-           "tracker_first"]
+           "condense", "condensed", "condensed_switch", "evidence", "installed_package_named", "ranked", "research",
+           "researched", "stable_words", "tracker_first"]

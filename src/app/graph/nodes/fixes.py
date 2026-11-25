@@ -293,6 +293,7 @@ def _what_others_found(state: Any, defect: Any, defect_index: int, cycle: Any = 
     """What others found for a fixer's error (plan WL.4, behind its switch): an install's error the registry does not
     explain (T2), a build error the round before had too (T3), or the error of a defect an attempt left open (T1).
     `model`, the fixer's, makes the one condensing call when `STUCK_LOOKUP_CONDENSED` is on (plan HK.3)."""
+    from app.analysis import installed_usage
     from app.graph import stuck_lookup
 
     round_ = int(state.get("test_round", 0) or 0)
@@ -300,7 +301,7 @@ def _what_others_found(state: Any, defect: Any, defect_index: int, cycle: Any = 
         state["repository"].root_path, defect, list(getattr(cycle, "defects", None) or [defect]),
         getattr(state.get("stack_selection"), "technology_stack", None), round_=round_,
         sprint=int(state.get("current_sprint_index", 0) or 0), stage_name=f"defect_fix_{round_}_{defect_index}",
-        model=model)
+        model=model) + installed_usage.for_a_fixer(state["repository"].root_path, defect)  # FX.10, its switch
 
 
 def _diagnosed_if_it_keeps_failing(state: Any, defect: Any, ctx: GraphContext) -> None:

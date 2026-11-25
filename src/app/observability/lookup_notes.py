@@ -25,6 +25,8 @@ from typing import Any, Iterable
 SHOWN = "lookup"
 SHOWN_AGAIN = "lookup shown again"
 OUTCOME = "lookup outcome"
+#: The ledger's event for what became of one fixer's lookup: looked up, or the gate that stopped it (FX.11).
+GATE = "lookup gate"
 
 #: A defect's outcomes after a fix stage, and those of them that close it.
 OUTCOMES = frozenset({"fixed", "unverified", "left open", "reverted", "closed", "closed without a fixer",
@@ -102,6 +104,19 @@ def record(stage: str, answer: dict[str, Any], *, trigger: str, defect: Any = No
     except Exception:  # noqa: BLE001 - a record must never fail the stage
         pass
     return the_id
+
+
+def gate_seen(stage: str, defect: Any, gate: str, *, trigger: str = "") -> None:
+    """One ledger record per fixer shown: whether its error was looked up, or the gate that stopped it (FX.11).
+    Measured before it: on a medium run none of eight fixers' lookups got past its gates, and nothing said which gate,
+    so the audit could only print "not reached". Never raises."""
+    try:
+        from app.observability import defect_ledger
+
+        defect_ledger.note(GATE, stage, defect=defect, gate=str(gate or ""), trigger=str(trigger or ""),
+                           detail=f"{trigger}: {gate}" if trigger else str(gate or ""))
+    except Exception:  # noqa: BLE001 - a record must never fail the stage
+        pass
 
 
 def outcome_seen(event: str, stage: str, defect: Any, defect_key: str) -> None:
@@ -208,5 +223,26 @@ def source_lines(records: Iterable[dict]) -> list[str]:
             + ", ".join(f"{name} {answered[name]} of {n}" for name, n in asked.most_common())]
 
 
-__all__ = ["CLOSING", "OUTCOME", "OUTCOMES", "SHOWN", "SHOWN_AGAIN", "answered_by", "note_id", "outcome_lines",
-           "outcome_seen", "outcomes", "record", "source_lines"]
+def gate_lines(records: Iterable[dict]) -> list[str]:
+    """`loop.sh effects`' line for FX.11: for the fixers shown, how many lookups ran and what stopped the rest."""
+    gates: Counter = Counter()
+    looked_up: Counter = Counter()
+    for record in _ledger(records):
+        if record.get("event") != GATE:
+            continue
+        gate = str(record.get("gate") or "?")
+        gates[gate] += 1
+        if gate == "looked up":
+            looked_up[str(record.get("trigger") or "?")] += 1
+    label = "FX.11 fixers' lookups, by the gate that stopped them"
+    if not gates:
+        return [f"     -  {label}: not reached"]
+    said = []
+    for gate, n in gates.most_common():
+        said.append(f"{gate} {n}" + (" (" + ", ".join(f"{t} {k}" for t, k in looked_up.most_common()) + ")"
+                                     if gate == "looked up" else ""))
+    return [f"  {sum(gates.values()):>4}  {label}: " + ", ".join(said)]
+
+
+__all__ = ["CLOSING", "GATE", "OUTCOME", "OUTCOMES", "SHOWN", "SHOWN_AGAIN", "answered_by", "gate_lines",
+           "gate_seen", "note_id", "outcome_lines", "outcome_seen", "outcomes", "record", "source_lines"]

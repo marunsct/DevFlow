@@ -4628,7 +4628,16 @@ def _refuse_if_it_adds_errors(target: Path, relative_path: str, content: str, pr
             f"Refusing to {'change' if editing else 'write'} '{relative_path}': it would add errors the "
             f"language service is sure of - {found}. Nothing was written. Send it again with those fixed."
             f"{_how_to_name_what_is_not_defined(new) if editing else ''}"
+            f"{_how_the_installed_libraries_define_it(project or root, relative_path, content, new)}"
         )
+
+
+def _how_the_installed_libraries_define_it(project: Path, relative_path: str, content: str, new: list[dict]) -> str:
+    """How the installed libraries define the names a refused change calls (FX.10, behind its switch); ""."""
+    from app.analysis import installed_usage
+
+    said = installed_usage.for_a_refusal(project, relative_path, content, new)
+    return "\n" + said if said else ""
 
 
 _A_NAME_NOT_DEFINED = re.compile(

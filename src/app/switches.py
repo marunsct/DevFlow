@@ -212,10 +212,13 @@ GROUPS: dict[str, tuple[str, ...]] = {
     # of libraries whose release line is newer than the model's training data (plan HK.7); the security and testing
     # advisers and the security reviewer given the framework's own current guidance for its release (plan HK.9): each
     # off until measured. A model the diagnosis measured never to look things up offered no web tool schemas (plan
-    # HK.11): off until measured.
+    # HK.11): off until measured. A library's error looked up for the defect's first fixer, not after a failed fix
+    # (FX.9), and fixers and refused edits shown how the installed release defines the functions the code calls
+    # (FX.10): each off until measured.
     "Internet lookups": ("WEB_LOOKUP_WHEN_STUCK", "WEB_TOOLS_OFFERED", "WEB_TOOLS_AFTER_TWO_FAILED_FIXES",
                          "STUCK_LOOKUP_CONDENSED", "PRODUCT_RESEARCH", "API_CARDS_FOR_NEWER_RELEASES",
-                         "FRAMEWORK_GUIDANCE_FOR_ADVISERS", "WEB_TOOLS_BY_MEASURED_TIER"),
+                         "FRAMEWORK_GUIDANCE_FOR_ADVISERS", "WEB_TOOLS_BY_MEASURED_TIER", "LOOKUP_AT_FIRST_SIGHT",
+                         "USAGE_NOTES_FROM_THE_INSTALLED_PACKAGE"),
     # Which locked tests a dispute may still send back past the reclassification cap: only those whose quoted repair
     # the harness confirmed by running it (`graph.contested_tests`). Off until measured: it relaxes the cap.
     "Suite disputes": ("CONTESTED_TESTS_CONFIRMED",),

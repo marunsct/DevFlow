@@ -134,10 +134,12 @@ def effects(records: list[dict], decisions: str = "") -> list[str]:
     lines.extend(built_before_testing_lines(records))
     lines.extend(its_own_to_fix_lines(records))
     # HK.4 and KS.6: whether a lookup note's defect was closed by the next fix, and each lookup source's answer rate.
-    from app.observability.lookup_notes import outcome_lines, source_lines
+    from app.observability.lookup_notes import gate_lines, outcome_lines, source_lines
 
     lines.extend(outcome_lines(records))
     lines.extend(source_lines(records))
+    # FX.11: for every fixer shown, whether its error was looked up or which gate stopped it.
+    lines.extend(gate_lines(records))
     lines.extend(review_reading_lines(records))
     # Beside what fired: a switch that was on, had its chance and did nothing (`CHANCES`).
     from app.observability.switch_firing import chance_lines

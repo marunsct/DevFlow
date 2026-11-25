@@ -89,6 +89,8 @@ SWITCHES: dict[str, str] = {
     "API_CARDS_FOR_NEWER_RELEASES": "app.stacks.api_cards:cards_switch",
     "FRAMEWORK_GUIDANCE_FOR_ADVISERS": "app.stacks.framework_guidance:guidance_switch",
     "WEB_TOOLS_BY_MEASURED_TIER": "app.tools.research_tool:by_measured_tier_switch",
+    "LOOKUP_AT_FIRST_SIGHT": "app.graph.stuck_lookup:first_sight_switch",
+    "USAGE_NOTES_FROM_THE_INSTALLED_PACKAGE": "app.analysis.installed_usage:usage_notes_switch",
     "DOMAIN_CRAFT_CHECKLISTS": "app.agents.domain_craft:craft_switch",
     "ADVICE_SIZED_TO_THE_BRIEF": "app.agents.advice_sized",
     "MEASURED_ROUND_WHEN_RED": "app.graph.measured_round",

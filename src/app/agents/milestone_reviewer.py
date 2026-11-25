@@ -635,6 +635,29 @@ def create_milestone_reviewer_agent(
 MAX_PROVEN_FINDINGS = 6
 
 
+def without_repeats_of_other_reviews(review: MilestoneReviewOutput, sprint_findings: Any) -> MilestoneReviewOutput:
+    """`review` less each finding that does not hold the sprint and repeats one another review recorded for it (PA.17).
+
+    Measured on one run (2026-11-25 per-agent audit, role 19): the milestone review repeated two of the security
+    review's findings as suggestions - read again by the reader, recorded twice. A blocking or major finding is the
+    milestone's own decision to hold the sprint, and is always kept; its own earlier findings are kept too, since one
+    not raised again reads as fixed (`what_you_said_last_time`). Never raises.
+    """
+    try:
+        from app.agents.repeated_findings import already_recorded, recorded_by
+
+        others = recorded_by(sprint_findings, other_than="milestone")
+        if not others:
+            return review
+        kept = [finding for finding in review.findings
+                if finding.severity in ("blocking", "major") or not already_recorded(finding.description, others)]
+        if len(kept) == len(review.findings):
+            return review
+        return review.model_copy(update={"findings": kept})
+    except Exception:  # noqa: BLE001 - the review as it was answered stands
+        return review
+
+
 def findings_for_what_the_checks_proved(
     repository_root: str | Path, stack: Any = None, brief: str = ""
 ) -> list[MilestoneReviewFinding]:
@@ -713,4 +736,5 @@ __all__ = [
     "findings_for_what_the_checks_proved",
     "what_the_specialists_reported",
     "what_you_said_last_time",
+    "without_repeats_of_other_reviews",
 ]

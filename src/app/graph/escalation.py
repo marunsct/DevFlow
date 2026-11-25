@@ -272,7 +272,7 @@ def escalation(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         if needed:
             return _the_foundation_first(state, update, failing, error, needed)
 
-    return _defer_and_continue(state, update, failing, error, decided_by="auto")
+    return _defer_and_continue(state, update, failing, error, decided_by="auto", ctx=ctx)
 
 
 #: The kind of an acceptance suite held for a person (`app.graph.suite_gate`), in `state["escalation"]["kind"]`.
@@ -351,7 +351,8 @@ def _the_foundation_first(
 
 
 def _defer_and_continue(
-    state: Any, update: dict[str, Any], failing: list[dict[str, Any]], error: str, *, decided_by: str
+    state: Any, update: dict[str, Any], failing: list[dict[str, Any]], error: str, *, decided_by: str,
+    ctx: Any = None,
 ) -> dict[str, Any]:
     from app.decisions import record_decision
     from app.graph.workflow import _handing_on
@@ -364,6 +365,12 @@ def _defer_and_continue(
     }
     if to_defer:
         suite.defer(root, to_defer)
+    # The code review still reads the sprint, once, and its major findings get one fix pass and reach the release
+    # (PQ.4): ahead of the measurement below, so a kept fix is in the baseline the next sprint is measured against.
+    from app.graph import review_after_escalation
+
+    reviewed = review_after_escalation.review_and_fix(state, getattr(ctx, "judgement_model", None),
+                                                      _the_fixer_s_model(state, ctx))
     # The run goes on from here, so this is the state the next sprint is
     # measured against and the one this sprint's record counts. Without it the
     # record reported the last accepted sprint's counts - one run's sprint 4
@@ -384,8 +391,10 @@ def _defer_and_continue(
         affects=sorted(to_defer),
     )
     known = [*(state.get("known_issues") or []), *([error[:600]] if error and not to_defer else [])]
+    accepted_attempt = _the_failed_attempt_accepted(state, update)
+    known += review_after_escalation.recorded(state, update, reviewed)
     return _handing_on(
-        **{**update, **_the_failed_attempt_accepted(state, update)},
+        **{**update, **accepted_attempt},
         stage=_where_next(state),
         escalation=None,
         known_issues=known,
@@ -396,6 +405,16 @@ def _defer_and_continue(
             *([] if to_defer else open_unit_tests or []),
         }),
     )
+
+
+def _the_fixer_s_model(state: Any, ctx: Any) -> Any:
+    """The model the review's one fix pass rewrites with, or None when there is no context to choose one."""
+    from app.graph.review_after_escalation import FIX_STAGE
+
+    try:
+        return ctx.the_build_model(state, FIX_STAGE, reasons=True) if ctx is not None else None
+    except Exception:  # noqa: BLE001 - no fix pass; the review's findings are still named at release
+        return None
 
 
 def _the_failed_attempt_accepted(state: Any, update: dict[str, Any]) -> dict[str, Any]:
@@ -475,7 +494,7 @@ def accept(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         # review the same specification again would be the same question twice.
         # No ruling here: the person chose with the open points in front of them, and none was shown to them.
         return _build_from_the_latest_specification(state, {}, error, decided_by="user", next_stage="scaffold")
-    return _defer_and_continue(state, {}, _failing(state), error, decided_by="user")
+    return _defer_and_continue(state, {}, _failing(state), error, decided_by="user", ctx=ctx)
 
 
 def retry(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:

@@ -24,7 +24,9 @@ CEILINGS = {
     "specialist": 14_000,
     # 4,450 since the security review is told which of its words are blocking and major, and which is a suggestion
     # (LR.54): the scope rule's "never a blocking or major finding" named no word of its scale, where high gates.
-    "security_reviewer": 4_450,
+    # 4,800 since a finding names its harm, one that names none is a note about the code, and a finding the sprint
+    # recorded is not raised again (PA.17): five of six findings on one run were not about security, three repeated.
+    "security_reviewer": 4_800,
     # + the rule that the product ships every route, so none is added only for the tests (LF.757): a fixer added an
     # unauthenticated route that deletes every record, for a test's clean-up.
     # + the rule that a comparison rule also says how its values are shown (LF.780): two runs printed "The 3" where a

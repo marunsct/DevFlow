@@ -914,6 +914,10 @@ export const RunDashboard: React.FC = () => {
                 </ul>
               </div>
             )}
+            {/* PQ.4: a code review's major finding still open after an escalation's one fix pass, listed among the gaps. */}
+            {run.status === 'completed' && run.verdict === 'delivered_with_known_defects' && (
+              <p className="mt-3 text-xs font-semibold text-warning" data-testid="known-defects">Delivered with known defects: a code review's major findings are still open, listed with the gaps</p>
+            )}
             {run.status === 'completed' && run.verdict === 'delivered' && !run.non_deliverable && (
               <p className="mt-3 text-xs font-semibold text-success" data-testid="delivered">Delivered: every criterion built, and nothing left open that could stop the product working</p>
             )}

@@ -153,7 +153,8 @@ def evidence(state: Any, sprint_number: int, goal: str, heading: str = "") -> st
         lines.append("")
     gaps, notes = completion_verdict.split(state.get("completion_gaps"))
     cuts = [note for note in notes if completion_verdict.is_a_cut(note)]
-    notes = [note for note in notes if not completion_verdict.is_a_cut(note)]
+    known_defects = [note for note in notes if completion_verdict.is_a_known_defect(note)]
+    notes = [note for note in notes if not completion_verdict.is_a_cut(note) and note not in known_defects]
     if gaps:
         # The release page must carry what the release knew it did not prove,
         # beside the counts it measured - a record that says "verified" over a
@@ -165,6 +166,11 @@ def evidence(state: Any, sprint_number: int, goal: str, heading: str = "") -> st
             "",
         ]
         lines += [f"- {gap}" for gap in gaps]
+        lines.append("")
+    if known_defects:
+        # A code review's major finding still open after an escalation's one fix pass (PQ.4): delivered with it, named.
+        lines += ["## Known defects", "", "Major findings of the code review after an escalation, still open:", ""]
+        lines += [f"- {defect}" for defect in known_defects]
         lines.append("")
     if cuts:
         # A criterion shipped with no proof is a stated scope cut (LR.21): named for the reader, apart from the gaps.
@@ -544,7 +550,8 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     screenshot_rubric.score(root, getattr(ctx, "judgement_model", None), config["configurable"].get(APP_RUN_ID_KEY))
     may_not_work, to_know = completion_verdict.split(gaps)
     cut = [gap for gap in to_know if completion_verdict.is_a_cut(gap)]
-    to_know = [gap for gap in to_know if not completion_verdict.is_a_cut(gap)]
+    known_defects = [gap for gap in to_know if completion_verdict.is_a_known_defect(gap)]
+    to_know = [gap for gap in to_know if not completion_verdict.is_a_cut(gap) and gap not in known_defects]
     record_decision(
         state, update, point="release",
         question="Is the product ready to release?",
@@ -555,6 +562,8 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
             + (f", except those deferred: {', '.join(sorted(deferred))}" if deferred else "")
             + ".\n" + (f"{packaged}\n" if packaged else "") + summary
             + ("\nShips with gaps that mean it may not work:\n" + "\n".join(f"- {gap}" for gap in may_not_work) if may_not_work else "")
+            + ("\nShips with known defects, a code review's major findings still open:\n"
+               + "\n".join(f"- {gap}" for gap in known_defects) if known_defects else "")
             + ("\nShips with scope cuts, criteria with no proof:\n" + "\n".join(f"- {gap}" for gap in cut) if cut else "")
             + ("\nShips with notes for the reader:\n" + "\n".join(f"- {note}" for note in to_know) if to_know else "")
             # Notes, not gaps: what a text check suspected of a locked test that passes.
@@ -856,6 +865,13 @@ def _code_no_review_read(run_id: str | None, state: Any = None) -> list[str]:
     work. Passing the suite is evidence; it is not a review.
     """
     if not run_id:
+        return []
+    # The code review asked after a sprint was accepted at an escalation read the code (PQ.4): a direct call, recorded
+    # under the escalation's own stage, so its decision is what says so.
+    from app.graph.review_after_escalation import DECISION_POINT
+
+    if any(str(record.get("point")) == DECISION_POINT for record in (state or {}).get("decisions") or []
+           if isinstance(record, dict)):
         return []
     try:
         from app.observability.transcript import read_live

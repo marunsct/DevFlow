@@ -4,10 +4,10 @@
 
 ## Findings
 {% if findings %}
-| Severity | Category | Description | Affected files | Remediation |
-|---|---|---|---|---|
+| Severity | Category | Description | Harm | Affected files | Remediation |
+|---|---|---|---|---|---|
 {% for f in findings %}
-| **{{ f.severity | cell | title }}** | {{ f.category | cell }} | {{ f.description | cell }} | {{ f.affected_files | join(", ") | cell }} | {{ f.remediation | cell }} |
+| **{{ f.severity | cell | title }}** | {{ f.category | cell }} | {{ f.description | cell }} | {{ (f.harm or "none named: a note about the code") | cell }} | {{ f.affected_files | join(", ") | cell }} | {{ f.remediation | cell }} |
 {% endfor %}
 {% else %}
 No findings were recorded.

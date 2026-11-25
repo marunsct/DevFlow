@@ -172,6 +172,11 @@ def _review_the_milestone(state: WorkflowGraphState, config: RunnableConfig, ctx
     review = _through("a_later_sprint_builds", review, _findings_a_later_sprint_builds(review, state))
     review = _through("security_graded_by_its_own_review", review,
                       _security_graded_by_its_own_review(review, state.get("security_review")))
+    # What another review of this sprint recorded is not repeated as a finding that does not hold it (PA.17).
+    from app.agents.milestone_reviewer import without_repeats_of_other_reviews
+
+    review = _through("repeats_another_review", review,
+                      without_repeats_of_other_reviews(review, state.get("sprint_findings")))
     review = _through("the_dependency_check_contradicts", review, _findings_the_dependency_check_contradicts(review, state))
     review = _through("about_the_harness_s_files", review, _findings_about_the_harness_s_files_made_minor(review, root))
     review = _through("about_the_locked_suite", review, _findings_about_the_locked_suite_made_minor(review, root))

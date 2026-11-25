@@ -635,7 +635,9 @@ class RunStatusResponse(BaseModel):
         default="",
         description=(
             "For a completed run, what its gaps say about the product: 'delivered', 'delivered_with_cuts' (criteria "
-            "shipped deferred, listed in `scope_cuts`) or 'not_deliverable' (a gap means it may not work); '' otherwise."
+            "shipped deferred, listed in `scope_cuts`), 'delivered_with_known_defects' (a code review's major finding "
+            "still open after an escalation, among `completion_gaps`) or 'not_deliverable' (a gap means it may not "
+            "work); '' otherwise."
         ),
     )
     scope_cuts: list[str] = Field(

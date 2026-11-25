@@ -619,7 +619,7 @@ def _later_sprints(state: Any) -> str:
 def code_review(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     """A senior engineer reads the batch's diff; what blocks becomes a defect."""
     from app.acceptance.requests import criteria_text
-    from app.agents.code_reviewer import build_code_review_request, create_code_reviewer_agent
+    from app.agents.code_reviewer import build_code_review_request, create_code_reviewer_agent, the_standards
     from app.agents.specialists import ReportedDefect
     from app.graph.acceptance_nodes import criteria_due
     from app.graph.workflow import _handing_on, _run_gated_agent
@@ -653,8 +653,10 @@ def code_review(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     attempt = int(state.get("sprint_replan_count") or 0), int(state.get("milestone_revision_count") or 0)
     stage_name = f"code_review_{attempt[0]}_{attempt[1]}"
     # The facts the work is built and judged under (plan CM.1).
+    # What the specification adopted for records, requests and errors: the data and service bars are held to it (PQ.9).
+    standards = the_standards(state.get("technical_specification"))
     request = with_the_facts(build_code_review_request(diff, orders, criteria, str(state.get("ci_report") or ""),
-                                                       later), state["repository"].root_path)
+                                                       later, standards=standards), state["repository"].root_path)
     # The changed files held in its memory when today's diff and memory do not show them all; a new file held there
     # is not sent again as a diff of every line (LF.1284).
     from app.agents import review_files
@@ -665,7 +667,7 @@ def code_review(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         new = set(ci.new_since(root, since))
         request = with_the_facts(build_code_review_request(
             ci.diff_since(root, since, leaving_out=[path for path in held if path in new]), orders, criteria,
-            str(state.get("ci_report") or ""), later, held=held), state["repository"].root_path)
+            str(state.get("ci_report") or ""), later, held=held, standards=standards), state["repository"].root_path)
     update = _run_gated_agent(
         state, config,
         stage_name=stage_name,

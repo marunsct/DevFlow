@@ -95,6 +95,16 @@ describe('the run page', () => {
     expect(screen.getByTestId('scope-cuts').textContent).toContain('the export view');
   });
 
+  // PQ.4: a code review's major finding still open after an escalation is a known defect, never plain delivered.
+  it('says a run with an open major review finding was delivered with known defects', async () => {
+    const open = "An escalation left this open (DR-5): A code review's major finding is still open after the escalation: `app.js`: drops every note";
+    Object.assign(run, { status: 'completed', current_stage: 'complete', verdict: 'delivered_with_known_defects',
+      scope_cuts: [], completion_gaps: [open], blocking_gaps: [] });
+    renderPage();
+    expect(await screen.findByTestId('known-defects')).toBeTruthy();
+    expect(screen.queryByTestId('delivered')).toBeNull();
+  });
+
   it('offers the product itself and how to run it once the run is complete', async () => {
     Object.assign(run, { status: 'completed', current_stage: 'complete', verdict: 'delivered', scope_cuts: [] });
     renderPage();

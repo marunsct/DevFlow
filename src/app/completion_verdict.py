@@ -12,6 +12,8 @@ scored full marks or almost nothing, and the verdict said nothing. A gap is one 
   the suite did not notice may behave the same, a problem the suite was locked with was followed by a green suite.
 
 - **A cut:** a criterion shipped deferred, unproven by the suite: stated to the reader as a scope cut (LR.21).
+- **A known defect:** a major finding of the code review run after a sprint was accepted at an escalation, still open
+  after its one fix pass (PQ.4): the product is delivered with known defects, not plain delivered.
 
 Only the kinds listed here are notes or cuts; **a gap of any other kind blocks**, a new one included, because a false "not
 deliverable" costs a reader a look and a false "deliverable" costs them a product that does not work. The split
@@ -23,6 +25,13 @@ import re
 
 #: The start of a gap saying a design review finding has a decision. It is not left open.
 SETTLED_DESIGN_FINDING = "Design review finding settled by "
+
+#: The start of a known issue for a code review's major finding still open after a sprint accepted at an escalation
+#: had its one fix pass (PQ.4, `app.graph.review_after_escalation`), and of one that fix pass changed the code for.
+OPEN_REVIEW_FINDING = "A code review's major finding is still open after the escalation:"
+REVIEW_FINDING_GIVEN_A_FIX = "A code review's major finding had one fix pass after the escalation, not reviewed again:"
+_AT_AN_ESCALATION = r"(?:An escalation left this open(?: \(DR-\d+\))?: )?"
+_KNOWN_DEFECT = re.compile(_AT_AN_ESCALATION + re.escape(OPEN_REVIEW_FINDING))
 
 #: Severity a milestone review gives a defect it says must not ship.
 _BLOCKING_FINDING = re.compile(r"\[blocking\]", re.IGNORECASE)
@@ -47,6 +56,9 @@ _NOTES = re.compile(
         r"(An escalation left this open(?: \(DR-\d+\))?: )?" + re.escape(SETTLED_DESIGN_FINDING),
         r"An escalation left this open(?: \(DR-\d+\))?: Design review left open:",
         r"An escalation left this open(?: \(DR-\d+\))?: The sprint plan is ",
+        # A major review finding the one fix pass after an escalation changed the code for (PQ.4): no review read it
+        # again, so the reader is told, and the suite measured at release says whether the product works.
+        _AT_AN_ESCALATION + re.escape(REVIEW_FINDING_GIVEN_A_FIX),
         # A sprint accepted unfinished whose tests the locked suite passes in full at release (LR.21).
         r"An escalation left this open(?: \(DR-\d+\))?: every locked test passes at release: ",
         # Worth knowing about what ships beside the product, or who judged it.
@@ -99,8 +111,9 @@ _NOTES = re.compile(
 #: them lost a hidden test, while every one was marked non-deliverable beside runs that did lose one.
 _CUTS = re.compile(r"(?:AC|CR)-\d+ ships deferred, unproven by the suite:")
 
-#: The three things a finished run can say about its product (LR.21).
+#: The things a finished run can say about its product (LR.21; known defects PQ.4).
 DELIVERED, DELIVERED_WITH_CUTS, NOT_DELIVERABLE = "delivered", "delivered_with_cuts", "not_deliverable"
+DELIVERED_WITH_KNOWN_DEFECTS = "delivered_with_known_defects"
 
 
 def is_a_cut(gap: str) -> bool:
@@ -108,18 +121,27 @@ def is_a_cut(gap: str) -> bool:
     return _CUTS.match(str(gap).lstrip()) is not None
 
 
+def is_a_known_defect(gap: str) -> bool:
+    """Whether this gap is a code review's major finding still open after an escalation's one fix pass (PQ.4)."""
+    return _KNOWN_DEFECT.match(str(gap).lstrip()) is not None
+
+
 def verdict(gaps: list[str] | None) -> str:
-    """What a finished run's gaps say about its product: not deliverable, delivered with cuts, or delivered."""
+    """What a finished run's gaps say about its product: not deliverable, delivered with known defects, delivered with
+    cuts, or delivered."""
     texts = [str(gap) for gap in gaps or []]
     if any(is_blocking(gap) for gap in texts):
         return NOT_DELIVERABLE
+    if any(is_a_known_defect(gap) for gap in texts):
+        return DELIVERED_WITH_KNOWN_DEFECTS
     return DELIVERED_WITH_CUTS if any(is_a_cut(gap) for gap in texts) else DELIVERED
 
 
 def is_blocking(gap: str) -> bool:
-    """Whether this gap means the product may not work. An unknown kind does; a stated scope cut does not."""
+    """Whether this gap means the product may not work. An unknown kind does; a stated scope cut or a known defect,
+    named to the reader as such, does not."""
     text = str(gap).lstrip()
-    if is_a_cut(text):
+    if is_a_cut(text) or is_a_known_defect(text):
         return False
     if text.startswith(_A_MILESTONE_RISK):
         return bool(_BLOCKING_FINDING.search(text))
@@ -132,5 +154,6 @@ def split(gaps: list[str] | None) -> tuple[list[str], list[str]]:
     return [gap for gap in texts if is_blocking(gap)], [gap for gap in texts if not is_blocking(gap)]
 
 
-__all__ = ["DELIVERED", "DELIVERED_WITH_CUTS", "NOT_DELIVERABLE", "SETTLED_DESIGN_FINDING", "is_a_cut", "is_blocking",
-           "split", "verdict"]
+__all__ = ["DELIVERED", "DELIVERED_WITH_CUTS", "DELIVERED_WITH_KNOWN_DEFECTS", "NOT_DELIVERABLE", "OPEN_REVIEW_FINDING",
+           "REVIEW_FINDING_GIVEN_A_FIX", "SETTLED_DESIGN_FINDING", "is_a_cut", "is_a_known_defect", "is_blocking", "split",
+           "verdict"]

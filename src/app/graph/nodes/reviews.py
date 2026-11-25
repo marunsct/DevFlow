@@ -43,8 +43,13 @@ def _the_security_review(state: Any, config: RunnableConfig, ctx: GraphContext) 
     root = state["repository"].root_path
     permissions = ("Permissions: All tools have read/write access to the repository scope. Validation tools are "
                    "restricted to a safe list of commands.")
+    # What the sprint has recorded already is not raised again (PA.17).
+    from app.agents.repeated_findings import recorded_by
+
+    recorded = recorded_by(state.get("sprint_findings"))
     # The facts the work is built and judged under (plan CM.1).
-    request = with_the_facts(build_security_review_request(changed_files, permissions, root, held=()), root)
+    request = with_the_facts(build_security_review_request(changed_files, permissions, root, held=(),
+                                                           recorded=recorded), root)
     # The files under review held in its memory when today's request and memory do not show them all (LF.1284).
     from app.agents.security_reviewer import source_coverage
 
@@ -52,7 +57,8 @@ def _the_security_review(state: Any, config: RunnableConfig, ctx: GraphContext) 
                                         "security_review", review_files.opening_of(request),
                                         told_to_open=source_coverage(changed_files, root)[1]) or []
     if held:
-        request = with_the_facts(build_security_review_request(changed_files, permissions, root, held=held), root)
+        request = with_the_facts(build_security_review_request(changed_files, permissions, root, held=held,
+                                                               recorded=recorded), root)
     # The framework's own security guidance for the release this project uses (plan HK.9).
     from app.stacks import framework_guidance
 
@@ -72,6 +78,10 @@ def _the_security_review(state: Any, config: RunnableConfig, ctx: GraphContext) 
 
     review: SecurityReviewOutput = update.pop("__security_review__")
     review = _without_findings_about_the_harness_s_files(review, state["repository"].root_path)
+    # A finding that names no harm is a code note, never critical or high; a repeat that does not gate is left out.
+    from app.agents.security_reviewer import as_recorded
+
+    review = as_recorded(review, recorded)
 
     # Rendered from the decision, like the architecture and milestone
     # reviews. This was the last reviewer still holding a write tool with

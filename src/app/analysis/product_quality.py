@@ -414,6 +414,12 @@ def _tag_at(text: str, start: int) -> str:
     return text[start:start + 200]
 
 
+#: Input kinds that take no text from a person, so need no label.
+_NOT_A_FIELD = frozenset({"hidden", "submit", "reset", "image"})
+#: Input kinds a person types into: a `value` attribute there is a default, not a label.
+_TEXT_ENTRY = frozenset({"text", "email", "password", "search", "tel", "url", "number"})
+
+
 def unlabelled_fields(path: Path, text: str, relative: str) -> tuple[int, list[str]]:
     """(fields, the unlabelled ones as evidence) of one markup file."""
     labelled_ids = set(re.findall(r"""(?:\bfor|htmlFor)\s*=\s*\{?\s*["'`]([^"'`]+)["'`]""", text))
@@ -421,7 +427,11 @@ def unlabelled_fields(path: Path, text: str, relative: str) -> tuple[int, list[s
     for match in _FIELD_TAG.finditer(text):
         tag = _tag_at(text, match.start())
         kind = re.search(r"""\btype\s*=\s*\{?\s*["'`](\w+)""", tag)
-        if kind and kind.group(1).lower() in {"hidden", "submit", "button", "reset", "image"}:
+        if kind and kind.group(1).lower() in _NOT_A_FIELD:
+            continue
+        # A control whose own `value` is its text (an input that sends or acts rather than takes text) is labelled
+        # by that text.
+        if kind and kind.group(1).lower() not in _TEXT_ENTRY and re.search(r"""\bvalue\s*=""", tag):
             continue
         total += 1
         ident = re.search(r"""\bid\s*=\s*\{?\s*["'`]([^"'`]+)["'`]""", tag)

@@ -22,7 +22,11 @@ ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "src"
 
 #: Started by a process, not imported: the command-line entry point.
-ENTRY_POINTS = {"app.main"}
+ENTRY_POINTS = {
+    "app.main",
+    # `loop.sh quality` and `loop.sh score` run it as `python -m` in the worker (PQ.10).
+    "app.analysis.product_quality",
+}
 
 #: Outside `src/app`, and imported by name.
 SCRIPT_DIRECTORIES = ("scripts", "evaluation")

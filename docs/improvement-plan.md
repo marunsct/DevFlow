@@ -90,7 +90,6 @@ Merged duplicates: PQ.3 is SP.1; PQ.6 and PQ.9 go into SK.2; PQ.11's text path i
 | A (building) | TG thorough mode: every blocking/major/critical/high pre-development finding resolved before development, plus the brief-deferral false positive | on |
 | A | SP.1 a due adopted item not built is major and gating; SP.2 every adopted item placed in a sprint or declined | on |
 | A | SP.3 specialists review their own domain (`SPECIALIST_DOMAIN_REVIEW`); SP.4 page facts for a UI/UX reviewer that cannot see | SP.3 switch, SP.4 on |
-| B | UX.1-UX.8 full-window preview and workspace, own-window routes, preview toolbar, VS Code-style shell with Monaco, search, diff (app and read routes only) | on |
 | C | PQ.6 rest: the pack's token stylesheet left out of a brief's line limit; PQ.9 rest: the code reviewer checks the data and service bars; PQ.1 rest: a behaviour under a constraint heading ("with refresh") as a criterion; PQ.8 proof: a page probe finds the three states | on |
 | C | PQ.10 rest: development-only packages imported by product code; model deliberation left as comments; PQ.2 rest: unique/required as defects | on |
 | C | PA.12 rest: test-runner reports (`test-results*.xml`, `junit.xml`) left out of a stage's project memory; a page product's later suite writer checked on a fullstack run | on |

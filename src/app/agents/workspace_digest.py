@@ -190,7 +190,7 @@ def _what_to_do_with(owner: str, root: Path | None = None, name: str = "") -> st
             )
     return {
         # "the acceptance command runs it" was untrue of a unit test setup.
-        contract.KEPT_SETUP: "the project's test commands run it; do not change, run or test it",
+        contract.KEPT_SETUP: "the project's test commands run it; do not change it, execute it on its own or test it",
         contract.LOCKED_SUITE: "read it for what the product must do; never change it",
     }.get(owner, "not yours to change")
 

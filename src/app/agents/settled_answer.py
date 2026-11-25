@@ -43,7 +43,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any
+from typing import Any, Iterable
 
 logger = logging.getLogger(__name__)
 
@@ -1892,9 +1892,19 @@ def _the_same_call_answered_the_same(messages: list[Any]) -> tuple[str, int] | N
     return (calls[-1][0], running) if running >= alike else (replies[-1][-1][0], alike)
 
 
-def stable_tools_notice(withheld: set[str]) -> str:
-    """What a call is told when its tools stay listed but some are refused (plan PX.2)."""
-    names = ", ".join(f"`{name}`" for name in sorted(withheld)[:12])
+def stable_tools_notice(withheld: set[str], offered: Iterable[str] = ()) -> str:
+    """What a call is told when its tools stay listed but some are refused (plan PX.2).
+
+    Every refused tool is named, or - when fewer are still allowed - every one still allowed. Measured over 12 runs:
+    the notice named the first 12 refused tools in alphabetical order, which always left out `run_terminal_command`,
+    `write_artifact` and the rest of the alphabet; 24 of 139 refused calls were to a tool it had left out.
+    """
+    allowed = sorted(set(offered) - set(withheld) - {""})
+    if allowed and len(allowed) < len(withheld):
+        names = ", ".join(f"`{name}`" for name in allowed)
+        return (f"\n\nStill listed, but refused if called on this call: every tool except {names}. A call to any "
+                "other returns a refusal and is not run.")
+    names = ", ".join(f"`{name}`" for name in sorted(withheld))
     return (f"\n\nStill listed, but refused if called on this call: {names}. A call to one returns "
             "a refusal and is not run.")
 
@@ -2672,7 +2682,8 @@ def build_settled_answer_middleware(
                     # call above settled on.
                     refused_fallback = {**overrides, "model_settings": spiral_plainer}
                 if withheld_here:
-                    correction += stable_tools_notice(withheld_here)
+                    correction += stable_tools_notice(
+                        withheld_here, {_named(tool) for tool in getattr(request, "tools", None) or []})
                 corrected = [*sent_messages, {"role": "user", "content": correction}]
                 if refused_fallback is not None:
                     refused_fallback = request.override(messages=corrected, **refused_fallback)

@@ -2078,7 +2078,7 @@ def _what_to_do_instead(executable: str) -> str:
     return f" {suggestion}" if suggestion else ""
 
 
-def _installed(names: frozenset[str] | set[str]) -> tuple[list[str], list[str]]:
+def _installed(names: frozenset[str] | set[str], repo_root: str | Path | None = None) -> tuple[list[str], list[str]]:
     """Split allowed executables into those on PATH now, and the rest.
 
     The allowlist is the security boundary and is not narrowed by this - a
@@ -2097,16 +2097,25 @@ def _installed(names: frozenset[str] | set[str]) -> tuple[list[str], list[str]]:
     Re-evaluated on every refusal rather than cached, because `pip install
     pytest` and `npm install -D vitest` genuinely move a name from the second
     list to the first mid-run.
+
+    With `repo_root` whose commands run in a pack's own image, that image is asked instead of this process
+    (`image_programs`, deep review 2026-11-25): measured on a Python pack run, this said cargo and go were installed -
+    the worker's - and neither was in the image the commands ran in.
     """
+    from app.tools import image_programs
+
+    in_the_image = image_programs.split(repo_root, names) if repo_root else None
+    if in_the_image is not None:
+        return in_the_image
     present, absent = [], []
     for name in sorted(names):
         (present if shutil.which(name) else absent).append(name)
     return present, absent
 
 
-def _what_can_actually_run(permitted: frozenset[str] | set[str]) -> str:
+def _what_can_actually_run(permitted: frozenset[str] | set[str], repo_root: str | Path | None = None) -> str:
     """The "Allowed:" sentence, telling apart what runs from what must be installed."""
-    present, absent = _installed(permitted)
+    present, absent = _installed(permitted, repo_root)
     if not absent:
         return f"Allowed: {', '.join(present)}."
     return (
@@ -2274,7 +2283,7 @@ def _what_to_do_with_that_argument(
             "it runs a program the allowlist has not cleared, so it is refused "
             "whatever follows it. There is nothing to put in a file: run the "
             "program directly as the first item of `command`, and it is checked "
-            f"on its own name. {_what_can_actually_run(permitted)}"
+            f"on its own name. {_what_can_actually_run(permitted, repo_root)}"
         )
     if kind == "foreign_build_file":
         return (
@@ -2308,7 +2317,8 @@ def _what_to_do_with_that_argument(
 _SHELL_JOINS = ("&&", "||", ";", "|", ">", "<", "$(", "`")
 
 
-def _a_command_line_in_one_string(argv: list[str], permitted: Sequence[str], role_name: str) -> str:
+def _a_command_line_in_one_string(argv: list[str], permitted: Sequence[str], role_name: str,
+                                  repo_root: str | Path | None = None) -> str:
     """Why a whole command line as the first item is refused, and what to send instead.
 
     The program was the line's last path part: `cd /workspace/app && cat
@@ -2332,7 +2342,7 @@ def _a_command_line_in_one_string(argv: list[str], permitted: Sequence[str], rol
         message += " To run a command in a folder, give the folder as `working_directory`; `cd` is not a program."
     elif first_word not in permitted:
         message += (f" '{first_word}' is not permitted for role '{role_name}' either."
-                    f"{_what_to_do_instead(first_word)} {_what_can_actually_run(permitted)}")
+                    f"{_what_to_do_instead(first_word)} {_what_can_actually_run(permitted, repo_root)}")
     elif not joined:
         message += f" '{first_word}' is permitted - send {[first_word, *line.split()[1:], *argv[1:]]!r}."
     return message
@@ -2374,7 +2384,7 @@ def validate_command(
 
     permitted = allowed_executables(role_name, repo_root)
     if len(argv[0].split()) > 1:
-        raise CommandNotAllowed(_a_command_line_in_one_string(argv, permitted, role_name))
+        raise CommandNotAllowed(_a_command_line_in_one_string(argv, permitted, role_name, repo_root))
     # Before any check of a permitted program's arguments: a shell line split
     # into items - `["python", "-m", "uvicorn", ..., "&&", ...]` - was answered
     # about the module `-m` names, and its operator never mentioned. A program
@@ -2412,7 +2422,7 @@ def validate_command(
                 f"{ASSIGNMENT_ADVICE} Send the program first, without the setting"
                 + (f": {[*argv[assignments:]]!r}." if program in permitted else
                    f" - though '{program}' is not permitted for role '{role_name}' either. "
-                   f"{_what_can_actually_run(permitted)}")
+                   f"{_what_can_actually_run(permitted, repo_root)}")
                 + " What this environment already provides (installed tools, browsers, runtimes) needs no setting."
             )
         first_word = os.path.basename(argv[0].split()[0]) if argv[0].split() else ""
@@ -2429,7 +2439,7 @@ def validate_command(
         raise CommandNotAllowed(
             f"'{executable}' is not permitted for role '{role_name}'."
             f"{_what_to_do_instead(executable)} "
-            f"{_what_can_actually_run(permitted)}"
+            f"{_what_can_actually_run(permitted, repo_root)}"
         )
 
     forbidden = _FORBIDDEN_ARGS.get(executable, frozenset())

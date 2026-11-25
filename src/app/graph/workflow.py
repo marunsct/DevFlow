@@ -8402,6 +8402,7 @@ def _the_specification_for_the_fix(state: Any, defect: Any, co_defects: list[tup
         return ""
     return "\n" + specification_for_the_work_order(
         state.get("technical_specification"), SimpleNamespace(files=list(dict.fromkeys(named)), interfaces=[]),
+        getattr(state.get("repository"), "root_path", None),
     )
 
 

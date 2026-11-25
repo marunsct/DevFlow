@@ -243,6 +243,71 @@ def verified(answer: Rulings, specification: str, findings: list[str], brief: st
     return kept
 
 
+#: A statement that opens with a criterion's id: `AC-7: Character count includes newlines ...`.
+_OPENS_WITH_A_CRITERION = re.compile(r"^\W*(?:AC|CR)-\d+\b")
+#: A route in a statement: `/notes/{id}`, `/health`.
+_A_ROUTE = re.compile(r"(?<![\w.])/[A-Za-z][\w\-/{}:<>]*")
+#: Words too common in a specification to show two statements are about one thing.
+_COMMON = frozenset({
+    "that", "this", "with", "from", "when", "each", "have", "will", "must", "should", "which", "their", "there",
+    "only", "into", "than", "then", "also", "does", "more", "been", "were", "they", "them", "what", "where", "while",
+    "other", "every", "same", "such", "some", "used", "uses", "using", "returns", "return", "given", "after",
+    "before", "without", "within", "between", "about", "these", "those", "here", "being", "both", "either",
+    "neither", "never", "always", "because", "statement", "specification", "brief",
+})
+#: The shortest a criterion's text is to be recognised inside a statement.
+_LEAST_CRITERION_CHARS = 20
+
+
+def _route_set(text: str) -> set[str]:
+    return {re.sub(r"\{[^}]*\}|<[^>]*>|:[\w-]+", "{}", route).rstrip("/.,;)") for route in _A_ROUTE.findall(text)}
+
+
+def _content_words(text: str) -> set[str]:
+    return {word for word in re.findall(r"[a-z][a-z0-9_.\-]*[a-z0-9]", str(text or "").lower())
+            if len(word) >= 4 and word not in _COMMON} | set(re.findall(r"\b\d{3}\b", str(text or "")))
+
+
+def why_it_cannot_apply(stands: str, gives_way: str, criteria: Sequence[str] = ()) -> str:
+    """Why a ruling is not shown to a builder, or "" when it is (deep review 2026-11-25, item 2).
+
+    Measured over 13 runs carrying rulings: in 5, a ruling had an acceptance criterion give way to a specification
+    sentence it had nothing to do with - "'Returns the string ... Compact JSON string' stands, over 'AC-7: Character
+    count includes newlines ...'" - and a fixer, told to build to the statement that stands, broke the line count
+    against AC-7; the fix was reverted. A criterion is what the acceptance suite proves: it never gives way to a
+    specification sentence here, and a quarrel with it is a suite or specification dispute. And two statements that
+    share no route and no word are not about one thing, so neither can stand over the other.
+    """
+    plain = " ".join(str(gives_way or "").split())
+    if _OPENS_WITH_A_CRITERION.match(plain):
+        return "the statement that gives way is an acceptance criterion: a suite or specification dispute, not a ruling"
+    for criterion in criteria or ():
+        text = " ".join(str(criterion or "").split())
+        if len(text) >= _LEAST_CRITERION_CHARS and (text in plain or (len(plain) >= _LEAST_CRITERION_CHARS and plain in text)):
+            return "the statement that gives way is an acceptance criterion: a suite or specification dispute, not a ruling"
+    first, second = _route_set(stands), _route_set(gives_way)
+    if first and second and not first & second:
+        return "the two statements are about different routes"
+    if not _content_words(stands) & _content_words(gives_way):
+        return "the two statements share no route, name or word"
+    return ""
+
+
+def _could_not_apply(why: str, gives_way: str) -> None:
+    from app.observability.rule_coverage import RULING_PAIRS, could_not_apply
+
+    could_not_apply(RULING_PAIRS, f"{why}: {gives_way[:160]}")
+
+
+def _the_criteria_texts(root: str | Path | None) -> list[str]:
+    try:
+        from app.acceptance import suite
+
+        return [c.text for c in suite.criteria(root)] if root else []
+    except Exception:  # noqa: BLE001 - judged without them
+        return []
+
+
 def _asked(root: str | Path) -> bool:
     return (Path(root) / RULINGS_FILE).is_file()
 
@@ -306,11 +371,17 @@ def settle(state: Any, update: dict[str, Any], model: Any, findings: list[str]) 
         # fact (`start.sh` runs `node src/main.ts`) against the specification's `npx tsx`, and was rejected because
         # the quote was in neither the specification nor the brief.
         standing = "\n".join([brief, *map(str, facts or [])])
+        criteria = _the_criteria_texts(root)
         for ruling in verified(answer, specification, findings, standing, rejected) if answer is not None else []:
             first_stands = ruling.stands.strip().lower() == "first"
             stands = _plain(ruling.first_statement if first_stands else ruling.second_statement)
             gives_way = _plain(ruling.second_statement if first_stands else ruling.first_statement)
             why = _plain(ruling.why)[:_MOST_WHY_CHARS]
+            cannot = why_it_cannot_apply(stands, gives_way, criteria)
+            if cannot:
+                rejected.append(f"finding {ruling.finding}: {cannot} - stands: {stands[:200]!r}; gives way: {gives_way[:200]!r}")
+                _could_not_apply(cannot, gives_way)
+                continue
             record = record_decision(
                 state, update, point="technical_specification",
                 question=("The specification departs from what the brief states, or the setup already does: which statement stands?"
@@ -422,7 +493,20 @@ def _kept(root: str | Path | None) -> list[dict[str, Any]]:
         if not path.is_file():
             return []
         rulings = [r for r in json.loads(path.read_text(encoding="utf-8")).get("rulings") or [] if isinstance(r, dict)]
-        return rulings if enabled() else [r for r in rulings if r.get("from_the_setup") or r.get("from_the_harness")]
+        if not enabled():
+            return [r for r in rulings if r.get("from_the_setup") or r.get("from_the_harness")]
+        # A model's ruling is shown only when it can apply (`why_it_cannot_apply`): also those recorded before the
+        # check, which a resumed run still shows. The setup's and the harness's are measured, not judged.
+        criteria = _the_criteria_texts(root)
+        shown = []
+        for ruling in rulings:
+            cannot = "" if ruling.get("from_the_setup") or ruling.get("from_the_harness") else why_it_cannot_apply(
+                str(ruling.get("stands") or ""), str(ruling.get("gives_way") or ""), criteria)
+            if cannot:
+                _could_not_apply(cannot, str(ruling.get("gives_way") or ""))
+                continue
+            shown.append(ruling)
+        return shown
     except Exception:  # noqa: BLE001 - a request without the rulings is the request as it was
         logger.debug("Could not read the specification's rulings", exc_info=True)
         return []

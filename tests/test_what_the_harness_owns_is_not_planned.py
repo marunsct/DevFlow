@@ -115,7 +115,7 @@ def test_the_digest_marks_them_and_says_what_to_do(project) -> None:
     (project / "notes" / "src" / "app.js").write_text("export function addNote(title) {}\n")
     digest = render_workspace_digest(project, max_files=200)
     serve = next(line for line in digest.splitlines() if "notes/scripts/serve.mjs" in line)
-    assert contract.KEPT_SETUP in serve and "do not change, run or test it" in serve
+    assert contract.KEPT_SETUP in serve and "do not change it, execute it on its own or test it" in serve
     spec = next(line for line in digest.splitlines() if "notes/acceptance/notes.spec.js" in line)
     assert contract.LOCKED_SUITE in spec and "never change it" in spec
     app = next(line for line in digest.splitlines() if "notes/src/app.js" in line)

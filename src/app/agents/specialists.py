@@ -452,9 +452,10 @@ NO_SHELL_NOTE = (
     "cannot be run, and nor can `cd`, pipes or `&&`. A build or test step must "
     "therefore be a script declared in the project's own manifest and run "
     "through its package manager, or a program run directly with "
-    "`run_terminal_command` - never a .sh file. `make`, `pnpm` and `yarn` are "
-    "not installed here either.\n"
+    "`run_terminal_command` - never a .sh file.\n"
 )
+#: Said after `NO_SHELL_NOTE` until the image commands run in has been asked (`_the_runners_not_here`).
+NOT_HERE_BY_DEFAULT = "`make`, `pnpm` and `yarn` are not installed here either.\n"
 """The constraint that is invisible until a stage has already spent itself.
 
 The first version of this offered "an npm/pnpm/yarn script, a Makefile target"
@@ -477,7 +478,7 @@ written, the task delegated and the script authored.
 """
 
 
-def _no_code_on_the_command_line(stack: Any) -> str:
+def _no_code_on_the_command_line(stack: Any, repository_root: str | None = None) -> str:
     """The inline-code refusal this stack's own toolchain will hand back, or "".
 
     Measured on one run: `specialist_backend_1`, `specialist_testing_2`
@@ -518,7 +519,7 @@ def _no_code_on_the_command_line(stack: Any) -> str:
         for name in programs & set(_FORBIDDEN_ARGS)
         if _WHY_THE_ARGUMENT_IS_REFUSED.get(name) == "eval"
     }
-    present, _absent = _installed(evaluators)
+    present, _absent = _installed(evaluators, repository_root)
     if not present:
         return ""
     spellings = [
@@ -526,15 +527,17 @@ def _no_code_on_the_command_line(stack: Any) -> str:
         for name in present
         for flag in sorted(_FORBIDDEN_ARGS[name])
     ]
+    # What happens, not a refusal (deep review 2026-11-25, item 6): code on the command line has been saved to a file
+    # and run since the owner's decision of 2026-10-20 (`agent_toolkit._code_on_the_command_line_as_a_file`). Told
+    # "refused every time", models wrote, ran and deleted scratch files of their own - about 70 extra calls - while
+    # 207 of the 209 inline commands sent anyway ran.
     return (
-        "Code cannot be handed to a program as an argument. This is refused "
-        "every time, for what it is, and no edit to any file changes that: "
+        "Code passed to a program on its command line ("
         + ", ".join(spellings)
-        + ". To execute something once, write it to a file in the project "
-        "folder named `tmp-<what it checks>`, and run the file: a file named "
-        "so is removed by the harness before it could ship. If what "
-        "you actually need is what is already in a file, `read_file` and `grep` "
-        "answer that in one call without running anything.\n"
+        + ") is saved by the harness to a `tmp-inline-*` file in the project folder and run from there; the "
+        "harness removes that file itself before the next test round and at release, so leave it. If what you "
+        "actually need is what is already in a file, `read_file` and `grep` answer that in one call without "
+        "running anything.\n"
     )
 
 
@@ -677,9 +680,12 @@ def describe_stack(stack: Any, repository_root: str | None = None) -> str:
         for label, attribute in fields
         if (value := getattr(stack, attribute, "") or "")
     ]
-    extra = list(getattr(stack, "additional_tools", None) or [])
+    # Named when the stack was chosen; the specification, written later, decides the libraries and may replace one.
+    from app.agents.stack_reconciled import other_tools_line
+
+    extra = other_tools_line(getattr(stack, "additional_tools", None) or [], repository_root)
     if extra:
-        lines.append(f"- Other tools: {', '.join(str(tool) for tool in extra)}")
+        lines.append(extra)
     if not lines:
         return ""
     return (
@@ -693,9 +699,29 @@ def describe_stack(stack: Any, repository_root: str | None = None) -> str:
         "rather than switching.\n"
         + ("" if _set_up_by_a_pack(repository_root) else _THE_UNIT_RUNNER_IS_NOT_THE_ONLY_ONE + _how_the_pieces_load(stack))
         + NO_SHELL_NOTE
-        + _no_code_on_the_command_line(stack)
+        + _the_runners_not_here(repository_root)
+        + _no_code_on_the_command_line(stack, repository_root)
         + "\n"
     )
+
+
+def _the_runners_not_here(repository_root: str | None) -> str:
+    """Which of `make`, `pnpm` and `yarn` the image commands run in lacks, as a sentence; "" when it has them all.
+
+    The sentence was measured once on the worker image, and said "`make` ... and `yarn` are not installed" beside a
+    Python pack's image that has both (`image_programs`, deep review 2026-11-25). Until the image has been asked, as
+    before.
+    """
+    from app.tools import image_programs
+
+    split = image_programs.split(repository_root, ("make", "pnpm", "yarn")) if repository_root else None
+    if split is None:
+        return NOT_HERE_BY_DEFAULT
+    absent = [f"`{name}`" for name in split[1]]
+    if not absent:
+        return ""
+    named = absent[0] if len(absent) == 1 else ", ".join(absent[:-1]) + " and " + absent[-1]
+    return f"{named} {'is' if len(absent) == 1 else 'are'} not installed here either.\n"
 
 
 def _set_up_by_a_pack(repository_root: str | None) -> bool:
@@ -937,13 +963,16 @@ MOST_DETAIL_CHARACTERS = 16_000
 _A_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
 
 
-def specification_for_the_work_order(specification: Any, work_order: Any) -> str:
+def specification_for_the_work_order(specification: Any, work_order: Any, root: str | Path | None = None) -> str:
     """The specification's entries about this work order's files and names, or "".
 
     A faster model builds from the specification; it is handed the entries that
     name one of its files (by path or file name) or one of the names its
     interfaces declare - the exact signatures, shapes, messages, steps and
     tests it would otherwise invent - and the rest stays in the document.
+
+    `root`, the workspace: a library call's version is given as installed there where the two differ
+    (`stack_reconciled.library_calls`).
     """
     if specification is None or work_order is None:
         return ""
@@ -960,11 +989,11 @@ def specification_for_the_work_order(specification: Any, work_order: Any) -> str
     return (
         api_reference(specification)
         + ledger.for_a_work_order(specification, work_order)
-        + _the_entries_about_its_files(specification, work_order)
+        + _the_entries_about_its_files(specification, work_order, root)
     )
 
 
-def _the_entries_about_its_files(specification: Any, work_order: Any) -> str:
+def _the_entries_about_its_files(specification: Any, work_order: Any, root: str | Path | None = None) -> str:
     """The specification's entries naming one of the work order's files or interface names, or ""."""
     files = {str(path).strip().lstrip("./") for path in (getattr(work_order, "files", None) or []) if str(path).strip()}
     needles = files | {path.rsplit("/", 1)[-1] for path in files}
@@ -985,9 +1014,13 @@ def _the_entries_about_its_files(specification: Any, work_order: Any) -> str:
     # Every library call, whichever file makes it: an entry names the library,
     # not the file, and a call recalled wrongly is the commonest way a smaller
     # model's build fails.
-    calls = [str(entry).strip() for entry in getattr(specification, "library_usage", None) or [] if str(entry).strip()]
+    # The specification's calls, not the documentation's: a version the architect recalled is given as the one
+    # installed here where the two differ (deep review 2026-11-25, item 3).
+    from app.agents.stack_reconciled import library_calls
+
+    calls = library_calls(getattr(specification, "library_usage", None) or [], root)
     if calls:
-        blocks.append("Library calls, as their documentation gives them:\n" + "\n".join(f"- {entry}" for entry in calls))
+        blocks.append("Library calls the specification decided:\n" + "\n".join(f"- {entry}" for entry in calls))
     if not blocks:
         return ""
     text = "\n\n".join(blocks)

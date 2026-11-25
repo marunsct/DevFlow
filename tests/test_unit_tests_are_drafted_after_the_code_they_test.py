@@ -41,7 +41,7 @@ def test_tests_wait_for_the_code_and_are_shown_it(tmp_path, monkeypatch):
 def test_a_test_request_is_shown_the_code_it_tests(tmp_path, monkeypatch):
     (tmp_path / "notes_api").mkdir()
     (tmp_path / PRODUCT).write_text("def save(data_dir, note):\n    raise ValueError('Title is required')\n")
-    monkeypatch.setattr("app.agents.specialists.specification_for_the_work_order", lambda spec, task: "")
+    monkeypatch.setattr("app.agents.specialists.specification_for_the_work_order", lambda spec, task, *where: "")
     monkeypatch.setattr("app.agents.shared_facts.the_facts_section", lambda root, built=False: "")
     task = types.SimpleNamespace(files=[TEST], task_description="tests", interfaces=[], acceptance_criteria=[])
 

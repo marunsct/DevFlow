@@ -27,6 +27,8 @@ FINDING = "[major] The output format departs from the brief's stated one-per-lin
 
 class Specification(BaseModel):
     acceptance_criteria: list[str] = [f"{SPEC_SAYS}, sorted by count"]
+    #: The measured case: the specification starts the service another way than the setup does.
+    deployment: list[str] = ["start.sh starts the service with `npx tsx src/main.ts`"]
 
 
 class Model:
@@ -98,7 +100,7 @@ def test_the_call_is_asked_to_settle_departures_in_plain_words():
 # Measured on one run: a right ruling quoted the setup's own fact against the specification and was rejected - the
 # quote was in neither the specification nor the brief - so the design's open finding stayed open.
 SETUP_SAYS = "start.sh is already set up and starts the service with `node src/main.ts`"
-SPEC_SAYS_START = "The tool prints a JSON array of objects with word and count fields"
+SPEC_SAYS_START = "start.sh starts the service with `npx tsx src/main.ts`"
 
 
 def test_what_the_setup_already_does_stands_like_the_brief(tmp_path, on, monkeypatch):

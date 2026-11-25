@@ -64,7 +64,7 @@ def test_every_work_order_is_handed_the_library_calls():
     detail = specification_for_the_work_order(SPEC, order)
 
     assert "import { App } from 'framework'" in detail
-    assert "Library calls, as their documentation gives them:" in detail
+    assert "Library calls the specification decided:" in detail
 
 
 def test_the_setup_stage_is_shown_what_the_specification_decided():

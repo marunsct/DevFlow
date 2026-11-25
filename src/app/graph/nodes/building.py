@@ -805,7 +805,8 @@ def specialist_dispatch_node(state: WorkflowGraphState, config: RunnableConfig, 
             interface_design=_the_interface_design_for(state, task),
             later_sprints_brief=_the_later_sprints_brief(state),
             earlier_fixes=_the_fixes_to_keep(state, task),
-            specification_detail=specification_for_the_work_order(state.get("technical_specification"), task),
+            specification_detail=specification_for_the_work_order(
+                state.get("technical_specification"), task, state["repository"].root_path),
         )
         # The facts the work is built and judged under (plan CM.1).
         request = with_the_facts(request, state["repository"].root_path, built=False)
@@ -903,7 +904,8 @@ def specialist_worker_node(state: dict, config: RunnableConfig, ctx: GraphContex
         interface_design=_the_interface_design_for(state, task),
         later_sprints_brief=_the_later_sprints_brief(state),
         earlier_fixes=_the_fixes_to_keep(state, task),
-        specification_detail=specification_for_the_work_order(state.get("technical_specification"), task),
+        specification_detail=specification_for_the_work_order(
+            state.get("technical_specification"), task, state["repository"].root_path),
     )
     # The facts the work is built and judged under (plan CM.1).
     request = with_the_facts(request, state["repository"].root_path, built=False)

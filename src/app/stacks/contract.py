@@ -865,11 +865,16 @@ def describe(repo_root: str | Path | None, *, with_reference_code: bool = True) 
         f"run with `{shown(record.get('unit_test'))}` in `{project}/`.\n"
         f"- Acceptance tests: `{project}/{pack.acceptance_dir}/` belongs to QA and is locked; "
         "nothing else may change it. The harness runs it and reports which criteria pass.\n"
-        f"- Kept by the harness: {kept}"
-        + (f", and the manifest scripts {scripts}" if scripts else "")
-        + ". They are test setup, not the product: do not change them, test them, run them "
-        "yourself or build on them - one run's stage wrote a unit test that started the "
-        "harness's server and hung for five minutes. "
+        f"- Kept by the harness: {kept}. They are test setup, not the product: do not change them, "
+        "test them, execute them on their own or build on them - one run's stage wrote a unit test "
+        "that started the harness's server and hung for five minutes. "
+        # The scripts apart from the files (deep review 2026-11-25, item 7): one prohibition named both, beside a
+        # defect's "Run `npm run test:acceptance`" in 80 messages - and running the scripts is how the tests run.
+        + (f"The manifest scripts {scripts} are kept too: do not change them. Running them is how the "
+           f"tests run: `{shown(record.get('unit_test'))}` for the unit tests"
+           + (f" and `{shown(record.get('acceptance_test'))}` for the acceptance suite"
+              if record.get("acceptance_test") else "")
+           + ", as they are. " if scripts else "")
         + _where_dependencies_go(project, record)
         + " Everything else in the project is yours.\n"
         f"{pack.filled(pack.guide, project, record.get('title') or project, record.get('package'))}\n"

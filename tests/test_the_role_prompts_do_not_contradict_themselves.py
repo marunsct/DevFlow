@@ -18,7 +18,7 @@ BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I
 def test_the_contradictions_are_gone():
     role = inspect.getsource(role_agent)
     assert "must be delegated" not in role and "is the whole of your job" not in role
-    assert "with `limit` set past its last line" in role
+    assert "`read_file` call with no `limit`: it returns the whole" in role
     builders = inspect.getsource(specialists)
     assert "'separate' core application logic" not in builders
     assert "is not removing it: the product still runs it" in builders
@@ -26,7 +26,7 @@ def test_the_contradictions_are_gone():
 
 def test_the_new_words_ban_the_product_s_nouns():
     role = inspect.getsource(role_agent)
-    for phrase in ("for the stage that writes it", "Read what your answer rests on", "limit` set past its last line"):
+    for phrase in ("for the stage that writes it", "Read what your answer rests on", "call with no `limit`: it returns"):
         at = role.index(phrase)
         assert not BANNED.search(role[at - 200:at + 300])
     builders = inspect.getsource(specialists)

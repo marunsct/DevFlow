@@ -1,0 +1,49 @@
+{
+  "pack": "fullstack-react-fastapi",
+  "project": "task-management-dashboard",
+  "title": "Task Management Dashboard",
+  "package": "task_management_dashboard",
+  "install": [
+    [
+      "npm",
+      "install",
+      "--no-audit",
+      "--no-fund"
+    ],
+    [
+      "python3",
+      "-m",
+      "venv",
+      ".venv"
+    ],
+    [
+      ".venv/bin/python",
+      "-m",
+      "pip",
+      "install",
+      "--quiet",
+      "--disable-pip-version-check",
+      "-r",
+      "requirements.txt",
+      "-r",
+      "requirements-dev.txt"
+    ]
+  ],
+  "unit_test": [
+    "npm",
+    "test"
+  ],
+  "acceptance_test": [
+    "npm",
+    "run",
+    "test:acceptance"
+  ],
+  "unit_report": "test-results/unit.xml",
+  "acceptance_report": "test-results/acceptance.xml",
+  "unit_dir": "tests",
+  "acceptance_dir": "acceptance",
+  "unit_pattern": "*.test.tsx",
+  "acceptance_pattern": "*.spec.js",
+  "evidence_dir": "test-results/evidence",
+  "scaffolded": true
+}

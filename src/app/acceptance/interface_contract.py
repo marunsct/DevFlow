@@ -31,7 +31,7 @@ import json
 import logging
 import re
 import shutil
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from functools import partial
 from pathlib import Path
 from typing import Any
@@ -482,6 +482,18 @@ def parse(lines: list[str] | tuple[str, ...]) -> tuple[list[Check], list[str]]:
         # names no criterion of this product, so it is read like a line with none.
         if named_ids_switch.enabled():
             line = _IDS_THAT_ARE_NOT_NUMBERS.sub("", line)
+        # A page or command line with no criterion before it: its id was taken off for naming an unrelated criterion
+        # (`app.acceptance.contract_ids`). Read with a stand-in id and checked all the same; it charges no criterion.
+        without_its_criterion = bool(re.match(r"(?:page|command)\s", line))
+        if without_its_criterion:
+            before = len(checks)
+            read, _ = parse([f"AC-0 {line}"])
+            if read:
+                checks.extend(replace(check, criterion="", line=line) for check in read)
+            if len(checks) > before:
+                continue
+            unreadable.append(line)
+            continue
         if match := _HTTP.match(line):
             statuses = tuple(int(code) for code in re.findall(r"\d{3}", match[4]))
             checks.append(Check(match[1], "http", line, method=match[2], path=match[3], status=statuses[0],
@@ -1375,14 +1387,15 @@ def _run_each_command(checks: list[Check], project: str, runner: Any, failed: li
         except ValueError:
             unchecked.append(f"{check.line} (no exit code came back)")
             continue
+        charged = f"[{check.criterion}] " if check.criterion else ""
         if code != check.exit_code:
-            failed.append(f"[{check.criterion}] {check.line} - it exited {code}")
+            failed.append(f"{charged}{check.line} - it exited {code}")
         elif check.stdout and not _it_printed(str(outcome.get("stdout") or outcome.get("output") or ""), check.stdout):
             printed = str(outcome.get("stdout") or outcome.get("output") or "").strip()
             if _A_DESCRIBED_OUTPUT.search(check.stdout):
                 unchecked.append(f"{check.line} (its printed text is described, not given)")
             else:
-                failed.append(f"[{check.criterion}] {check.line} - it printed {printed[:120]!r}")
+                failed.append(f"{charged}{check.line} - it printed {printed[:120]!r}")
 
 
 #: What the product printed while the last probe ran in each project folder, read by `what_the_server_printed`.

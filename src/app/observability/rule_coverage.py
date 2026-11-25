@@ -29,7 +29,12 @@ ACTION_VERBS = "action_verbs"
 FIELDS_GIVEN_WITH = "fields_given_with"
 CONTRACT_SIGN_IN = "contract_sign_in"
 RUNNER_TOTALS = "runner_totals"
+CONTRACT_IDS = "contract_ids"
+RULING_PAIRS = "ruling_pairs"
 CHECKS: dict[str, str] = {
+    CONTRACT_IDS: ("a contract line's criterion id checked by the words its route, control or command shares with "
+                   "that criterion's text"),
+    RULING_PAIRS: "a ruling on the specification kept only when its two statements share a route or a word",
     ACTION_VERBS: "user actions read from a closed list of verbs in the criteria's lists",
     FIELDS_GIVEN_WITH: "fields read from the words after 'add/create/enter ... with', answered from page controls",
     CONTRACT_SIGN_IN: "the contract probes sign in by a POST path's name and send the answer's token as a Bearer header",

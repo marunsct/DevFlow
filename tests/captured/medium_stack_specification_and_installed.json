@@ -1,0 +1,209 @@
+{
+ "additional_tools_line": "- **Additional tools:** SQLAlchemy (async ORM), Alembic (migrations), python-jose (JWT), passlib (password hashing), Pydantic (validation), httpx (async HTTP testing), Vite (frontend build), Docker Compose (orchestration)",
+ "additional_tools": [
+  "SQLAlchemy (async ORM)",
+  "Alembic (migrations)",
+  "python-jose (JWT)",
+  "passlib (password hashing)",
+  "Pydantic (validation)",
+  "httpx (async HTTP testing)",
+  "Vite (frontend build)",
+  "Docker Compose (orchestration)"
+ ],
+ "library_usage": [
+  "Library: fastapi 0.165.0. Import: from fastapi import FastAPI, Depends, HTTPException, Header, Query, Response. Call: app = FastAPI(title='Task Management Dashboard', version='1.0.0'). app.add_middleware(CORSMiddleware, allow_origins=[...], allow_credentials=True, allow_methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], allow_headers=['Content-Type', 'Authorization']). app.include_router(auth_router, prefix='/api', tags=['auth']). app.get('/api/health')(health_check)",
+  "Library: PyJWT 1.4.0. Import: import jwt. Call: jwt.encode(payload, key, algorithm=algorithm) -> str; jwt.decode(token, key, algorithms=[algorithm]) -> dict. Used in auth.py for JWT token creation and validation. The sub claim is always set to str(user_id) for PyJWT 2.10+ compatibility."
+ ],
+ "decisions_section": "\n\n### ADR-01 — Choose FastAPI over Express.js\n**Context:**\nThe brief specifies Python/FastAPI or Node.js/Express for the backend. Both are viable options.\n\n**Decision:**\nUse Python with FastAPI 0.165.0.\n\n**Rationale:**\nFastAPI provides built-in OpenAPI/Swagger documentation (required by the brief), async support, Pydantic data validation, and excellent PostgreSQL integration via SQLAlchemy. The technology stack document selected FastAPI for these advantages.\n\n**Trade-offs:**\n- Python runtime is slower than Node.js for CPU-bound work, but this is an I/O-bound CRUD application.\n- Smaller ecosystem than Node.js, but sufficient for the MVP scope.\n\n**Consequences:**\n- All backend code uses Python 3.12+ with type hints.\n- Requires python-jose, bcrypt, SQLAlchemy, Pydantic, and FastAPI packages.\n- Auto-generated Swagger docs at /docs require no additional setup.\n\n**Validation evidence:**\nStack facts: FastAPI 0.165.0 (2026-11-18) fits Python 3.12.16 (needs >=3.11).\nEvidence relied on (stack facts, read 2026-11-25): FastAPI - package: pypi `fastapi`; current release (date): 0.165.0 (2026-11-18); support: not tracked by endoflife.date; open advisories: none known; toolchain fit: fits python 3.12.16 (needs >=3.11); pack: yes (fullstack-react-fastapi)\nEvidence relied on (stack facts, read 2026-11-25): Express.js - package: npm `express`; current release (date): 5.3.0 (2026-10-09); support: Express 5: supported, no end date published; open advisories: none known; toolchain fit: fits node 24.22.3 (needs >= 18); pack: yes (node-http-api)\n\n### ADR-02 — Choose React over Vue.js\n**Context:**\nThe brief specifies React or Vue.js for the frontend.\n\n**Decision:**\nUse React 19.3.1 with Vite 6.x as the build tool.\n\n**Rationale:**\nReact has a mature ecosystem for analytics dashboards with charting library integrations (Recharts). The technology stack document selected React. Vite provides fast builds and HMR.\n\n**Trade-offs:**\n- React has a steeper learning curve than Vue.js.\n- Larger bundle size than Vue.js, but mitigated by code splitting.\n\n**Consequences:**\n- Frontend code uses .tsx files with TypeScript.\n- Vite configuration in vite.config.ts.\n- React Router for client-side routing.\n\n**Validation evidence:**\nStack facts: React 19.3.1 (2026-10-14) fits Node 24.22.3.\nEvidence relied on (stack facts, read 2026-11-25): React - package: npm `react`; current release (date): 19.3.1 (2026-10-14); support: React 19: supported, no end date published; open advisories: none known; toolchain fit: fits node 24.22.3 (needs >=0.10.0); pack: yes (browser-react)\nEvidence relied on (stack facts, read 2026-11-25): Vue.js - package: npm `vue`; current release (date): 3.5.46 (2026-11-20); support: Vue 3.5: supported, no end date published; open advisories: none known; toolchain fit: fits node 24.22.3; pack: yes (browser-vue)\nEvidence relied on (stack facts, read 2026-11-25): Vite - package: pypi `vite`; current release (date): 1.5.2 (2019-10-02); support: not tracked by endoflife.date; open advisories: none known; toolchain fit: fits python 3.12.16; pack: yes (browser-react)\n\n### ADR-03 — JWT with refresh token rotation\n**Context:**\nThe brief requires JWT tokens with refresh mechanism. The security specialist recommends refresh token rotation.\n\n**Decision:**\nAccess tokens: 15-minute expiry, HS256 signed, sub=str(user.id). Refresh tokens: 7-day expiry, SHA-256 hashed before storage, stored in HTTP-only Secure cookies with SameSite=Strict. Each refresh rotates the token (revokes old, creates new).\n\n**Rationale:**\nShort-lived access tokens minimize exposure window. Refresh token rotation prevents token reuse attacks. HTTP-only cookies prevent XSS theft. SHA-256 hashing ensures raw tokens are never stored.\n\n**Trade-offs:**\n- Token rotation adds one extra database write per refresh.\n- HTTP-only cookies require CSRF protection on the refresh endpoint (mitigated by SameSite=Strict and origin validation).\n\n**Consequences:**\n- Refresh tokens table with token_hash column.\n- Cookie-based token storage in frontend.\n- Logout must revoke all active refresh tokens for the user.\n\n**Validation evidence:**\nStack facts: python-jose 3.5.0 (2025-05-28) supports HS256. PyJWT 2.10+ requires sub to be a string.\nEvidence relied on (stack facts, read 2026-11-25): JWT - package: pypi `jwt`; current release (date): 1.4.0 (2025-06-23); support: not tracked by endoflife.date; open advisories: none known; toolchain fit: fits python 3.12.16 (needs >=3.9); pack: no\n\n### ADR-04 — bcrypt for password hashing\n**Context:**\nThe security specialist recommends bcrypt with rounds=12. passlib 1.7.4 is incompatible with bcrypt 5.\n\n**Decision:**\nUse bcrypt directly: bcrypt.hashpw(password.encode(), bcrypt.gensalt(rounds=12)) for hashing and bcrypt.checkpw(password.encode(), stored_hash) for verification. Pin bcrypt<5 in dependencies.\n\n**Rationale:**\nbcrypt is the industry standard for password hashing. Rounds=12 provides good security (approximately 250ms per hash on modern hardware). Direct use avoids passlib's incompatibility with bcrypt 5.\n\n**Trade-offs:**\n- Direct bcrypt usage means slightly more code than using passlib's high-level API.\n- bcrypt<5 pin limits access to future bcrypt improvements.\n\n**Consequences:**\n- Password hashes stored as VARCHAR(255) in database.\n- No dependency on passlib for hashing (passlib can still be used for other utilities).\n- bcrypt package required in dependencies.\n\n**Validation evidence:**\nStack facts: passlib 1.9.5 (2026-11-23). The framework constraints note passlib 1.7.4 fails with bcrypt 5; using bcrypt 4.x resolves this.\n\n### ADR-05 — SQLAlchemy async ORM with SQLite file database\n**Context:**\nThe brief requires PostgreSQL. The environment has no database server. A file-based database is needed for development and testing.\n\n**Decision:**\nUse SQLAlchemy 2.1.9 with async engine. DATABASE_URL defaults to 'sqlite+aiosqlite:///./data/tasks.db' when unset. PostgreSQL connection string used when DATABASE_URL is set.\n\n**Rationale:**\nSQLite file database requires no server setup, enabling tests to run without a database process. SQLAlchemy abstracts the database driver, so the same code works with both SQLite and PostgreSQL.\n\n**Trade-offs:**\n- SQLite does not support concurrent writes as well as PostgreSQL.\n- Some PostgreSQL-specific features (ENUM types) are not available in SQLite; use VARCHAR with CHECK constraints instead.\n\n**Consequences:**\n- Database module detects dialect and configures engine appropriately.\n- Alembic migrations work with both SQLite and PostgreSQL.\n- Tests run against SQLite; production uses PostgreSQL.\n\n**Validation evidence:**\nStack facts: SQLAlchemy 2.1.9 (2026-11-16) fits Python 3.12.16.\nEvidence relied on (stack facts, read 2026-11-25): PostgreSQL - package: a product, not a package; support: PostgreSQL 19: supported until 2031-11-19\nEvidence relied on (stack facts, read 2026-11-25): SQLite - package: a product, not a package; support: SQLite 3: supported, no end date published\nEvidence relied on (stack facts, read 2026-11-25): SQLAlchemy - package: pypi `sqlalchemy`; current release (date): 2.1.9 (2026-11-16); support: not tracked by endoflife.date; open advisories: none known; toolchain fit: fits python 3.12.16 (needs >=3.11); pack: no\n\n### ADR-06 — VARCHAR with CHECK constraints instead of PostgreSQL ENUM\n**Context:**\nThe database specialist recommends PostgreSQL ENUM types for priority and status. However, SQLite (used in development) does not support ENUM types.\n\n**Decision:**\nUse VARCHAR columns with CHECK constraints for priority and status fields. This provides the same validation at the database level while remaining compatible with both SQLite and PostgreSQL.\n\n**Rationale:**\nCHECK constraints work identically in SQLite and PostgreSQL, ensuring consistent validation across environments. This avoids the need for dialect-specific migration scripts.\n\n**Trade-offs:**\n- PostgreSQL ENUM types would provide slightly better type safety at the database level.\n- Slightly more storage (VARCHAR vs internal ENUM representation), but negligible for this schema.\n\n**Consequences:**\n- priority column: VARCHAR(10) NOT NULL DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high', 'urgent')).\n- status column: VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'completed', 'cancelled')).\n- Alembic migrations use VARCHAR with CHECK for both SQLite and PostgreSQL.\n\n**Validation evidence:**\nSQLAlchemy documentation: VARCHAR with CHECK constraint is the standard cross-dialect approach for enum-like constraints.\nEvidence relied on (stack facts, read 2026-11-25): PostgreSQL - package: a product, not a package; support: PostgreSQL 19: supported until 2031-11-19\nEvidence relied on (stack facts, read 2026-11-25): SQLite - package: a product, not a package; support: SQLite 3: supported, no end date published\n\n### ADR-07 — Commit within route handler, not in teardown\n**Context:**\nFastAPI 0.118+ runs teardown code after the response is sent. A commit in teardown could land after the client reads the database.\n\n**Decision:**\nAll database commits happen within the route handler, before returning the response. The database session dependency uses scope='function' to ensure each request gets a fresh session.\n\n**Rationale:**\nThis ensures the database state is consistent when the client receives the response. TestClient (used in unit tests) waits for teardown, but the running service does not, so committing in teardown would cause the service to fail while tests pass.\n\n**Trade-offs:**\n- Slightly more code in each route handler to handle commit/rollback explicitly.\n- Error handling must be more careful to ensure rollback on failure.\n\n**Consequences:**\n- get_db dependency: session = AsyncSession(engine); yield session; session.close().\n- Route handlers: try: session.commit() except: session.rollback(); raise.\n\n**Validation evidence:**\nFastAPI documentation: 'Since FastAPI 0.118 the code after yield in a dependency runs once the response has been sent.'\n\n### ADR-08 — No API versioning in MVP\n**Context:**\nThe tools_and_models open question asks about API versioning strategy.\n\n**Decision:**\nNo versioning prefix in MVP. All routes under /api/. If breaking changes are needed in the future, a new /api/v2/ prefix will be added.\n\n**Rationale:**\nThe MVP is the first release. Adding versioning adds complexity (routing, documentation, testing) that is not needed for a single-version product. Versioning can be added later with minimal disruption.\n\n**Trade-offs:**\n- Breaking changes would require a major version bump and potentially dual-support during migration.\n- Clients have no explicit version contract; they must handle API changes.\n\n**Consequences:**\n- All routes use /api/ prefix without version segment.\n- OpenAPI docs at /docs cover all routes.\n- Future: /api/v2/ routes added alongside /api/ routes during transition period.\n\n**Validation evidence:**\nNo evidence in the brief or stack documents mandates versioning. The open question was answered as a decision.\n\n### ADR-09 — In-memory rate limiter for registration and login\n**Context:**\nThe security specialist recommends rate limiting: 5 requests per IP per 15 minutes on registration and login endpoints.\n\n**Decision:**\nImplement a simple in-memory rate limiter using a dictionary keyed by client IP, storing lists of request timestamps. Check and prune timestamps on each request. Returns 429 with Retry-After header when limit exceeded.\n\n**Rationale:**\nIn-memory storage is sufficient for the MVP scale. No external dependency (Redis, etc.) needed. Simple implementation that works correctly for single-instance deployments.\n\n**Trade-offs:**\n- Rate limit state is lost on server restart.\n- Not distributed-safe (multiple instances would have separate rate limiters).\n- No persistence across restarts.\n\n**Consequences:**\n- Rate limiter module in task_management_dashboard/rate_limiter.py.\n- Applied as FastAPI middleware on /api/register and /api/login routes.\n- Retry-After header calculated as seconds until oldest request in window expires.\n\n**Validation evidence:**\nNo external library needed. Python standard library (time, collections.defaultdict) sufficient.\n\n### ADR-10 — CORS restricted to configured frontend origin\n**Context:**\nThe security specialist recommends CORS configuration to allow only the configured frontend origin.\n\n**Decision:**\nFastAPI CORSMiddleware with allow_origins from CORS_ORIGINS env var (comma-separated). allow_credentials=True. allow_methods ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']. allow_headers ['Content-Type', 'Authorization']. Default origin: 'http://localhost:5173' (Vite dev server).\n\n**Rationale:**\nRestricting CORS to known origins prevents cross-origin attacks from malicious websites. Credentials (cookies) are only sent to trusted origins.\n\n**Trade-offs:**\n- Frontend must be started on the configured origin for development.\n- Production origin must be explicitly configured.\n\n**Consequences:**\n- CORS_ORIGINS environment variable (comma-separated URLs).\n- CORSMiddleware added in app factory (main.py).\n- Default: ['http://localhost:5173'].\n\n**Validation evidence:**\nFastAPI documentation: CORSMiddleware constructor accepts allow_origins, allow_credentials, allow_methods, allow_headers parameters.\nEvidence relied on (stack facts, read 2026-11-25): FastAPI - package: pypi `fastapi`; current release (date): 0.165.0 (2026-11-18); support: not tracked by endoflife.date; open advisories: none known; toolchain fit: fits python 3.12.16 (needs >=3.11); pack: yes (fullstack-react-fastapi)\nEvidence relied on (stack facts, read 2026-11-25): Vite - package: pypi `vite`; current release (date): 1.5.2 (2019-10-02); support: not tracked by endoflife.date; open advisories: none known; toolchain fit: fits python 3.12.16; pack: yes (browser-react)\n\n### ADR-11 — Analytics computed on demand via SQL aggregation\n**Context:**\nThe database specialist recommends computing aggregates on demand rather than maintaining a separate analytics table.\n\n**Decision:**\nAnalytics endpoint runs SQL COUNT queries grouped by status, priority, and owner. Overdue count uses WHERE due_date < CURRENT_DATE AND status NOT IN ('completed', 'cancelled'). Tasks per user uses GROUP BY owner_id.\n\n**Rationale:**\nOn-demand computation ensures always-consistent results with no risk of stale data. The task volume in MVP is small enough that real-time aggregation is fast (milliseconds).\n\n**Trade-offs:**\n- Each analytics request performs multiple database queries.\n- Performance degrades with very large task volumes (not expected in MVP).\n\n**Consequences:**\n- analytics.py route file with SQL aggregation queries.\n- Response includes total_tasks, by_priority, by_status, overdue_tasks, tasks_per_user.\n- No separate analytics table or cache.\n\n**Validation evidence:**\nSQLAlchemy documentation: func.count(), func.group_by(), and raw SQL expressions supported.\n\n### ADR-12 — React SPA with Vite build tool\n**Context:**\nThe technology stack specifies React on Vite. The frontend is a single-page application served by the backend in production.\n\n**Decision:**\nReact 19.3.1 with Vite 6.x as the build tool. TypeScript (.tsx) for type safety. React Router for client-side routing. No state management library (React Context + useState for state).\n\n**Rationale:**\nVite provides fast builds and HMR. TypeScript catches type errors at compile time. React Context is sufficient for MVP-scale state management without adding Redux/Zustand complexity.\n\n**Trade-offs:**\n- React Context re-renders all consumers on state change; fine for MVP but may need optimization later.\n- No build step complexity from Next.js or Remix.\n\n**Consequences:**\n- Frontend files: src/App.tsx, src/main.tsx, src/components/, src/hooks/, src/types/, src/utils/.\n- Vite config in vite.config.ts.\n- React Router for navigation between login, register, tasks list, task detail, and analytics pages.\n\n**Validation evidence:**\nStack facts: React 19.3.1 (2026-10-14). Vite is the configured build tool.\nEvidence relied on (stack facts, read 2026-11-25): React - package: npm `react`; current release (date): 19.3.1 (2026-10-14); support: React 19: supported, no end date published; open advisories: none known; toolchain fit: fits node 24.22.3 (needs >=0.10.0); pack: yes (browser-react)\nEvidence relied on (stack facts, read 2026-11-25): Vite - package: pypi `vite`; current release (date): 1.5.2 (2019-10-02); support: not tracked by endoflife.date; open advisories: none known; toolchain fit: fits python 3.12.16; pack: yes (browser-react)\n\n### ADR-13 — JWT sub claim as string for PyJWT 2.10+ compatibility\n**Context:**\nPyJWT 2.10 and later refuses a token whose sub claim is not a string (InvalidSubjectError on decode).\n\n**Decision:**\nConvert user.id to string on encode: jwt.encode({'sub': str(user.id), 'exp': ...}). Convert back to int on decode: int(jwt.decode(token)['sub']).\n\n**Rationale:**\nPyJWT 2.10+ strictly enforces sub as a string type. Using str(user.id) satisfies this requirement while preserving the numeric user ID in the token.\n\n**Trade-offs:**\n- Slightly larger token payload (string representation of integer).\n- All JWT-reading code must convert sub back to int.\n\n**Consequences:**\n- auth.py encode_token function: jwt.encode({'sub': str(user.id), ...}).\n- auth.py decode_token function: int(decoded['sub']).\n- All route handlers receiving user.id from JWT decode it as int.\n\n**Validation evidence:**\nFramework constraints: 'PyJWT 2.10 and later refuses a token whose sub claim is not a string (InvalidSubjectError on decode).' Stack facts: JWT 1.4.0 (2025-06-23).\nEvidence relied on (stack facts, read 2026-11-25): JWT - package: pypi `jwt`; current release (date): 1.4.0 (2025-06-23); support: not tracked by endoflife.date; open advisories: none known; toolchain fit: fits python 3.12.16 (needs >=3.9); pack: no\n\n<!-- Generated from the architect's structured specification. Editing this file does not change what the pipeline reads. -->\n",
+ "dependencies": [
+  {
+   "ecosystem": "npm",
+   "package": "react",
+   "version": "19.3.1",
+   "resolved": "19.3.1",
+   "declared_in": "task-management-dashboard"
+  },
+  {
+   "ecosystem": "npm",
+   "package": "react-dom",
+   "version": "19.3.1",
+   "resolved": "19.3.1",
+   "declared_in": "task-management-dashboard"
+  },
+  {
+   "ecosystem": "npm",
+   "package": "react-router-dom",
+   "version": "7.18.7",
+   "resolved": "7.18.7",
+   "declared_in": "task-management-dashboard"
+  },
+  {
+   "ecosystem": "npm",
+   "package": "@playwright/test",
+   "version": "1.65.1",
+   "resolved": "1.64.0",
+   "declared_in": "task-management-dashboard"
+  },
+  {
+   "ecosystem": "npm",
+   "package": "@testing-library/dom",
+   "version": "10.4.2",
+   "resolved": "10.4.2",
+   "declared_in": "task-management-dashboard"
+  },
+  {
+   "ecosystem": "npm",
+   "package": "@testing-library/react",
+   "version": "16.3.3",
+   "resolved": "16.3.3",
+   "declared_in": "task-management-dashboard"
+  },
+  {
+   "ecosystem": "npm",
+   "package": "@types/react",
+   "version": "19.3.2",
+   "resolved": "19.3.1",
+   "declared_in": "task-management-dashboard"
+  },
+  {
+   "ecosystem": "npm",
+   "package": "@types/react-dom",
+   "version": "19.3.0",
+   "resolved": "19.3.0",
+   "declared_in": "task-management-dashboard"
+  },
+  {
+   "ecosystem": "npm",
+   "package": "@vitejs/plugin-react",
+   "version": "6.3.0",
+   "resolved": "5.2.0",
+   "declared_in": "task-management-dashboard"
+  },
+  {
+   "ecosystem": "npm",
+   "package": "axe-core",
+   "version": "4.14.1",
+   "resolved": "4.14.0",
+   "declared_in": "task-management-dashboard"
+  },
+  {
+   "ecosystem": "npm",
+   "package": "jsdom",
+   "version": "31.0.1",
+   "resolved": "26.1.0",
+   "declared_in": "task-management-dashboard"
+  },
+  {
+   "ecosystem": "npm",
+   "package": "typescript",
+   "version": "7.0.2",
+   "resolved": "5.9.3",
+   "declared_in": "task-management-dashboard"
+  },
+  {
+   "ecosystem": "npm",
+   "package": "vite",
+   "version": "8.3.8",
+   "resolved": "7.3.8",
+   "declared_in": "task-management-dashboard"
+  },
+  {
+   "ecosystem": "npm",
+   "package": "vitest",
+   "version": "5.1.2",
+   "resolved": "3.2.7",
+   "declared_in": "task-management-dashboard"
+  },
+  {
+   "ecosystem": "pypi",
+   "package": "pytest",
+   "version": "9.2.0",
+   "resolved": "9.2.0",
+   "declared_in": "task-management-dashboard"
+  },
+  {
+   "ecosystem": "pypi",
+   "package": "httpx",
+   "version": "0.28.1",
+   "resolved": "0.28.1",
+   "declared_in": "task-management-dashboard"
+  },
+  {
+   "ecosystem": "pypi",
+   "package": "pytest-timeout",
+   "version": "2.4.0",
+   "resolved": "2.4.0",
+   "declared_in": "task-management-dashboard"
+  },
+  {
+   "ecosystem": "pypi",
+   "package": "pytest-asyncio",
+   "version": "1.5.0",
+   "resolved": "1.5.0",
+   "declared_in": "task-management-dashboard"
+  },
+  {
+   "ecosystem": "pypi",
+   "package": "fastapi",
+   "version": "0.165.0",
+   "resolved": "0.165.0",
+   "declared_in": "task-management-dashboard"
+  },
+  {
+   "ecosystem": "pypi",
+   "package": "uvicorn",
+   "version": "0.54.0",
+   "resolved": "0.54.0",
+   "declared_in": "task-management-dashboard"
+  },
+  {
+   "ecosystem": "pypi",
+   "package": "sqlalchemy",
+   "version": "2.1.9",
+   "resolved": "2.1.9",
+   "declared_in": "task-management-dashboard"
+  },
+  {
+   "ecosystem": "pypi",
+   "package": "alembic",
+   "version": "1.20.1",
+   "resolved": "1.20.1",
+   "declared_in": "task-management-dashboard"
+  },
+  {
+   "ecosystem": "pypi",
+   "package": "pydantic",
+   "version": "2.14.4",
+   "resolved": "2.14.4",
+   "declared_in": "task-management-dashboard"
+  },
+  {
+   "ecosystem": "pypi",
+   "package": "pyjwt",
+   "version": "2.15.1",
+   "resolved": "2.15.1",
+   "declared_in": "task-management-dashboard"
+  },
+  {
+   "ecosystem": "pypi",
+   "package": "bcrypt",
+   "version": "5.0.0",
+   "resolved": "4.3.0",
+   "declared_in": "task-management-dashboard"
+  },
+  {
+   "ecosystem": "pypi",
+   "package": "python-multipart",
+   "version": "0.0.34",
+   "resolved": "0.0.34",
+   "declared_in": "task-management-dashboard"
+  },
+  {
+   "ecosystem": "pypi",
+   "package": "aiosqlite",
+   "version": "0.22.1",
+   "resolved": "0.22.1",
+   "declared_in": "task-management-dashboard"
+  }
+ ]
+}

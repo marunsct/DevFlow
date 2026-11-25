@@ -1,0 +1,442 @@
+{
+ "tasks_api": {
+  "criteria": [
+   {
+    "id": "AC-1",
+    "text": "Sign up with a username and a password"
+   },
+   {
+    "id": "AC-2",
+    "text": "Sign in, which gives a token for the requests that follow"
+   },
+   {
+    "id": "AC-3",
+    "text": "Create an item with a title; it starts not done"
+   },
+   {
+    "id": "AC-4",
+    "text": "List your own items"
+   },
+   {
+    "id": "AC-5",
+    "text": "Mark one of your items done or not done"
+   },
+   {
+    "id": "AC-6",
+    "text": "Delete one of your items"
+   },
+   {
+    "id": "AC-7",
+    "text": "Accounts and items survive a restart of the service"
+   },
+   {
+    "id": "AC-8",
+    "text": "JSON over HTTP. An item is {\"id\": <integer>, \"title\": <string>, \"done\": <boolean>}"
+   },
+   {
+    "id": "AC-9",
+    "text": "POST /signup with {\"username\": ..., \"password\": ...} answers 201 with {\"username\": ...}, or 409 when the username is taken. A missing or empty username or password is refused with 400 or 422"
+   },
+   {
+    "id": "AC-10",
+    "text": "POST /signin with {\"username\": ..., \"password\": ...} answers 200 with {\"token\": <string>}, or 401 when they do not match an account"
+   },
+   {
+    "id": "AC-11",
+    "text": "Every request below sends the header Authorization: Bearer <token>; without a valid token it answers 401"
+   },
+   {
+    "id": "AC-12",
+    "text": "POST /items with {\"title\": ...} answers 201 with the item. A missing or empty title is refused with 400 or 422, and nothing is stored"
+   },
+   {
+    "id": "AC-13",
+    "text": "GET /items answers 200 with a JSON array of the signed-in person's items only"
+   },
+   {
+    "id": "AC-14",
+    "text": "PATCH /items/{id} with {\"done\": true|false} answers 200 with the item, or 404 when it is not one of the signed-in person's items"
+   },
+   {
+    "id": "AC-15",
+    "text": "DELETE /items/{id} answers 204, or 404 when it is not one of the signed-in person's items"
+   },
+   {
+    "id": "AC-16",
+    "text": "GET /health answers 200 without a token"
+   },
+   {
+    "id": "AC-17",
+    "text": "The project directory has a start.sh that starts the service on 127.0.0.1 at the port in the PORT environment variable, keeping its data under the directory in the DATA_DIR environment variable. Nothing else is set in its environment: any secret it needs it makes and keeps itself"
+   },
+   {
+    "id": "AC-18",
+    "text": "Every operation works as the interface says"
+   },
+   {
+    "id": "AC-19",
+    "text": "One person's items are never visible to or changeable by another"
+   },
+   {
+    "id": "AC-20",
+    "text": "Accounts and items persist across restarts, and signing in still works after one"
+   },
+   {
+    "id": "AC-21",
+    "text": "Invalid input is refused without storing anything"
+   }
+  ],
+  "interface_contract": [
+   "AC-1 POST /signup -> 201",
+   "AC-2 POST /signup -> 409",
+   "AC-3 POST /signup -> 400",
+   "AC-4 POST /signup -> 422",
+   "AC-5 POST /signin -> 200",
+   "AC-6 POST /signin -> 401",
+   "AC-7 POST /signin -> 401",
+   "AC-8 POST /items -> 201",
+   "AC-9 POST /items -> 422",
+   "AC-10 GET /items -> 200",
+   "AC-11 GET /items -> 401",
+   "AC-12 GET /items -> 401",
+   "AC-13 PATCH /items/{id} -> 200",
+   "AC-14 PATCH /items/{id} -> 200",
+   "AC-15 PATCH /items/{id} -> 404",
+   "AC-16 DELETE /items/{id} -> 204",
+   "AC-17 DELETE /items/{id} -> 404",
+   "AC-18 GET /items -> 200 (isolated data)",
+   "AC-19 POST /signin -> 200 (post-restart)",
+   "AC-20 GET /health -> 200"
+  ]
+ },
+ "medium_fastapi": {
+  "criteria": [
+   {
+    "id": "AC-1",
+    "text": "User registration and authentication (JWT-based)"
+   },
+   {
+    "id": "AC-2",
+    "text": "Create, read, update, delete tasks"
+   },
+   {
+    "id": "AC-3",
+    "text": "Assign tasks to team members"
+   },
+   {
+    "id": "AC-4",
+    "text": "Set priorities (low, medium, high, urgent)"
+   },
+   {
+    "id": "AC-5",
+    "text": "Due dates and reminders"
+   },
+   {
+    "id": "AC-6",
+    "text": "Task categories and tags"
+   },
+   {
+    "id": "AC-7",
+    "text": "Search and filter functionality"
+   },
+   {
+    "id": "AC-8",
+    "text": "Users can register, login, logout securely"
+   },
+   {
+    "id": "AC-9",
+    "text": "Task CRUD operations work correctly"
+   },
+   {
+    "id": "AC-10",
+    "text": "Team collaboration features function properly"
+   },
+   {
+    "id": "AC-11",
+    "text": "Analytics dashboard shows task statistics"
+   },
+   {
+    "id": "AC-12",
+    "text": "API documentation available (Swagger/OpenAPI)"
+   },
+   {
+    "id": "AC-13",
+    "text": "All endpoints have proper error handling"
+   },
+   {
+    "id": "AC-14",
+    "text": "User Interface: Modern web application with responsive design"
+   },
+   {
+    "id": "AC-15",
+    "text": "Database migrations required"
+   },
+   {
+    "id": "AC-16",
+    "text": "Docker containerization"
+   }
+  ],
+  "interface_contract": [
+   "AC-1 page /login textbox \"Email\"",
+   "AC-2 page /register textbox \"Username\"",
+   "AC-3 page /tasks textbox \"Search\"",
+   "AC-3 page /tasks select \"Priority\"",
+   "AC-3 page /tasks select \"Status\"",
+   "AC-4 page /tasks/:id textbox \"Title\"",
+   "AC-5 page /analytics textbox \"Total Tasks\"",
+   "AC-6 POST /api/register -> 201",
+   "AC-7 GET /api/tasks -> 200"
+  ]
+ },
+ "wordstats_cli": {
+  "criteria": [
+   {
+    "id": "AC-1",
+    "text": "Count the words, lines and characters in a text file"
+   },
+   {
+    "id": "AC-2",
+    "text": "List the most frequent words"
+   },
+   {
+    "id": "AC-3",
+    "text": "Print the results as JSON for other programs"
+   },
+   {
+    "id": "AC-4",
+    "text": "Read standard input when the file is given as -"
+   },
+   {
+    "id": "AC-5",
+    "text": "Report a missing file as an error"
+   },
+   {
+    "id": "AC-6",
+    "text": "Run as python -m wordstats <file> from the project directory. It prints three lines: words: <n>, lines: <n> and characters: <n>"
+   },
+   {
+    "id": "AC-7",
+    "text": "A word is a run of letters, digits and apostrophes. characters counts every character, newlines included. lines is the number of lines; a last line without a newline still counts"
+   },
+   {
+    "id": "AC-8",
+    "text": "--top N prints the N most frequent words instead, one per line as <word> <count>, most frequent first, ties in alphabetical order. Words are compared in lower case"
+   },
+   {
+    "id": "AC-9",
+    "text": "--json prints {\"words\": n, \"lines\": n, \"characters\": n}, or with --top N prints {\"top\": [{\"word\": w, \"count\": c}, ...]}"
+   },
+   {
+    "id": "AC-10",
+    "text": "A file that does not exist prints an error to standard error and exits with status 2"
+   },
+   {
+    "id": "AC-11",
+    "text": "Counts are exactly as the interface defines them"
+   },
+   {
+    "id": "AC-12",
+    "text": "The top words are ordered as the interface says"
+   },
+   {
+    "id": "AC-13",
+    "text": "JSON output parses and matches the plain output"
+   },
+   {
+    "id": "AC-14",
+    "text": "Errors go to standard error with exit status 2"
+   }
+  ],
+  "interface_contract": [
+   "AC-1 command wordstats <file> -> exit 0",
+   "AC-2 command wordstats <file> --top N -> exit 0",
+   "AC-3 command wordstats <file> --json -> exit 0",
+   "AC-4 command wordstats - -> exit 0",
+   "AC-5 command wordstats nonexistent.txt -> exit 2",
+   "AC-6 command wordstats <file> -> exit 0",
+   "AC-7 command wordstats <file> -> exit 0",
+   "AC-8 command wordstats <file> --top N -> exit 0",
+   "AC-9 command wordstats <file> --json --top N -> exit 0",
+   "AC-10 command wordstats nonexistent.txt -> exit 2",
+   "AC-11 command python -m wordstats <file> -> exit 0",
+   "AC-12 command wordstats <file> --top N -> exit 0",
+   "AC-13 command wordstats - --top N -> exit 0",
+   "AC-14 command wordstats nonexistent.txt -> exit 2"
+  ]
+ },
+ "bookmarks": {
+  "criteria": [
+   {
+    "id": "AC-1",
+    "text": "Save a bookmark with a title, a URL and an optional tag"
+   },
+   {
+    "id": "AC-2",
+    "text": "List saved bookmarks, newest first"
+   },
+   {
+    "id": "AC-3",
+    "text": "Delete a bookmark"
+   },
+   {
+    "id": "AC-4",
+    "text": "Filter the list by tag"
+   },
+   {
+    "id": "AC-5",
+    "text": "Bookmarks are kept by the service and survive a reload of the page"
+   },
+   {
+    "id": "AC-6",
+    "text": "The service serves the page at /"
+   },
+   {
+    "id": "AC-7",
+    "text": "The page has a text field labelled \"Title\", a text field labelled \"URL\", a text field labelled \"Tag\" and a button named \"Save bookmark\""
+   },
+   {
+    "id": "AC-8",
+    "text": "A bookmark without a title, or whose URL does not start with http:// or https://, is not saved"
+   },
+   {
+    "id": "AC-9",
+    "text": "Each bookmark is an item of a list showing its title as a link to its URL, and its tag. Each has a button named \"Delete\""
+   },
+   {
+    "id": "AC-10",
+    "text": "A text field labelled \"Filter by tag\" shows only the bookmarks with exactly that tag; when it is empty, all are shown"
+   },
+   {
+    "id": "AC-11",
+    "text": "GET /api/bookmarks answers 200 with an array of {\"id\", \"title\", \"url\", \"tag\"}, newest first"
+   },
+   {
+    "id": "AC-12",
+    "text": "POST /api/bookmarks with {\"title\", \"url\", \"tag\"} answers 201 with the bookmark, or 400 or 422 for invalid input, storing nothing"
+   },
+   {
+    "id": "AC-13",
+    "text": "DELETE /api/bookmarks/{id} answers 204, or 404 when there is no such bookmark"
+   },
+   {
+    "id": "AC-14",
+    "text": "The project directory has a start.sh that starts the service on 127.0.0.1 at the port in the PORT environment variable, keeping its data under the directory in DATA_DIR"
+   },
+   {
+    "id": "AC-15",
+    "text": "Bookmarks can be saved, listed, filtered and deleted from the page"
+   },
+   {
+    "id": "AC-16",
+    "text": "The JSON interface behaves as described"
+   },
+   {
+    "id": "AC-17",
+    "text": "Invalid bookmarks are refused"
+   },
+   {
+    "id": "AC-18",
+    "text": "The list survives a reload"
+   }
+  ],
+  "interface_contract": [
+   "AC-6 GET / -> 200 text/html",
+   "AC-1 page / textbox \"Title\"",
+   "AC-1 page / textbox \"URL\"",
+   "AC-1 page / textbox \"Tag\"",
+   "AC-1 page / button \"Save bookmark\"",
+   "AC-4 page / textbox \"Filter by tag\"",
+   "AC-1 POST /api/bookmarks -> 201 {\"id\": <number>, ...}",
+   "AC-1 POST /api/bookmarks -> 400 {\"error\": \"Title is required\"}",
+   "AC-1 POST /api/bookmarks -> 400 {\"error\": \"URL must start with http:// or https://\"}",
+   "AC-3 DELETE /api/bookmarks/:id -> 204",
+   "AC-3 DELETE /api/bookmarks/:id -> 404 {\"error\": \"Bookmark not found\"}",
+   "AC-2 GET /api/bookmarks -> 200 [<bookmark>, ...]",
+   "AC-4 GET /api/bookmarks?tag=<value> -> 200 [<filtered_bookmark>, ...]"
+  ]
+ },
+ "notes_api_java": {
+  "criteria": [
+   {
+    "id": "AC-1",
+    "text": "Create a note with a title and a body"
+   },
+   {
+    "id": "AC-2",
+    "text": "List all notes"
+   },
+   {
+    "id": "AC-3",
+    "text": "Fetch one note by its id"
+   },
+   {
+    "id": "AC-4",
+    "text": "Update a note's title and body"
+   },
+   {
+    "id": "AC-5",
+    "text": "Delete a note"
+   },
+   {
+    "id": "AC-6",
+    "text": "Notes survive a restart of the service"
+   },
+   {
+    "id": "AC-7",
+    "text": "JSON over HTTP. A note is {\"id\": <integer>, \"title\": <string>, \"body\": <string>}"
+   },
+   {
+    "id": "AC-8",
+    "text": "POST /notes with {\"title\": ..., \"body\": ...} creates a note and answers 201 with the note"
+   },
+   {
+    "id": "AC-9",
+    "text": "GET /notes answers 200 with a JSON array of every note"
+   },
+   {
+    "id": "AC-10",
+    "text": "GET /notes/{id} answers 200 with the note, or 404 when there is none"
+   },
+   {
+    "id": "AC-11",
+    "text": "PUT /notes/{id} with {\"title\": ..., \"body\": ...} replaces both and answers 200 with the note, or 404"
+   },
+   {
+    "id": "AC-12",
+    "text": "DELETE /notes/{id} answers 204, or 404"
+   },
+   {
+    "id": "AC-13",
+    "text": "A title that is missing or empty is refused with 400 or 422, and nothing is stored"
+   },
+   {
+    "id": "AC-14",
+    "text": "GET /health answers 200"
+   },
+   {
+    "id": "AC-15",
+    "text": "The project directory has a start.sh that starts the service on 127.0.0.1 at the port in the PORT environment variable, keeping its data under the directory in the DATA_DIR environment variable"
+   },
+   {
+    "id": "AC-16",
+    "text": "Every operation works as the interface says"
+   },
+   {
+    "id": "AC-17",
+    "text": "Notes persist across restarts"
+   },
+   {
+    "id": "AC-18",
+    "text": "Invalid input is refused without storing anything"
+   }
+  ],
+  "interface_contract": [
+   "AC-1 POST /notes -> 201",
+   "AC-2 GET /notes -> 200",
+   "AC-3 GET /notes/{id} -> 200",
+   "AC-4 PUT /notes/{id} -> 200",
+   "AC-5 DELETE /notes/{id} -> 204",
+   "AC-6 GET /health -> 200"
+  ]
+ }
+}

@@ -413,7 +413,8 @@ def fix_request(root: Path, path: str, defect: Any, failure: str, specification:
 
     from app.graph import anchored_edits
 
-    detail = specification_for_the_work_order(specification, SimpleNamespace(files=[path], interfaces=[])) if specification else ""
+    detail = specification_for_the_work_order(
+        specification, SimpleNamespace(files=[path], interfaces=[]), root) if specification else ""
     now = (root / path).read_text(encoding="utf-8", errors="replace")
     # Too long to come back whole within a reply: its outline and the parts
     # the failure points at, answered by anchored edits (plan SZ.2).

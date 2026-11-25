@@ -1085,8 +1085,12 @@ def files_held_line(held: Any) -> str:
         return ""
     shown = ", ".join(f"`{n}`" for n in names[:MOST_HELD_NAMED]) + (
         f" and {len(names) - MOST_HELD_NAMED} more" if len(names) > MOST_HELD_NAMED else "")
-    return (f"\n\n[Already in front of you, whole and current, in the project memory at the start of this "
-            f"message: {shown}. Reading any of them returns nothing new; work from the memory.]")
+    # "As they were when this stage began", not "current": the line is fixed for the visit, and the "[Project memory
+    # update]" note at the end of a later request names a file changed since (`changes_since`). Measured: 675 of
+    # 1,089 requests called one file both current here and changed there (deep review 2026-11-25, item 8).
+    return (f"\n\n[Already in front of you, whole, in the project memory at the start of this message, as they "
+            f"were when this stage began: {shown}. A note at the end of a request names any changed since; "
+            f"reading one it does not name returns nothing new, so work from the memory.]")
 
 
 def _with_memory(messages: list[Any], memory: str, held: Any = ()) -> list[Any] | None:

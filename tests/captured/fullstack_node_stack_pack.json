@@ -1,0 +1,31 @@
+{
+  "pack": "fullstack-node",
+  "project": "bookmarks",
+  "title": "Bookmarks",
+  "package": "bookmarks",
+  "install": [
+    [
+      "npm",
+      "install",
+      "--no-audit",
+      "--no-fund"
+    ]
+  ],
+  "unit_test": [
+    "npm",
+    "test"
+  ],
+  "acceptance_test": [
+    "npm",
+    "run",
+    "test:acceptance"
+  ],
+  "unit_report": "test-results/unit.xml",
+  "acceptance_report": "test-results/acceptance.xml",
+  "unit_dir": "tests",
+  "acceptance_dir": "acceptance",
+  "unit_pattern": "*.test.js",
+  "acceptance_pattern": "*.spec.js",
+  "evidence_dir": "test-results/evidence",
+  "scaffolded": true
+}

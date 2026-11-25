@@ -1,0 +1,368 @@
+{
+ "wordstats_cli": {
+  "criteria": [
+   {
+    "id": "AC-1",
+    "text": "Count the words, lines and characters in a text file",
+    "source": "brief"
+   },
+   {
+    "id": "AC-2",
+    "text": "List the most frequent words",
+    "source": "brief"
+   },
+   {
+    "id": "AC-3",
+    "text": "Print the results as JSON for other programs",
+    "source": "brief"
+   },
+   {
+    "id": "AC-4",
+    "text": "Read standard input when the file is given as -",
+    "source": "brief"
+   },
+   {
+    "id": "AC-5",
+    "text": "Report a missing file as an error",
+    "source": "brief"
+   },
+   {
+    "id": "AC-6",
+    "text": "Run as python -m wordstats <file> from the project directory. It prints three lines: words: <n>, lines: <n> and characters: <n>",
+    "source": "brief"
+   },
+   {
+    "id": "AC-7",
+    "text": "A word is a run of letters, digits and apostrophes. characters counts every character, newlines included. lines is the number of lines; a last line without a newline still counts",
+    "source": "brief"
+   },
+   {
+    "id": "AC-8",
+    "text": "--top N prints the N most frequent words instead, one per line as <word> <count>, most frequent first, ties in alphabetical order. Words are compared in lower case",
+    "source": "brief"
+   },
+   {
+    "id": "AC-9",
+    "text": "--json prints {\"words\": n, \"lines\": n, \"characters\": n}, or with --top N prints {\"top\": [{\"word\": w, \"count\": c}, ...]}",
+    "source": "brief"
+   },
+   {
+    "id": "AC-10",
+    "text": "A file that does not exist prints an error to standard error and exits with status 2",
+    "source": "brief"
+   },
+   {
+    "id": "AC-11",
+    "text": "Counts are exactly as the interface defines them",
+    "source": "brief"
+   },
+   {
+    "id": "AC-12",
+    "text": "The top words are ordered as the interface says",
+    "source": "brief"
+   },
+   {
+    "id": "AC-13",
+    "text": "JSON output parses and matches the plain output",
+    "source": "brief"
+   },
+   {
+    "id": "AC-14",
+    "text": "Errors go to standard error with exit status 2",
+    "source": "brief"
+   }
+  ],
+  "rulings": [
+   {
+    "decision": "DR-8",
+    "finding": 10,
+    "stands": "The specification does not write this file.",
+    "gives_way": "Checks if the file path exists using try/except FileNotFoundError. If not found, prints f\"Error: '{path}' not found\\n\" to sys.stderr and returns 2.",
+    "why": "The setup decides that the harness writes and keeps acceptance/conftest.py, so the product specification cannot dictate its internal logic or existence beyond what the harness provides."
+   },
+   {
+    "decision": "DR-9",
+    "finding": 6,
+    "stands": "Returns the string.; returns: str: Compact JSON string with no extra whitespace and no trailing newl",
+    "gives_way": "AC-7: Character count includes newlines; line count includes a final line even if it lacks a trailing newline.",
+    "why": "The brief specifies JSON output as structured data for programmatic consumption, implying standard JSON formatting without trailing newlines, whereas the trailing newline rule in AC-7 applies to text line counting logic, not the JSON serialization format."
+   },
+   {
+    "decision": "DR-10",
+    "finding": 7,
+    "stands": "Returns the string.; returns: str: Compact JSON string",
+    "gives_way": "AC-7: Character count includes newlines; line count includes a final line even if it lacks a trailing newline.",
+    "why": "The brief specifies JSON output as structured data for programmatic consumption, implying standard JSON formatting without trailing newlines, whereas the trailing newline rule in AC-7 applies to text line counting logic, not the JSON serialization format."
+   },
+   {
+    "decision": "DR-11",
+    "finding": 8,
+    "stands": "format_plain_top return value (str): One line per top word formatted as '{word} {count}\\n'. No trailing newline after the last entry is NOT added — each entry includes its own newline.",
+    "gives_way": "AC-7: Character count includes newlines; line count includes a final line even if it lacks a trailing newline.",
+    "why": "The specification explicitly defines the output format for plain top words as having each entry terminated by a newline, which is a formatting contract distinct from the file content counting rules in AC-7."
+   }
+  ]
+ },
+ "notes_api_javascript": {
+  "criteria": [
+   {
+    "id": "AC-1",
+    "text": "Create a note with a title and a body",
+    "source": "brief"
+   },
+   {
+    "id": "AC-2",
+    "text": "List all notes",
+    "source": "brief"
+   },
+   {
+    "id": "AC-3",
+    "text": "Fetch one note by its id",
+    "source": "brief"
+   },
+   {
+    "id": "AC-4",
+    "text": "Update a note's title and body",
+    "source": "brief"
+   },
+   {
+    "id": "AC-5",
+    "text": "Delete a note",
+    "source": "brief"
+   },
+   {
+    "id": "AC-6",
+    "text": "Notes survive a restart of the service",
+    "source": "brief"
+   },
+   {
+    "id": "AC-7",
+    "text": "JSON over HTTP. A note is {\"id\": <integer>, \"title\": <string>, \"body\": <string>}",
+    "source": "brief"
+   },
+   {
+    "id": "AC-8",
+    "text": "POST /notes with {\"title\": ..., \"body\": ...} creates a note and answers 201 with the note",
+    "source": "brief"
+   },
+   {
+    "id": "AC-9",
+    "text": "GET /notes answers 200 with a JSON array of every note",
+    "source": "brief"
+   },
+   {
+    "id": "AC-10",
+    "text": "GET /notes/{id} answers 200 with the note, or 404 when there is none",
+    "source": "brief"
+   },
+   {
+    "id": "AC-11",
+    "text": "PUT /notes/{id} with {\"title\": ..., \"body\": ...} replaces both and answers 200 with the note, or 404",
+    "source": "brief"
+   },
+   {
+    "id": "AC-12",
+    "text": "DELETE /notes/{id} answers 204, or 404",
+    "source": "brief"
+   },
+   {
+    "id": "AC-13",
+    "text": "A title that is missing or empty is refused with 400 or 422, and nothing is stored",
+    "source": "brief"
+   },
+   {
+    "id": "AC-14",
+    "text": "GET /health answers 200",
+    "source": "brief"
+   },
+   {
+    "id": "AC-15",
+    "text": "The project directory has a start.sh that starts the service on 127.0.0.1 at the port in the PORT environment variable, keeping its data under the directory in the DATA_DIR environment variable",
+    "source": "brief"
+   },
+   {
+    "id": "AC-16",
+    "text": "Every operation works as the interface says",
+    "source": "brief"
+   },
+   {
+    "id": "AC-17",
+    "text": "Notes persist across restarts",
+    "source": "brief"
+   },
+   {
+    "id": "AC-18",
+    "text": "Invalid input is refused without storing anything",
+    "source": "brief"
+   }
+  ],
+  "rulings": [
+   {
+    "decision": "DR-8",
+    "finding": 1,
+    "stands": "- Response on success: 204 No Content with no response body; the note is permanently removed from the data file",
+    "gives_way": "Component 5: Acceptance Tests (acceptance/*.spec.js) — Uses Playwright request fixture to test full HTTP endpoints against a running service instance. Starts the service via child_process.exec or similar mechanism, waits for GET /health to return status 200 before any test runs, sends HTTP requests with appropriate methods and bodies, asserts on status codes and response body shapes.",
+    "why": "The brief explicitly defines DELETE /notes/{id} as returning 204, so the API contract defining the response body takes precedence over the generic test description which allows asserting on shapes that must match the API."
+   },
+   {
+    "decision": "DR-9",
+    "finding": 2,
+    "stands": "- Response on success: 204 No Content with no response body; the note is permanently removed from the data file",
+    "gives_way": "src/app.js — DELETE /notes/{id} handler(req, res): Parses {id} path parameter using parseId(). If invalid, responds with 400 Bad Request and JSON error body {\"error\": \"<message>\"}. Reads notes via readNotes(). Finds the note index matching the ID. If not found, responds with 404 Not Found and JSON error body {\"error\": \"<message>\"}. Removes the note from the array. Calls writeNotes() to persist. Re",
+    "why": "The brief mandates a 204 status for successful deletion, which by definition has no body; the function contract's implication of returning a body for success contradicts the API contract and brief."
+   },
+   {
+    "decision": "DR-10",
+    "finding": 3,
+    "stands": "- Request: GET /health with no body and no path parameters",
+    "gives_way": "Path parameters for /notes/{id} are strictly validated as positive integers; decimals, non-numeric strings, zero, and negatives return 400.",
+    "why": "These statements refer to different endpoints (/health vs /notes/{id}); there is no contradiction, but the finding incorrectly identifies them as opposing views on the same parameter scope."
+   },
+   {
+    "decision": "DR-11",
+    "finding": 4,
+    "stands": "- Request: GET /notes with no body and no path parameters",
+    "gives_way": "Path parameters for /notes/{id} are strictly validated as positive integers; decimals, non-numeric strings, zero, and negatives return 400.",
+    "why": "These statements refer to different endpoints (/notes vs /notes/{id}); there is no contradiction, but the finding incorrectly identifies them as opposing views on the same parameter scope."
+   },
+   {
+    "decision": "DR-12",
+    "finding": 5,
+    "stands": "Acceptance tests use Playwright's request fixture against a running service instance started via start.sh with explicit PORT and DATA_DIR environment variables.",
+    "gives_way": "{\"title\": \"PORT environment variable requirement\", ... \"decision\": \"start.sh exits with non-zero code if PORT is not set in the environment. No default port is used.\"}",
+    "why": "The brief requires PORT from the environment variable, so the acceptance tests must provide it explicitly; the decision confirms no default is used, meaning the tests' explicit provision is required and consistent with the decision."
+   }
+  ]
+ },
+ "notes_api_php": {
+  "criteria": [
+   {
+    "id": "AC-1",
+    "text": "Create a note with a title and a body",
+    "source": "brief"
+   },
+   {
+    "id": "AC-2",
+    "text": "List all notes",
+    "source": "brief"
+   },
+   {
+    "id": "AC-3",
+    "text": "Fetch one note by its id",
+    "source": "brief"
+   },
+   {
+    "id": "AC-4",
+    "text": "Update a note's title and body",
+    "source": "brief"
+   },
+   {
+    "id": "AC-5",
+    "text": "Delete a note",
+    "source": "brief"
+   },
+   {
+    "id": "AC-6",
+    "text": "Notes survive a restart of the service",
+    "source": "brief"
+   },
+   {
+    "id": "AC-7",
+    "text": "JSON over HTTP. A note is {\"id\": <integer>, \"title\": <string>, \"body\": <string>}",
+    "source": "brief"
+   },
+   {
+    "id": "AC-8",
+    "text": "POST /notes with {\"title\": ..., \"body\": ...} creates a note and answers 201 with the note",
+    "source": "brief"
+   },
+   {
+    "id": "AC-9",
+    "text": "GET /notes answers 200 with a JSON array of every note",
+    "source": "brief"
+   },
+   {
+    "id": "AC-10",
+    "text": "GET /notes/{id} answers 200 with the note, or 404 when there is none",
+    "source": "brief"
+   },
+   {
+    "id": "AC-11",
+    "text": "PUT /notes/{id} with {\"title\": ..., \"body\": ...} replaces both and answers 200 with the note, or 404",
+    "source": "brief"
+   },
+   {
+    "id": "AC-12",
+    "text": "DELETE /notes/{id} answers 204, or 404",
+    "source": "brief"
+   },
+   {
+    "id": "AC-13",
+    "text": "A title that is missing or empty is refused with 400 or 422, and nothing is stored",
+    "source": "brief"
+   },
+   {
+    "id": "AC-14",
+    "text": "GET /health answers 200",
+    "source": "brief"
+   },
+   {
+    "id": "AC-15",
+    "text": "The project directory has a start.sh that starts the service on 127.0.0.1 at the port in the PORT environment variable, keeping its data under the directory in the DATA_DIR environment variable",
+    "source": "brief"
+   },
+   {
+    "id": "AC-16",
+    "text": "Every operation works as the interface says",
+    "source": "brief"
+   },
+   {
+    "id": "AC-17",
+    "text": "Notes persist across restarts",
+    "source": "brief"
+   },
+   {
+    "id": "AC-18",
+    "text": "Invalid input is refused without storing anything",
+    "source": "brief"
+   }
+  ],
+  "rulings": [
+   {
+    "decision": "DR-7",
+    "finding": 1,
+    "stands": "monolog/monolog ^3.7 — Import: use Monolog\\Logger; use Monolog\\Handler\\RotatingFileHandler; use Monolog\\Level. Call: $logger = new Logger('notes-api'); $logger->pushHandler(new RotatingFileHandler(DATA_DIR . '/notes-api.log', 30, Level::Debug)); $logger->info('Request received', ['method' => 'POST', 'path' => '/notes', 'status' => 201]); Logs HTTP method, path, status code, and request duration.",
+    "gives_way": "notes-api/src/Middleware/JsonBodyMiddleware.php — Slim middleware that parses the raw request body as JSON, sets parsed body on the request attributes, and rejects non-JSON or oversized bodies (over 1 MB) with HTTP 400.",
+    "why": "The first statement incorrectly assigns Monolog logging functionality to the JSON body middleware, whereas the brief mandates logging via Monolog as a separate concern."
+   },
+   {
+    "decision": "DR-8",
+    "finding": 4,
+    "stands": "GET /notes — Request: no body. Response: 200 OK with body <JSON array of note objects> where each element is {\"id\": <integer>, \"title\": <string>, \"body\": <string>}. Returns empty array [] when no notes exist.",
+    "gives_way": "TS-2 (List Notes): Given N notes exist, when I GET /notes, then the response status is 200 and the JSON array length is N with each element having fields id, title, body.",
+    "why": "The first statement covers all cases including empty results as required by the brief, while the second only describes the non-empty case."
+   },
+   {
+    "decision": "DR-9",
+    "finding": 5,
+    "stands": "Request body content (title, body) is excluded from Monolog log output to prevent accidental leakage of user-provided note text into log files. Only HTTP method, path, status code, and request duration are logged.",
+    "gives_way": "GET /notes/{id} (Fetch): Client sends GET request with integer ID in path. GetNoteHandler parses ID, creates NoteId::from() (validates > 0). Calls PdoNoteRepository::findById(). Repository executes SELECT * WHERE id = ?. If found, returns Note; else null. Handler returns 200 with note JSON or 404 with error JSON.",
+    "why": "The second statement correctly addresses the privacy constraint regarding log content, which is a specific requirement from the brief, whereas the first describes standard data flow without addressing the logging exclusion."
+   },
+   {
+    "decision": "DR-10",
+    "finding": 6,
+    "stands": "The service binds to 127.0.0.1 (localhost only) by default via the HOST environment variable or its 127.0.0.1 default, preventing external network access.",
+    "gives_way": "No external network connectivity is required or used by the service. All processing and storage are local.",
+    "why": "The second statement implements the brief's explicit requirement for the service to listen on 127.0.0.1."
+   },
+   {
+    "decision": "DR-11",
+    "finding": 7,
+    "stands": "AC-1: POST /notes with valid {\"title\":\"Test\",\"body\":\"Content\"} returns status 201 and response body contains id (integer), title (\"Test\"), body (\"Content\").",
+    "gives_way": "AC-5/AC-12: Create a note via POST /notes, DELETE /notes/{id}, assert status 204 (no response body); then GET /notes/{id} to confirm it returns 404; also DELETE an id that does not exist asserting 404.",
+    "why": "The second statement correctly reflects the brief's requirement that POST /notes returns a 201 status with the created note in the response body."
+   }
+  ]
+ }
+}

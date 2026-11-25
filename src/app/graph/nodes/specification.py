@@ -211,6 +211,13 @@ def principal_architect_node(state: WorkflowGraphState, config: RunnableConfig, 
                 update.get("technical_specification"), previous_specification
             )
 
+        # Each contract line's criterion id checked against the criterion it names, before the line is handed on
+        # "word for word" and titles a release probe (deep review 2026-11-25, item 1). See `app.acceptance.contract_ids`.
+        from app.acceptance.contract_ids import with_the_ids_checked
+
+        update["technical_specification"] = with_the_ids_checked(
+            update.get("technical_specification"), _the_numbered_criteria(state))
+
         # Each decision naming a candidate records the evidence row it relied on (HK.8).
         from app.stacks.stack_evidence import with_the_rows_relied_on
 
@@ -315,6 +322,22 @@ def principal_architect_node(state: WorkflowGraphState, config: RunnableConfig, 
             else:
                 update["specification_repair_count"] = 0
     return update
+
+
+def _the_numbered_criteria(state: Any) -> list[Any]:
+    """The acceptance criteria as the suite and the release number them: the saved list, else numbered as QA will
+    number them from the brief and the intake (`acceptance.criteria.number`); [] when neither can be read."""
+    try:
+        from app.acceptance import suite
+        from app.acceptance.criteria import number
+
+        saved = suite.criteria(state["repository"].root_path)
+        if saved:
+            return list(saved)
+        return number(getattr(state.get("document"), "text", "") or "", state.get("product_intake"))
+    except Exception:  # noqa: BLE001 - nothing to check the ids against
+        logger.debug("Could not read the numbered criteria", exc_info=True)
+        return []
 
 
 def architecture_review_node(state: WorkflowGraphState, config: RunnableConfig, ctx: GraphContext) -> dict[str, Any]:

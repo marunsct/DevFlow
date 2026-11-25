@@ -226,6 +226,24 @@ def the_commands_a_run_is_told(repo_root: str | Path | None = None) -> list[str]
     return sorted(command for command in permitted if command in of_the_stack)
 
 
+def _the_available_commands(repo_root: str | Path | None, runnable: list[str]) -> str:
+    """The commands line: those the image the commands run in has, and apart the allowed ones it does not.
+
+    Measured on a Python pack run: "Available" listed the role's whole allowlist - pnpm, poetry, ruff and uv among
+    them - and none of the four was in the image the commands ran in (`image_programs`, deep review 2026-11-25).
+    Until the image has been asked, the allowlist as before.
+    """
+    from app.tools import image_programs
+
+    split = image_programs.split(repo_root, runnable, with_the_virtualenv=False) if repo_root else None
+    if split is None:
+        return f"- Available commands: {', '.join(runnable)}.\n"
+    present, absent = split
+    return (f"- Available commands: {', '.join(present) or '(none)'}.\n"
+            + (f"- Allowed, but not in the image commands run in (an install into the project or `npx <tool>` "
+               f"provides one): {', '.join(absent)}.\n" if absent else ""))
+
+
 def the_environment_contract(repo_root: str | Path | None = None) -> str:
     """The facts every stage needs about the sandbox, in stable bytes.
 
@@ -242,7 +260,7 @@ def the_environment_contract(repo_root: str | Path | None = None) -> str:
     browser = sorted(allowed_executables("testing_specialist", repo_root))
     return (
         "The execution environment, stated once for every stage - reference, not a request:\n"
-        f"- Available commands: {', '.join(runnable)}.\n"
+        + _the_available_commands(repo_root, runnable)
         + _describe_the_browser_for_a_stage(browser)
         + _describe_the_network()
         + "- NOTHING IS RUNNING except the command you start. There is no database\n"

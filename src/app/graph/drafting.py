@@ -381,7 +381,7 @@ def draft_request(root: Path, path: str, task: Any, specification: Any, stack: A
     from app.stacks import api_cards
 
     detail = specification_for_the_work_order(
-        specification, SimpleNamespace(files=[path], interfaces=list(getattr(task, "interfaces", None) or [])),
+        specification, SimpleNamespace(files=[path], interfaces=list(getattr(task, "interfaces", None) or [])), root,
     )
     target = root / path
     now = ""

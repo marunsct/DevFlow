@@ -3815,32 +3815,78 @@ _TAP_TESTS = re.compile(r"^\s*[#ℹ]\s*tests\s+(\d+)", re.M)
 #: again**, and only 13 ended green. The regression note fired in 3 runs. The
 #: check was right and blind.
 #:
-#: Each entry yields (passed, failed) and the total is their sum, because a
+#: Each reader yields (passed, failed) and the total is their sum, because a
 #: runner that reports a total separately does not always agree with it -
 #: Playwright counts flaky and skipped tests in neither column.
-_RUNNER_TOTALS: tuple[tuple[str, re.Pattern[str], re.Pattern[str]], ...] = (
-    # Each read within its summary line (found in the launch review): read across lines, "Tests: 3 failed, 3 total"
-    # followed by "Snapshots: 2 passed" counted two passing tests, and pytest's bare "(\d+) passed" matched any line.
-    # jest: "Tests:       1 failed, 5 passed, 6 total"
-    ("jest", re.compile(r"Tests:[^\n]*?(\d+)\s+passed"),
-             re.compile(r"Tests:[^\n]*?(\d+)\s+failed")),
-    # vitest: "Tests  5 passed | 1 failed (6)"
-    ("vitest", re.compile(r"Tests\s+[^\n]*?(\d+)\s+passed"),
-               re.compile(r"Tests\s+[^\n]*?(\d+)\s+failed")),
-    # pytest: "5 passed, 1 failed in 0.12s" - the summary line, which ends with the time it took
-    ("pytest", re.compile(r"(\d+)\s+passed(?=[^\n]*\bin\s+[\d.]+s)"), re.compile(r"(\d+)\s+failed(?=[^\n]*\bin\s+[\d.]+s)")),
-    # playwright: "  3 failed" on its own line, then "  2 passed (30.0s)"
-    ("playwright", re.compile(r"^\s*(\d+)\s+passed\s+\([\d.]+m?s\)", re.M), re.compile(r"^\s*(\d+)\s+failed\s*$", re.M)),
-    # cargo: "test result: FAILED. 3 passed; 1 failed;"
-    ("cargo", re.compile(r"test result:[^\n]*?(\d+)\s+passed"),
-              re.compile(r"test result:[^\n]*?(\d+)\s+failed")),
-    # go: one "--- PASS:" / "--- FAIL:" line per test
-    ("go", re.compile(r"^---\s+PASS:", re.M), re.compile(r"^---\s+FAIL:", re.M)),
-    # cargo-nextest, the Rust packs' runner: "Summary [   0.012s] 4 tests run: 3 passed, 1 failed, 0 skipped"
-    # (deep review 2026-11-18: no pattern read it, so every Rust run's ledger had no counts).
-    ("nextest", re.compile(r"Summary \[[^\]]*\][^\n]*?\btests? run:[^\n]*?(\d+)\s+passed"),
-                re.compile(r"Summary \[[^\]]*\][^\n]*?\btests? run:[^\n]*?(\d+)\s+failed")),
-)
+#:
+#: Each is read within its own summary line (launch review): read across lines, "Tests: 3 failed, 3 total" followed by
+#: "Snapshots: 2 passed" counted two passing tests, and pytest's bare "(\d+) passed" matched any line.
+_JEST = re.compile(r"Tests:[^\n]*")  # "Tests:       1 failed, 5 passed, 6 total"
+_VITEST = re.compile(r"Tests\s+[^\n]*?\d+\s+(?:passed|failed)[^\n]*")  # "Tests  5 passed | 1 failed (6)"
+# cargo-nextest, the Rust packs' runner: "Summary [   0.012s] 4 tests run: 3 passed, 1 failed, 0 skipped" (deep review
+# 2026-11-18: no pattern read it, so every Rust run's ledger had no counts).
+_NEXTEST = re.compile(r"Summary \[[^\]]*\][^\n]*?\btests? run:[^\n]*")
+_PASSED = re.compile(r"(\d+)\s+passed")
+_FAILED = re.compile(r"(\d+)\s+failed")
+# Playwright: "  3 failed" on its own line, the failed tests listed under it, then "  2 passed (30.0s)" - or "(4.7m)"
+# on a run over a minute, which the seconds-only form never read.
+_PLAYWRIGHT_PASSED = re.compile(r"^\s*(\d+)\s+passed\s+\([\d.]+(?:m?s|m|h)\)", re.M)
+_PLAYWRIGHT_FAILED = re.compile(r"^\s*(\d+)\s+failed\s*$", re.M)
+# pytest's closing line: "===== 23 passed, 9 warnings, 9 errors in 4.34s =====", "7 failed, 80 passed, 19 errors in
+# 5.79s" with -q. Anchored at the line's start, so cargo's "test result: ... 1 failed; ... finished in 0.00s" is not it.
+_PYTEST = re.compile(r"^[= ]*(\d+ [a-z]+(?:, \d+ [a-z]+)*) in [\d.]+s\b", re.M)
+_PYTEST_COLLECTION_STOPPED = re.compile(r"Interrupted: \d+ errors? during collection")
+# cargo's own runner, one line per test binary: "test result: FAILED. 3 passed; 1 failed;".
+_CARGO = re.compile(r"test result: \w+\. (\d+) passed; (\d+) failed")
+# go: one "--- PASS:" / "--- FAIL:" line per test.
+_GO_PASS = re.compile(r"^---\s+PASS:", re.M)
+_GO_FAIL = re.compile(r"^---\s+FAIL:", re.M)
+
+
+def _on_its_last_line(pattern: re.Pattern[str]) -> Callable[[str], tuple[int, int] | None]:
+    """A reader of the last summary line `pattern` finds: a runner run twice in one output (a watch rerun) said its
+    latest totals last."""
+    def read(text: str) -> tuple[int, int] | None:
+        lines = pattern.findall(text)
+        if not lines:
+            return None
+        passed, failed = _PASSED.search(lines[-1]), _FAILED.search(lines[-1])
+        return int(passed.group(1)) if passed else 0, int(failed.group(1)) if failed else 0
+    return read
+
+
+def _playwright(text: str) -> tuple[int, int] | None:
+    """Playwright's last "N failed" and "N passed (time)": two lines, with the list of failed tests between them."""
+    passed, failed = _PLAYWRIGHT_PASSED.findall(text), _PLAYWRIGHT_FAILED.findall(text)
+    if not (passed or failed):
+        return None
+    return int(passed[-1]) if passed else 0, int(failed[-1]) if failed else 0
+
+
+def _pytest(text: str) -> tuple[int, int] | None:
+    """pytest's last closing line; a test that errored (at setup, say) is a failure. Measured: "23 passed, 9 warnings,
+    9 errors" was read as 23 of 23 passed, so a change that turned tests into setup errors read as a smaller suite.
+    Errors that stopped collection ran no test, and are not counted as tests."""
+    lines = _PYTEST.findall(text)
+    if not lines:
+        return None
+    counts: dict[str, int] = {}
+    for number, word in re.findall(r"(\d+) ([a-z]+)", lines[-1]):
+        counts[word.rstrip("s") if word.startswith("error") else word] = int(number)
+    errors = 0 if _PYTEST_COLLECTION_STOPPED.search(text) else counts.get("error", 0)
+    return counts.get("passed", 0), counts.get("failed", 0) + errors
+
+
+def _cargo(text: str) -> tuple[int, int] | None:
+    """cargo's own runner: the sum of its lines, one per test binary (the library, each file under `tests/`, the
+    doc-tests); reading only the first counted the library's tests alone."""
+    found = _CARGO.findall(text)
+    return (sum(int(p) for p, _ in found), sum(int(f) for _, f in found)) if found else None
+
+
+def _go(text: str) -> tuple[int, int] | None:
+    passed, failed = len(_GO_PASS.findall(text)), len(_GO_FAIL.findall(text))
+    return (passed, failed) if passed or failed else None
 
 
 def _maven(text: str) -> tuple[int, int] | None:
@@ -3921,73 +3967,78 @@ _RSPEC = re.compile(r"\b(\d+) examples?, (\d+) failures?(?:, (\d+) pending)?(?:,
 _PHPUNIT_OK = re.compile(r"^OK \((\d+) tests?, \d+ assertions?\)", re.M)
 _PHPUNIT = re.compile(r"^Tests: \d+, Assertions: \d+(?:, \w+: \d+)*\.", re.M)
 
-#: The runners whose summaries are counted rather than matched by one pattern each: their totals are a sum or a
-#: difference of several numbers. Read after `_RUNNER_TOTALS`, whose lines none of them prints. Measured by the
-#: rule-coverage counter (LR.46) across the language sweep: Maven and .NET runs were recorded with no counts.
-#: Minitest (the Rails pack's runner) and Gradle added by the deep review (2026-11-18): neither was read.
-_COUNTED_RUNNERS = (("maven", _maven), ("dotnet", _dotnet), ("rspec", _rspec), ("phpunit", _phpunit),
-                    ("gotestsum", _gotestsum), ("minitest", _minitest), ("gradle", _gradle))
+#: Every runner's reader, by the name the language table's `test_totals` uses. Maven and .NET added after the
+#: rule-coverage counter (LR.46) measured their runs recorded with no counts; Minitest (the Rails pack's runner) and
+#: Gradle by the deep review (2026-11-18).
+_READERS: tuple[tuple[str, Callable[[str], tuple[int, int] | None]], ...] = (
+    ("jest", _on_its_last_line(_JEST)), ("vitest", _on_its_last_line(_VITEST)), ("pytest", _pytest),
+    ("playwright", _playwright), ("cargo", _cargo), ("go", _go), ("nextest", _on_its_last_line(_NEXTEST)),
+    ("maven", _maven), ("dotnet", _dotnet), ("rspec", _rspec), ("phpunit", _phpunit),
+    ("gotestsum", _gotestsum), ("minitest", _minitest), ("gradle", _gradle),
+)
+
+#: A runner whose output prints another's summary lines inside its own, and whose own summary is the one that counts.
+#: nextest prints each failing test's captured output, and that holds libtest's own "test result: FAILED. 0 passed;
+#: 1 failed" - measured: a nextest run of 44 tests, 15 failing, was recorded as 0 of 1. gotestsum prints go's
+#: "--- FAIL:" lines with its own "DONE" summary.
+_PRINTS_THE_LINES_OF = {"nextest": "cargo", "gotestsum": "go"}
 
 #: Every runner whose printed totals are counted, by the name the language table's `test_totals` uses ("tap" for
 #: `node --test` and anything TAP-compatible).
-RUNNERS_COUNTED = ("tap", *(name for name, _, _ in _RUNNER_TOTALS), *(name for name, _ in _COUNTED_RUNNERS))
+RUNNERS_COUNTED = ("tap", *(name for name, _ in _READERS))
 
 
 def _the_counts_a_test_run_reported(result: dict) -> dict:
-    """`{"passed": n, "failed": n, "tests": n}` from TAP output, or `{}`.
+    """`{"passed": n, "failed": n, "tests": n}` summed over every runner the output reports, or `{}`.
 
     Recorded so a later run of the same command can be compared against it.
     Without this the ledger knows a command ran and what it exited with, and
     nothing about whether it did more or less than last time.
+
+    Every runner, not the first: one command can run several. `node --test x && playwright test` stopped at the TAP
+    totals (a sprint summary said "Test Cases: 36" for 36 unit tests and 10 browser tests), and a fullstack pack's
+    `npm test`, Vitest then pytest, at Vitest's: measured, 20 page tests added beside 33 passing pytest tests read as
+    20 tests, and the stage was warned that the suite had shrunk and not to remove tests.
     """
     text = f"{result.get('stdout') or ''}\n{result.get('stderr') or ''}"
-    passed, failed, tests = (
-        _TAP_PASS.search(text),
-        _TAP_FAIL.search(text),
-        _TAP_TESTS.search(text),
-    )
+    found: list[tuple[int, int, int]] = []
+    passed, failed, tests = (_TAP_PASS.search(text), _TAP_FAIL.search(text), _TAP_TESTS.search(text))
     if passed and failed and tests:
-        tap = {
-            "passed": int(passed.group(1)),
-            "failed": int(failed.group(1)),
-            "tests": int(tests.group(1)),
-        }
-        # And whatever ran after it. `node --test x && playwright test` is one
-        # command and two runners; returning at the TAP totals dropped the
-        # second. One run's sprint summary reported "Test Cases: 36" for a
-        # suite of 36 unit tests and 10 browser tests. TAP's "# pass 36" does
-        # not match any runner pattern below, so nothing is counted twice.
-        other = _the_first_runner_s_totals(text)
-        if other:
-            return {key: tap[key] + other[key] for key in tap}
-        return tap
-    return _the_first_runner_s_totals(text)
+        # TAP's own total, which counts a skipped test too. Its "# pass 36" is no other runner's line.
+        found.append((int(passed.group(1)), int(failed.group(1)), int(tests.group(1))))
+    read = {name: counted for name, reader in _READERS if (counted := reader(text)) and any(counted)}
+    for name, inside in _PRINTS_THE_LINES_OF.items():
+        if name in read:
+            read.pop(inside, None)
+    found += [(ok, bad, ok + bad) for ok, bad in read.values()]
+    if not found:
+        return {}
+    return {key: sum(counts[i] for counts in found) for i, key in enumerate(("passed", "failed", "tests"))}
 
 
-def _the_first_runner_s_totals(text: str) -> dict:
-    """The totals of the first non-TAP runner `text` reports, or `{}`."""
-    # Not TAP. Every other runner says the same thing in its own words, and
-    # reading only TAP is why the regression check fired in 3 runs of 41 while
-    # 39 of them broke a suite that had been green. See `_RUNNER_TOTALS`.
-    for name, pass_pattern, fail_pattern in _RUNNER_TOTALS:
-        if name == "go":
-            ok, bad = len(pass_pattern.findall(text)), len(fail_pattern.findall(text))
-            if not (ok or bad):
-                continue
-        else:
-            ok_match, bad_match = pass_pattern.search(text), fail_pattern.search(text)
-            if not (ok_match or bad_match):
-                continue
-            ok = int(ok_match.group(1)) if ok_match else 0
-            bad = int(bad_match.group(1)) if bad_match else 0
-        if ok == 0 and bad == 0:
-            continue
-        return {"passed": ok, "failed": bad, "tests": ok + bad}
-    for _, read in _COUNTED_RUNNERS:
-        counted = read(text)
-        if counted and any(counted):
-            return {"passed": counted[0], "failed": counted[1], "tests": counted[0] + counted[1]}
-    return {}
+#: The totals of the last command's whole output, read before it was cut for the model, with the output as it was
+#: shown: `(stdout shown, stderr shown, totals)`. Measured: Playwright prints "N failed", the failed tests, then
+#: "N passed"; on a long run the cut kept the head and the tail and dropped the "N failed" line, so 93 failing tests of
+#: 97 were recorded as 4 of 4 passing, and when one fewer passed the stage was told its suite had shrunk.
+_COUNTS_OF_THE_WHOLE_OUTPUT: contextvars.ContextVar[tuple[Any, Any, dict] | None] = contextvars.ContextVar(
+    "counts_of_the_whole_output", default=None
+)
+
+
+def _counted_whole(stdout: Any, stderr: Any, outcome: dict) -> dict:
+    """`outcome`, a command's result with its output cut for the model; the totals of the whole output kept beside it."""
+    whole = {"stdout": stdout if isinstance(stdout, str) else "", "stderr": stderr if isinstance(stderr, str) else ""}
+    _COUNTS_OF_THE_WHOLE_OUTPUT.set((outcome.get("stdout"), outcome.get("stderr"), _the_counts_a_test_run_reported(whole)))
+    return outcome
+
+
+def _the_counts_of_this_command(result: dict) -> dict:
+    """The totals of the command `result` is the outcome of: of its whole output when that output is the one last cut
+    here, else as `result` shows them."""
+    kept = _COUNTS_OF_THE_WHOLE_OUTPUT.get()
+    if kept is not None and (result.get("stdout"), result.get("stderr")) == kept[:2]:
+        return dict(kept[2])
+    return _the_counts_a_test_run_reported(result)
 
 
 #: Said when a test command answers as it did last time and nothing has changed since.
@@ -4032,7 +4083,7 @@ def _fewer_pass_than_last_time(
     regression - a suite legitimately passes less the moment a failing test is
     added to it, and `tests` is how this tells the two apart.
     """
-    now = _the_counts_a_test_run_reported(result)
+    now = _the_counts_of_this_command(result)
     if not now:
         return ""
     try:
@@ -4075,7 +4126,7 @@ def _fewer_pass_than_last_time(
 
 
 def _count_a_test_run_whose_totals_were_not_read(command: Sequence[str], result: dict) -> None:
-    """Record (LR.46) a test run that printed output in no summary `_RUNNER_TOTALS` reads; changes nothing.
+    """Record (LR.46) a test run that printed output in no summary `_READERS` reads; changes nothing.
 
     Its ledger entry has no counts, so `_fewer_pass_than_last_time` and the sprint summary's totals cannot see it.
     A run that printed nothing, or never started, is not counted: there was nothing to read.
@@ -4088,7 +4139,7 @@ def _count_a_test_run_whose_totals_were_not_read(command: Sequence[str], result:
     rule_coverage.could_not_apply(
         rule_coverage.RUNNER_TOTALS,
         f"`{shown}` printed no totals in a form read (TAP, "
-        f"{', '.join([*(name for name, _, _ in _RUNNER_TOTALS), *(name for name, _ in _COUNTED_RUNNERS)])})",
+        f"{', '.join(name for name, _ in _READERS)})",
     )
 
 
@@ -4169,7 +4220,7 @@ def _record_execution(
     if path is None:
         return None
     try:
-        totals = dict(earlier.get("counts") or {}) if earlier else _the_counts_a_test_run_reported(result)
+        totals = dict(earlier.get("counts") or {}) if earlier else _the_counts_of_this_command(result)
         if category == "test" and not totals and not earlier:
             totals = _the_counts_its_report_holds(repo_root, command, duration_seconds)
         # A pack's own command writes its report whenever a test runs, and that report was read above: one with no
@@ -5447,14 +5498,14 @@ class SandboxExecutor:
                 ends_at_its_summary=_runs_tests(argv),
             )
         except subprocess.TimeoutExpired as expired:
-            return {
+            return _counted_whole(expired.stdout, expired.stderr, {
                 "error": f"Command timed out after {timeout} seconds; it was ended at the time limit. Its output so far is in stdout and stderr." + _timeout_advice(workspace, run_in, argv),
                 "stdout": _as_workspace_relative(_truncate(expired.stdout or "" if isinstance(expired.stdout, str) else "", f"{role_name}-{argv[0]}-stdout", workspace), workspace),
                 "stderr": _as_workspace_relative(_truncate(expired.stderr or "" if isinstance(expired.stderr, str) else "", f"{role_name}-{argv[0]}-stderr", workspace), workspace),
                 "returncode": "124",
-            }
+            })
         except _TreeOverBudget as over:
-            return {
+            return _counted_whole(over.stdout, over.stderr, {
                 "error": (
                     f"Command stopped: its processes together were using {over.used_mb} MB, "
                     f"past the {over.budget_mb} MB this container can give one command. "
@@ -5467,7 +5518,7 @@ class SandboxExecutor:
                 "stdout": _as_workspace_relative(_truncate(over.stdout, f"{role_name}-{argv[0]}-stdout", workspace), workspace),
                 "stderr": _as_workspace_relative(_truncate(over.stderr, f"{role_name}-{argv[0]}-stderr", workspace), workspace),
                 "returncode": "137",
-            }
+            })
         except OSError as exc:
             return {"error": f"Could not run '{argv[0]}': {exc}"}
         finally:
@@ -5485,7 +5536,7 @@ class SandboxExecutor:
                 "alive - a database engine, a thread, a server or a timer never closed. That is a "
                 "defect in the tests' setup: close or dispose of it when the tests end."
             )
-        return finished
+        return _counted_whole(result.stdout, result.stderr, finished)
 
     @classmethod
     def execute(
@@ -5905,7 +5956,7 @@ class SandboxExecutor:
         unhonoured = _a_pin_the_image_does_not_carry(workspace)
         if unhonoured:
             finished["runtime_not_used"] = unhonoured
-        return finished
+        return _counted_whole(result.stdout, result.stderr, finished)
 
 
 #: A command container older than this has outlived every command's timeout: nothing waits for it any more.

@@ -1,0 +1,39 @@
+error[E0425]: cannot find function `app_with_store` in crate `notes_api`
+error[E0425]: cannot find function `init_db_connection` in module `db`
+error[E0432]: unresolved import `bytes`
+error[E0432]: unresolved import `crate::models::AppState`
+error[E0432]: unresolved import `http_body_util`
+error[E0432]: unresolved import `notes_api::from_vars`
+error[E0432]: unresolved import `tokio::signal`
+error[E0432]: unresolved import `tower`
+error[E0433]: failed to resolve: could not find `JournalMode` in `rusqlite`
+error[E0433]: failed to resolve: could not find `JournalMode` in `sqlite`
+error[E0433]: failed to resolve: could not find `SqlitePoolOptions` in `sqlx`
+error[E0433]: failed to resolve: could not find `TestClient` in `axum`
+error[E0433]: failed to resolve: could not find `config` in `notes_api`
+error[E0433]: failed to resolve: could not find `db` in `notes_api`
+error[E0433]: failed to resolve: could not find `test` in `axum`
+error[E0433]: failed to resolve: use of undeclared type `StatusCode`
+error[E0599]: `Body` is not an iterator
+error[E0599]: no function or associated item named `new` found for struct `axum::extract::Path<_>` in the current scope
+error[E0599]: no method named `as_array` found for struct `StatusCode` in the current scope
+error[E0599]: no method named `as_ref` found for struct `tokio::sync::RwLockReadGuard<'_, SqliteWrapper>` in the current scope
+error[E0599]: no method named `as_ref` found for struct `tokio::sync::RwLockWriteGuard<'_, SqliteWrapper>` in the current scope
+error[E0599]: no method named `into_make_service_with_connect_info` found for struct `Router<AppState>` in the current scope
+error[E0599]: no method named `into_make_service` found for struct `Router<AppState>` in the current scope
+error[E0599]: no method named `into_response` found for struct `StatusCode` in the current scope
+error[E0599]: no method named `into_response` found for tuple `(StatusCode, Json<ErrorJson>)` in the current scope
+error[E0599]: no method named `into_response` found for tuple `(StatusCode, Json<Note>)` in the current scope
+error[E0599]: no method named `into_response` found for tuple `(StatusCode, Json<Vec<Note>>)` in the current scope
+error[E0599]: no method named `into_response` found for tuple `(StatusCode, serde_json::Value)` in the current scope
+error[E0599]: no method named `optional` found for enum `Result` in the current scope
+error[E0599]: no method named `set_busy_timeout` found for struct `Connection` in the current scope
+error[E0599]: no method named `set_journal_mode` found for struct `Connection` in the current scope
+error[E0599]: no method named `state` found for struct `Router` in the current scope
+error[E0599]: no variant or associated item named `Io` found for enum `rusqlite::Error` in the current scope
+error[E0599]: no variant or associated item named `QueryFailed` found for enum `rusqlite::Error` in the current scope
+error[E0599]: no variant or associated item named `QueryNoResults` found for enum `rusqlite::Error` in the current scope
+error[E0599]: no variant or associated item named `QueryReturnsNoRows` found for enum `rusqlite::Error` in the current scope
+error[E0599]: the method `fetch_all` exists for struct `QueryAs<'_, _, Note, _>`, but its trait bounds were not satisfied
+error[E0599]: the method `fetch_one` exists for struct `QueryAs<'_, _, Note, _>`, but its trait bounds were not satisfied
+error[E0599]: the method `oneshot` exists for struct `Router<AppState>`, but its trait bounds were not satisfied

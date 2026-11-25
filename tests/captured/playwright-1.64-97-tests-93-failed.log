@@ -1,0 +1,2151 @@
+
+> task-management-dashboard@0.1.0 test:acceptance
+> playwright test
+
+[WebServer] INFO:     127.0.0.1:37668 - "GET /api/health HTTP/1.1" 200 OK
+[WebServer] INFO:     127.0.0.1:37672 - "GET / HTTP/1.1" 200 OK
+[WebServer] INFO:     127.0.0.1:37672 - "GET /assets/index-D9jTJFBw.js HTTP/1.1" 200 OK
+[WebServer] INFO:     127.0.0.1:37686 - "GET /assets/index-BjvV7hZB.css HTTP/1.1" 200 OK
+
+The page, loaded with nothing driving it, shows:
+- main:
+  - heading "Create Your Account" [level=1]
+  - text: Username
+  - textbox "Username"
+  - text: Email
+  - textbox "Email"
+  - text: Password
+  - textbox "Password"
+  - button "Register"
+  - paragraph:
+    - text: Already have an account?
+    - link "Log in":
+      - /url: /login
+
+
+Running 97 tests using 1 worker
+
+[WebServer] INFO:     127.0.0.1:37700 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:37700 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘   1 acceptance/analytics.spec.js:52:1 › [AC-11] analytics returns all required fields with correct types (16ms)
+[WebServer] INFO:     127.0.0.1:37706 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:37706 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘   2 acceptance/analytics.spec.js:91:1 › [AC-11] total_tasks reflects the actual number of tasks owned by the user (15ms)
+[WebServer] INFO:     127.0.0.1:37716 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:37716 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘   3 acceptance/analytics.spec.js:112:1 › [AC-11] tasks_by_priority returns accurate counts per priority level (15ms)
+[WebServer] INFO:     127.0.0.1:37720 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:37720 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘   4 acceptance/analytics.spec.js:138:1 › [AC-11] tasks_by_status returns accurate counts per status (16ms)
+[WebServer] INFO:     127.0.0.1:37724 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:37724 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘   5 acceptance/analytics.spec.js:160:1 › [AC-11] overdue_count counts tasks past due_date where status is not done (15ms)
+[WebServer] INFO:     127.0.0.1:37736 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:37736 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘   6 acceptance/analytics.spec.js:183:1 › [AC-11] completion_rate reflects percentage of completed tasks (16ms)
+[WebServer] INFO:     127.0.0.1:37744 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:37744 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘   7 acceptance/analytics.spec.js:206:1 › [AC-11] analytics returns zeros when user has no tasks (15ms)
+[WebServer] INFO:     127.0.0.1:37760 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:37760 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:37760 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘   8 acceptance/analytics.spec.js:231:1 › [AC-11] analytics only returns statistics for the authenticated user (16ms)
+[WebServer] INFO:     127.0.0.1:37774 - "GET /docs HTTP/1.1" 200 OK
+  ✓   9 acceptance/api_docs.spec.js:13:1 › [AC-12] GET /docs returns HTTP 200 with HTML (12ms)
+[WebServer] INFO:     127.0.0.1:37780 - "GET /docs HTTP/1.1" 200 OK
+  ✘  10 acceptance/api_docs.spec.js:21:1 › [AC-12] GET /docs contains registered API endpoints (7ms)
+[WebServer] INFO:     127.0.0.1:37782 - "GET /openapi.json HTTP/1.1" 200 OK
+  ✓  11 acceptance/api_docs.spec.js:33:1 › [AC-12] GET /openapi.json returns valid JSON (13ms)
+[WebServer] INFO:     127.0.0.1:37784 - "GET /openapi.json HTTP/1.1" 200 OK
+  ✓  12 acceptance/api_docs.spec.js:41:1 › [AC-12] GET /openapi.json returns valid OpenAPI 3.x specification (9ms)
+[WebServer] INFO:     127.0.0.1:37792 - "GET /openapi.json HTTP/1.1" 200 OK
+  ✘  13 acceptance/api_docs.spec.js:54:1 › [AC-12] OpenAPI spec includes all registered endpoints (6ms)
+[WebServer] INFO:     127.0.0.1:37804 - "GET /openapi.json HTTP/1.1" 200 OK
+  ✘  14 acceptance/api_docs.spec.js:79:1 › [AC-12] OpenAPI spec defines request and response schemas for tasks (13ms)
+[WebServer] INFO:     127.0.0.1:37818 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:37818 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:37818 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  15 acceptance/assign.spec.js:73:1 › [AC-3] assign a task via PUT and verify assigned_to is set (17ms)
+[WebServer] INFO:     127.0.0.1:37832 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:37832 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:37832 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  16 acceptance/assign.spec.js:111:1 › [AC-10] assignee sees assigned task in their filtered list (16ms)
+[WebServer] INFO:     127.0.0.1:37844 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:37844 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  17 acceptance/assign.spec.js:150:1 › [AC-3] assigning to a non-existent user returns 404 (15ms)
+[WebServer] INFO:     127.0.0.1:37854 - "POST /api/register HTTP/1.1" 404 Not Found
+  ✘  18 acceptance/auth.spec.js:45:1 › [AC-1][AC-8] user can register with valid credentials (13ms)
+[WebServer] INFO:     127.0.0.1:37858 - "POST /api/register HTTP/1.1" 404 Not Found
+  ✘  19 acceptance/auth.spec.js:52:1 › [AC-1][AC-8] registration rejects duplicate username (13ms)
+[WebServer] INFO:     127.0.0.1:37860 - "POST /api/register HTTP/1.1" 404 Not Found
+  ✘  20 acceptance/auth.spec.js:61:1 › [AC-1][AC-8] registration rejects duplicate email (14ms)
+[WebServer] INFO:     127.0.0.1:37866 - "POST /api/register HTTP/1.1" 404 Not Found
+  ✘  21 acceptance/auth.spec.js:70:1 › [AC-1][AC-8] registration rejects short password (13ms)
+[WebServer] INFO:     127.0.0.1:37870 - "POST /api/register HTTP/1.1" 404 Not Found
+  ✘  22 acceptance/auth.spec.js:77:1 › [AC-1][AC-8] registration rejects invalid email format (13ms)
+[WebServer] INFO:     127.0.0.1:37882 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:37882 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  23 acceptance/auth.spec.js:86:1 › [AC-8][AC-1] login with valid credentials returns access_token and refresh_token (15ms)
+[WebServer] INFO:     127.0.0.1:37888 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  24 acceptance/auth.spec.js:96:1 › [AC-8] login rejects invalid credentials (13ms)
+[WebServer] INFO:     127.0.0.1:37894 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:37894 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  25 acceptance/auth.spec.js:103:1 › [AC-8] login rejects wrong password for existing user (16ms)
+[WebServer] INFO:     127.0.0.1:37908 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:37908 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  26 acceptance/auth.spec.js:113:1 › [AC-1] access_token is a valid JWT with required claims (15ms)
+[WebServer] INFO:     127.0.0.1:37920 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:37920 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  27 acceptance/auth.spec.js:141:1 › [AC-1] refresh_token is returned as a string (15ms)
+[WebServer] INFO:     127.0.0.1:37922 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:37922 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  28 acceptance/auth.spec.js:153:3 › [AC-8] logout with valid token invalidates the refresh token (15ms)
+[WebServer] INFO:     127.0.0.1:37930 - "GET / HTTP/1.1" 200 OK
+[WebServer] INFO:     127.0.0.1:37946 - "GET /assets/index-BjvV7hZB.css HTTP/1.1" 200 OK
+[WebServer] INFO:     127.0.0.1:37930 - "GET /assets/index-D9jTJFBw.js HTTP/1.1" 200 OK
+  ✓  29 acceptance/auth.spec.js:179:1 › [AC-8] the registration page shows a Register button (110ms)
+[WebServer] INFO:     127.0.0.1:37948 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:37948 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  30 acceptance/categories_tags.spec.js:38:1 › [AC-6] creating a task with null category and empty tags is accepted (11ms)
+[WebServer] INFO:     127.0.0.1:37956 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:37956 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  31 acceptance/categories_tags.spec.js:52:1 › [AC-6] creating a task with empty string category and empty tags is accepted (15ms)
+[WebServer] INFO:     127.0.0.1:37966 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:37966 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  32 acceptance/categories_tags.spec.js:68:1 › [AC-6] category stores and returns the exact string provided (16ms)
+[WebServer] INFO:     127.0.0.1:37970 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:37970 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  33 acceptance/categories_tags.spec.js:92:1 › [AC-6] tags stores and returns the exact array of strings provided (18ms)
+[WebServer] INFO:     127.0.0.1:37986 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:37986 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  34 acceptance/categories_tags.spec.js:122:1 › [AC-6] updating category via PUT persists correctly (15ms)
+[WebServer] INFO:     127.0.0.1:38000 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:38000 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  35 acceptance/categories_tags.spec.js:152:1 › [AC-6] updating tags via PUT persists correctly (15ms)
+[WebServer] INFO:     127.0.0.1:38004 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:38004 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  36 acceptance/categories_tags.spec.js:184:1 › [AC-6] tags with strings exceeding 50 characters returns 422 (16ms)
+[WebServer] INFO:     127.0.0.1:38020 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:38020 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  37 acceptance/categories_tags.spec.js:196:1 › [AC-6] multiple valid tags are all stored correctly (19ms)
+[WebServer] INFO:     127.0.0.1:45314 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:45314 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  38 acceptance/due_dates.spec.js:38:1 › [AC-5] creating a task with a valid future due_date stores it in ISO 8601 format (15ms)
+[WebServer] INFO:     127.0.0.1:45324 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:45324 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  39 acceptance/due_dates.spec.js:68:1 › [AC-5] creating a task with null due_date is accepted (15ms)
+[WebServer] INFO:     127.0.0.1:45334 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:45334 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  40 acceptance/due_dates.spec.js:88:1 › [AC-5] updating a task to set a due_date persists correctly (15ms)
+[WebServer] INFO:     127.0.0.1:45342 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:45342 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  41 acceptance/due_dates.spec.js:119:1 › [AC-5] updating a task to clear its due_date stores null (15ms)
+[WebServer] INFO:     127.0.0.1:45346 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:45346 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  42 acceptance/due_dates.spec.js:149:1 › [AC-5] due_date is returned consistently across all API responses (15ms)
+[WebServer] INFO:     127.0.0.1:45358 - "GET /api/tasks HTTP/1.1" 404 Not Found
+  ✘  43 acceptance/error_handling.spec.js:38:1 › [AC-13] unauthenticated GET /api/tasks returns 401 (13ms)
+[WebServer] INFO:     127.0.0.1:45374 - "POST /api/tasks HTTP/1.1" 404 Not Found
+  ✘  44 acceptance/error_handling.spec.js:43:1 › [AC-13] unauthenticated POST /api/tasks returns 401 (13ms)
+[WebServer] INFO:     127.0.0.1:45382 - "PUT /api/tasks/00000000-0000-0000-0000-000000000000 HTTP/1.1" 404 Not Found
+  ✘  45 acceptance/error_handling.spec.js:48:1 › [AC-13] unauthenticated PUT /api/tasks/{id} returns 401 (13ms)
+[WebServer] INFO:     127.0.0.1:45394 - "DELETE /api/tasks/00000000-0000-0000-0000-000000000000 HTTP/1.1" 404 Not Found
+  ✘  46 acceptance/error_handling.spec.js:55:1 › [AC-13] unauthenticated DELETE /api/tasks/{id} returns 401 (13ms)
+[WebServer] INFO:     127.0.0.1:45406 - "GET /api/analytics HTTP/1.1" 404 Not Found
+  ✘  47 acceptance/error_handling.spec.js:60:1 › [AC-13] unauthenticated GET /api/analytics returns 401 (13ms)
+[WebServer] INFO:     127.0.0.1:45408 - "POST /api/logout HTTP/1.1" 404 Not Found
+  ✘  48 acceptance/error_handling.spec.js:65:1 › [AC-13] unauthenticated POST /api/logout returns 401 (13ms)
+[WebServer] INFO:     127.0.0.1:45420 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:45420 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  49 acceptance/error_handling.spec.js:72:1 › [AC-13] GET non-existent task returns 404 (15ms)
+[WebServer] INFO:     127.0.0.1:45424 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:45424 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  50 acceptance/error_handling.spec.js:81:1 › [AC-13] PUT non-existent task returns 404 (16ms)
+[WebServer] INFO:     127.0.0.1:45428 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:45428 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  51 acceptance/error_handling.spec.js:91:1 › [AC-13] DELETE non-existent task returns 404 (18ms)
+[WebServer] INFO:     127.0.0.1:45434 - "POST /api/register HTTP/1.1" 404 Not Found
+  ✘  52 acceptance/error_handling.spec.js:102:1 › [AC-13] POST /api/register with missing username returns 422 (14ms)
+[WebServer] INFO:     127.0.0.1:45440 - "POST /api/register HTTP/1.1" 404 Not Found
+  ✘  53 acceptance/error_handling.spec.js:111:1 › [AC-13] POST /api/register with missing email returns 422 (13ms)
+[WebServer] INFO:     127.0.0.1:45456 - "POST /api/register HTTP/1.1" 404 Not Found
+  ✘  54 acceptance/error_handling.spec.js:120:1 › [AC-13] POST /api/register with missing password returns 422 (13ms)
+[WebServer] INFO:     127.0.0.1:45468 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  55 acceptance/error_handling.spec.js:129:1 › [AC-13] POST /api/login with missing email returns 422 (13ms)
+[WebServer] INFO:     127.0.0.1:45478 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  56 acceptance/error_handling.spec.js:138:1 › [AC-13] POST /api/login with missing password returns 422 (13ms)
+[WebServer] INFO:     127.0.0.1:45494 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:45494 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  57 acceptance/error_handling.spec.js:147:1 › [AC-13] POST /api/tasks with missing title returns 422 (15ms)
+[WebServer] INFO:     127.0.0.1:45510 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:45510 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  58 acceptance/error_handling.spec.js:159:1 › [AC-13] POST /api/tasks with missing priority returns 422 (15ms)
+[WebServer] INFO:     127.0.0.1:45514 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:45514 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  59 acceptance/error_handling.spec.js:171:1 › [AC-13] PUT /api/tasks/{id} with missing version returns 422 (15ms)
+[WebServer] INFO:     127.0.0.1:45522 - "POST /api/register HTTP/1.1" 404 Not Found
+  ✘  60 acceptance/error_handling.spec.js:195:1 › [AC-13] registration with short password includes validation error (13ms)
+[WebServer] INFO:     127.0.0.1:45536 - "POST /api/register HTTP/1.1" 404 Not Found
+  ✘  61 acceptance/error_handling.spec.js:208:1 › [AC-13] registration with invalid email includes validation error (15ms)
+[WebServer] INFO:     127.0.0.1:45538 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:45538 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  62 acceptance/error_handling.spec.js:217:1 › [AC-13] task creation with invalid priority includes validation error (15ms)
+[WebServer] INFO:     127.0.0.1:45540 - "GET /api/tasks HTTP/1.1" 404 Not Found
+  ✘  63 acceptance/error_handling.spec.js:231:1 › [AC-13] all 401 responses have consistent structure (13ms)
+[WebServer] INFO:     127.0.0.1:45542 - "POST /api/register HTTP/1.1" 404 Not Found
+  ✘  64 acceptance/error_handling.spec.js:251:1 › [AC-13] all 422 responses have consistent structure (13ms)
+[WebServer] INFO:     127.0.0.1:45548 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:45548 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  65 acceptance/error_handling.spec.js:270:3 › [AC-13] all 404 responses have consistent structure (15ms)
+[WebServer] INFO:     127.0.0.1:45562 - "GET /api/health HTTP/1.1" 200 OK
+  ✘  66 acceptance/error_handling.spec.js:302:1 › [AC-13] GET /api/health returns 200 without authentication (15ms)
+[WebServer] INFO:     127.0.0.1:45568 - "GET /api/tasks HTTP/1.1" 404 Not Found
+  ✘  67 acceptance/error_handling.spec.js:311:1 › [AC-13] request with invalid access token returns 401 (13ms)
+[WebServer] INFO:     127.0.0.1:45582 - "POST /api/logout HTTP/1.1" 404 Not Found
+  ✘  68 acceptance/error_handling.spec.js:318:1 › [AC-13] POST /api/logout with invalid token returns 401 (13ms)
+[WebServer] INFO:     127.0.0.1:45594 - "POST /api/refresh HTTP/1.1" 404 Not Found
+  ✘  69 acceptance/error_handling.spec.js:325:1 › [AC-13] POST /api/refresh with no refresh token returns 401 (13ms)
+[WebServer] INFO:     127.0.0.1:45600 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:45600 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  70 acceptance/priorities.spec.js:31:1 › [AC-4] creating a task with priority "low" succeeds (15ms)
+[WebServer] INFO:     127.0.0.1:45616 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:45616 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  71 acceptance/priorities.spec.js:43:1 › [AC-4] creating a task with priority "medium" succeeds (15ms)
+[WebServer] INFO:     127.0.0.1:45620 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:45620 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  72 acceptance/priorities.spec.js:55:1 › [AC-4] creating a task with priority "high" succeeds (15ms)
+[WebServer] INFO:     127.0.0.1:45630 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:45630 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  73 acceptance/priorities.spec.js:67:1 › [AC-4] creating a task with priority "urgent" succeeds (15ms)
+[WebServer] INFO:     127.0.0.1:45640 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:45640 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  74 acceptance/priorities.spec.js:81:1 › [AC-4] creating a task with invalid priority returns 422 (15ms)
+[WebServer] INFO:     127.0.0.1:45654 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:45654 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  75 acceptance/priorities.spec.js:91:1 › [AC-4] creating a task with numeric priority returns 422 (15ms)
+[WebServer] INFO:     127.0.0.1:45658 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:45658 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  76 acceptance/priorities.spec.js:101:1 › [AC-4] creating a task with empty string priority returns 422 (15ms)
+[WebServer] INFO:     127.0.0.1:45664 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:45664 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  77 acceptance/priorities.spec.js:111:1 › [AC-4] creating a task with missing priority returns 422 (16ms)
+[WebServer] INFO:     127.0.0.1:40366 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:40366 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  78 acceptance/priorities.spec.js:121:1 › [AC-4] updating a task with invalid priority returns 422 (15ms)
+[WebServer] INFO:     127.0.0.1:40378 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:40378 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  79 acceptance/priorities.spec.js:143:1 › [AC-4] each valid priority is stored and returned correctly (15ms)
+[WebServer] INFO:     127.0.0.1:40386 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:40386 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  80 acceptance/search_filter.spec.js:50:1 › [AC-7] search matches task title case-insensitively (15ms)
+[WebServer] INFO:     127.0.0.1:40388 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:40388 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  81 acceptance/search_filter.spec.js:73:1 › [AC-7] search matches task description case-insensitively (15ms)
+[WebServer] INFO:     127.0.0.1:40394 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:40394 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  82 acceptance/search_filter.spec.js:92:1 › [AC-7] search with no results returns empty list (15ms)
+[WebServer] INFO:     127.0.0.1:40396 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:40396 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  83 acceptance/search_filter.spec.js:110:1 › [AC-7] filter by priority returns only matching tasks (15ms)
+[WebServer] INFO:     127.0.0.1:40400 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:40400 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  84 acceptance/search_filter.spec.js:143:1 › [AC-7] filter by status returns only matching tasks (15ms)
+[WebServer] INFO:     127.0.0.1:40412 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:40412 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:40412 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  85 acceptance/search_filter.spec.js:189:1 › [AC-7] filter by assignee_id returns only assigned tasks (16ms)
+[WebServer] INFO:     127.0.0.1:40424 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:40424 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  86 acceptance/search_filter.spec.js:250:1 › [AC-7] filter by due_date_before returns only matching tasks (16ms)
+[WebServer] INFO:     127.0.0.1:40432 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:40432 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  87 acceptance/search_filter.spec.js:275:1 › [AC-7] combining search and priority filter narrows results (15ms)
+[WebServer] INFO:     127.0.0.1:40434 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:40434 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  88 acceptance/search_filter.spec.js:297:1 › [AC-7] pagination works correctly with filtered results (15ms)
+[WebServer] INFO:     127.0.0.1:40440 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:40440 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  89 acceptance/tasks.spec.js:58:1 › [AC-2][AC-9] create a task returns 201 with the created object (15ms)
+[WebServer] INFO:     127.0.0.1:40456 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:40456 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  90 acceptance/tasks.spec.js:75:1 › [AC-2][AC-9] created task fields match the creation payload (15ms)
+[WebServer] INFO:     127.0.0.1:40460 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:40460 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  91 acceptance/tasks.spec.js:94:1 › [AC-2][AC-9] GET task by id returns all fields (15ms)
+[WebServer] INFO:     127.0.0.1:40466 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:40466 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  92 acceptance/tasks.spec.js:114:1 › [AC-2][AC-9] GET a non-existent task returns 404 (15ms)
+[WebServer] INFO:     127.0.0.1:40482 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:40482 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  93 acceptance/tasks.spec.js:125:1 › [AC-2][AC-9] update a task via PUT returns the updated object (15ms)
+[WebServer] INFO:     127.0.0.1:40496 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:40496 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  94 acceptance/tasks.spec.js:151:1 › [AC-2][AC-9] PUT with wrong version returns 409 conflict (15ms)
+[WebServer] INFO:     127.0.0.1:40506 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:40506 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  95 acceptance/tasks.spec.js:167:1 › [AC-2][AC-9] delete a task returns 204 and subsequent GET returns 404 (15ms)
+[WebServer] INFO:     127.0.0.1:40522 - "POST /api/register HTTP/1.1" 404 Not Found
+[WebServer] INFO:     127.0.0.1:40522 - "POST /api/login HTTP/1.1" 404 Not Found
+  ✘  96 acceptance/tasks.spec.js:187:1 › [AC-2][AC-9] GET /api/tasks returns paginated task list (15ms)
+[WebServer] INFO:     127.0.0.1:40538 - "GET /api/tasks HTTP/1.1" 404 Not Found
+  ✘  97 acceptance/tasks.spec.js:210:1 › [AC-9] unauthenticated requests to /api/tasks return 401 (13ms)
+
+
+  1) acceptance/analytics.spec.js:52:1 › [AC-11] analytics returns all required fields with correct types 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      31 | async function getAccessToken(request, email, password) {
+      32 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 33 |   expect(resp.status()).toBe(200);
+         |                         ^
+      34 |   const body = await resp.json();
+      35 |   return body.access_token;
+      36 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/analytics.spec.js:33:25)
+        at /workspace/task-management-dashboard/acceptance/analytics.spec.js:54:17
+
+    Error Context: test-results/evidence/analytics--AC-11-analytics-ccecc-d-fields-with-correct-types/error-context.md
+
+  2) acceptance/analytics.spec.js:91:1 › [AC-11] total_tasks reflects the actual number of tasks owned by the user 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      31 | async function getAccessToken(request, email, password) {
+      32 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 33 |   expect(resp.status()).toBe(200);
+         |                         ^
+      34 |   const body = await resp.json();
+      35 |   return body.access_token;
+      36 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/analytics.spec.js:33:25)
+        at /workspace/task-management-dashboard/acceptance/analytics.spec.js:93:17
+
+    Error Context: test-results/evidence/analytics--AC-11-total-tas-b8329--of-tasks-owned-by-the-user/error-context.md
+
+  3) acceptance/analytics.spec.js:112:1 › [AC-11] tasks_by_priority returns accurate counts per priority level 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      31 | async function getAccessToken(request, email, password) {
+      32 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 33 |   expect(resp.status()).toBe(200);
+         |                         ^
+      34 |   const body = await resp.json();
+      35 |   return body.access_token;
+      36 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/analytics.spec.js:33:25)
+        at /workspace/task-management-dashboard/acceptance/analytics.spec.js:114:17
+
+    Error Context: test-results/evidence/analytics--AC-11-tasks-by--1fbc5-e-counts-per-priority-level/error-context.md
+
+  4) acceptance/analytics.spec.js:138:1 › [AC-11] tasks_by_status returns accurate counts per status 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      31 | async function getAccessToken(request, email, password) {
+      32 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 33 |   expect(resp.status()).toBe(200);
+         |                         ^
+      34 |   const body = await resp.json();
+      35 |   return body.access_token;
+      36 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/analytics.spec.js:33:25)
+        at /workspace/task-management-dashboard/acceptance/analytics.spec.js:140:17
+
+    Error Context: test-results/evidence/analytics--AC-11-tasks-by--898e6--accurate-counts-per-status/error-context.md
+
+  5) acceptance/analytics.spec.js:160:1 › [AC-11] overdue_count counts tasks past due_date where status is not done 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      31 | async function getAccessToken(request, email, password) {
+      32 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 33 |   expect(resp.status()).toBe(200);
+         |                         ^
+      34 |   const body = await resp.json();
+      35 |   return body.access_token;
+      36 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/analytics.spec.js:33:25)
+        at /workspace/task-management-dashboard/acceptance/analytics.spec.js:162:17
+
+    Error Context: test-results/evidence/analytics--AC-11-overdue-c-981b5-te-where-status-is-not-done/error-context.md
+
+  6) acceptance/analytics.spec.js:183:1 › [AC-11] completion_rate reflects percentage of completed tasks 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      31 | async function getAccessToken(request, email, password) {
+      32 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 33 |   expect(resp.status()).toBe(200);
+         |                         ^
+      34 |   const body = await resp.json();
+      35 |   return body.access_token;
+      36 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/analytics.spec.js:33:25)
+        at /workspace/task-management-dashboard/acceptance/analytics.spec.js:185:17
+
+    Error Context: test-results/evidence/analytics--AC-11-completio-de544-rcentage-of-completed-tasks/error-context.md
+
+  7) acceptance/analytics.spec.js:206:1 › [AC-11] analytics returns zeros when user has no tasks ───
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      31 | async function getAccessToken(request, email, password) {
+      32 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 33 |   expect(resp.status()).toBe(200);
+         |                         ^
+      34 |   const body = await resp.json();
+      35 |   return body.access_token;
+      36 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/analytics.spec.js:33:25)
+        at /workspace/task-management-dashboard/acceptance/analytics.spec.js:208:17
+
+    Error Context: test-results/evidence/analytics--AC-11-analytics-2d0fa-eros-when-user-has-no-tasks/error-context.md
+
+  8) acceptance/analytics.spec.js:231:1 › [AC-11] analytics only returns statistics for the authenticated user 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      31 | async function getAccessToken(request, email, password) {
+      32 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 33 |   expect(resp.status()).toBe(200);
+         |                         ^
+      34 |   const body = await resp.json();
+      35 |   return body.access_token;
+      36 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/analytics.spec.js:33:25)
+        at /workspace/task-management-dashboard/acceptance/analytics.spec.js:236:18
+
+    Error Context: test-results/evidence/analytics--AC-11-analytics-ca730--for-the-authenticated-user/error-context.md
+
+  9) acceptance/api_docs.spec.js:21:1 › [AC-12] GET /docs contains registered API endpoints ────────
+
+    Error: expect(received).toContain(expected) // indexOf
+
+    Expected substring: "api/register"
+    Received string:    "
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
+        <link type=\"text/css\" rel=\"stylesheet\" href=\"https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css\">
+        <link rel=\"shortcut icon\" href=\"https://fastapi.tiangolo.com/img/favicon.png\">
+        <title>Task Management Dashboard - Swagger UI</title>
+        </head>
+        <body>
+        <div id=\"swagger-ui\">
+        </div>
+        <script src=\"https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js\"></script>
+        <!-- `SwaggerUIBundle` is now available on the page -->
+        <script>
+        const ui = SwaggerUIBundle({
+            url: '/openapi.json',
+        \"dom_id\": \"#swagger-ui\",
+    \"layout\": \"BaseLayout\",
+    \"deepLinking\": true,
+    \"showExtensions\": true,
+    \"showCommonExtensions\": true,
+    oauth2RedirectUrl: window.location.origin + '/docs/oauth2-redirect',
+        presets: [
+            SwaggerUIBundle.presets.apis,
+            SwaggerUIBundle.SwaggerUIStandalonePreset
+            ],
+        })
+        </script>
+        </body>
+        </html>
+        "
+
+      24 |   const html = await resp.text();
+      25 |   // The HTML should reference key endpoint paths.
+    > 26 |   expect(html).toContain('api/register');
+         |                ^
+      27 |   expect(html).toContain('api/login');
+      28 |   expect(html).toContain('api/tasks');
+      29 | });
+        at /workspace/task-management-dashboard/acceptance/api_docs.spec.js:26:16
+
+    Error Context: test-results/evidence/api_docs--AC-12-GET-docs-contains-registered-API-endpoints/error-context.md
+
+  10) acceptance/api_docs.spec.js:54:1 › [AC-12] OpenAPI spec includes all registered endpoints ────
+
+    Error: expect(received).toContain(expected) // indexOf
+
+    Expected value: "/api/register"
+    Received array: ["/api/health"]
+
+      69 |   ];
+      70 |   for (const path of requiredPaths) {
+    > 71 |     expect(paths).toContain(path);
+         |                   ^
+      72 |   }
+      73 |
+      74 |   // Verify task detail endpoint is documented.
+        at /workspace/task-management-dashboard/acceptance/api_docs.spec.js:71:19
+
+    Error Context: test-results/evidence/api_docs--AC-12-OpenAPI-sp-23963-es-all-registered-endpoints/error-context.md
+
+  11) acceptance/api_docs.spec.js:79:1 › [AC-12] OpenAPI spec defines request and response schemas for tasks 
+
+    Error: expect(received).toBeDefined()
+
+    Received: undefined
+
+      83 |   // Find the POST /api/tasks endpoint.
+      84 |   const postTasksPath = body.paths['/api/tasks'];
+    > 85 |   expect(postTasksPath).toBeDefined();
+         |                         ^
+      86 |   expect(postTasksPath.post).toBeDefined();
+      87 |
+      88 |   // Verify response schema includes expected fields.
+        at /workspace/task-management-dashboard/acceptance/api_docs.spec.js:85:25
+
+    Error Context: test-results/evidence/api_docs--AC-12-OpenAPI-sp-d7d24--response-schemas-for-tasks/error-context.md
+
+  12) acceptance/assign.spec.js:73:1 › [AC-3] assign a task via PUT and verify assigned_to is set ──
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      28 | async function getAccessToken(request, email, password) {
+      29 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 30 |   expect(resp.status()).toBe(200);
+         |                         ^
+      31 |   const body = await resp.json();
+      32 |   return body.access_token;
+      33 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/assign.spec.js:30:25)
+        at /workspace/task-management-dashboard/acceptance/assign.spec.js:78:22
+
+    Error Context: test-results/evidence/assign--AC-3-assign-a-task-50c7b-d-verify-assigned-to-is-set/error-context.md
+
+  13) acceptance/assign.spec.js:111:1 › [AC-10] assignee sees assigned task in their filtered list ─
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      28 | async function getAccessToken(request, email, password) {
+      29 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 30 |   expect(resp.status()).toBe(200);
+         |                         ^
+      31 |   const body = await resp.json();
+      32 |   return body.access_token;
+      33 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/assign.spec.js:30:25)
+        at /workspace/task-management-dashboard/acceptance/assign.spec.js:115:22
+
+    Error Context: test-results/evidence/assign--AC-10-assignee-see-8ad47-task-in-their-filtered-list/error-context.md
+
+  14) acceptance/assign.spec.js:150:1 › [AC-3] assigning to a non-existent user returns 404 ────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      28 | async function getAccessToken(request, email, password) {
+      29 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 30 |   expect(resp.status()).toBe(200);
+         |                         ^
+      31 |   const body = await resp.json();
+      32 |   return body.access_token;
+      33 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/assign.spec.js:30:25)
+        at /workspace/task-management-dashboard/acceptance/assign.spec.js:152:22
+
+    Error Context: test-results/evidence/assign--AC-3-assigning-to-a-non-existent-user-returns-404/error-context.md
+
+  15) acceptance/auth.spec.js:45:1 › [AC-1][AC-8] user can register with valid credentials ─────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 201
+    Received: 404
+
+      45 | test('[AC-1][AC-8] user can register with valid credentials', async ({ request }) => {
+      46 |   const { response, email } = await registerUser(request);
+    > 47 |   expect(response.status()).toBe(201);
+         |                             ^
+      48 |   const body = await response.json();
+      49 |   expect(body).toHaveProperty('message');
+      50 | });
+        at /workspace/task-management-dashboard/acceptance/auth.spec.js:47:29
+
+    Error Context: test-results/evidence/auth--AC-1-AC-8-user-can-register-with-valid-credentials/error-context.md
+
+  16) acceptance/auth.spec.js:52:1 › [AC-1][AC-8] registration rejects duplicate username ──────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 201
+    Received: 404
+
+      52 | test('[AC-1][AC-8] registration rejects duplicate username', async ({ request }) => {
+      53 |   const { response } = await registerUser(request, 'dup-user');
+    > 54 |   expect(response.status()).toBe(201); // first succeeds
+         |                             ^
+      55 |   const dupResponse = await request.post('/api/register', {
+      56 |     data: { username: 'testuser-dup-user', email: `other-${uid()}@example.com`, password: 'securepass123' },
+      57 |   });
+        at /workspace/task-management-dashboard/acceptance/auth.spec.js:54:29
+
+    Error Context: test-results/evidence/auth--AC-1-AC-8-registration-rejects-duplicate-username/error-context.md
+
+  17) acceptance/auth.spec.js:61:1 › [AC-1][AC-8] registration rejects duplicate email ─────────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 201
+    Received: 404
+
+      61 | test('[AC-1][AC-8] registration rejects duplicate email', async ({ request }) => {
+      62 |   const { response } = await registerUser(request, 'dup-email');
+    > 63 |   expect(response.status()).toBe(201); // first succeeds
+         |                             ^
+      64 |   const dupResponse = await request.post('/api/register', {
+      65 |     data: { username: `other-${uid()}`, email: 'testuser-dup-email@example.com', password: 'securepass123' },
+      66 |   });
+        at /workspace/task-management-dashboard/acceptance/auth.spec.js:63:29
+
+    Error Context: test-results/evidence/auth--AC-1-AC-8-registration-rejects-duplicate-email/error-context.md
+
+  18) acceptance/auth.spec.js:70:1 › [AC-1][AC-8] registration rejects short password ──────────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 422
+    Received: 404
+
+      72 |     data: { username: `shortpw-${uid()}`, email: `${uid()}@example.com`, password: 'short' },
+      73 |   });
+    > 74 |   expect(response.status()).toBe(422);
+         |                             ^
+      75 | });
+      76 |
+      77 | test('[AC-1][AC-8] registration rejects invalid email format', async ({ request }) => {
+        at /workspace/task-management-dashboard/acceptance/auth.spec.js:74:29
+
+    Error Context: test-results/evidence/auth--AC-1-AC-8-registration-rejects-short-password/error-context.md
+
+  19) acceptance/auth.spec.js:77:1 › [AC-1][AC-8] registration rejects invalid email format ────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 422
+    Received: 404
+
+      79 |     data: { username: `bademail-${uid()}`, email: 'not-an-email', password: 'securepass123' },
+      80 |   });
+    > 81 |   expect(response.status()).toBe(422);
+         |                             ^
+      82 | });
+      83 |
+      84 | // ── AC-8 / AC-1: Login ───────────────────────────────────────────────────────
+        at /workspace/task-management-dashboard/acceptance/auth.spec.js:81:29
+
+    Error Context: test-results/evidence/auth--AC-1-AC-8-registration-rejects-invalid-email-format/error-context.md
+
+  20) acceptance/auth.spec.js:86:1 › [AC-8][AC-1] login with valid credentials returns access_token and refresh_token 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      88 |   // Re-register to get fresh credentials (registerUser already registered)
+      89 |   const { response, body } = await loginUser(request, email, password);
+    > 90 |   expect(response.status()).toBe(200);
+         |                             ^
+      91 |   expect(body).toHaveProperty('access_token');
+      92 |   expect(body).toHaveProperty('refresh_token');
+      93 |   expect(body.token_type).toBe('bearer');
+        at /workspace/task-management-dashboard/acceptance/auth.spec.js:90:29
+
+    Error Context: test-results/evidence/auth--AC-8-AC-1-login-with-cb39a-ess-token-and-refresh-token/error-context.md
+
+  21) acceptance/auth.spec.js:96:1 › [AC-8] login rejects invalid credentials ──────────────────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 401
+    Received: 404
+
+       98 |     data: { email: `nonexistent-${uid()}@example.com`, password: 'wrongpassword' },
+       99 |   });
+    > 100 |   expect(response.status()).toBe(401);
+          |                             ^
+      101 | });
+      102 |
+      103 | test('[AC-8] login rejects wrong password for existing user', async ({ request }) => {
+        at /workspace/task-management-dashboard/acceptance/auth.spec.js:100:29
+
+    Error Context: test-results/evidence/auth--AC-8-login-rejects-invalid-credentials/error-context.md
+
+  22) acceptance/auth.spec.js:103:1 › [AC-8] login rejects wrong password for existing user ────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 401
+    Received: 404
+
+      106 |     data: { email, password: 'wrongpassword' },
+      107 |   });
+    > 108 |   expect(response.status()).toBe(401);
+          |                             ^
+      109 | });
+      110 |
+      111 | // ── AC-1: JWT token structure ────────────────────────────────────────────────
+        at /workspace/task-management-dashboard/acceptance/auth.spec.js:108:29
+
+    Error Context: test-results/evidence/auth--AC-8-login-rejects-wrong-password-for-existing-user/error-context.md
+
+  23) acceptance/auth.spec.js:113:1 › [AC-1] access_token is a valid JWT with required claims ──────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      117 |     // "Cannot read properties of null" TypeError.
+      118 |     const loginResp = await request.post('/api/login', { data: { email, password } });
+    > 119 |     expect(loginResp.status()).toBe(200);
+          |                                ^
+      120 |     const body = await loginResp.json();
+      121 |       // Guard: ensure the response actually contains an access_token before
+      122 |       // attempting to decode it; otherwise a null/missing value throws a TypeError.
+        at /workspace/task-management-dashboard/acceptance/auth.spec.js:119:32
+
+    Error Context: test-results/evidence/auth--AC-1-access-token-is-a-valid-JWT-with-required-claims/error-context.md
+
+  24) acceptance/auth.spec.js:141:1 › [AC-1] refresh_token is returned as a string ─────────────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      145 |     // "Cannot read properties of null" TypeError.
+      146 |       const loginResp = await request.post('/api/login', { data: { email, password } });
+    > 147 |     expect(loginResp.status()).toBe(200);
+          |                                ^
+      148 |     const body = await loginResp.json();
+      149 |     expect(typeof body.refresh_token).toBe('string');
+      150 |     expect(body.refresh_token.length).toBeGreaterThan(0);
+        at /workspace/task-management-dashboard/acceptance/auth.spec.js:147:32
+
+    Error Context: test-results/evidence/auth--AC-1-refresh-token-is-returned-as-a-string/error-context.md
+
+  25) acceptance/auth.spec.js:153:3 › [AC-8] logout with valid token invalidates the refresh token ─
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      155 |   // Login to get tokens.
+      156 |   const loginResp = await request.post('/api/login', { data: { email, password } });
+    > 157 |   expect(loginResp.status()).toBe(200);
+          |                              ^
+      158 |   const loginBody = await loginResp.json();
+      159 |   const accessToken = loginBody.access_token;
+      160 |
+        at /workspace/task-management-dashboard/acceptance/auth.spec.js:157:30
+
+    Error Context: test-results/evidence/auth--AC-8-logout-with-val-780c4-validates-the-refresh-token/error-context.md
+
+  26) acceptance/categories_tags.spec.js:38:1 › [AC-6] creating a task with null category and empty tags is accepted 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/categories_tags.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/categories_tags.spec.js:40:17
+
+    Error Context: test-results/evidence/categories_tags--AC-6-crea-a6f85--and-empty-tags-is-accepted/error-context.md
+
+  27) acceptance/categories_tags.spec.js:52:1 › [AC-6] creating a task with empty string category and empty tags is accepted 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/categories_tags.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/categories_tags.spec.js:54:17
+
+    Error Context: test-results/evidence/categories_tags--AC-6-crea-d0cf0--and-empty-tags-is-accepted/error-context.md
+
+  28) acceptance/categories_tags.spec.js:68:1 › [AC-6] category stores and returns the exact string provided 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/categories_tags.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/categories_tags.spec.js:72:19
+
+    Error Context: test-results/evidence/categories_tags--AC-6-cate-7ae6d-s-the-exact-string-provided/error-context.md
+
+  29) acceptance/categories_tags.spec.js:92:1 › [AC-6] tags stores and returns the exact array of strings provided 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/categories_tags.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/categories_tags.spec.js:100:19
+
+    Error Context: test-results/evidence/categories_tags--AC-6-tags-993da-t-array-of-strings-provided/error-context.md
+
+  30) acceptance/categories_tags.spec.js:122:1 › [AC-6] updating category via PUT persists correctly 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/categories_tags.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/categories_tags.spec.js:124:17
+
+    Error Context: test-results/evidence/categories_tags--AC-6-upda-eafc0--via-PUT-persists-correctly/error-context.md
+
+  31) acceptance/categories_tags.spec.js:152:1 › [AC-6] updating tags via PUT persists correctly ───
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/categories_tags.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/categories_tags.spec.js:154:17
+
+    Error Context: test-results/evidence/categories_tags--AC-6-upda-73be5--via-PUT-persists-correctly/error-context.md
+
+  32) acceptance/categories_tags.spec.js:184:1 › [AC-6] tags with strings exceeding 50 characters returns 422 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/categories_tags.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/categories_tags.spec.js:186:17
+
+    Error Context: test-results/evidence/categories_tags--AC-6-tags-109f1-g-50-characters-returns-422/error-context.md
+
+  33) acceptance/categories_tags.spec.js:196:1 › [AC-6] multiple valid tags are all stored correctly 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/categories_tags.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/categories_tags.spec.js:198:17
+
+    Error Context: test-results/evidence/categories_tags--AC-6-mult-4357c-gs-are-all-stored-correctly/error-context.md
+
+  34) acceptance/due_dates.spec.js:38:1 › [AC-5] creating a task with a valid future due_date stores it in ISO 8601 format 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/due_dates.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/due_dates.spec.js:40:17
+
+    Error Context: test-results/evidence/due_dates--AC-5-creating-a-c6df8-tores-it-in-ISO-8601-format/error-context.md
+
+  35) acceptance/due_dates.spec.js:68:1 › [AC-5] creating a task with null due_date is accepted ────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/due_dates.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/due_dates.spec.js:70:17
+
+    Error Context: test-results/evidence/due_dates--AC-5-creating-a-459b6-h-null-due-date-is-accepted/error-context.md
+
+  36) acceptance/due_dates.spec.js:88:1 › [AC-5] updating a task to set a due_date persists correctly 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/due_dates.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/due_dates.spec.js:90:17
+
+    Error Context: test-results/evidence/due_dates--AC-5-updating-a-045ba-due-date-persists-correctly/error-context.md
+
+  37) acceptance/due_dates.spec.js:119:1 › [AC-5] updating a task to clear its due_date stores null 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/due_dates.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/due_dates.spec.js:121:17
+
+    Error Context: test-results/evidence/due_dates--AC-5-updating-a-a7723-ar-its-due-date-stores-null/error-context.md
+
+  38) acceptance/due_dates.spec.js:149:1 › [AC-5] due_date is returned consistently across all API responses 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/due_dates.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/due_dates.spec.js:151:17
+
+    Error Context: test-results/evidence/due_dates--AC-5-due-date-i-35079-ly-across-all-API-responses/error-context.md
+
+  39) acceptance/error_handling.spec.js:38:1 › [AC-13] unauthenticated GET /api/tasks returns 401 ──
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 401
+    Received: 404
+
+      38 | test('[AC-13] unauthenticated GET /api/tasks returns 401', async ({ request }) => {
+      39 |   const resp = await request.get('/api/tasks');
+    > 40 |   expect(resp.status()).toBe(401);
+         |                         ^
+      41 | });
+      42 |
+      43 | test('[AC-13] unauthenticated POST /api/tasks returns 401', async ({ request }) => {
+        at /workspace/task-management-dashboard/acceptance/error_handling.spec.js:40:25
+
+    Error Context: test-results/evidence/error_handling--AC-13-unau-3f0dd-d-GET-api-tasks-returns-401/error-context.md
+
+  40) acceptance/error_handling.spec.js:43:1 › [AC-13] unauthenticated POST /api/tasks returns 401 ─
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 401
+    Received: 404
+
+      43 | test('[AC-13] unauthenticated POST /api/tasks returns 401', async ({ request }) => {
+      44 |   const resp = await request.post('/api/tasks', { data: { title: 'no-auth-task', priority: 'low' } });
+    > 45 |   expect(resp.status()).toBe(401);
+         |                         ^
+      46 | });
+      47 |
+      48 | test('[AC-13] unauthenticated PUT /api/tasks/{id} returns 401', async ({ request }) => {
+        at /workspace/task-management-dashboard/acceptance/error_handling.spec.js:45:25
+
+    Error Context: test-results/evidence/error_handling--AC-13-unau-2fa2b--POST-api-tasks-returns-401/error-context.md
+
+  41) acceptance/error_handling.spec.js:48:1 › [AC-13] unauthenticated PUT /api/tasks/{id} returns 401 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 401
+    Received: 404
+
+      50 |     data: { title: 'no-auth-update', version: 1 },
+      51 |   });
+    > 52 |   expect(resp.status()).toBe(401);
+         |                         ^
+      53 | });
+      54 |
+      55 | test('[AC-13] unauthenticated DELETE /api/tasks/{id} returns 401', async ({ request }) => {
+        at /workspace/task-management-dashboard/acceptance/error_handling.spec.js:52:25
+
+    Error Context: test-results/evidence/error_handling--AC-13-unau-16f8e-UT-api-tasks-id-returns-401/error-context.md
+
+  42) acceptance/error_handling.spec.js:55:1 › [AC-13] unauthenticated DELETE /api/tasks/{id} returns 401 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 401
+    Received: 404
+
+      55 | test('[AC-13] unauthenticated DELETE /api/tasks/{id} returns 401', async ({ request }) => {
+      56 |   const resp = await request.delete('/api/tasks/00000000-0000-0000-0000-000000000000');
+    > 57 |   expect(resp.status()).toBe(401);
+         |                         ^
+      58 | });
+      59 |
+      60 | test('[AC-13] unauthenticated GET /api/analytics returns 401', async ({ request }) => {
+        at /workspace/task-management-dashboard/acceptance/error_handling.spec.js:57:25
+
+    Error Context: test-results/evidence/error_handling--AC-13-unau-a9c7a-TE-api-tasks-id-returns-401/error-context.md
+
+  43) acceptance/error_handling.spec.js:60:1 › [AC-13] unauthenticated GET /api/analytics returns 401 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 401
+    Received: 404
+
+      60 | test('[AC-13] unauthenticated GET /api/analytics returns 401', async ({ request }) => {
+      61 |   const resp = await request.get('/api/analytics');
+    > 62 |   expect(resp.status()).toBe(401);
+         |                         ^
+      63 | });
+      64 |
+      65 | test('[AC-13] unauthenticated POST /api/logout returns 401', async ({ request }) => {
+        at /workspace/task-management-dashboard/acceptance/error_handling.spec.js:62:25
+
+    Error Context: test-results/evidence/error_handling--AC-13-unau-5460f-T-api-analytics-returns-401/error-context.md
+
+  44) acceptance/error_handling.spec.js:65:1 › [AC-13] unauthenticated POST /api/logout returns 401 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 401
+    Received: 404
+
+      65 | test('[AC-13] unauthenticated POST /api/logout returns 401', async ({ request }) => {
+      66 |   const resp = await request.post('/api/logout');
+    > 67 |   expect(resp.status()).toBe(401);
+         |                         ^
+      68 | });
+      69 |
+      70 | // ── AC-13: Non-existent resource IDs return 404 ───────────────────────────────
+        at /workspace/task-management-dashboard/acceptance/error_handling.spec.js:67:25
+
+    Error Context: test-results/evidence/error_handling--AC-13-unau-b0b10-POST-api-logout-returns-401/error-context.md
+
+  45) acceptance/error_handling.spec.js:72:1 › [AC-13] GET non-existent task returns 404 ───────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/error_handling.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/error_handling.spec.js:74:17
+
+    Error Context: test-results/evidence/error_handling--AC-13-GET-non-existent-task-returns-404/error-context.md
+
+  46) acceptance/error_handling.spec.js:81:1 › [AC-13] PUT non-existent task returns 404 ───────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/error_handling.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/error_handling.spec.js:83:17
+
+    Error Context: test-results/evidence/error_handling--AC-13-PUT-non-existent-task-returns-404/error-context.md
+
+  47) acceptance/error_handling.spec.js:91:1 › [AC-13] DELETE non-existent task returns 404 ────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/error_handling.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/error_handling.spec.js:93:17
+
+    Error Context: test-results/evidence/error_handling--AC-13-DELETE-non-existent-task-returns-404/error-context.md
+
+  48) acceptance/error_handling.spec.js:102:1 › [AC-13] POST /api/register with missing username returns 422 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 422
+    Received: 404
+
+      104 |     data: { email: `missing-user-${uid()}@example.com`, password: 'securepass123' },
+      105 |   });
+    > 106 |   expect(resp.status()).toBe(422);
+          |                         ^
+      107 |   const body = await resp.json();
+      108 |   expect(body).toHaveProperty('detail');
+      109 | });
+        at /workspace/task-management-dashboard/acceptance/error_handling.spec.js:106:25
+
+    Error Context: test-results/evidence/error_handling--AC-13-POST-b6931-issing-username-returns-422/error-context.md
+
+  49) acceptance/error_handling.spec.js:111:1 › [AC-13] POST /api/register with missing email returns 422 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 422
+    Received: 404
+
+      113 |     data: { username: `missing-email-${uid()}`, password: 'securepass123' },
+      114 |   });
+    > 115 |   expect(resp.status()).toBe(422);
+          |                         ^
+      116 |   const body = await resp.json();
+      117 |   expect(body).toHaveProperty('detail');
+      118 | });
+        at /workspace/task-management-dashboard/acceptance/error_handling.spec.js:115:25
+
+    Error Context: test-results/evidence/error_handling--AC-13-POST-92a9a-h-missing-email-returns-422/error-context.md
+
+  50) acceptance/error_handling.spec.js:120:1 › [AC-13] POST /api/register with missing password returns 422 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 422
+    Received: 404
+
+      122 |     data: { username: `missing-pw-${uid()}`, email: `${uid()}@example.com` },
+      123 |   });
+    > 124 |   expect(resp.status()).toBe(422);
+          |                         ^
+      125 |   const body = await resp.json();
+      126 |   expect(body).toHaveProperty('detail');
+      127 | });
+        at /workspace/task-management-dashboard/acceptance/error_handling.spec.js:124:25
+
+    Error Context: test-results/evidence/error_handling--AC-13-POST-ffebb-issing-password-returns-422/error-context.md
+
+  51) acceptance/error_handling.spec.js:129:1 › [AC-13] POST /api/login with missing email returns 422 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 422
+    Received: 404
+
+      131 |     data: { password: 'securepass123' },
+      132 |   });
+    > 133 |   expect(resp.status()).toBe(422);
+          |                         ^
+      134 |   const body = await resp.json();
+      135 |   expect(body).toHaveProperty('detail');
+      136 | });
+        at /workspace/task-management-dashboard/acceptance/error_handling.spec.js:133:25
+
+    Error Context: test-results/evidence/error_handling--AC-13-POST-3880d-h-missing-email-returns-422/error-context.md
+
+  52) acceptance/error_handling.spec.js:138:1 › [AC-13] POST /api/login with missing password returns 422 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 422
+    Received: 404
+
+      140 |     data: { email: `missing-pw-login-${uid()}@example.com` },
+      141 |   });
+    > 142 |   expect(resp.status()).toBe(422);
+          |                         ^
+      143 |   const body = await resp.json();
+      144 |   expect(body).toHaveProperty('detail');
+      145 | });
+        at /workspace/task-management-dashboard/acceptance/error_handling.spec.js:142:25
+
+    Error Context: test-results/evidence/error_handling--AC-13-POST-43139-issing-password-returns-422/error-context.md
+
+  53) acceptance/error_handling.spec.js:147:1 › [AC-13] POST /api/tasks with missing title returns 422 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/error_handling.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/error_handling.spec.js:149:17
+
+    Error Context: test-results/evidence/error_handling--AC-13-POST-9427b-h-missing-title-returns-422/error-context.md
+
+  54) acceptance/error_handling.spec.js:159:1 › [AC-13] POST /api/tasks with missing priority returns 422 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/error_handling.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/error_handling.spec.js:161:17
+
+    Error Context: test-results/evidence/error_handling--AC-13-POST-af5d7-issing-priority-returns-422/error-context.md
+
+  55) acceptance/error_handling.spec.js:171:1 › [AC-13] PUT /api/tasks/{id} with missing version returns 422 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/error_handling.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/error_handling.spec.js:173:17
+
+    Error Context: test-results/evidence/error_handling--AC-13-PUT--3ef71-missing-version-returns-422/error-context.md
+
+  56) acceptance/error_handling.spec.js:195:1 › [AC-13] registration with short password includes validation error 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 422
+    Received: 404
+
+      197 |     data: { username: `short-pw-${uid()}`, email: `${uid()}@example.com`, password: 'abc' },
+      198 |   });
+    > 199 |   expect(resp.status()).toBe(422);
+          |                         ^
+      200 |   const body = await resp.json();
+      201 |   expect(body).toHaveProperty('detail');
+      202 |   // Detail should be an array of error objects.
+        at /workspace/task-management-dashboard/acceptance/error_handling.spec.js:199:25
+
+    Error Context: test-results/evidence/error_handling--AC-13-regi-84948-d-includes-validation-error/error-context.md
+
+  57) acceptance/error_handling.spec.js:208:1 › [AC-13] registration with invalid email includes validation error 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 422
+    Received: 404
+
+      210 |     data: { username: `bad-email-${uid()}`, email: 'not-an-email', password: 'securepass123' },
+      211 |   });
+    > 212 |   expect(resp.status()).toBe(422);
+          |                         ^
+      213 |   const body = await resp.json();
+      214 |   expect(body).toHaveProperty('detail');
+      215 | });
+        at /workspace/task-management-dashboard/acceptance/error_handling.spec.js:212:25
+
+    Error Context: test-results/evidence/error_handling--AC-13-regi-2d7fe-l-includes-validation-error/error-context.md
+
+  58) acceptance/error_handling.spec.js:217:1 › [AC-13] task creation with invalid priority includes validation error 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/error_handling.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/error_handling.spec.js:219:17
+
+    Error Context: test-results/evidence/error_handling--AC-13-task-a2b44-y-includes-validation-error/error-context.md
+
+  59) acceptance/error_handling.spec.js:231:1 › [AC-13] all 401 responses have consistent structure 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 401
+    Received: 404
+
+      232 |   // Unauthenticated GET /api/tasks.
+      233 |   const resp1 = await request.get('/api/tasks');
+    > 234 |   expect(resp1.status()).toBe(401);
+          |                          ^
+      235 |   if (resp1.ok() === false) {
+      236 |     try {
+      237 |       const body1 = await resp1.json();
+        at /workspace/task-management-dashboard/acceptance/error_handling.spec.js:234:26
+
+    Error Context: test-results/evidence/error_handling--AC-13-all--e810a-s-have-consistent-structure/error-context.md
+
+  60) acceptance/error_handling.spec.js:251:1 › [AC-13] all 422 responses have consistent structure 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 422
+    Received: 404
+
+      252 |   // Registration with missing fields.
+      253 |   const resp1 = await request.post('/api/register', { data: {} });
+    > 254 |   expect(resp1.status()).toBe(422);
+          |                          ^
+      255 |   const body1 = await resp1.json();
+      256 |   expect(body1).toHaveProperty('detail');
+      257 |
+        at /workspace/task-management-dashboard/acceptance/error_handling.spec.js:254:26
+
+    Error Context: test-results/evidence/error_handling--AC-13-all--ca579-s-have-consistent-structure/error-context.md
+
+  61) acceptance/error_handling.spec.js:270:3 › [AC-13] all 404 responses have consistent structure 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/error_handling.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/error_handling.spec.js:272:19
+
+    Error Context: test-results/evidence/error_handling--AC-13-all--58595-s-have-consistent-structure/error-context.md
+
+  62) acceptance/error_handling.spec.js:302:1 › [AC-13] GET /api/health returns 200 without authentication 
+
+    Error: expect(received).toHaveProperty(path, value)
+
+    Expected path: "status"
+
+    Expected value: "healthy"
+    Received value: "ok"
+
+      304 |   expect(resp.status()).toBe(200);
+      305 |   const body = await resp.json();
+    > 306 |     expect(body).toHaveProperty('status', 'healthy');
+          |                  ^
+      307 |   });
+      308 |
+      309 |   // ── AC-13: Invalid token returns 401 ────────────────────────────────────────
+        at /workspace/task-management-dashboard/acceptance/error_handling.spec.js:306:18
+
+    Error Context: test-results/evidence/error_handling--AC-13-GET--a4186--200-without-authentication/error-context.md
+
+  63) acceptance/error_handling.spec.js:311:1 › [AC-13] request with invalid access token returns 401 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 401
+    Received: 404
+
+      313 |     headers: { Authorization: 'Bearer invalid-token-here' },
+      314 |   });
+    > 315 |   expect(resp.status()).toBe(401);
+          |                         ^
+      316 | });
+      317 |
+      318 | test('[AC-13] POST /api/logout with invalid token returns 401', async ({ request }) => {
+        at /workspace/task-management-dashboard/acceptance/error_handling.spec.js:315:25
+
+    Error Context: test-results/evidence/error_handling--AC-13-requ-e2d10-id-access-token-returns-401/error-context.md
+
+  64) acceptance/error_handling.spec.js:318:1 › [AC-13] POST /api/logout with invalid token returns 401 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 401
+    Received: 404
+
+      320 |     headers: { Authorization: 'Bearer invalid-token-here' },
+      321 |   });
+    > 322 |   expect(resp.status()).toBe(401);
+          |                         ^
+      323 | });
+      324 |
+      325 | test('[AC-13] POST /api/refresh with no refresh token returns 401', async ({ request }) => {
+        at /workspace/task-management-dashboard/acceptance/error_handling.spec.js:322:25
+
+    Error Context: test-results/evidence/error_handling--AC-13-POST-980bd-h-invalid-token-returns-401/error-context.md
+
+  65) acceptance/error_handling.spec.js:325:1 › [AC-13] POST /api/refresh with no refresh token returns 401 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 401
+    Received: 404
+
+      325 | test('[AC-13] POST /api/refresh with no refresh token returns 401', async ({ request }) => {
+      326 |   const resp = await request.post('/api/refresh');
+    > 327 |   expect(resp.status()).toBe(401);
+          |                         ^
+      328 | });
+      329 |
+        at /workspace/task-management-dashboard/acceptance/error_handling.spec.js:327:25
+
+    Error Context: test-results/evidence/error_handling--AC-13-POST-1c91a-o-refresh-token-returns-401/error-context.md
+
+  66) acceptance/priorities.spec.js:31:1 › [AC-4] creating a task with priority "low" succeeds ─────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      22 | async function getAccessToken(request, email, password) {
+      23 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 24 |   expect(resp.status()).toBe(200);
+         |                         ^
+      25 |   const body = await resp.json();
+      26 |   return body.access_token;
+      27 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/priorities.spec.js:24:25)
+        at /workspace/task-management-dashboard/acceptance/priorities.spec.js:33:17
+
+    Error Context: test-results/evidence/priorities--AC-4-creating-a-task-with-priority-low-succeeds/error-context.md
+
+  67) acceptance/priorities.spec.js:43:1 › [AC-4] creating a task with priority "medium" succeeds ──
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      22 | async function getAccessToken(request, email, password) {
+      23 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 24 |   expect(resp.status()).toBe(200);
+         |                         ^
+      25 |   const body = await resp.json();
+      26 |   return body.access_token;
+      27 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/priorities.spec.js:24:25)
+        at /workspace/task-management-dashboard/acceptance/priorities.spec.js:45:17
+
+    Error Context: test-results/evidence/priorities--AC-4-creating--4b2e9-th-priority-medium-succeeds/error-context.md
+
+  68) acceptance/priorities.spec.js:55:1 › [AC-4] creating a task with priority "high" succeeds ────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      22 | async function getAccessToken(request, email, password) {
+      23 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 24 |   expect(resp.status()).toBe(200);
+         |                         ^
+      25 |   const body = await resp.json();
+      26 |   return body.access_token;
+      27 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/priorities.spec.js:24:25)
+        at /workspace/task-management-dashboard/acceptance/priorities.spec.js:57:17
+
+    Error Context: test-results/evidence/priorities--AC-4-creating-a-task-with-priority-high-succeeds/error-context.md
+
+  69) acceptance/priorities.spec.js:67:1 › [AC-4] creating a task with priority "urgent" succeeds ──
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      22 | async function getAccessToken(request, email, password) {
+      23 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 24 |   expect(resp.status()).toBe(200);
+         |                         ^
+      25 |   const body = await resp.json();
+      26 |   return body.access_token;
+      27 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/priorities.spec.js:24:25)
+        at /workspace/task-management-dashboard/acceptance/priorities.spec.js:69:17
+
+    Error Context: test-results/evidence/priorities--AC-4-creating--97339-th-priority-urgent-succeeds/error-context.md
+
+  70) acceptance/priorities.spec.js:81:1 › [AC-4] creating a task with invalid priority returns 422 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      22 | async function getAccessToken(request, email, password) {
+      23 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 24 |   expect(resp.status()).toBe(200);
+         |                         ^
+      25 |   const body = await resp.json();
+      26 |   return body.access_token;
+      27 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/priorities.spec.js:24:25)
+        at /workspace/task-management-dashboard/acceptance/priorities.spec.js:83:17
+
+    Error Context: test-results/evidence/priorities--AC-4-creating--23b1b-nvalid-priority-returns-422/error-context.md
+
+  71) acceptance/priorities.spec.js:91:1 › [AC-4] creating a task with numeric priority returns 422 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      22 | async function getAccessToken(request, email, password) {
+      23 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 24 |   expect(resp.status()).toBe(200);
+         |                         ^
+      25 |   const body = await resp.json();
+      26 |   return body.access_token;
+      27 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/priorities.spec.js:24:25)
+        at /workspace/task-management-dashboard/acceptance/priorities.spec.js:93:17
+
+    Error Context: test-results/evidence/priorities--AC-4-creating--443fc-umeric-priority-returns-422/error-context.md
+
+  72) acceptance/priorities.spec.js:101:1 › [AC-4] creating a task with empty string priority returns 422 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      22 | async function getAccessToken(request, email, password) {
+      23 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 24 |   expect(resp.status()).toBe(200);
+         |                         ^
+      25 |   const body = await resp.json();
+      26 |   return body.access_token;
+      27 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/priorities.spec.js:24:25)
+        at /workspace/task-management-dashboard/acceptance/priorities.spec.js:103:17
+
+    Error Context: test-results/evidence/priorities--AC-4-creating--09456-string-priority-returns-422/error-context.md
+
+  73) acceptance/priorities.spec.js:111:1 › [AC-4] creating a task with missing priority returns 422 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      22 | async function getAccessToken(request, email, password) {
+      23 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 24 |   expect(resp.status()).toBe(200);
+         |                         ^
+      25 |   const body = await resp.json();
+      26 |   return body.access_token;
+      27 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/priorities.spec.js:24:25)
+        at /workspace/task-management-dashboard/acceptance/priorities.spec.js:113:17
+
+    Error Context: test-results/evidence/priorities--AC-4-creating--1beef-issing-priority-returns-422/error-context.md
+
+  74) acceptance/priorities.spec.js:121:1 › [AC-4] updating a task with invalid priority returns 422 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      22 | async function getAccessToken(request, email, password) {
+      23 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 24 |   expect(resp.status()).toBe(200);
+         |                         ^
+      25 |   const body = await resp.json();
+      26 |   return body.access_token;
+      27 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/priorities.spec.js:24:25)
+        at /workspace/task-management-dashboard/acceptance/priorities.spec.js:123:17
+
+    Error Context: test-results/evidence/priorities--AC-4-updating--6d156-nvalid-priority-returns-422/error-context.md
+
+  75) acceptance/priorities.spec.js:143:1 › [AC-4] each valid priority is stored and returned correctly 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      22 | async function getAccessToken(request, email, password) {
+      23 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 24 |   expect(resp.status()).toBe(200);
+         |                         ^
+      25 |   const body = await resp.json();
+      26 |   return body.access_token;
+      27 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/priorities.spec.js:24:25)
+        at /workspace/task-management-dashboard/acceptance/priorities.spec.js:147:19
+
+    Error Context: test-results/evidence/priorities--AC-4-each-vali-98a60-ored-and-returned-correctly/error-context.md
+
+  76) acceptance/search_filter.spec.js:50:1 › [AC-7] search matches task title case-insensitively ──
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/search_filter.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/search_filter.spec.js:52:17
+
+    Error Context: test-results/evidence/search_filter--AC-7-search-4e732-sk-title-case-insensitively/error-context.md
+
+  77) acceptance/search_filter.spec.js:73:1 › [AC-7] search matches task description case-insensitively 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/search_filter.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/search_filter.spec.js:75:17
+
+    Error Context: test-results/evidence/search_filter--AC-7-search-cdae7-cription-case-insensitively/error-context.md
+
+  78) acceptance/search_filter.spec.js:92:1 › [AC-7] search with no results returns empty list ─────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/search_filter.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/search_filter.spec.js:94:17
+
+    Error Context: test-results/evidence/search_filter--AC-7-search-0222a--results-returns-empty-list/error-context.md
+
+  79) acceptance/search_filter.spec.js:110:1 › [AC-7] filter by priority returns only matching tasks 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/search_filter.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/search_filter.spec.js:112:17
+
+    Error Context: test-results/evidence/search_filter--AC-7-filter-03e59-returns-only-matching-tasks/error-context.md
+
+  80) acceptance/search_filter.spec.js:143:1 › [AC-7] filter by status returns only matching tasks ─
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/search_filter.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/search_filter.spec.js:145:17
+
+    Error Context: test-results/evidence/search_filter--AC-7-filter-782bc-returns-only-matching-tasks/error-context.md
+
+  81) acceptance/search_filter.spec.js:189:1 › [AC-7] filter by assignee_id returns only assigned tasks 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/search_filter.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/search_filter.spec.js:194:18
+
+    Error Context: test-results/evidence/search_filter--AC-7-filter-baf39-returns-only-assigned-tasks/error-context.md
+
+  82) acceptance/search_filter.spec.js:250:1 › [AC-7] filter by due_date_before returns only matching tasks 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/search_filter.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/search_filter.spec.js:252:17
+
+    Error Context: test-results/evidence/search_filter--AC-7-filter-ed9dc-returns-only-matching-tasks/error-context.md
+
+  83) acceptance/search_filter.spec.js:275:1 › [AC-7] combining search and priority filter narrows results 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/search_filter.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/search_filter.spec.js:277:17
+
+    Error Context: test-results/evidence/search_filter--AC-7-combin-1f0b8-rity-filter-narrows-results/error-context.md
+
+  84) acceptance/search_filter.spec.js:297:1 › [AC-7] pagination works correctly with filtered results 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/search_filter.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/search_filter.spec.js:299:17
+
+    Error Context: test-results/evidence/search_filter--AC-7-pagina-61524-ectly-with-filtered-results/error-context.md
+
+  85) acceptance/tasks.spec.js:58:1 › [AC-2][AC-9] create a task returns 201 with the created object 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/tasks.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/tasks.spec.js:60:17
+
+    Error Context: test-results/evidence/tasks--AC-2-AC-9-create-a--a008b-201-with-the-created-object/error-context.md
+
+  86) acceptance/tasks.spec.js:75:1 › [AC-2][AC-9] created task fields match the creation payload ──
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/tasks.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/tasks.spec.js:77:17
+
+    Error Context: test-results/evidence/tasks--AC-2-AC-9-created-t-bd975--match-the-creation-payload/error-context.md
+
+  87) acceptance/tasks.spec.js:94:1 › [AC-2][AC-9] GET task by id returns all fields ───────────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/tasks.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/tasks.spec.js:96:17
+
+    Error Context: test-results/evidence/tasks--AC-2-AC-9-GET-task-by-id-returns-all-fields/error-context.md
+
+  88) acceptance/tasks.spec.js:114:1 › [AC-2][AC-9] GET a non-existent task returns 404 ────────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/tasks.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/tasks.spec.js:116:17
+
+    Error Context: test-results/evidence/tasks--AC-2-AC-9-GET-a-non-existent-task-returns-404/error-context.md
+
+  89) acceptance/tasks.spec.js:125:1 › [AC-2][AC-9] update a task via PUT returns the updated object 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/tasks.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/tasks.spec.js:127:17
+
+    Error Context: test-results/evidence/tasks--AC-2-AC-9-update-a--68e2c--returns-the-updated-object/error-context.md
+
+  90) acceptance/tasks.spec.js:151:1 › [AC-2][AC-9] PUT with wrong version returns 409 conflict ────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/tasks.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/tasks.spec.js:153:17
+
+    Error Context: test-results/evidence/tasks--AC-2-AC-9-PUT-with-wrong-version-returns-409-conflict/error-context.md
+
+  91) acceptance/tasks.spec.js:167:1 › [AC-2][AC-9] delete a task returns 204 and subsequent GET returns 404 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/tasks.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/tasks.spec.js:169:17
+
+    Error Context: test-results/evidence/tasks--AC-2-AC-9-delete-a--4d797--subsequent-GET-returns-404/error-context.md
+
+  92) acceptance/tasks.spec.js:187:1 › [AC-2][AC-9] GET /api/tasks returns paginated task list ─────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      29 | async function getAccessToken(request, email, password) {
+      30 |   const resp = await request.post('/api/login', { data: { email, password } });
+    > 31 |   expect(resp.status()).toBe(200);
+         |                         ^
+      32 |   const body = await resp.json();
+      33 |   return body.access_token;
+      34 | }
+        at getAccessToken (/workspace/task-management-dashboard/acceptance/tasks.spec.js:31:25)
+        at /workspace/task-management-dashboard/acceptance/tasks.spec.js:189:17
+
+    Error Context: test-results/evidence/tasks--AC-2-AC-9-GET-api-tasks-returns-paginated-task-list/error-context.md
+
+  93) acceptance/tasks.spec.js:210:1 › [AC-9] unauthenticated requests to /api/tasks return 401 ────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 401
+    Received: 404
+
+      210 | test('[AC-9] unauthenticated requests to /api/tasks return 401', async ({ request }) => {
+      211 |   const resp = await request.get('/api/tasks');
+    > 212 |   expect(resp.status()).toBe(401);
+          |                         ^
+      213 | });
+      214 |
+        at /workspace/task-management-dashboard/acceptance/tasks.spec.js:212:25
+
+    Error Context: test-results/evidence/tasks--AC-9-unauthenticated-requests-to-api-tasks-return-401/error-context.md
+
+  93 failed
+    acceptance/analytics.spec.js:52:1 › [AC-11] analytics returns all required fields with correct types 
+    acceptance/analytics.spec.js:91:1 › [AC-11] total_tasks reflects the actual number of tasks owned by the user 
+    acceptance/analytics.spec.js:112:1 › [AC-11] tasks_by_priority returns accurate counts per priority level 
+    acceptance/analytics.spec.js:138:1 › [AC-11] tasks_by_status returns accurate counts per status 
+    acceptance/analytics.spec.js:160:1 › [AC-11] overdue_count counts tasks past due_date where status is not done 
+    acceptance/analytics.spec.js:183:1 › [AC-11] completion_rate reflects percentage of completed tasks 
+    acceptance/analytics.spec.js:206:1 › [AC-11] analytics returns zeros when user has no tasks ────
+    acceptance/analytics.spec.js:231:1 › [AC-11] analytics only returns statistics for the authenticated user 
+    acceptance/api_docs.spec.js:21:1 › [AC-12] GET /docs contains registered API endpoints ─────────
+    acceptance/api_docs.spec.js:54:1 › [AC-12] OpenAPI spec includes all registered endpoints ──────
+    acceptance/api_docs.spec.js:79:1 › [AC-12] OpenAPI spec defines request and response schemas for tasks 
+    acceptance/assign.spec.js:73:1 › [AC-3] assign a task via PUT and verify assigned_to is set ────
+    acceptance/assign.spec.js:111:1 › [AC-10] assignee sees assigned task in their filtered list ───
+    acceptance/assign.spec.js:150:1 › [AC-3] assigning to a non-existent user returns 404 ──────────
+    acceptance/auth.spec.js:45:1 › [AC-1][AC-8] user can register with valid credentials ───────────
+    acceptance/auth.spec.js:52:1 › [AC-1][AC-8] registration rejects duplicate username ────────────
+    acceptance/auth.spec.js:61:1 › [AC-1][AC-8] registration rejects duplicate email ───────────────
+    acceptance/auth.spec.js:70:1 › [AC-1][AC-8] registration rejects short password ────────────────
+    acceptance/auth.spec.js:77:1 › [AC-1][AC-8] registration rejects invalid email format ──────────
+    acceptance/auth.spec.js:86:1 › [AC-8][AC-1] login with valid credentials returns access_token and refresh_token 
+    acceptance/auth.spec.js:96:1 › [AC-8] login rejects invalid credentials ────────────────────────
+    acceptance/auth.spec.js:103:1 › [AC-8] login rejects wrong password for existing user ──────────
+    acceptance/auth.spec.js:113:1 › [AC-1] access_token is a valid JWT with required claims ────────
+    acceptance/auth.spec.js:141:1 › [AC-1] refresh_token is returned as a string ───────────────────
+    acceptance/auth.spec.js:153:3 › [AC-8] logout with valid token invalidates the refresh token ───
+    acceptance/categories_tags.spec.js:38:1 › [AC-6] creating a task with null category and empty tags is accepted 
+    acceptance/categories_tags.spec.js:52:1 › [AC-6] creating a task with empty string category and empty tags is accepted 
+    acceptance/categories_tags.spec.js:68:1 › [AC-6] category stores and returns the exact string provided 
+    acceptance/categories_tags.spec.js:92:1 › [AC-6] tags stores and returns the exact array of strings provided 
+    acceptance/categories_tags.spec.js:122:1 › [AC-6] updating category via PUT persists correctly ─
+    acceptance/categories_tags.spec.js:152:1 › [AC-6] updating tags via PUT persists correctly ─────
+    acceptance/categories_tags.spec.js:184:1 › [AC-6] tags with strings exceeding 50 characters returns 422 
+    acceptance/categories_tags.spec.js:196:1 › [AC-6] multiple valid tags are all stored correctly ─
+    acceptance/due_dates.spec.js:38:1 › [AC-5] creating a task with a valid future due_date stores it in ISO 8601 format 
+    acceptance/due_dates.spec.js:68:1 › [AC-5] creating a task with null due_date is accepted ──────
+    acceptance/due_dates.spec.js:88:1 › [AC-5] updating a task to set a due_date persists correctly 
+    acceptance/due_dates.spec.js:119:1 › [AC-5] updating a task to clear its due_date stores null ──
+    acceptance/due_dates.spec.js:149:1 › [AC-5] due_date is returned consistently across all API responses 
+    acceptance/error_handling.spec.js:38:1 › [AC-13] unauthenticated GET /api/tasks returns 401 ────
+    acceptance/error_handling.spec.js:43:1 › [AC-13] unauthenticated POST /api/tasks returns 401 ───
+    acceptance/error_handling.spec.js:48:1 › [AC-13] unauthenticated PUT /api/tasks/{id} returns 401 
+    acceptance/error_handling.spec.js:55:1 › [AC-13] unauthenticated DELETE /api/tasks/{id} returns 401 
+    acceptance/error_handling.spec.js:60:1 › [AC-13] unauthenticated GET /api/analytics returns 401 
+    acceptance/error_handling.spec.js:65:1 › [AC-13] unauthenticated POST /api/logout returns 401 ──
+    acceptance/error_handling.spec.js:72:1 › [AC-13] GET non-existent task returns 404 ─────────────
+    acceptance/error_handling.spec.js:81:1 › [AC-13] PUT non-existent task returns 404 ─────────────
+    acceptance/error_handling.spec.js:91:1 › [AC-13] DELETE non-existent task returns 404 ──────────
+    acceptance/error_handling.spec.js:102:1 › [AC-13] POST /api/register with missing username returns 422 
+    acceptance/error_handling.spec.js:111:1 › [AC-13] POST /api/register with missing email returns 422 
+    acceptance/error_handling.spec.js:120:1 › [AC-13] POST /api/register with missing password returns 422 
+    acceptance/error_handling.spec.js:129:1 › [AC-13] POST /api/login with missing email returns 422 
+    acceptance/error_handling.spec.js:138:1 › [AC-13] POST /api/login with missing password returns 422 
+    acceptance/error_handling.spec.js:147:1 › [AC-13] POST /api/tasks with missing title returns 422 
+    acceptance/error_handling.spec.js:159:1 › [AC-13] POST /api/tasks with missing priority returns 422 
+    acceptance/error_handling.spec.js:171:1 › [AC-13] PUT /api/tasks/{id} with missing version returns 422 
+    acceptance/error_handling.spec.js:195:1 › [AC-13] registration with short password includes validation error 
+    acceptance/error_handling.spec.js:208:1 › [AC-13] registration with invalid email includes validation error 
+    acceptance/error_handling.spec.js:217:1 › [AC-13] task creation with invalid priority includes validation error 
+    acceptance/error_handling.spec.js:231:1 › [AC-13] all 401 responses have consistent structure ──
+    acceptance/error_handling.spec.js:251:1 › [AC-13] all 422 responses have consistent structure ──
+    acceptance/error_handling.spec.js:270:3 › [AC-13] all 404 responses have consistent structure ──
+    acceptance/error_handling.spec.js:302:1 › [AC-13] GET /api/health returns 200 without authentication 
+    acceptance/error_handling.spec.js:311:1 › [AC-13] request with invalid access token returns 401 
+    acceptance/error_handling.spec.js:318:1 › [AC-13] POST /api/logout with invalid token returns 401 
+    acceptance/error_handling.spec.js:325:1 › [AC-13] POST /api/refresh with no refresh token returns 401 
+    acceptance/priorities.spec.js:31:1 › [AC-4] creating a task with priority "low" succeeds ───────
+    acceptance/priorities.spec.js:43:1 › [AC-4] creating a task with priority "medium" succeeds ────
+    acceptance/priorities.spec.js:55:1 › [AC-4] creating a task with priority "high" succeeds ──────
+    acceptance/priorities.spec.js:67:1 › [AC-4] creating a task with priority "urgent" succeeds ────
+    acceptance/priorities.spec.js:81:1 › [AC-4] creating a task with invalid priority returns 422 ──
+    acceptance/priorities.spec.js:91:1 › [AC-4] creating a task with numeric priority returns 422 ──
+    acceptance/priorities.spec.js:101:1 › [AC-4] creating a task with empty string priority returns 422 
+    acceptance/priorities.spec.js:111:1 › [AC-4] creating a task with missing priority returns 422 ─
+    acceptance/priorities.spec.js:121:1 › [AC-4] updating a task with invalid priority returns 422 ─
+    acceptance/priorities.spec.js:143:1 › [AC-4] each valid priority is stored and returned correctly 
+    acceptance/search_filter.spec.js:50:1 › [AC-7] search matches task title case-insensitively ────
+    acceptance/search_filter.spec.js:73:1 › [AC-7] search matches task description case-insensitively 
+    acceptance/search_filter.spec.js:92:1 › [AC-7] search with no results returns empty list ───────
+    acceptance/search_filter.spec.js:110:1 › [AC-7] filter by priority returns only matching tasks ─
+    acceptance/search_filter.spec.js:143:1 › [AC-7] filter by status returns only matching tasks ───
+    acceptance/search_filter.spec.js:189:1 › [AC-7] filter by assignee_id returns only assigned tasks 
+    acceptance/search_filter.spec.js:250:1 › [AC-7] filter by due_date_before returns only matching tasks 
+    acceptance/search_filter.spec.js:275:1 › [AC-7] combining search and priority filter narrows results 
+    acceptance/search_filter.spec.js:297:1 › [AC-7] pagination works correctly with filtered results 
+    acceptance/tasks.spec.js:58:1 › [AC-2][AC-9] create a task returns 201 with the created object ─
+    acceptance/tasks.spec.js:75:1 › [AC-2][AC-9] created task fields match the creation payload ────
+    acceptance/tasks.spec.js:94:1 › [AC-2][AC-9] GET task by id returns all fields ─────────────────
+    acceptance/tasks.spec.js:114:1 › [AC-2][AC-9] GET a non-existent task returns 404 ──────────────
+    acceptance/tasks.spec.js:125:1 › [AC-2][AC-9] update a task via PUT returns the updated object ─
+    acceptance/tasks.spec.js:151:1 › [AC-2][AC-9] PUT with wrong version returns 409 conflict ──────
+    acceptance/tasks.spec.js:167:1 › [AC-2][AC-9] delete a task returns 204 and subsequent GET returns 404 
+    acceptance/tasks.spec.js:187:1 › [AC-2][AC-9] GET /api/tasks returns paginated task list ───────
+    acceptance/tasks.spec.js:210:1 › [AC-9] unauthenticated requests to /api/tasks return 401 ──────
+  4 passed (26.6s)

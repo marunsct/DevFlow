@@ -1,0 +1,82 @@
+  80 failed
+    acceptance/analytics.spec.js:52:1 › [AC-11] analytics returns all required fields with correct types 
+    acceptance/analytics.spec.js:91:1 › [AC-11] total_tasks reflects the actual number of tasks owned by the user 
+    acceptance/analytics.spec.js:112:1 › [AC-11] tasks_by_priority returns accurate counts per priority level 
+    acceptance/analytics.spec.js:138:1 › [AC-11] tasks_by_status returns accurate counts per status 
+    acceptance/analytics.spec.js:160:1 › [AC-11] overdue_count counts tasks past due_date where status is not done 
+    acceptance/analytics.spec.js:183:1 › [AC-11] completion_rate reflects percentage of completed tasks 
+    acceptance/analytics.spec.js:206:1 › [AC-11] analytics returns zeros when user has no tasks ────
+    acceptance/analytics.spec.js:231:1 › [AC-11] analytics only returns statistics for the authenticated user 
+    acceptance/api_docs.spec.js:21:1 › [AC-12] GET /docs contains registered API endpoints ─────────
+    acceptance/api_docs.spec.js:54:1 › [AC-12] OpenAPI spec includes all registered endpoints ──────
+    acceptance/api_docs.spec.js:79:1 › [AC-12] OpenAPI spec defines request and response schemas for tasks 
+    acceptance/assign.spec.js:73:1 › [AC-3] assign a task via PUT and verify assigned_to is set ────
+    acceptance/assign.spec.js:111:1 › [AC-10] assignee sees assigned task in their filtered list ───
+    acceptance/assign.spec.js:150:1 › [AC-3] assigning to a non-existent user returns 404 ──────────
+    acceptance/auth.spec.js:45:1 › [AC-1][AC-8] user can register with valid credentials ───────────
+    acceptance/auth.spec.js:52:1 › [AC-1][AC-8] registration rejects duplicate username ────────────
+    acceptance/auth.spec.js:61:1 › [AC-1][AC-8] registration rejects duplicate email ───────────────
+    acceptance/auth.spec.js:86:1 › [AC-8][AC-1] login with valid credentials returns access_token and refresh_token 
+    acceptance/auth.spec.js:96:1 › [AC-8] login rejects invalid credentials ────────────────────────
+    acceptance/auth.spec.js:103:1 › [AC-8] login rejects wrong password for existing user ──────────
+    acceptance/auth.spec.js:113:1 › [AC-1] access_token is a valid JWT with required claims ────────
+    acceptance/auth.spec.js:141:1 › [AC-1] refresh_token is returned as a string ───────────────────
+    acceptance/auth.spec.js:153:3 › [AC-8] logout with valid token invalidates the refresh token ───
+    acceptance/categories_tags.spec.js:16:1 › [AC-6] creating a task with null category and empty tags is accepted 
+    acceptance/categories_tags.spec.js:30:1 › [AC-6] creating a task with empty string category and empty tags is accepted 
+    acceptance/categories_tags.spec.js:45:1 › [AC-6] category stores and returns the exact string provided 
+    acceptance/categories_tags.spec.js:69:1 › [AC-6] tags stores and returns the exact array of strings provided 
+    acceptance/categories_tags.spec.js:99:1 › [AC-6] updating category via PUT persists correctly ──
+    acceptance/categories_tags.spec.js:129:1 › [AC-6] updating tags via PUT persists correctly ─────
+    acceptance/categories_tags.spec.js:161:1 › [AC-6] tags with strings exceeding 50 characters returns 422 
+    acceptance/categories_tags.spec.js:173:1 › [AC-6] multiple valid tags are all stored correctly ─
+    acceptance/due_dates.spec.js:38:1 › [AC-5] creating a task with a valid future due_date stores it in ISO 8601 format 
+    acceptance/due_dates.spec.js:68:1 › [AC-5] creating a task with null due_date is accepted ──────
+    acceptance/due_dates.spec.js:88:1 › [AC-5] updating a task to set a due_date persists correctly 
+    acceptance/due_dates.spec.js:119:1 › [AC-5] updating a task to clear its due_date stores null ──
+    acceptance/due_dates.spec.js:149:1 › [AC-5] due_date is returned consistently across all API responses 
+    acceptance/error_handling.spec.js:38:1 › [AC-13] unauthenticated GET /api/tasks returns 401 ────
+    acceptance/error_handling.spec.js:43:1 › [AC-13] unauthenticated POST /api/tasks returns 401 ───
+    acceptance/error_handling.spec.js:48:1 › [AC-13] unauthenticated PUT /api/tasks/{id} returns 401 
+    acceptance/error_handling.spec.js:55:1 › [AC-13] unauthenticated DELETE /api/tasks/{id} returns 401 
+    acceptance/error_handling.spec.js:60:1 › [AC-13] unauthenticated GET /api/analytics returns 401 
+    acceptance/error_handling.spec.js:72:1 › [AC-13] GET non-existent task returns 404 ─────────────
+    acceptance/error_handling.spec.js:81:1 › [AC-13] PUT non-existent task returns 404 ─────────────
+    acceptance/error_handling.spec.js:91:1 › [AC-13] DELETE non-existent task returns 404 ──────────
+    acceptance/error_handling.spec.js:147:1 › [AC-13] POST /api/tasks with missing title returns 422 
+    acceptance/error_handling.spec.js:159:1 › [AC-13] POST /api/tasks with missing priority returns 422 
+    acceptance/error_handling.spec.js:171:1 › [AC-13] PUT /api/tasks/{id} with missing version returns 422 
+    acceptance/error_handling.spec.js:217:1 › [AC-13] task creation with invalid priority includes validation error 
+    acceptance/error_handling.spec.js:231:1 › [AC-13] all 401 responses have consistent structure ──
+    acceptance/error_handling.spec.js:251:1 › [AC-13] all 422 responses have consistent structure ──
+    acceptance/error_handling.spec.js:270:1 › [AC-13] all 404 responses have consistent structure ──
+    acceptance/error_handling.spec.js:305:1 › [AC-13] request with invalid access token returns 401 
+    acceptance/priorities.spec.js:15:1 › [AC-4] creating a task with priority "low" succeeds ───────
+    acceptance/priorities.spec.js:27:1 › [AC-4] creating a task with priority "medium" succeeds ────
+    acceptance/priorities.spec.js:39:1 › [AC-4] creating a task with priority "high" succeeds ──────
+    acceptance/priorities.spec.js:51:1 › [AC-4] creating a task with priority "urgent" succeeds ────
+    acceptance/priorities.spec.js:65:1 › [AC-4] creating a task with invalid priority returns 422 ──
+    acceptance/priorities.spec.js:75:1 › [AC-4] creating a task with numeric priority returns 422 ──
+    acceptance/priorities.spec.js:85:1 › [AC-4] creating a task with empty string priority returns 422 
+    acceptance/priorities.spec.js:95:1 › [AC-4] creating a task with missing priority returns 422 ──
+    acceptance/priorities.spec.js:105:1 › [AC-4] updating a task with invalid priority returns 422 ─
+    acceptance/priorities.spec.js:127:1 › [AC-4] each valid priority is stored and returned correctly 
+    acceptance/search_filter.spec.js:50:1 › [AC-7] search matches task title case-insensitively ────
+    acceptance/search_filter.spec.js:73:1 › [AC-7] search matches task description case-insensitively 
+    acceptance/search_filter.spec.js:92:1 › [AC-7] search with no results returns empty list ───────
+    acceptance/search_filter.spec.js:110:1 › [AC-7] filter by priority returns only matching tasks ─
+    acceptance/search_filter.spec.js:143:1 › [AC-7] filter by status returns only matching tasks ───
+    acceptance/search_filter.spec.js:189:1 › [AC-7] filter by assignee_id returns only assigned tasks 
+    acceptance/search_filter.spec.js:250:1 › [AC-7] filter by due_date_before returns only matching tasks 
+    acceptance/search_filter.spec.js:272:1 › [AC-7] combining search and priority filter narrows results 
+    acceptance/search_filter.spec.js:294:1 › [AC-7] pagination works correctly with filtered results 
+    acceptance/tasks.spec.js:16:1 › [AC-2][AC-9] create a task returns 201 with the created object ─
+    acceptance/tasks.spec.js:33:1 › [AC-2][AC-9] created task fields match the creation payload ────
+    acceptance/tasks.spec.js:53:1 › [AC-2][AC-9] GET task by id returns all fields ─────────────────
+    acceptance/tasks.spec.js:74:1 › [AC-2][AC-9] GET a non-existent task returns 404 ───────────────
+    acceptance/tasks.spec.js:89:1 › [AC-2][AC-9] update a task via PUT returns the updated object ──
+    acceptance/tasks.spec.js:116:1 › [AC-2][AC-9] PUT with wrong version returns 409 conflict ──────
+    acceptance/tasks.spec.js:133:1 › [AC-2][AC-9] delete a task returns 204 and subsequent GET returns 404 
+    acceptance/tasks.spec.js:153:1 › [AC-2][AC-9] GET /api/tasks returns paginated task list ───────
+    acceptance/tasks.spec.js:176:1 › [AC-9] unauthenticated requests to /api/tasks return 401 ──────
+  17 passed (4.7m)

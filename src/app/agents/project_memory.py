@@ -316,10 +316,13 @@ def digest_of(text: str, focus: str, budget: int) -> str:
     return f"Outline:\n{outline}" + (f"\n\nSections this request points at:\n{shown}" if shown else "")
 
 
-#: A line that defines something, in the languages the packs cover.
+#: A line that defines something, in the languages the packs cover. With the modifiers C#, Java, PHP and Kotlin write
+#: before a class or a function (`public`, `final class`, `public function`): measured, without them no C# or Java
+#: product file and 39 of 55 PHP ones were in the map at all.
 _DEFINES = re.compile(
-    r"^\s*(?:export\s+(?:default\s+)?)?(?:pub(?:\([a-z]+\))?\s+)?(?:async\s+)?"
-    r"(?:function\*?|class|interface|type|enum|struct|trait|def|func|fn|module|impl|"
+    r"^\s*(?:export\s+(?:default\s+)?)?(?:pub(?:\([a-z]+\))?\s+)?"
+    r"(?:(?:public|private|protected|internal|static|final|abstract|sealed|partial|readonly|data|open)\s+)*(?:async\s+)?"
+    r"(?:function\*?|class|interface|type|enum|struct|trait|record|def|func|fn|module|impl|"
     r"(?:const|let|var)\s+\w+\s*(?::[^=]+)?=\s*(?:async\s*)?(?:\([^)]*\)|\w+)\s*=>)\b.*"
 )
 #: The most a map of the files left out may take, in characters.

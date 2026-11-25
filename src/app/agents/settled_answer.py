@@ -589,8 +589,10 @@ IDENTICAL_ANSWERS_BEFORE_WITHHOLDING_THE_TOOL = 4
 #: An edit's result saying the change is already in the file.
 _ALREADY_APPLIED = re.compile(r'"status":\s*"already_applied"')
 
+#: The tool layer's own refusal of a call whose arguments do not fit the tool ("Error invoking tool 'read_file' with
+#: kwargs {...} with error: file_path: Field required") is one too: measured, the one refusal shape not counted.
 _REFUSED = re.compile(
-    r'^\s*(?:\[[^\]]*\]\s*)?(?:\{"error"|Error:|Refusing|Not running|Not looking|No journalled)',
+    r'^\s*(?:\[[^\]]*\]\s*)?(?:\{"error"|Error:|Error invoking tool\b|Refusing|Not running|Not looking|No journalled)',
 )
 
 #: How far back to look for an answer the stage already wrote. Bounded so an

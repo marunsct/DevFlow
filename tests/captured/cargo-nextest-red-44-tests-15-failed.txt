@@ -1,0 +1,446 @@
+warning: unused imports: `delete` and `put`
+ --> src/lib.rs:1:21
+  |
+1 | use axum::routing::{delete, get, post, put};
+  |                     ^^^^^^             ^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `Json`
+ --> src/lib.rs:2:12
+  |
+2 | use axum::{Json, Router};
+  |            ^^^^
+
+warning: unused import: `serde_json::json`
+ --> src/lib.rs:3:5
+  |
+3 | use serde_json::json;
+  |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::path::PathBuf`
+ --> src/lib.rs:4:5
+  |
+4 | use std::path::PathBuf;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Serialize`
+ --> src/handlers.rs:4:26
+  |
+4 | use serde::{Deserialize, Serialize};
+  |                          ^^^^^^^^^
+
+warning: `notes_api` (lib) generated 5 warnings (run `cargo fix --lib -p notes_api` to apply 5 suggestions)
+warning: unused import: `NoteRow`
+ --> tests/db_tests.rs:1:91
+  |
+1 | use notes_api::db::{create_note, delete_note, get_note, init_db, list_notes, update_note, NoteRow};
+  |                                                                                           ^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: `notes_api` (test "db_tests") generated 1 warning (run `cargo fix --test "db_tests"` to apply 1 suggestion)
+warning: unused import: `http_body_util::BodyExt`
+   --> tests/handler_tests.rs:273:9
+    |
+273 |     use http_body_util::BodyExt;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `serde_json::Value`
+   --> tests/handler_tests.rs:274:9
+    |
+274 |     use serde_json::Value;
+    |         ^^^^^^^^^^^^^^^^^
+
+warning: `notes_api` (test "handler_tests") generated 2 warnings (run `cargo fix --test "handler_tests"` to apply 2 suggestions)
+warning: `notes_api` (lib test) generated 5 warnings (5 duplicates)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.02s
+────────────
+ Nextest run ID b24b8e62-2a9b-45ba-9282-ed35966de54a with nextest profile: ci
+    Starting 44 tests across 4 binaries
+        PASS [   0.003s] notes_api db::tests::test_delete_note_returns_false_for_missing_id
+        PASS [   0.003s] notes_api db::tests::test_create_note_returns_unique_id
+        PASS [   0.003s] notes_api db::tests::test_get_note_returns_none_for_missing_id
+        FAIL [   0.003s] notes_api db::tests::test_list_notes_returns_in_ascending_order
+  stdout ───
+
+    running 1 test
+    test db::tests::test_list_notes_returns_in_ascending_order ... FAILED
+
+    failures:
+
+    failures:
+        db::tests::test_list_notes_returns_in_ascending_order
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'db::tests::test_list_notes_returns_in_ascending_order' panicked at src/db.rs:176:9:
+    assertion `left == right` failed
+      left: "Title 3"
+     right: "Title 1"
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        PASS [   0.003s] notes_api db::tests::test_update_note_returns_false_for_missing_id
+        PASS [   0.017s] notes_api::db_tests defect_fix_verification::init_db_compiles_and_runs_without_error_conversion
+        PASS [   0.020s] notes_api::db_tests defect_fix_verification::init_db_creates_correct_schema
+        PASS [   0.013s] notes_api::db_tests defect_fix_verification::init_db_creates_parent_directories
+        PASS [   0.013s] notes_api::db_tests defect_fix_verification::init_db_is_idempotent
+        PASS [   0.015s] notes_api::db_tests test_create_note_returns_unique_id
+        PASS [   0.013s] notes_api::db_tests test_default_body_is_empty_string
+        PASS [   0.015s] notes_api::db_tests test_delete_note_returns_false_for_missing_id
+        PASS [   0.018s] notes_api::db_tests test_delete_note_returns_true_and_removes_data
+        PASS [   0.015s] notes_api::db_tests test_get_note_returns_existing_note
+        PASS [   0.011s] notes_api::db_tests test_get_note_returns_none_for_missing_id
+        FAIL [   0.018s] notes_api::db_tests test_list_notes_returns_in_ascending_order
+  stdout ───
+
+    running 1 test
+    test test_list_notes_returns_in_ascending_order ... FAILED
+
+    failures:
+
+    failures:
+        test_list_notes_returns_in_ascending_order
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.02s
+
+  stderr ───
+
+    thread 'test_list_notes_returns_in_ascending_order' panicked at tests/db_tests.rs:54:5:
+    assertion `left == right` failed
+      left: "Title 3"
+     right: "Title 1"
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        PASS [   0.018s] notes_api::db_tests test_notes_are_ordered_by_id_asc_in_list
+        PASS [   0.009s] notes_api::db_tests test_update_note_returns_false_for_missing_id
+        PASS [   0.003s] notes_api::handler_tests ac10_method_not_allowed
+        FAIL [   0.003s] notes_api::handler_tests ac1_post_notes_creates_note_returns_201
+  stdout ───
+
+    running 1 test
+    test ac1_post_notes_creates_note_returns_201 ... FAILED
+
+    failures:
+
+    failures:
+        ac1_post_notes_creates_note_returns_201
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 24 filtered out; finished in 0.00s
+
+  stderr ───
+    Database error: unable to open database file: /workspace/.agent-home/tmp/ac1-80/notes.db
+
+    thread 'ac1_post_notes_creates_note_returns_201' panicked at tests/handler_tests.rs:56:5:
+    assertion `left == right` failed
+      left: 500
+     right: 201
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        PASS [   0.014s] notes_api::db_tests test_update_note_returns_true_and_updates_data
+        FAIL [   0.002s] notes_api::handler_tests ac1_post_notes_defaults_body_to_empty
+  stdout ───
+
+    running 1 test
+    test ac1_post_notes_defaults_body_to_empty ... FAILED
+
+    failures:
+
+    failures:
+        ac1_post_notes_defaults_body_to_empty
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 24 filtered out; finished in 0.00s
+
+  stderr ───
+    Database error: unable to open database file: /workspace/.agent-home/tmp/ac1_default_body-82/notes.db
+
+    thread 'ac1_post_notes_defaults_body_to_empty' panicked at tests/handler_tests.rs:66:5:
+    assertion `left == right` failed
+      left: 500
+     right: 201
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.002s] notes_api::handler_tests ac2_get_notes_empty_returns_empty_array
+  stdout ───
+
+    running 1 test
+    test ac2_get_notes_empty_returns_empty_array ... FAILED
+
+    failures:
+
+    failures:
+        ac2_get_notes_empty_returns_empty_array
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 24 filtered out; finished in 0.00s
+
+  stderr ───
+    Database error: unable to open database file: /workspace/.agent-home/tmp/ac2_empty-83/notes.db
+
+    thread 'ac2_get_notes_empty_returns_empty_array' panicked at tests/handler_tests.rs:126:5:
+    assertion `left == right` failed
+      left: 500
+     right: 200
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.003s] notes_api::handler_tests ac2_get_notes_returns_list_ordered_by_id
+  stdout ───
+
+    running 1 test
+    test ac2_get_notes_returns_list_ordered_by_id ... FAILED
+
+    failures:
+
+    failures:
+        ac2_get_notes_returns_list_ordered_by_id
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 24 filtered out; finished in 0.00s
+
+  stderr ───
+    Database error: unable to open database file: /workspace/.agent-home/tmp/ac2-85/notes.db
+    Database error: unable to open database file: /workspace/.agent-home/tmp/ac2-85/notes.db
+    Database error: unable to open database file: /workspace/.agent-home/tmp/ac2-85/notes.db
+    Database error: unable to open database file: /workspace/.agent-home/tmp/ac2-85/notes.db
+
+    thread 'ac2_get_notes_returns_list_ordered_by_id' panicked at tests/handler_tests.rs:110:5:
+    assertion `left == right` failed
+      left: 500
+     right: 200
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.002s] notes_api::handler_tests ac3_get_note_existing_returns_200
+  stdout ───
+
+    running 1 test
+    test ac3_get_note_existing_returns_200 ... FAILED
+
+    failures:
+
+    failures:
+        ac3_get_note_existing_returns_200
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 24 filtered out; finished in 0.00s
+
+  stderr ───
+    Database error: unable to open database file: /workspace/.agent-home/tmp/ac3-87/notes.db
+    Database error: unable to open database file: /workspace/.agent-home/tmp/ac3-87/notes.db
+
+    thread 'ac3_get_note_existing_returns_200' panicked at tests/handler_tests.rs:136:5:
+    assertion `left == right` failed
+      left: 500
+     right: 200
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.002s] notes_api::handler_tests ac3_get_note_not_found_returns_404
+  stdout ───
+
+    running 1 test
+    test ac3_get_note_not_found_returns_404 ... FAILED
+
+    failures:
+
+    failures:
+        ac3_get_note_not_found_returns_404
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 24 filtered out; finished in 0.00s
+
+  stderr ───
+    Database error: unable to open database file: /workspace/.agent-home/tmp/ac3_notfound-89/notes.db
+
+    thread 'ac3_get_note_not_found_returns_404' panicked at tests/handler_tests.rs:145:5:
+    assertion `left == right` failed
+      left: 500
+     right: 404
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.002s] notes_api::handler_tests ac4_put_note_not_found_returns_404
+  stdout ───
+
+    running 1 test
+    test ac4_put_note_not_found_returns_404 ... FAILED
+
+    failures:
+
+    failures:
+        ac4_put_note_not_found_returns_404
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 24 filtered out; finished in 0.00s
+
+  stderr ───
+    Database error: unable to open database file: /workspace/.agent-home/tmp/ac4_notfound-91/notes.db
+
+    thread 'ac4_put_note_not_found_returns_404' panicked at tests/handler_tests.rs:169:5:
+    assertion `left == right` failed
+      left: 500
+     right: 404
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.002s] notes_api::handler_tests ac4_put_note_updates_returns_200
+  stdout ───
+
+    running 1 test
+    test ac4_put_note_updates_returns_200 ... FAILED
+
+    failures:
+
+    failures:
+        ac4_put_note_updates_returns_200
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 24 filtered out; finished in 0.00s
+
+  stderr ───
+    Database error: unable to open database file: /workspace/.agent-home/tmp/ac4-93/notes.db
+    Database error: unable to open database file: /workspace/.agent-home/tmp/ac4-93/notes.db
+
+    thread 'ac4_put_note_updates_returns_200' panicked at tests/handler_tests.rs:159:5:
+    assertion `left == right` failed
+      left: 500
+     right: 200
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        PASS [   0.002s] notes_api::handler_tests ac4_put_note_validation_missing_title_returns_400
+        PASS [   0.002s] notes_api::handler_tests ac4_put_note_validation_whitespace_title_returns_422
+        FAIL [   0.002s] notes_api::handler_tests ac5_delete_note_not_found_returns_404
+  stdout ───
+
+    running 1 test
+    test ac5_delete_note_not_found_returns_404 ... FAILED
+
+    failures:
+
+    failures:
+        ac5_delete_note_not_found_returns_404
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 24 filtered out; finished in 0.00s
+
+  stderr ───
+    Database error: unable to open database file: /workspace/.agent-home/tmp/ac5_notfound-99/notes.db
+
+    thread 'ac5_delete_note_not_found_returns_404' panicked at tests/handler_tests.rs:217:5:
+    assertion `left == right` failed
+      left: 500
+     right: 404
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.002s] notes_api::handler_tests ac5_delete_note_removes_from_list
+  stdout ───
+
+    running 1 test
+    test ac5_delete_note_removes_from_list ... FAILED
+
+    failures:
+
+    failures:
+        ac5_delete_note_removes_from_list
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 24 filtered out; finished in 0.00s
+
+  stderr ───
+    Database error: unable to open database file: /workspace/.agent-home/tmp/ac5_remove-102/notes.db
+    Database error: unable to open database file: /workspace/.agent-home/tmp/ac5_remove-102/notes.db
+    Database error: unable to open database file: /workspace/.agent-home/tmp/ac5_remove-102/notes.db
+
+    thread 'ac5_delete_note_removes_from_list' panicked at tests/handler_tests.rs:209:5:
+    assertion `left == right` failed
+      left: 500
+     right: 200
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.002s] notes_api::handler_tests ac5_delete_note_returns_204
+  stdout ───
+
+    running 1 test
+    test ac5_delete_note_returns_204 ... FAILED
+
+    failures:
+
+    failures:
+        ac5_delete_note_returns_204
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 24 filtered out; finished in 0.00s
+
+  stderr ───
+    Database error: unable to open database file: /workspace/.agent-home/tmp/ac5-103/notes.db
+    Database error: unable to open database file: /workspace/.agent-home/tmp/ac5-103/notes.db
+
+    thread 'ac5_delete_note_returns_204' panicked at tests/handler_tests.rs:199:5:
+    assertion `left == right` failed
+      left: 500
+     right: 204
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        PASS [   0.002s] notes_api::handler_tests ac6_health_returns_200
+        PASS [   0.002s] notes_api::handler_tests ac7_post_notes_empty_title_returns_400
+        FAIL [   0.002s] notes_api::handler_tests ac7_post_notes_missing_title_returns_400
+  stdout ───
+
+    running 1 test
+    test ac7_post_notes_missing_title_returns_400 ... FAILED
+
+    failures:
+
+    failures:
+        ac7_post_notes_missing_title_returns_400
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 24 filtered out; finished in 0.00s
+
+  stderr ───
+    Database error: unable to open database file: /workspace/.agent-home/tmp/ac7_missing_title-109/notes.db
+
+    thread 'ac7_post_notes_missing_title_returns_400' panicked at tests/handler_tests.rs:81:5:
+    assertion `left == right` failed
+      left: 500
+     right: 200
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        PASS [   0.002s] notes_api::handler_tests ac7_post_notes_whitespace_title_returns_422
+        FAIL [   0.002s] notes_api::handler_tests ac8_response_has_exactly_three_fields
+  stdout ───
+
+    running 1 test
+    test ac8_response_has_exactly_three_fields ... FAILED
+
+    failures:
+
+    failures:
+        ac8_response_has_exactly_three_fields
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 24 filtered out; finished in 0.00s
+
+  stderr ───
+    Database error: unable to open database file: /workspace/.agent-home/tmp/ac8-113/notes.db
+
+    thread 'ac8_response_has_exactly_three_fields' panicked at tests/handler_tests.rs:232:5:
+    assertion `left == right` failed
+      left: 500
+     right: 201
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        PASS [   0.002s] notes_api::handler_tests ac9_content_type_is_json
+        PASS [   0.002s] notes_api::handler_tests defect_fix_verification::app_can_be_called_multiple_times
+        PASS [   0.002s] notes_api::handler_tests defect_fix_verification::app_returns_router_and_compiles
+        PASS [   0.002s] notes_api::handler_tests defect_fix_verification::app_state_is_accessible_from_crate
+        PASS [   0.002s] notes_api::handler_tests defect_fix_verification::app_state_is_clone
+        PASS [   0.002s] notes_api::handler_tests defect_fix_verification::health_handler_accepts_state_correctly
+────────────
+     Summary [   0.141s] 44 tests run: 29 passed, 15 failed, 0 skipped
+        FAIL [   0.003s] notes_api db::tests::test_list_notes_returns_in_ascending_order
+        FAIL [   0.018s] notes_api::db_tests test_list_notes_returns_in_ascending_order
+        FAIL [   0.003s] notes_api::handler_tests ac1_post_notes_creates_note_returns_201
+        FAIL [   0.002s] notes_api::handler_tests ac1_post_notes_defaults_body_to_empty
+        FAIL [   0.002s] notes_api::handler_tests ac2_get_notes_empty_returns_empty_array
+        FAIL [   0.003s] notes_api::handler_tests ac2_get_notes_returns_list_ordered_by_id
+        FAIL [   0.002s] notes_api::handler_tests ac3_get_note_existing_returns_200
+        FAIL [   0.002s] notes_api::handler_tests ac3_get_note_not_found_returns_404
+        FAIL [   0.002s] notes_api::handler_tests ac4_put_note_not_found_returns_404
+        FAIL [   0.002s] notes_api::handler_tests ac4_put_note_updates_returns_200
+        FAIL [   0.002s] notes_api::handler_tests ac5_delete_note_not_found_returns_404
+        FAIL [   0.002s] notes_api::handler_tests ac5_delete_note_removes_from_list
+        FAIL [   0.002s] notes_api::handler_tests ac5_delete_note_returns_204
+        FAIL [   0.002s] notes_api::handler_tests ac7_post_notes_missing_title_returns_400
+        FAIL [   0.002s] notes_api::handler_tests ac8_response_has_exactly_three_fields
+error: test run failed
+

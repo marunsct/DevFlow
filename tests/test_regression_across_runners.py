@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.tools.sandbox import _RUNNER_TOTALS, _the_counts_a_test_run_reported
+from app.tools.sandbox import RUNNERS_COUNTED, _the_counts_a_test_run_reported
 
 OUTPUT = {
     "node --test": "TAP version 13\n# tests 6\n# pass 5\n# fail 1\n",
@@ -88,7 +88,7 @@ def test_every_runner_in_the_table_is_one_a_stack_can_choose():
     from app.tools.sandbox import TOOLCHAINS
 
     runnable = {name for names in TOOLCHAINS.values() for name in names}
-    named = {name for name, _, _ in _RUNNER_TOTALS}
+    named = set(RUNNERS_COUNTED)
     # `jest` and `vitest` are in the toolchains; pytest, cargo and go are the
     # runners of their languages rather than separate executables.
     assert {"jest", "vitest"} <= runnable

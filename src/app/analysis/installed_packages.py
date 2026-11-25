@@ -54,7 +54,13 @@ _PYTHON_ATTRIBUTE = re.compile(r"module ['\"]([\w.]+)['\"] has no attribute ['\"
 _SCRIPT_MEMBER = re.compile(r"""Module ['"]{1,2}([@\w./-]+)['"]{1,2} has no exported member(?: named)? ['"]([\w$]+)['"]""")
 _SCRIPT_EXPORT = re.compile(r"""requested module ['"]([@\w./-]+)['"] does not provide an export named ['"]([\w$]+)['"]""")
 _SCRIPT_SUBPATH = re.compile(r"""Package subpath ['"]\./([\w./-]+)['"] is not defined by "exports" in \S*?node_modules/((?:@[\w.-]+/)?[\w.-]+)/package\.json""")
-_RUST_PATH = re.compile(r"unresolved import `([A-Za-z_]\w*)::[^`]+`|(?:no|cannot find [a-z ,]+) `([A-Za-z_]\w*)` in `([A-Za-z_]\w*)")
+_RUST_PATH = re.compile(r"unresolved import `([A-Za-z_]\w*)::[^`]+`|(?:no|cannot find [a-z ,]+|could not find) `([A-Za-z_]\w*)` in "
+                        r"(?:(?:crate|module|enum) )?`([A-Za-z_]\w*)")
+#: rustc's E0432 for a crate the project never declared: "unresolved import `http_body_util`".
+_RUST_CRATE = re.compile(r"unresolved import `([A-Za-z_]\w*)`")
+#: rustc's E0599 for a name a crate's type has not: "no method named `as_ref` found for struct `tokio::sync::X<..>`".
+_RUST_MEMBER = re.compile(r"no (?:method|function|variant|associated item|variant or associated item|function or "
+                          r"associated item) named `(\w+)` found for (?:struct|enum|trait|union) `([A-Za-z_]\w*)::")
 
 
 def missing_in(error: str) -> Missing | None:
@@ -68,11 +74,19 @@ def missing_in(error: str) -> Missing | None:
         return Missing(found.group(1), found.group(2), "script")
     if found := _SCRIPT_SUBPATH.search(text):
         return Missing(found.group(2), found.group(1), "script", subpath=True)
-    if found := _RUST_PATH.search(text):
-        crate = found.group(1) or found.group(3)
-        if crate not in {"crate", "self", "super", "std", "core", "alloc"}:
-            return Missing(crate, found.group(2) or "", "rust")
+    # Measured on real rustc output (deep review of the parsers, 2026-11-25): E0433's "could not find `X` in `y`",
+    # E0425's "in crate `y`", a crate never declared (E0432 with one name) and E0599's name a crate's type lacks
+    # were read as nothing, so the installed crate was never asked about them.
+    for pattern, crate_at, name_at in ((_RUST_PATH, (1, 3), 2), (_RUST_CRATE, (1,), 0), (_RUST_MEMBER, (2,), 1)):
+        if found := pattern.search(text):
+            crate = next((found.group(i) for i in crate_at if found.group(i)), "")
+            if crate not in _NOT_A_CRATE:
+                return Missing(crate, (found.group(name_at) or "") if name_at else "", "rust")
     return None
+
+
+#: The first segments of a Rust path that name no crate.
+_NOT_A_CRATE = frozenset({"", "crate", "self", "super", "std", "core", "alloc", "Self"})
 
 
 # --- where a project's packages are ---------------------------------------------------------------------------------

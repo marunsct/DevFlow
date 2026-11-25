@@ -234,7 +234,7 @@ def _the_routes_it_serves(repo_root: str | Path, project: Path, env: dict, *, co
             printed = str(outcome.get("stdout") or "")
         else:
             printed = subprocess.run(  # noqa: S603 - the pack's own listing, in the project
-                list(command), cwd=project, env=env, capture_output=True, text=True, timeout=20,
+                list(command), cwd=project, env=env, capture_output=True, text=True, errors="replace", timeout=20,
             ).stdout
         routes = [line.strip() for line in printed.splitlines() if line.strip()][:40]
         if not routes:

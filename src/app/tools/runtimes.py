@@ -210,13 +210,13 @@ def _python(wanted: str) -> tuple[str, Path]:
     environment = {"PATH": os.environ.get("PATH", ""), "HOME": str(toolchain_dir()),
                    "UV_PYTHON_INSTALL_DIR": str(where)}
     done = subprocess.run(
-        [uv, "python", "install", wanted], capture_output=True, text=True, timeout=DOWNLOAD_TIMEOUT,
+        [uv, "python", "install", wanted], capture_output=True, text=True, errors="replace", timeout=DOWNLOAD_TIMEOUT,
         env=environment, check=False,
     )
     if done.returncode != 0:
         raise RuntimeUnavailable(f"`uv python install {wanted}` failed: {(done.stderr or done.stdout)[-400:]}")
     found = subprocess.run(
-        [uv, "python", "find", "--managed-python", wanted], capture_output=True, text=True, timeout=60,
+        [uv, "python", "find", "--managed-python", wanted], capture_output=True, text=True, errors="replace", timeout=60,
         env=environment, check=False,
     )
     executable = Path((found.stdout or "").strip())

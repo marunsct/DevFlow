@@ -164,7 +164,7 @@ def _git(root: Path, *args: str, index: Path | None = None) -> subprocess.Comple
             [binary, *SAFE_SETTINGS, *args],
             cwd=str(root),
             capture_output=True,
-            text=True,
+            text=True, errors="replace",
             timeout=_TIMEOUT_SECONDS,
             check=False,
             env=env,

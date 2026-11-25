@@ -64,7 +64,7 @@ def _without_its_types(node: str, content: str) -> str | None:
     """The JavaScript Node runs for this TypeScript, `_STRIP_FAILED` and why, or None when it cannot say."""
     try:
         result = subprocess.run(  # noqa: S603 - fixed argv, no shell
-            [node, "-e", _STRIP], input=content, capture_output=True, text=True, timeout=TIMEOUT_SECONDS,
+            [node, "-e", _STRIP], input=content, capture_output=True, text=True, errors="replace", timeout=TIMEOUT_SECONDS,
         )
     except Exception:  # noqa: BLE001 - a check that cannot run says nothing
         return None
@@ -137,7 +137,7 @@ def _the_module_goal_also_rejects(node: str, path: Path, content: str) -> str | 
             [node, "--input-type=module", "--check"],
             input=content,
             capture_output=True,
-            text=True,
+            text=True, errors="replace",
             timeout=TIMEOUT_SECONDS,
         )
     except Exception:  # noqa: BLE001 - a check that cannot run says nothing
@@ -196,7 +196,7 @@ def parse_error(path: Path, content: str) -> str | None:
         result = subprocess.run(  # noqa: S603 - fixed argv, no shell
             [node, "--check", str(probe)],
             capture_output=True,
-            text=True,
+            text=True, errors="replace",
             timeout=TIMEOUT_SECONDS,
         )
     except Exception:  # noqa: BLE001 - a check that cannot run says nothing

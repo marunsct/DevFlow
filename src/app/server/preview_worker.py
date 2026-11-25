@@ -220,7 +220,7 @@ def inner_port(port: int) -> int:
 def _docker(*args: str) -> subprocess.CompletedProcess:
     from app.tools.sandbox import _docker_binary
 
-    return subprocess.run([_docker_binary(), *args], capture_output=True, text=True, timeout=_DOCKER_SECONDS,
+    return subprocess.run([_docker_binary(), *args], capture_output=True, text=True, errors="replace", timeout=_DOCKER_SECONDS,
                           check=False)
 
 
@@ -246,7 +246,7 @@ def start(request: dict[str, Any], client: Any = None,
             raise CannotStart("The product says of no way to start it (no start script, start command or entry file).")
         argv, project = found
         command = docker_command(state, argv, project, repo_root)
-        done = (run or (lambda c: subprocess.run(c, capture_output=True, text=True, timeout=_DOCKER_SECONDS,
+        done = (run or (lambda c: subprocess.run(c, capture_output=True, text=True, errors="replace", timeout=_DOCKER_SECONDS,
                                                  check=False)))(command)
         if done.returncode != 0:
             raise CannotStart(f"The container did not start: {str(done.stderr or '').strip()[-500:]}")

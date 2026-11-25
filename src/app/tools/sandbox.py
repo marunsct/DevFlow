@@ -1439,6 +1439,8 @@ def _run_and_watch_the_tree(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        # A product may print bytes that are not UTF-8 (a test of binary data): read as replaced, never a crash.
+        errors="replace",
         preexec_fn=functools.partial(_apply_limits, data_bytes),  # noqa: PLW1509 - the point is to limit the child
         start_new_session=False,   # _apply_limits calls setsid itself
     )
@@ -3649,7 +3651,7 @@ def execution_readiness() -> tuple[bool, str]:
     try:
         probe = subprocess.run(
             [binary, "version", "--format", "{{.Server.Version}}"],
-            capture_output=True, text=True, timeout=15, check=False,
+            capture_output=True, text=True, errors="replace", timeout=15, check=False,
         )
     except (OSError, subprocess.SubprocessError) as error:
         return False, f"The container runtime '{binary}' could not be asked for its version: {error}"
@@ -5931,7 +5933,7 @@ class SandboxExecutor:
             extra={"sandbox_container": container},
         )
         try:
-            result = subprocess.run(docker_cmd, capture_output=True, text=True, timeout=timeout)
+            result = subprocess.run(docker_cmd, capture_output=True, text=True, errors="replace", timeout=timeout)
         except subprocess.TimeoutExpired:
             subprocess.run([docker, "kill", container], capture_output=True, check=False)
             return {
@@ -5976,12 +5978,12 @@ def end_the_commands_nobody_waits_for(
     try:
         docker = _docker_binary()
         listed = run([docker, "ps", "--filter", "name=^sandbox-", "--format", "{{.Names}}"],
-                     capture_output=True, text=True, timeout=30, check=False)
+                     capture_output=True, text=True, errors="replace", timeout=30, check=False)
         names = [n.strip() for n in (listed.stdout or "").splitlines() if n.strip().startswith("sandbox-")]
         if not names:
             return []
         inspected = run([docker, "inspect", "-f", "{{.Name}} {{.State.StartedAt}}", *names],
-                        capture_output=True, text=True, timeout=30, check=False)
+                        capture_output=True, text=True, errors="replace", timeout=30, check=False)
         moment = now or datetime.now(timezone.utc)
         for line in (inspected.stdout or "").splitlines():
             name, _, started = line.strip().lstrip("/").partition(" ")
@@ -5990,7 +5992,7 @@ def end_the_commands_nobody_waits_for(
             except ValueError:
                 continue
             if (moment - began).total_seconds() > STALE_AFTER_SECONDS:
-                run([docker, "kill", name], capture_output=True, text=True, timeout=30, check=False)
+                run([docker, "kill", name], capture_output=True, text=True, errors="replace", timeout=30, check=False)
                 stopped.append(name)
         if stopped:
             logger.warning("Stopped %d command container(s) no command waits for: %s", len(stopped), ", ".join(stopped))

@@ -74,7 +74,7 @@ def _probe(image: str, names: list[str]) -> set[str] | None:
     docker = _docker_binary()
     result = subprocess.run(
         [docker, "run", "--rm", "--network", "none", "--entrypoint", "which", image, *names],
-        capture_output=True, text=True, timeout=PROBE_TIMEOUT, check=False,
+        capture_output=True, text=True, errors="replace", timeout=PROBE_TIMEOUT, check=False,
     )
     # `which` exits 1 when any one is missing, and prints the paths of the rest; nothing printed and a failure is
     # an image that could not be started or has no `which`.

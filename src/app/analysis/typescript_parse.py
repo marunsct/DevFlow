@@ -115,7 +115,7 @@ def parse_error(path: Path, content: str) -> str | None:
             [node, "-e", _CHECK, compiler, path.name],
             input=content,
             capture_output=True,
-            text=True,
+            text=True, errors="replace",
             timeout=TIMEOUT_SECONDS,
         )
     except Exception:  # noqa: BLE001 - a check that cannot run says nothing

@@ -336,7 +336,7 @@ def seed_from_git(
             result = subprocess.run(  # noqa: S603 - argv list, no shell
                 command,
                 capture_output=True,
-                text=True,
+                text=True, errors="replace",
                 timeout=CLONE_TIMEOUT_SECONDS,
                 env=_clone_environment(token, askpass),
                 check=False,

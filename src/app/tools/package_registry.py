@@ -365,7 +365,7 @@ def runtime_here(ecosystem: str) -> str:
     found = "not installed"
     if shutil.which(argv[0]):
         try:
-            done = subprocess.run(list(argv), capture_output=True, text=True, timeout=20, check=False)
+            done = subprocess.run(list(argv), capture_output=True, text=True, errors="replace", timeout=20, check=False)
             text = (done.stdout or done.stderr).strip().splitlines()
             found = text[0][:120] if text else "installed, version unknown"
         except (OSError, subprocess.SubprocessError):

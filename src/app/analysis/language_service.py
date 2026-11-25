@@ -419,7 +419,7 @@ def underlined(repo_root: str | Path, target: Path, content: str, project: Path 
         result = subprocess.run(  # noqa: S603 - fixed argv, no shell
             [node, "-e", _SCRIPT, compiler, str(project), str(target), "1" if _reads_node_types() else "0",
              runtime, "1" if check_names else "0"],
-            input=content, capture_output=True, text=True, timeout=TIMEOUT_SECONDS,
+            input=content, capture_output=True, text=True, errors="replace", timeout=TIMEOUT_SECONDS,
         )
     except Exception:  # noqa: BLE001 - a check that cannot run says nothing
         logger.debug("The language service could not run on %s", target, exc_info=True)
@@ -558,7 +558,7 @@ def _pyright_diagnostics(project: Path) -> list[dict] | None:
             path.write_text(json.dumps(config), encoding="utf-8")
             result = subprocess.run(  # noqa: S603 - fixed argv, no shell
                 [node, pyright, "--outputjson", "--project", str(path)],
-                capture_output=True, text=True, timeout=TIMEOUT_SECONDS, cwd=scratch,
+                capture_output=True, text=True, errors="replace", timeout=TIMEOUT_SECONDS, cwd=scratch,
             )
         output = result.stdout or "{}"
         found = json.loads(output[output.find("{"):] if "{" in output else "{}")

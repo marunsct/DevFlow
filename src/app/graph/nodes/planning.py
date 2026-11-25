@@ -115,7 +115,6 @@ def tools_models_node(state: WorkflowGraphState, config: RunnableConfig, ctx: Gr
         build_tools_models_request, create_tools_models_agent, render_document,
     )
 
-    agent = create_tools_models_agent(model=ctx.planning_model, checkpointer=ctx.checkpointer, repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories)
     intake = state.get("product_intake")
     if intake is None:
         # Send it back to the stage that owes the output, on a fresh
@@ -155,6 +154,12 @@ def tools_models_node(state: WorkflowGraphState, config: RunnableConfig, ctx: Gr
         if hasattr(intake, "model_dump_json")
         else json.dumps(intake, indent=2)
     )
+    # Only the comparison sections the intake's kind of product needs are offered (plan PA.14).
+    from app.agents.tools_models import offered_only, sections_for
+
+    sections = sections_for(intake_text)
+    agent = create_tools_models_agent(model=ctx.planning_model, checkpointer=ctx.checkpointer, repo_root=ctx.repo_root,
+                                      allow_subdirectories=ctx.allow_subdirectories, sections=sections)
     request = build_tools_models_request(intake_text, state["repository"])
     update = _run_gated_agent(
         state,
@@ -166,6 +171,7 @@ def tools_models_node(state: WorkflowGraphState, config: RunnableConfig, ctx: Gr
         next_stage="stack_selector",
     )
     if not _hand_back(update, "tools_models"):
+        update["tools_models"] = offered_only(update["tools_models"], sections)
         _record_document(
             state,
             "docs/tools_and_models.md",
@@ -348,7 +354,9 @@ def specialist_consultation_node(state: WorkflowGraphState, config: RunnableConf
     )
     if _hand_back(update, "__advice__"):
         return update
-    advice[role] = advice_from(update.pop("__advice__"))
+    from app.agents.advice_sized import sized
+
+    advice[role] = sized(advice_from(update.pop("__advice__")), role, brief)
     logger.info(
         "Consulted the %s specialist before the specification: %d recommendation(s)",
         role, len(advice[role]),

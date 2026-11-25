@@ -314,107 +314,128 @@ def technical_lead_node(state: WorkflowGraphState, config: RunnableConfig, ctx: 
     # Only a readiness retry carries it on; a dispatched plan is a sprint's own.
     update["nothing_left_but_carried"] = None
 
-    # Pinned before the readiness check, which checks each work order's files
-    # against it. In parallel mode the specialists all start before a file
-    # exists, and the directory was pinned by whichever wrote first. See
-    # `pin_the_directory_a_plan_names`.
-    try:
-        from app.tools.repository import pin_the_directory_a_plan_names
+    def made_ready(plan: Any) -> tuple[Any, list[str]]:
+        """`plan` with the harness's own repairs made, and what still stops it being handed out."""
+        # Pinned before the readiness check, which checks each work order's files
+        # against it. In parallel mode the specialists all start before a file
+        # exists, and the directory was pinned by whichever wrote first. See
+        # `pin_the_directory_a_plan_names`.
+        try:
+            from app.tools.repository import pin_the_directory_a_plan_names
 
-        pin_the_directory_a_plan_names(
-            state["repository"].root_path, update["milestone_plan"].model_dump_json()
+            pin_the_directory_a_plan_names(
+                state["repository"].root_path, plan.model_dump_json()
+            )
+        except Exception:  # noqa: BLE001 - the first write still pins it
+            logger.warning("Could not pin the project directory from the plan", exc_info=True)
+
+        # The definition of ready: every work order complete enough for a
+        # specialist who knows nothing but its brief. See `app.analysis.work_orders`.
+        from app.analysis.work_orders import (
+            readiness_problems,
+            with_paths_inside_the_project,
+            with_test_cases_from_its_criteria,
+            with_the_project_directory_cd_dropped,
         )
-    except Exception:  # noqa: BLE001 - the first write still pins it
-        logger.warning("Could not pin the project directory from the plan", exc_info=True)
 
-    # The definition of ready: every work order complete enough for a
-    # specialist who knows nothing but its brief. See `app.analysis.work_orders`.
-    from app.analysis.work_orders import (
-        readiness_problems,
-        with_paths_inside_the_project,
-        with_test_cases_from_its_criteria,
-        with_the_project_directory_cd_dropped,
-    )
+        # Joined commands split and empty titles filled by the harness, not sent back (plan PA.6).
+        from app.analysis.plan_repairs import repaired
 
-    update["milestone_plan"] = with_test_cases_from_its_criteria(
-        with_the_project_directory_cd_dropped(
-            with_paths_inside_the_project(update["milestone_plan"], state["repository"].root_path),
-            state["repository"].root_path,
-        ),
-        state.get("technical_specification"),
-        _the_criteria_due(state),
-    )
-    if not revising:
-        from app.analysis.work_orders import with_named_tests_given_to_testing
-        from app.graph.drafting import planned_files
-
-        update["milestone_plan"], given = with_named_tests_given_to_testing(
-            update["milestone_plan"], state["repository"].root_path, _what_this_sprint_builds(state),
-            planned_files(state.get("technical_specification")),
+        plan = with_test_cases_from_its_criteria(
+            repaired(with_the_project_directory_cd_dropped(
+                with_paths_inside_the_project(plan, state["repository"].root_path),
+                state["repository"].root_path,
+            ), state["repository"].root_path),
+            state.get("technical_specification"),
+            _the_criteria_due(state),
         )
-        if given:
-            logger.info("Test files the sprint names and no work order listed, given to testing: %s", ", ".join(given))
-    # A testing order that writes nothing only runs the tests the round runs anyway (before a testing order is
-    # added to a plan with none, so a plan is never left without one).
-    from app.analysis.work_orders import with_run_only_testing_orders_left_to_the_test_round
-
-    update["milestone_plan"], run_only = with_run_only_testing_orders_left_to_the_test_round(update["milestone_plan"])
-    if run_only:
-        logger.info("Testing work orders that write no file left to the test round: %s", "; ".join(run_only))
-    from app.analysis.work_orders import with_a_testing_work_order
-
-    update["milestone_plan"], added_testing = with_a_testing_work_order(
-        update["milestone_plan"], state["repository"].root_path
-    )
-    if added_testing:
-        logger.info("The plan had code and no testing work order; the harness added one")
         if not revising:
-            # The test files the sprint names go to the order just added: measured on one run, they were given out
-            # before it existed, nobody was given `test_cli.py`, and the plan was sent back for it.
             from app.analysis.work_orders import with_named_tests_given_to_testing
             from app.graph.drafting import planned_files
 
-            update["milestone_plan"], given = with_named_tests_given_to_testing(
-                update["milestone_plan"], state["repository"].root_path, _what_this_sprint_builds(state),
+            plan, given = with_named_tests_given_to_testing(
+                plan, state["repository"].root_path, _what_this_sprint_builds(state),
                 planned_files(state.get("technical_specification")),
             )
             if given:
-                logger.info("Test files the sprint names, given to the testing work order the harness added: %s",
-                            ", ".join(given))
-    # A unit test file is named where the project's runner collects it (LF.1263): measured, a work order put the
-    # service's tests inside its package, where nothing ran them.
-    from app.analysis.work_orders import with_tests_where_the_runner_collects
+                logger.info("Test files the sprint names and no work order listed, given to testing: %s", ", ".join(given))
+        # A testing order that writes nothing only runs the tests the round runs anyway (before a testing order is
+        # added to a plan with none, so a plan is never left without one).
+        from app.analysis.work_orders import with_run_only_testing_orders_left_to_the_test_round
 
-    update["milestone_plan"] = with_tests_where_the_runner_collects(update["milestone_plan"],
-                                                                    state["repository"].root_path)
-    # The harness's own repairs before the readiness check, not after it (HR2.P.1): 125 of 140 resends since 11-01
-    # were for what these then fixed anyway - the locked suite's file on a work order (50), a command the sandbox
-    # refuses (30). The check sees only what the harness cannot fix.
-    from app.analysis.planned_commands import with_refused_commands_noted
-    from app.analysis.work_orders import with_the_harness_s_files_left_out
+        plan, run_only = with_run_only_testing_orders_left_to_the_test_round(plan)
+        if run_only:
+            logger.info("Testing work orders that write no file left to the test round: %s", "; ".join(run_only))
+        from app.analysis.work_orders import with_a_testing_work_order
 
-    update["milestone_plan"] = with_the_harness_s_files_left_out(
-        update["milestone_plan"], state["repository"].root_path
-    )
-    update["milestone_plan"] = with_refused_commands_noted(
-        update["milestone_plan"], state["repository"].root_path
-    )
-    problems = readiness_problems(
-        update["milestone_plan"],
-        state["repository"].root_path,
-        carried_forward=[] if revising else _carried_to_this_plan(state),
-        # A revision answers the review's findings; the sprint's first plan
-        # was the one held to the files its scope names, and those were
-        # built - under the names that plan chose. One run's revision was
-        # sent back twice for `pure-functions.mjs`, a name from the scope
-        # the first plan had built as `app.mjs`.
-        sprint_scope="" if revising else _what_this_sprint_builds(state),
-        sprint_goals=[
-            str(getattr(sprint, "goal", "") or "")
-            for sprint in (getattr(state.get("sprint_plan"), "sprints", None) or [])
-        ],
-        sprint_index=state.get("current_sprint_index", 0),
-    )
+        plan, added_testing = with_a_testing_work_order(
+            plan, state["repository"].root_path
+        )
+        if added_testing:
+            logger.info("The plan had code and no testing work order; the harness added one")
+            if not revising:
+                # The test files the sprint names go to the order just added: measured on one run, they were given out
+                # before it existed, nobody was given `test_cli.py`, and the plan was sent back for it.
+                from app.analysis.work_orders import with_named_tests_given_to_testing
+                from app.graph.drafting import planned_files
+
+                plan, given = with_named_tests_given_to_testing(
+                    plan, state["repository"].root_path, _what_this_sprint_builds(state),
+                    planned_files(state.get("technical_specification")),
+                )
+                if given:
+                    logger.info("Test files the sprint names, given to the testing work order the harness added: %s",
+                                ", ".join(given))
+        # A unit test file is named where the project's runner collects it (LF.1263): measured, a work order put the
+        # service's tests inside its package, where nothing ran them.
+        from app.analysis.work_orders import with_tests_where_the_runner_collects
+
+        plan = with_tests_where_the_runner_collects(plan, state["repository"].root_path)
+        # The harness's own repairs before the readiness check, not after it (HR2.P.1): 125 of 140 resends since 11-01
+        # were for what these then fixed anyway - the locked suite's file on a work order (50), a command the sandbox
+        # refuses (30). The check sees only what the harness cannot fix.
+        from app.analysis.planned_commands import with_refused_commands_noted
+        from app.analysis.work_orders import with_the_harness_s_files_left_out
+
+        plan = with_the_harness_s_files_left_out(
+            plan, state["repository"].root_path
+        )
+        plan = with_refused_commands_noted(
+            plan, state["repository"].root_path
+        )
+        problems = readiness_problems(
+            plan,
+            state["repository"].root_path,
+            carried_forward=[] if revising else _carried_to_this_plan(state),
+            # A revision answers the review's findings; the sprint's first plan
+            # was the one held to the files its scope names, and those were
+            # built - under the names that plan chose. One run's revision was
+            # sent back twice for `pure-functions.mjs`, a name from the scope
+            # the first plan had built as `app.mjs`.
+            sprint_scope="" if revising else _what_this_sprint_builds(state),
+            sprint_goals=[
+                str(getattr(sprint, "goal", "") or "")
+                for sprint in (getattr(state.get("sprint_plan"), "sprints", None) or [])
+            ],
+            sprint_index=state.get("current_sprint_index", 0),
+        )
+        return plan, problems
+
+    update["milestone_plan"], problems = made_ready(update["milestone_plan"])
+    if problems and planned is None:
+        # What still needs judgement goes back as one more turn of the lead's own conversation (plan PA.6), not a
+        # fresh request: measured on a medium run, 12 plans in 4 visits, each send-back a new conversation of about
+        # 147,000 characters. A fresh visit follows only if this turn does not answer better.
+        from app.graph.plan_follow_up import asked_again
+
+        again = asked_again(agent, update, config, problems)
+        if again is not None:
+            better, better_problems = made_ready(again)
+            if len(better_problems) < len(problems):
+                logger.info("The lead's plan, asked again in its own conversation: %d problem(s) left of %d",
+                            len(better_problems), len(problems))
+                update["milestone_plan"], problems = better, better_problems
+
     if problems:
         retries = dict(state.get("structured_retries") or {})
         key = _READINESS_RETRIES
@@ -453,6 +474,9 @@ def technical_lead_node(state: WorkflowGraphState, config: RunnableConfig, ctx: 
                 # Kept from before: it gets the test files the scope names
                 # as the plan just checked did. One run dispatched an
                 # earlier plan that had never had them assigned.
+                from app.analysis.work_orders import with_named_tests_given_to_testing
+                from app.graph.drafting import planned_files
+
                 update["milestone_plan"], given = with_named_tests_given_to_testing(
                     update["milestone_plan"], state["repository"].root_path, _what_this_sprint_builds(state),
                     planned_files(state.get("technical_specification")),

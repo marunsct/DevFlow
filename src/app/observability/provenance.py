@@ -90,6 +90,7 @@ SWITCHES: dict[str, str] = {
     "FRAMEWORK_GUIDANCE_FOR_ADVISERS": "app.stacks.framework_guidance:guidance_switch",
     "WEB_TOOLS_BY_MEASURED_TIER": "app.tools.research_tool:by_measured_tier_switch",
     "DOMAIN_CRAFT_CHECKLISTS": "app.agents.domain_craft:craft_switch",
+    "ADVICE_SIZED_TO_THE_BRIEF": "app.agents.advice_sized",
     "SPECIALIST_DOMAIN_REVIEW": "app.agents.specialist_domain_review",
     "WEB_TOOLS_OFFERED": "app.tools.web_search:web_tools_offered_switch",
     "PRODUCT_PREVIEW": "app.server.preview:preview_switch",

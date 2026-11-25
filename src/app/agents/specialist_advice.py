@@ -233,6 +233,10 @@ def build_advice_request(role: str, brief_text: str, intake_text: str, stack_tex
         f"{criteria}"
         f"As the {ROLE_TITLE[role]}, advise the architect on {_WHAT_TO_COVER[role]}"
     )
+    # Sized to the brief, each item marked as asked for or beyond it (ADVICE_SIZED_TO_THE_BRIEF, plan PA.9).
+    from app.agents.advice_sized import request_note
+
+    content += request_note(role, brief_text)
     return {"messages": [{"role": "user", "content": content}]}
 
 
@@ -306,6 +310,11 @@ def advice_block(advice: dict[str, list[str]] | None) -> str:
         "it gives. Record one line per item in `specialist_advice_decisions`, starting with "
         "its id: \"UX-1: adopted - interface_design\", or \"DB-2: declined - <why>\"."
     )
+    from app.agents.advice_sized import architect_rule
+
+    rule = architect_rule()
+    if rule:
+        lines.append(rule.rstrip())
     if advice and advice.get("ui_ux"):
         lines.append(
             "The adopted UI/UX advice is the `interface_design` section: the layout at a "

@@ -242,6 +242,98 @@ class ToolsAndModelsOutput(BaseModel):
     open_questions: list[str] = Field(default_factory=list)
 
 
+#: Every comparison section of the answer, in the schema's order.
+SECTIONS = (
+    "frameworks", "model_providers", "storage_options", "queue_and_job_systems", "authentication",
+    "observability", "testing_tools", "deployment_options",
+)
+#: The sections every product compares: what it is built with, keeps its data in and is tested with.
+_EVERY_PRODUCT = ("frameworks", "storage_options", "testing_tools")
+#: The sections a kind of product needs beyond those (`app.stacks.KINDS`): a program run from a terminal and a library
+#: are not deployed as a service.
+_BY_KIND = {
+    "browser_app": ("deployment_options",),
+    "http_api": ("deployment_options",),
+    "fullstack": ("deployment_options",),
+    "cli": (),
+    "library": (),
+}
+#: A section the kind does not need, offered when the intake's own words ask for it.
+_ASKED_FOR = {
+    "model_providers": re.compile(
+        r"\b(?:llms?|language models?|ai\b|a\.i\.|machine learning|ml models?|model providers?|embeddings?|"
+        r"inference|chat ?bots?|generative|gpt\w*|prompts? to a model)", re.I),
+    "queue_and_job_systems": re.compile(
+        r"\b(?:queues?|queued|background (?:jobs?|work|processing)|job (?:queue|runner|scheduler)s?|workers?|"
+        r"scheduled|scheduler|cron|batch (?:jobs?|processing)|asynchronous processing)\b", re.I),
+    "authentication": re.compile(
+        r"\b(?:auth\w*|log ?ins?|log-ins?|sign[- ]?(?:in|up|on)|passwords?|user accounts?|accounts|permissions?|"
+        r"access tokens?|api keys?|bearer|oauth|sso)\b", re.I),
+    "observability": re.compile(
+        r"\b(?:monitor\w*|metrics|tracing|traces|observab\w*|telemetry|alert\w*|dashboards? for operators|"
+        r"structured logs?|log aggregation)\b", re.I),
+    "deployment_options": re.compile(r"\b(?:deploy\w*|hosting|hosted|container\w*|docker|cloud)\b", re.I),
+}
+
+
+def sections_for(intake_text: str) -> tuple[str, ...]:
+    """The comparison sections this product needs, by the kind of product its intake describes (plan PA.14).
+
+    Measured over 11 small runs: the answer compared queue systems, observability and model providers for products
+    that had none - a notes service, a word counter - and listed 47 open questions, and the stack selector read it
+    all. A section the kind does not need is offered only when the intake's own words ask for it. With no kind to
+    tell, every section is offered, as before.
+    """
+    from app.stacks import product_kind
+
+    text = str(intake_text or "")
+    kind = product_kind(None, text)
+    if kind not in _BY_KIND:
+        return SECTIONS
+    wanted = {*_EVERY_PRODUCT, *_BY_KIND[kind]}
+    wanted |= {name for name, asks in _ASKED_FOR.items() if asks.search(text)}
+    return tuple(name for name in SECTIONS if name in wanted)
+
+
+def answer_schema(sections: tuple[str, ...] = SECTIONS) -> type[ToolsAndModelsOutput]:
+    """`ToolsAndModelsOutput` as the model is offered it: only `sections` of the comparison sections.
+
+    The answer is still a `ToolsAndModelsOutput`: the narrowed schema keeps the class's module and name, so a saved
+    answer is read back as the class every later stage reads, and a section left out is simply empty.
+    """
+    left_out = frozenset(SECTIONS) - set(sections)
+    if not left_out:
+        return ToolsAndModelsOutput
+
+    class Offered(ToolsAndModelsOutput):
+        __doc__ = ToolsAndModelsOutput.__doc__
+
+        @classmethod
+        def model_json_schema(cls, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            schema = super().model_json_schema(*args, **kwargs)
+            properties = schema.get("properties") or {}
+            for name in left_out:
+                properties.pop(name, None)
+            if isinstance(schema.get("required"), list):
+                schema["required"] = [name for name in schema["required"] if name not in left_out]
+            return schema
+
+    Offered.__name__ = Offered.__qualname__ = ToolsAndModelsOutput.__name__
+    Offered.__module__ = ToolsAndModelsOutput.__module__
+    return Offered
+
+
+def offered_only(answer: Any, sections: tuple[str, ...]) -> Any:
+    """`answer` as a plain `ToolsAndModelsOutput`, with any section it was not offered left empty."""
+    if answer is None or not hasattr(answer, "model_dump"):
+        return answer
+    data = answer.model_dump()
+    for name in SECTIONS:
+        if name not in sections:
+            data[name] = []
+    return ToolsAndModelsOutput.model_validate(data)
+
+
 def _truncate_for_llm(text: str, max_chars: int | None = None) -> str:
     """Truncate long text for local LLM context limits.
 
@@ -303,9 +395,10 @@ Your role is to turn an approved product intake and repository evidence into an
 evidence-based comparison of the technology choices this project might use.
 
 Responsibilities:
-- Compare frameworks, model providers and model roles, databases and storage,
-  queue and job systems, authentication, observability, testing tools, and
-  deployment options.
+- Compare the options for each category your answer's schema offers. The
+  categories it offers are the ones this kind of product needs; a category it
+  does not offer is not this product's, so it gets no comparison and no open
+  question.
 - For every choice, record capability, compatibility, quality, latency, cost,
   privacy, licensing, operational burden, an alternative, and replacement
   criteria — do not skip fields with vague filler text.
@@ -337,17 +430,19 @@ def create_tools_models_agent(
     checkpointer: BaseCheckpointSaver | None = None,
     repo_root: str | Path | None = None,
         allow_subdirectories: bool = True,
+    sections: tuple[str, ...] = SECTIONS,
 ) -> Any:
     """Create the Tools and Models Architect role worker.
 
     Thin wrapper around `create_role_agent`, matching the pattern established
-    by `create_product_manager_agent`.
+    by `create_product_manager_agent`. `sections` are the comparison sections
+    its answer offers (`sections_for`).
     """
     return create_role_agent(
         name=_NAME,
         stage=_STAGE,
         system_prompt=_SYSTEM_PROMPT,
-        response_format=ToolsAndModelsOutput,
+        response_format=answer_schema(sections),
         model=model,
         checkpointer=checkpointer,
         repo_root=repo_root, allow_subdirectories=allow_subdirectories,
@@ -358,9 +453,13 @@ def create_tools_models_agent(
 
 
 __all__ = [
+    "SECTIONS",
     "TechnologyChoice",
     "TechnologyStack",
     "ToolsAndModelsOutput",
+    "answer_schema",
     "build_tools_models_request",
     "create_tools_models_agent",
+    "offered_only",
+    "sections_for",
 ]

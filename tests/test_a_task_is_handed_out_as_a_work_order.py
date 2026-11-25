@@ -169,7 +169,8 @@ def test_an_unready_plan_goes_back_to_the_lead_once_with_the_reasons(
     assert "YOUR PREVIOUS PLAN WAS NOT READY TO HAND OUT" in second
     assert "names no `files`" in second
     assert "No `testing` work order" in second
-    assert "The plan that was sent back" in second
+    # Asked in the lead's own conversation, which already holds the plan (plan PA.6).
+    assert "The plan you just returned is above in this conversation" in second
 
 
 class TestAStructuredItemIsALine:
@@ -298,7 +299,8 @@ def test_each_sprint_s_plan_gets_its_own_readiness_attempts(
     ]))])
     unready = _plan(_order("backend", files=[]))
     ready = _plan(_order("backend", files=["acme-scheduling/backend.src"]), _order("testing", files=["acme-scheduling/test.src"]))
-    agents.script("technical_lead", [responds_with(unready)] * 3 + [responds_with(unready), responds_with(ready)])
+    # Each visit with an unready plan is asked once more in its own conversation (plan PA.6): two calls a visit.
+    agents.script("technical_lead", [responds_with(unready)] * 6 + [responds_with(unready), responds_with(ready)])
     agents.script("specialist_backend", [responds_with(_specialist())] * 6)
     agents.script("specialist_testing", [responds_with(_specialist())] * 8)
     agents.script("milestone_reviewer", [responds_with(_milestone_review())] * 3)
@@ -307,9 +309,9 @@ def test_each_sprint_s_plan_gets_its_own_readiness_attempts(
     start_workflow(_graph(), _document(), _repository(tmp_path), "run-work-orders-per-sprint")
 
     asked = [payload["messages"][-1]["content"] for payload in agents.requests["technical_lead"]]
-    assert len(asked) == 5, len(asked)
-    assert "YOUR PREVIOUS PLAN WAS NOT READY TO HAND OUT" not in asked[3]
-    assert "YOUR PREVIOUS PLAN WAS NOT READY TO HAND OUT" in asked[4]
+    assert len(asked) == 8, len(asked)
+    assert "YOUR PREVIOUS PLAN WAS NOT READY TO HAND OUT" not in asked[6]
+    assert "YOUR PREVIOUS PLAN WAS NOT READY TO HAND OUT" in asked[7]
 
 
 class TestCasesFromTheCriteria:
@@ -412,7 +414,8 @@ def test_when_the_attempts_run_out_the_best_one_is_dispatched(
     # work orders, so it is the one the sprint gets.
     best = _plan(_order("backend", files=["acme-scheduling/a.src"]), _order("database", files=["acme-scheduling/b.src"]))
     thin = _plan(_order("backend", files=["acme-scheduling/a.src"]))
-    agents.script("technical_lead", [responds_with(best), responds_with(thin), responds_with(thin)])
+    # Each visit is asked once more in its own conversation (plan PA.6): two calls a visit.
+    agents.script("technical_lead", [responds_with(best)] + [responds_with(thin)] * 5)
     agents.script("specialist_backend", [responds_with(_specialist())] * 3)
     agents.script("specialist_database", [responds_with(_specialist())] * 3)
     agents.script("specialist_testing", [responds_with(_specialist())] * 3)
@@ -421,7 +424,7 @@ def test_when_the_attempts_run_out_the_best_one_is_dispatched(
 
     state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-best-attempt")
 
-    assert len(agents.requests["technical_lead"]) == 3
+    assert len(agents.requests["technical_lead"]) == 6
     assert agents.requests["specialist_database"], "the best attempt's database work order was never dispatched"
     assert state["stage"] == "complete", state.get("error")
 

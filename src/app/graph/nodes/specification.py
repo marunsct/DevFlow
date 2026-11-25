@@ -172,6 +172,25 @@ def principal_architect_node(state: WorkflowGraphState, config: RunnableConfig, 
         update["technical_specification"] = with_the_parts_written(
             update["technical_specification"], ctx.judgement_model, parts_context(),
         )
+    if not _hand_back(update, "technical_specification") and not (required_changes and previous_specification is not None):
+        # The first draft's sections compared before its first review; one call settles only the lines that
+        # disagree (plan PA.7). See `app.graph.specification_consistency`.
+        from app.graph.specification_consistency import settled
+        from app.stacks.contract import owned_by_the_harness
+
+        root = state["repository"].root_path
+        update["technical_specification"] = settled(
+            update["technical_specification"], lambda: _a_model_to_revise_with(ctx.judgement_model), parts_context(),
+            state.get("specialist_advice"), kept=lambda path: bool(owned_by_the_harness(root, path)),
+        )
+    if not _hand_back(update, "technical_specification"):
+        # An item beyond the brief adopted with no line of the brief quoted is declined (ADVICE_SIZED_TO_THE_BRIEF).
+        from app.agents.advice_sized import with_items_beyond_the_brief_declined
+
+        update["technical_specification"] = with_items_beyond_the_brief_declined(
+            update["technical_specification"], state.get("specialist_advice"),
+            getattr(state.get("document"), "text", "") or "",
+        )
     if not _hand_back(update, "technical_specification"):
         # Consumed: the revision request above already delivered them, so
         # a later rerun must not re-apply stale comments.

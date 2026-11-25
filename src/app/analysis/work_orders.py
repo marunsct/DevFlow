@@ -207,7 +207,11 @@ def with_a_testing_work_order(milestone: Any, repo_root: str | Path | None) -> t
             if _role(t) not in _NOT_CODE
             and _touches_product_code([str(f) for f in getattr(t, "files", None) or [] if str(f).strip()])
         ]
-        found = contract.the_pack(repo_root)
+        # A custom setup with no recorded contract still declares its test layout (plan PA.6): measured on a medium
+        # run, its plans went back whole for this work order four visits running.
+        from app.analysis.plan_repairs import declared_test_layout
+
+        found = contract.the_pack(repo_root) or declared_test_layout(repo_root)
         if not behaviour or not found:
             return milestone, False
         pack = found[0]
@@ -232,7 +236,7 @@ def with_a_testing_work_order(milestone: Any, repo_root: str | Path | None) -> t
                     continue
                 mine = next((p for p in patterns if suffix and str(p).endswith(suffix)), pattern)
                 folder = _the_mirrored_folder(pack, str(path), project) or unit_dir
-                test = "/".join(part for part in (project, folder, mine.replace("*", stem, 1)) if part)
+                test = "/".join(part for part in (project, folder, mine.replace("*", stem, 1)) if part and part != ".")
                 if test not in files:
                     files.append(test)
         if not files:

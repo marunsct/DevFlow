@@ -230,6 +230,10 @@ GROUPS: dict[str, tuple[str, ...]] = {
     # the pack's design tokens; the database and backend advisers asked for the same bars (plan SK.2 with PQ.6, PQ.9).
     # Off until measured: it changes the advice, and so the specification.
     "Builder craft": ("DOMAIN_CRAFT_CHECKLISTS",),
+    # The specialists' advice capped by the brief's criteria count, each item marked as asked for by the brief or
+    # beyond it, and an item beyond it declined unless the architect quotes the brief line that needs it (plan PA.9).
+    # Off until measured, two runs a family: it changes the advice, and so the specification.
+    "Specialist advice": ("ADVICE_SIZED_TO_THE_BRIEF",),
 }
 #: Every grouped switch, in the admin page's order.
 EXPERIMENTS = tuple(name for members in GROUPS.values() for name in members)

@@ -184,6 +184,15 @@ start; implied by `PIN_URL`/`PIN_MODEL_NAME`), `RUN_NAME`, `DELIVERY=fast|...`, 
 Benchmarks: `ls benchmarks/` (e.g. web-todo, tasks-api, notes-api-<lang>, fullstack-bookmarks-py, textkit-lib).
 The gate can take ~50 s per server; do not use short timeouts. A model server that was just reloaded: `ready deep`.
 
+**Why every local request carries `X-Olla-Session-ID`** (LF.1407). olla's sticky sessions key on that header, else on
+a hash of the request's first 512 bytes, which is nearly the same system-prompt opening for every stage: without the
+header, 149 requests went to one llama.cpp instance and 82 to the other (22:00-23:14 JST, 2026-11-25), at times with
+a request queued on one GPU while the other idled. The harness names each conversation `<run>:<stage>` so it keeps
+its instance and prompt cache while other conversations spread. `MODEL_SESSION_SCOPE=request` sends a fresh value per
+request instead (least-busy instance every call, no cache affinity); `MODEL_SESSION_HEADER` renames the header for
+another balancer, empty sends none. olla's response headers `X-Olla-Sticky-Session` and `X-Olla-Routing-Reason`
+show what it did with it.
+
 ## 4. Running the tests
 
 - `loop.sh suite` runs `pytest tests/` (`ENV=development`, `--no-cov`, venv on `PATH`, 900 s cap) across

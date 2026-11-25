@@ -755,6 +755,14 @@ class CompatibleChatOpenAI(ChatOpenAI):
             with_the_owner_s_sampling(payload, self._served_by()[1])
         except Exception:  # noqa: BLE001 - the request as it was
             pass
+        # The run and stage this request's conversation belongs to, for a balancer in front of several self-hosted
+        # servers to keep it on one (`app.models.session_header`); never sent to a hosted API.
+        try:
+            from app.models.session_header import with_the_session_named
+
+            with_the_session_named(payload, self._served_by()[0])
+        except Exception:  # noqa: BLE001 - the request as it was
+            pass
         return payload
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):  # type: ignore[override]

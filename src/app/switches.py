@@ -185,7 +185,8 @@ GROUPS: dict[str, tuple[str, ...]] = {
                    "HARNESS_FINDINGS_RECHECKED", "NEAR_GREEN_REPLANNED_ONCE", "STABLE_MEMORY_ORDER",
                    "NEAR_GREEN_REPAIR_TO_ROUND", "FIX_STAGES_THAT_CLOSE_NOTHING", "ONE_DESIGN_REVIEW",
                    "SPRINT_TIME_BUDGET", "MUTATION_GAPS_BUNDLED", "FIX_ORDER_CRITERIA_FIRST",
-                   "SUMMARISE_LATER_WITH_HEADROOM", "REPLY_ROOM_SIZED_PER_ROLE", "LONG_REASONING_BEFORE_A_READ"),
+                   "SUMMARISE_LATER_WITH_HEADROOM", "REPLY_ROOM_SIZED_PER_ROLE", "LONG_REASONING_BEFORE_A_READ",
+                   "MEASURED_ROUND_WHEN_RED"),
     # What a stack's setup stage may write (docs/measuring.md M6): measured off and on before it is kept.
     "Setup scope": ("SETUP_SCOPE_GUARD",),
     # Which review findings may send a sprint back (docs/measuring.md M7).

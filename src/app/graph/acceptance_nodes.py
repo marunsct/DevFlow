@@ -2594,9 +2594,12 @@ WHAT_THE_PRODUCT_SHOWS = " What the product shows when it loads, before any test
 
 
 def the_failed_tests_line(failed: list[dict]) -> str:
-    """The line a failing criterion's defect opens with: its first three failed tests, each with its first line."""
+    """The line a failing criterion's defect opens with: its first three failed tests, each with what it said - its
+    error and the values it got, past the runner's heading for the test (LF.1393)."""
+    from app.acceptance.failure_said import what_it_said
+
     return "; ".join(
-        f"{t.get('name')}: " + (((t.get("message") or "").strip().splitlines() or ["failed"])[0][:300])
+        f"{t.get('name')}: " + (what_it_said(t.get("message")) or "failed")
         for t in failed[:3]
     ) or "no test carrying this id ran"
 

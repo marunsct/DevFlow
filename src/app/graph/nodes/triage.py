@@ -197,9 +197,11 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
             skip_agent = False
 
     from app import delivery
+    from app.graph import measured_round
 
     harness_round = (
-        delivery.fast()
+        # Thorough delivery's red round, too, behind `MEASURED_ROUND_WHEN_RED` (LF.1395, off until measured).
+        (delivery.fast() or measured_round.the_harness_s_own(failing_due))
         and not state.get("pending_inner_thread_id")
         and acceptance_nodes.suite.is_locked(state["repository"].root_path)
         and bool(saved_run.get("ran"))
@@ -212,9 +214,12 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
         # findings; and the unit tests, here.
         unit_ok, unit_output = _run_unit_tests_procedurally(state["repository"].root_path)
         logger.info(
-            "test_round_%d: run by the harness (fast delivery); unit tests %s",
-            test_round, {True: "pass", False: "fail", None: "not recorded"}[unit_ok],
+            "test_round_%d: run by the harness (%s); unit tests %s", test_round,
+            "fast delivery" if delivery.fast() else "a red suite in thorough delivery",
+            {True: "pass", False: "fail", None: "not recorded"}[unit_ok],
         )
+        if not delivery.fast():
+            measured_round.note(f"test_round_{test_round}", failing_due)
         beside_a_green_suite = not failing_due and int(saved_run.get("failed") or 0) == 0
         # Beside a green locked suite, a unit test failing in two product states is set aside, not raised (B6).
         from app.graph import unit_test_quarantine
@@ -242,7 +247,8 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
             "__test_result__": SpecialistOutput(
                 changed_files=[],
                 defects=harness_defects,
-                decisions=["The harness ran this round itself (fast delivery)."],
+                decisions=["The harness ran this round itself ("
+                           + ("fast delivery" if delivery.fast() else "its suite fails criteria that are due") + ")."],
             )
         }
     elif (diagnosed := _diagnosed_file_by_file(state, saved_run, milestone, test_round)) is not None:
@@ -285,7 +291,8 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
             ],
             later_sprints=_what_later_sprints_build(state),
             brief=getattr(state.get("document"), "text", "") or "",
-            acceptance=acceptance_text,
+            # The failing criteria are the harness's to raise and a fixer's to diagnose, not the round's (LF.1394).
+            acceptance=acceptance_text + measured_round.the_split(failing_due),
         )
         # The facts the work is built and judged under (plan CM.1).
         request = with_the_facts(request, state["repository"].root_path)

@@ -72,13 +72,16 @@ SIGNALS: dict[str, str] = {
     "READS_SIZED_TO_THE_ROOM": "more than this request has room left for",
     # Recorded by the harness each time it switches thinking off for it (`app.agents.deliberated_reads`).
     "LONG_REASONING_BEFORE_A_READ": "Thinking switched off for the reply after one that reasoned at length and then only read",
+    # Recorded by the harness each red thorough round it measures alone (`app.graph.measured_round`).
+    "MEASURED_ROUND_WHEN_RED": "A red round measured by the harness alone in thorough delivery",
 }
 #: Transcript records the harness writes of what it did itself, with no model reading it: kind -> the field whose
 #: text a switch's signal is looked for in.
 HARNESS_RECORDS: dict[str, str] = {"repository_delivery": "message", "prompt_shaped": "message", "fix_order": "message",
                                    "summarised_later": "message",
                                    "reply_room": "message", "thinking_off_after_a_read": "message",
-                                   "time_budget": "message", "request_budget": "message"}
+                                   "time_budget": "message", "request_budget": "message",
+                                   "measured_round": "message"}
 
 
 @dataclass(frozen=True)

@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from app.acceptance import junit
+from app.acceptance.failure_said import what_it_said
 from app.acceptance.criteria import Criterion, from_records
 from app.stacks import contract
 from app.analysis.walk import files_under
@@ -1144,8 +1145,8 @@ class AcceptanceResult:
             line = f"- {result.id} {result.status.upper()}: {result.text}"
             for test in result.tests:
                 if test.get("outcome") == "failed":
-                    message = test.get("message", "").strip().splitlines()
-                    line += f"\n    failed: {test.get('name')} - {(message[0] if message else '')[:300]}"
+                    # The error and the values it got, past the runner's heading for the test (LF.1393).
+                    line += f"\n    failed: {test.get('name')} - {what_it_said(test.get('message', ''))}"
                     page = page_it_failed_on(test.get("message", ""))
                     if page:
                         line += "\n    the page when it failed:\n" + "\n".join(

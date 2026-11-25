@@ -4,6 +4,8 @@ Measured on one run: the sprint time budget (`SPRINT_TIME_BUDGET`) was read only
 order, and an attempt with defects left kept sending fixers, so one sprint ran 891 active minutes against its 126.
 Read inside the attempt too - at each test round and before each fixer - once the sprint has run twice its budget,
 the fix round stops; nearer than that it goes on, so a sprint close to green is not cut. Off, nothing changes.
+The stop applies once the attempt has had its first fix round (its first round is
+`test_a_sprint_s_time_budget_measures_its_own_work.py`'s), so these sprints have one behind them.
 """
 
 from __future__ import annotations
@@ -51,13 +53,18 @@ def test_a_fix_round_stops_only_once_the_sprint_has_run_twice_its_budget(minutes
     assert sprint_time_budget.Budget(minutes=minutes, limit=limit, size=8).ends_the_fix_round() is stops
 
 
+#: A fixer this attempt sent in its first fix round; the fix stages below are in round 2.
+EARLIER_FIXER = {"stage": "defect_fix_1_0", "files": ["app/count.js"], "did": "", "outcome": "left open"}
+
+
 @pytest.mark.parametrize("side_by_side", [False, True])
 def test_far_past_its_budget_the_round_sends_no_fixer_and_the_attempt_ends(
         monkeypatch, tmp_path, a_sprint_that_has_run, side_by_side):
     monkeypatch.setenv("SPRINT_TIME_BUDGET", "on")
     a_sprint_that_has_run(FAR_PAST)
-    state = the_fix_stage.a_state(tmp_path, the_fix_stage.a_defect(), the_fix_stage.a_defect("The total is wrong",
-                                  affected_files=["app/total.js"]), sprint_plan=PLAN)
+    state = the_fix_stage.a_state(tmp_path, the_fix_stage.a_defect(attempts=[EARLIER_FIXER]),
+                                  the_fix_stage.a_defect("The total is wrong", affected_files=["app/total.js"]),
+                                  sprint_plan=PLAN)
 
     update, seen = the_fix_stage.run(tmp_path, state, side_by_side=side_by_side)
 
@@ -87,10 +94,14 @@ def test_a_test_round_far_past_its_budget_starts_no_fix_round(
         monkeypatch, tmp_path, a_sprint_that_has_run, minutes, stage):
     from workflow_nodes import a_test_round, reported
 
+    from app.sprint import RemediationCycle
+
     monkeypatch.setenv("SPRINT_TIME_BUDGET", "on")
     a_sprint_that_has_run(minutes)
+    after_a_fix_round = RemediationCycle(sprint_goal="g", defects=[the_fix_stage.a_defect(attempts=[EARLIER_FIXER])])
 
-    update, _ = a_test_round(tmp_path, [reported("Saving an entry returns 500")], state={"sprint_plan": PLAN})
+    update, _ = a_test_round(tmp_path, [reported("Saving an entry returns 500")],
+                             state={"sprint_plan": PLAN, "remediation": after_a_fix_round})
 
     assert update["stage"] == stage
 

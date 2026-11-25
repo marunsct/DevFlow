@@ -88,6 +88,19 @@ def without_the_seldom_called(tools: Iterable[Any], keep: Iterable[str] = ()) ->
     return [tool for tool in tools if _named(tool) not in SELDOM_CALLED or _named(tool) in kept]
 
 
+def leaves_out(tool_name: str) -> bool:
+    """Whether every stage is offered `tool_name` never: the switch is on, the tool is seldom called, and nothing keeps
+    it - only the setup of a stack no pack covers keeps `use_runtime`, and the run's Internet lookups choice the web
+    pair. A switch whose only effect is such a tool acts nowhere, so it reads as off (`ask_specification.enabled`,
+    `project_graph.tool_enabled`): measured, two were recorded on in 29 of 29 runs while their tools were offered in none
+    of 9,567 requests, and every comparison by the switches on counted them as active."""
+    if not enabled() or tool_name not in SELDOM_CALLED or tool_name == "use_runtime":
+        return False
+    from app.tools import web_search
+
+    return not (web_search.offered() and tool_name in web_search.WEB_TOOL_NAMES)
+
+
 def _names_a_reader(prompt: str) -> bool:
     import re
 
@@ -122,4 +135,4 @@ def workspace_readers(repo_root: str | Path, can_write: bool, prompt: str = "") 
 
 
 __all__ = ["ON_BY_DEFAULT", "REQUIRED_READER", "SAID", "SELDOM_CALLED", "SPRINT_HISTORY", "WORKSPACE_READERS", "enabled",
-           "lean_tool_lists_switch", "sprint_history_offered", "without_the_seldom_called", "workspace_readers"]
+           "lean_tool_lists_switch", "leaves_out", "sprint_history_offered", "without_the_seldom_called", "workspace_readers"]

@@ -11,6 +11,12 @@ that fails its defect's tests counts as one failure of its prompt, and a single 
 sent (a rewrite that holds closes its defect, so the prompt is not asked again). At `MOST_IDENTICAL` failures the
 prompt is not sent again: the rewrite returns nothing and the defect goes to the agent loop, whose request is
 different. The count lives in the process: a restarted worker asks once more, then counts again.
+
+The prompt is the side that changes: each attempt's request grows by the attempt before it, so over 30 runs 1 of 221
+rewrite requests was byte-identical to an earlier one and the stop never fired, while 35 of 215 replies were
+byte-identical to an earlier reply of the same run. So the reply is fingerprinted too, as the files it writes: a set of
+files a rewrite or a candidate already wrote and that was measured failing (a single rewrite counts when written, a
+candidate when its defect's tests fail) is not written or measured again, and the defect goes to the agent loop.
 """
 
 from __future__ import annotations
@@ -27,6 +33,8 @@ ON_BY_DEFAULT = False
 MOST_IDENTICAL = 3
 
 _failures: dict[tuple[str, str], int] = {}
+#: The files a reply wrote, fingerprinted per workspace, that were measured failing (`reply_failed`).
+_failed_replies: set[tuple[str, str]] = set()
 _lock = threading.Lock()
 
 
@@ -55,10 +63,34 @@ def failed(root: object, prompt: str) -> None:
         _failures[key] = _failures.get(key, 0) + 1
 
 
+def _reply_key(root: object, files: dict[str, str]) -> tuple[str, str]:
+    whole = "\0".join(f"{path}\0{content}" for path, content in sorted(files.items()))
+    return str(root), hashlib.sha256(whole.encode("utf-8", errors="replace")).hexdigest()
+
+
+def reply_failed_before(root: object, files: dict[str, str]) -> bool:
+    """Whether these files, path to the content a reply gave them, were already written and measured failing in this
+    workspace; False when off or when `files` is empty."""
+    if not enabled() or not files:
+        return False
+    with _lock:
+        return _reply_key(root, files) in _failed_replies
+
+
+def reply_failed(root: object, files: dict[str, str]) -> None:
+    """Count these files, as a reply wrote them, as measured failing in this workspace; nothing when off."""
+    if not enabled() or not files:
+        return
+    with _lock:
+        _failed_replies.add(_reply_key(root, files))
+
+
 def forget() -> None:
     """Drop every count (a test's hook)."""
     with _lock:
         _failures.clear()
+        _failed_replies.clear()
 
 
-__all__ = ["MOST_IDENTICAL", "ON_BY_DEFAULT", "enabled", "exhausted", "failed", "forget"]
+__all__ = ["MOST_IDENTICAL", "ON_BY_DEFAULT", "enabled", "exhausted", "failed", "forget", "reply_failed",
+           "reply_failed_before"]

@@ -34,7 +34,6 @@ def principal_architect_node(state: WorkflowGraphState, config: RunnableConfig, 
     missing = _missing_upstream(state, "product_intake", "tools_models")
     if missing is not None:
         return missing
-    agent = create_principal_architect_agent(model=ctx.judgement_model, checkpointer=ctx.checkpointer, repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories)
 
     # A rejected specification must come back with the reasons attached,
     # otherwise the architect reproduces the version that was rejected.
@@ -154,6 +153,10 @@ def principal_architect_node(state: WorkflowGraphState, config: RunnableConfig, 
         if revised is not None:
             update = {"technical_specification": revised, "stage": "architecture_review"}
     if update is None:
+        # Built once its reading is known: a stage whose reading was done is offered no lookup, and told of none.
+        agent = create_principal_architect_agent(
+            model=ctx.judgement_model, checkpointer=ctx.checkpointer, repo_root=ctx.repo_root,
+            allow_subdirectories=ctx.allow_subdirectories, researched=bool(research))
         with researched(bool(research)):
             update = _run_gated_agent(
                 state,

@@ -89,6 +89,10 @@ class GraphContext:
         chosen = self.the_model_for_this_attempt(state)
         return quiet if chosen is self.model else chosen
 
+    def a_model_to_call(self, preferred: Any = None) -> Any:
+        """A model a helper can call directly: see `a_model_to_call`."""
+        return a_model_to_call(self, preferred)
+
     def the_model_for_this_attempt(self, state: Any) -> Any:
         """A rung of the escalation ladder: a sprint being tried again after a
         re-plan, a sent-back review, a held release or an escalation is built on
@@ -102,3 +106,25 @@ class GraphContext:
             or int(state.get("escalation_count") or 0) - int(state.get("design_escalation_count") or 0) >= 1
         )
         return self.judgement_model if retried else self.model
+
+
+def a_model_to_call(ctx: Any, preferred: Any = None) -> Any:
+    """A model a helper can call directly: `preferred`, else the judgement model, else the run's model, else the
+    deployment's default model, built as every stage builds it when the run names none; None only when none can be built.
+
+    The worker builds a run's graph with no model, and a run started not to use the frontier model has no judgement
+    model either, so both are None. Every helper that skipped on `model is None` was then skipped in every local run:
+    measured over 40 workspaces, no recurring cause was ever diagnosed, no candidate fix was ever asked and no page was
+    ever scored, though each was switched on. A stage given None builds the default model itself; this does the same
+    for a helper, so `model is None` in a helper means that no model exists, not that nobody passed one.
+    """
+    for model in (preferred, getattr(ctx, "judgement_model", None), getattr(ctx, "model", None)):
+        if model is not None:
+            return model
+    try:
+        from app.models import build_default_chat_model
+
+        return build_default_chat_model()
+    except Exception:  # noqa: BLE001 - no model can be built; the helper skips as before
+        logger.warning("No model could be built for a direct call; the helper that asked skips", exc_info=True)
+        return None

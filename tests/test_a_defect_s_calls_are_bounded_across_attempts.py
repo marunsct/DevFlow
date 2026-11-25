@@ -27,7 +27,7 @@ def _cycle(*calls):
 
 def test_under_the_ceiling_the_defect_is_fixed_again_and_at_it_it_is_left_open_with_its_diagnosis():
     with mock.patch.dict(os.environ, ON):
-        assert defect_budget.spent_out(_cycle(25, 30), 0) == ""
+        assert defect_budget.spent_out(_cycle(20, 15), 0) == "", "a third at their average of 17 stays under 60"
         why = defect_budget.spent_out(_cycle(25, 30, 12), 0)
     assert "67 model calls" in why and "changed the token check" in why
     assert not BANNED.search(why)

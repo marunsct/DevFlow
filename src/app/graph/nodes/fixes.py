@@ -365,7 +365,7 @@ def _diagnosed_if_it_keeps_failing(state: Any, defect: Any, ctx: GraphContext) -
 
         cause_journal.diagnosed(
             state["repository"].root_path, defect, str(getattr(defect, "actual_behavior", "") or ""),
-            ctx.judgement_model or ctx.model, sprint=state.get("current_sprint_index", 0),
+            ctx.a_model_to_call(), sprint=state.get("current_sprint_index", 0),
         )
     except Exception:  # noqa: BLE001 - the fix goes on without it
         logger.debug("Could not diagnose before the fix", exc_info=True)
@@ -453,7 +453,9 @@ def _fixed_by_rewriting(
     located: list[str] | None = None
     # A judgement model of its own, or with the fix cycle on the fix's own
     # model (plan AY step 2); None asks for no candidates.
-    candidate_model = the_candidate_model(ctx.judgement_model, ctx.model, fix_model)
+    # The fix's own model, else the one its stage builds when the run names none: in a local run both the run's
+    # model and its judgement model are None, and no candidate was ever asked (`context.a_model_to_call`).
+    candidate_model = the_candidate_model(ctx.judgement_model, ctx.model, ctx.a_model_to_call(fix_model))
     if failed_tries >= 1 and candidate_model is not None and not after_a_surrender:
         try:
             from app.graph.localisation import localised
@@ -616,7 +618,7 @@ def _fix_one(state: Any, config: RunnableConfig, defect_index: int, ctx: GraphCo
     # (plan AY step 4, off until measured).
     from app.graph import defect_budget
 
-    spent_out = defect_budget.spent_out(cycle, defect_index)
+    spent_out = defect_budget.spent_out(cycle, defect_index, state["repository"].root_path)
     if spent_out:
         from app.observability import defect_ledger
 
@@ -989,7 +991,7 @@ def _the_next_fix_batch(state: Any, config: RunnableConfig, ctx: GraphContext) -
     from app.graph import defect_budget
 
     for index in list(candidates):
-        spent_out = defect_budget.spent_out(cycle, index)
+        spent_out = defect_budget.spent_out(cycle, index, state["repository"].root_path)
         if spent_out:
             from app.observability import defect_ledger
 

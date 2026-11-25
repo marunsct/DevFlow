@@ -266,7 +266,7 @@ class TechnicalSpecificationOutput(BaseModel):
             "Every call the product makes into a third-party library or framework, one entry each: "
             "the library and the version it is built against, the exact import statement, and the "
             "exact call with its arguments and what it returns, as that version's documentation "
-            "gives it - read with `read_docs`, not recalled."
+            "gives it - read, not recalled."
         ),
     )
     decisions: list[ArchitectureDecisionRecord] = Field(
@@ -552,6 +552,13 @@ ONE_SOURCE_FOR_LIMITS = """- Add no limit the brief does not state: no maximum l
   repeating the value - a value written twice ends up written two ways."""
 
 
+#: How the architect is told to read a library's calls, in a request that offers it `read_docs`.
+READ_WITH_THE_TOOL = "read with `read_docs`"
+#: In its place where the stage's reading was done before it began: the notes are in the request, the tool is not.
+READ_FROM_THE_NOTES = "taken from the documentation notes in this request"
+#: In its place where no documentation tool is offered at all.
+READ_NOT_RECALLED = "taken from its documentation, not from memory"
+
 _SYSTEM_PROMPT = f"""You are the Principal Architect for this workflow.
 
 Your role is to turn an approved product intake and an approved tools-and-models
@@ -593,7 +600,7 @@ Responsibilities:
   often one off, and every test copies it.
 - Give every call into a library or framework as its documentation gives it
   for the version you pin: the import statement and the call, word for word,
-  read with `read_docs`. A smaller model recalls these wrongly more often than
+  {READ_WITH_THE_TOOL}. A smaller model recalls these wrongly more often than
   anything else.
 - Make the configuration allow everything the files do. The module system,
   the import paths (with or without file extensions), the source and test
@@ -641,13 +648,21 @@ def create_principal_architect_agent(
     checkpointer: BaseCheckpointSaver | None = None,
     repo_root: str | Path | None = None,
         allow_subdirectories: bool = True,
+    researched: bool = False,
 ) -> Any:
+    """The architect's agent. `researched`: its reading was done before it began (`app.tools.research.researched`), so
+    no lookup is offered to it and its prompt names none: measured, 62 of 68 architect requests told it to read with
+    `read_docs` while offering no such tool."""
     resolved_repo_root = str(Path(repo_root).resolve()) if repo_root else str(Path.cwd())
+    documentation = docs_tools(repo_root)
+    system_prompt = _SYSTEM_PROMPT
+    if researched or not documentation:
+        system_prompt = system_prompt.replace(READ_WITH_THE_TOOL, READ_FROM_THE_NOTES if researched else READ_NOT_RECALLED)
 
     return create_role_agent(
         name=_NAME,
         stage=_STAGE,
-        system_prompt=_SYSTEM_PROMPT,
+        system_prompt=system_prompt,
         response_format=TechnicalSpecificationOutput,
         model=model,
         checkpointer=checkpointer,
@@ -656,7 +671,7 @@ def create_principal_architect_agent(
         # write tool - see `app.agents.artifact_document`.
         can_write=False,
         # Versions move faster than any model's training: see `app.tools.package_registry`.
-        extra_tools=[*lookup_tools(), *docs_tools(), *web_tools(repo_root), *mcp_tools_for("principal_architect", repo_root)],
+        extra_tools=[*lookup_tools(), *documentation, *web_tools(repo_root), *mcp_tools_for("principal_architect", repo_root)],
     )
 
 

@@ -52,8 +52,20 @@ def main(run: str) -> int:
     numbers = with_model_errors_by_kind(numbers, records)
     numbers = with_salvage_outcomes(numbers, records)
     print(json.dumps({"run": run, **per_accepted_criterion(numbers, accepted_criteria(run)), **owner_rating(run),
-                      "switches_fired": " ".join(fired(records)) or "none"}))
+                      "switches_fired": " ".join(fired(records, decision_log_of(run))) or "none"}))
     return 0
+
+
+def decision_log_of(run: str) -> str:
+    """The run's `docs/decision_log.md`, where switches whose acts are decisions say they acted; "" when none."""
+    from pathlib import Path
+
+    for log in glob.glob(f"/app/data/workspaces/*/workspace-{run}*/docs/decision_log.md"):
+        try:
+            return Path(log).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+    return ""
 
 
 def paused_seconds_of(run: str) -> float:

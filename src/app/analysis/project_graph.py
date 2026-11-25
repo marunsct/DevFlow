@@ -221,8 +221,11 @@ def with_the_slice(request: dict[str, Any], root: str | Path, files: Iterable[st
 
 
 def tool_enabled() -> bool:
-    """CG.4: the `code_graph` tool is offered to builders and fixers (`CODE_GRAPH_TOOL`)."""
-    return is_on("CODE_GRAPH_TOOL", False)
+    """CG.4: the `code_graph` tool is offered to builders and fixers (`CODE_GRAPH_TOOL`); off where `LEAN_TOOL_LISTS`
+    leaves the tool out of every stage, since the switch then acts nowhere (`stage_tools.leaves_out`)."""
+    from app.agents import stage_tools
+
+    return is_on("CODE_GRAPH_TOOL", False) and not stage_tools.leaves_out("code_graph")
 
 
 def where_is(root: str | Path, name: str) -> list[str]:

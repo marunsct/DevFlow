@@ -46,7 +46,11 @@ _asked: dict[str, dict[str, int]] = {}
 
 
 def enabled() -> bool:
-    return is_on("ASK_SPECIFICATION", ON_BY_DEFAULT)
+    """On, and its tool offered somewhere: with `LEAN_TOOL_LISTS` leaving `ask_specification` out of every stage, the
+    switch acts nowhere and reads as off (`stage_tools.leaves_out`)."""
+    from app.agents import stage_tools
+
+    return is_on("ASK_SPECIFICATION", ON_BY_DEFAULT) and not stage_tools.leaves_out("ask_specification")
 
 
 def _answers(root: Path) -> list[dict[str, str]]:

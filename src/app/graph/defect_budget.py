@@ -101,15 +101,15 @@ def _attempts_in_the_run(ids: set[str]) -> list[str]:
         return []
 
 
-def _spent_in_the_run(ids: set[str]) -> int:
-    """The calls the ledger holds for defects `ids` over the whole run; 0 when unreadable."""
-    total = 0
+def _calls_in_the_run(ids: set[str]) -> list[int]:
+    """The calls of each attempt the ledger holds for defects `ids` over the whole run; [] when unreadable."""
+    calls = []
     for detail in _attempts_in_the_run(ids):
         try:
-            total += int(detail.split()[0] or 0)
+            calls.append(int(detail.split()[0] or 0))
         except (ValueError, IndexError):
             continue
-    return total
+    return calls
 
 
 def _a_cause_no_attempt_has_seen(cycle: Any, index: int) -> bool:
@@ -129,34 +129,57 @@ def _a_cause_no_attempt_has_seen(cycle: Any, index: int) -> bool:
     return not any(WITH_A_KNOWN_CAUSE in detail for detail in _attempts_in_the_run({defect_id(d) for d in chain}))
 
 
-def spent(cycle: Any, index: int) -> int:
-    """The calls defect `index` and the defect it recurs from have cost, by their attempt records - or over the whole
-    run, by the ledger, when that is more.
+def attempt_calls(cycle: Any, index: int, root: Any = None) -> list[int]:
+    """The model calls of each attempt at defect `index` so far: by its attempt records, by the run's ledger, or by the
+    fix journal's record of its problem (`root`), whichever has counted the most.
 
     The attempt records live on the cycle, and a re-planned sprint starts a new one: measured over 30 runs, six
-    defects went past the cap this way (523 calls, 288 model minutes; 132 calls on one), and five were never fixed.
+    defects went past the cap this way (523 calls, 288 model minutes; 132 calls on one), and five were never fixed. The
+    ledger follows a defect by its id across re-plans, and the journal follows its problem when the failing tests, and
+    so its id, change between attempts.
     """
     from app.observability.defect_ledger import defect_id
     from app.sprint import recurrence_chain
 
     defect = cycle.defects[index]
     chain = [defect, *recurrence_chain(defect, cycle.defects[:index])]
-    in_the_cycle = sum(int((a or {}).get("calls") or 0) for d in chain for a in (getattr(d, "attempts", None) or []))
-    return max(in_the_cycle, _spent_in_the_run({defect_id(d) for d in chain}))
+    in_the_cycle = [int(a.get("calls") or 0) for d in chain for a in (getattr(d, "attempts", None) or [])
+                    if isinstance(a, dict) and a.get("calls") is not None]
+    in_the_ledger = _calls_in_the_run({defect_id(d) for d in chain})
+    in_the_journal: list[int] = []
+    if root:
+        from app.graph.cause_journal import calls_on_the_problem
+
+        in_the_journal = calls_on_the_problem(root, defect)
+    return max((in_the_cycle, in_the_ledger, in_the_journal), key=sum)
 
 
-def spent_out(cycle: Any, index: int) -> str:
-    """Why defect `index` is not fixed again, or "" when it may be. "" when off."""
+def spent(cycle: Any, index: int, root: Any = None) -> int:
+    """The calls defect `index` and the defect it recurs from have cost across their attempts (`attempt_calls`)."""
+    return sum(attempt_calls(cycle, index, root))
+
+
+def spent_out(cycle: Any, index: int, root: Any = None) -> str:
+    """Why defect `index` is not fixed again, or "" when it may be. "" when off.
+
+    Not fixed again once its attempts have spent `most_calls()`, or once one more attempt, costing what its attempts
+    have cost on average, would take it past that. Checked only before an attempt, the ceiling alone was never reached:
+    attempts cost 16 to 20 calls, so a defect at 55 of 60 was given a fourth attempt and ended at 75, and no defect in 30
+    runs was ever left open by it.
+    """
     if not enabled():
         return ""
-    used = spent(cycle, index)
-    if used < most_calls() or _a_cause_no_attempt_has_seen(cycle, index):
+    calls = attempt_calls(cycle, index, root)
+    used = sum(calls)
+    next_one = used / len(calls) if calls else 0
+    if (used < most_calls() and used + next_one <= most_calls()) or _a_cause_no_attempt_has_seen(cycle, index):
         return ""
     did = [f"{a.get('stage')}: {a.get('did') or 'no decision recorded'} ({a.get('outcome')})"
            for a in getattr(cycle.defects[index], "attempts", None) or [] if isinstance(a, dict)]
-    return (f"left open after {used} model calls across its attempts (at most {most_calls()}); what they did: "
-            + ("; ".join(did[-3:]) or "nothing recorded"))
+    return (f"left open after {used} model calls across its attempts (at most {most_calls()}"
+            + (f"; another attempt at their average of {round(next_one)} would pass it" if used < most_calls() else "")
+            + "); what they did: " + ("; ".join(did[-3:]) or "nothing recorded"))
 
 
-__all__ = ["ATTEMPT_EVENT", "MOST_CALLS", "WITH_A_KNOWN_CAUSE", "ON_BY_DEFAULT", "calls_in", "enabled", "most_calls", "now", "record_calls",
-           "spent", "spent_out"]
+__all__ = ["ATTEMPT_EVENT", "MOST_CALLS", "WITH_A_KNOWN_CAUSE", "ON_BY_DEFAULT", "attempt_calls", "calls_in", "enabled",
+           "most_calls", "now", "record_calls", "spent", "spent_out"]

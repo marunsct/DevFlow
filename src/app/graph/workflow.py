@@ -1591,12 +1591,14 @@ def _with_the_attempt(cycle: Any, index: int, stage: str, fix_result: Any, outco
 
         defect = cycle.defects[index]
         record = attempt_record(stage, fix_result, outcome)
+        if calls is not None:
+            record["calls"] = calls
         if root:
             from app.graph import cause_journal
 
+            # With its calls: the journal follows one problem across re-plans and rewordings (`defect_budget.spent`).
             cause_journal.record(root, defect, record, sprint=sprint)
         if calls is not None:
-            record["calls"] = calls
             from app.graph import defect_budget
 
             defect_budget.record_calls(stage, defect, calls)

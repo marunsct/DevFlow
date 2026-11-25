@@ -103,6 +103,7 @@ def record_decision(
     existing.append(record)
     update["decisions"] = existing
     logger.info("Decision %s at %s (%s): %s", record["id"], point, decided_by, decision)
+    _kept_in_the_transcript(record)
     try:
         root = state["repository"].root_path
         from pathlib import Path
@@ -116,6 +117,25 @@ def record_decision(
     except Exception:  # noqa: BLE001 - the record in state is the authority
         logger.debug("Could not write the decision log", exc_info=True)
     return record
+
+
+def _kept_in_the_transcript(record: dict[str, Any]) -> None:
+    """One `decision` record in the run's transcript, with what was decided and why. Never raises.
+
+    The decision log is a file of the workspace, so the run's own records never held a decision: the switch-firing
+    register (`switch_firing.fired`), which reads only the transcript, reported a switch whose acts are decisions as never
+    acting - measured, `ONE_DESIGN_REVIEW` acted in 33 of 40 decision logs and was counted in none of 29 runs.
+    """
+    try:
+        from app.observability.log_context import current_run
+        from app.observability.transcript import record as kept
+
+        run, stage = current_run()
+        kept(run, str(stage or record.get("point") or ""), "decision", id=record.get("id"), point=record.get("point"),
+             decided_by=record.get("decided_by"),
+             text=f"{record.get('decision') or ''}\n{record.get('rationale') or ''}")
+    except Exception:  # noqa: BLE001 - the record in state is the authority
+        logger.debug("Could not keep the decision in the transcript", exc_info=True)
 
 
 def render(records: list[dict[str, Any]]) -> str:

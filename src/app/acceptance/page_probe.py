@@ -264,15 +264,49 @@ def page_errors(repo_root: str | Path, brief: str | None = None, *, runner: Any 
         report = ic._the_probe_s_report(root / project_name, project_name, probe, [None], run,  # noqa: SLF001
                                         "page_checks")
         if report is None or not report.found:
+            _kept(root, "could not run: the probe's runner wrote no report", report)
             return None
         errors: list[dict[str, Any]] = []
         for test in report.tests:
             if getattr(test, "outcome", "") == "failed" and (finding := what_the_test_found(test)) is not None:
                 errors.append(finding)
+        _kept(root, f"found {len(errors)}" if errors else "ran clean", report, errors)
         return errors
-    except Exception:  # noqa: BLE001 - a check that cannot run says nothing
+    except Exception as error:  # noqa: BLE001 - a check that cannot run says nothing
         logger.debug("Could not check the page in a browser", exc_info=True)
+        _kept(Path(repo_root), f"could not run: {type(error).__name__}: {str(error)[:160]}")
         return None
+
+
+#: The page probe's record in `.harness/contract-probe.json`, beside the contract probes' (`probe_coverage`).
+RECORD_KIND = "page"
+
+
+def _kept(root: Path, outcome: str, report: Any = None, found: list[dict[str, Any]] | None = None) -> None:
+    """The probe's outcome kept beside the contract probes': whether it ran clean, found something, or could not run,
+    and each check's result. Measured: the probe was reached in 8 of 45 workspaces and nothing told "four checks
+    passed" from "did not run". Never raises."""
+    try:
+        from app.acceptance import probe_coverage
+
+        checks = {f"page check {number}": title for number, _, title in CHECKS}
+        named = {}
+        for test in getattr(report, "tests", None) or []:
+            number = _NUMBER.search(str(getattr(test, "name", "") or ""))
+            if number:
+                named[f"page check {number.group(1)}"] = test
+        skipped = [{"line": title, "reason": " ".join(str(getattr(named[check], "message", "") or "skipped").split())[:200]}
+                   for check, title in checks.items() if check in named and getattr(named[check], "outcome", "") == "skipped"]
+        skipped += [{"line": title, "reason": "no result"} for check, title in checks.items()
+                    if report is not None and check not in named]
+        probed = [title for check, title in checks.items()
+                  if check in named and getattr(named[check], "outcome", "") != "skipped"]
+        probe_coverage.write(root, RECORD_KIND, {
+            "outcome": outcome, "considered": len(CHECKS), "asked": len(CHECKS) if report is not None else 0,
+            "probed": len(probed), "skipped": skipped, "found": [str(f.get("kind")) for f in found or []],
+        })
+    except Exception:  # noqa: BLE001 - a record must never change what the probe found
+        logger.debug("Could not keep the page probe's outcome", exc_info=True)
 
 
 #: Where the brief's word on persistence is kept for `still_raised`.

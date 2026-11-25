@@ -839,14 +839,25 @@ class CompatibleChatOpenAI(ChatOpenAI):
 
         Only when `max_retries` is 0, which is how the local model is built;
         any other client keeps the retries it has.
+
+        Either way, a server that cannot be reached right now - a balancer with
+        no healthy instance, a refused connection - is waited for, for up to
+        `outage.wait_seconds()`, before the error is raised (`app.models.outage`).
         """
+        from app.models.call_gate import _stop_if_this_run_was_stopped
+        from app.models.outage import Outage, through_an_outage
+
         if self.max_retries:
-            return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+            generate = super()._generate
+            return through_an_outage(lambda: generate(messages, stop=stop, run_manager=run_manager, **kwargs),
+                                     sleep=lambda seconds: time.sleep(seconds), clock=lambda: time.monotonic(),
+                                     between=_stop_if_this_run_was_stopped)
         ceiling = self.max_tokens if isinstance(self.max_tokens, int) else None
         server = self._served_by()
         cap = fix_stage_reply_cap(ceiling) or plan_review_reply_cap(ceiling)
         cap = thinking_off_reply_cap(cap, ceiling, kwargs)
         quick_failures = 0
+        outage = Outage(clock=lambda: time.monotonic())
         while True:
             started = time.monotonic()
             _REPLY_CAP.tokens = cap
@@ -854,9 +865,16 @@ class CompatibleChatOpenAI(ChatOpenAI):
             try:
                 result = super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
                 record_pace(server, _reply_tokens(result), time.monotonic() - started)
+                outage.answered()
                 return result
             except Exception as error:  # noqa: BLE001 - re-raised unless a retry can help
                 elapsed = time.monotonic() - started
+                pause = outage.pause_after(error, elapsed)
+                if pause is not None:
+                    # The server is not there right now: waited for, not failed on (`app.models.outage`).
+                    time.sleep(pause)
+                    _stop_if_this_run_was_stopped()
+                    continue
                 step = after_a_failed_call(error, elapsed, cap or ceiling, quick_failures)
                 if step is None:
                     raise

@@ -142,9 +142,11 @@ def effects(records: list[dict], decisions: str = "") -> list[str]:
     lines.extend(gate_lines(records))
     lines.extend(review_reading_lines(records))
     # Beside what fired: a switch that was on, had its chance and did nothing (`CHANCES`).
-    from app.observability.switch_firing import chance_lines
+    from app.observability.switch_firing import chance_lines, no_signal_line
 
     lines.extend(chance_lines(records, decisions))
+    # The switches whose acting the records cannot show at all: each needs a signal of its own before it can be judged.
+    lines.extend(line for line in [no_signal_line(records)] if line)
     return lines
 
 
@@ -316,7 +318,8 @@ def contract_probe_lines(stored: dict) -> list[str]:
         reasons = collections.Counter(str(s.get("reason", "")) for s in record.get("skipped") or [])
         why = "; ".join(f"{n} {reason}" for reason, n in reasons.most_common(4))
         out.append(f"contract probe {kind}: {record.get('considered', 0)} lines, {record.get('asked', 0)} asked, "
-                   f"{record.get('probed', 0)} probed" + (f"; skipped: {why}" if why else ""))
+                   f"{record.get('probed', 0)} probed" + (f"; skipped: {why}" if why else "")
+                   + (f"; {record['outcome']}" if record.get("outcome") else ""))
     return out
 
 

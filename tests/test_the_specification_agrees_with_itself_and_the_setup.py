@@ -38,7 +38,9 @@ def test_the_specification_has_a_section_of_library_calls():
     from app.agents.technical_lead import _CONTRACT_SECTIONS
 
     field = TechnicalSpecificationOutput.model_fields["library_usage"]
-    assert "import statement" in field.description and "`read_docs`" in field.description
+    # Read, not recalled - and no tool named: the schema goes with requests that offer none (LF.1433).
+    assert "import statement" in field.description and "not recalled" in field.description
+    assert "read_docs" not in field.description
     assert "library_usage" in dict(_SECTIONS) and "library_usage" in dict(_CONTRACT_SECTIONS)
     assert not BANNED.search(field.description)
 

@@ -1,0 +1,29 @@
+```ts
+// src/app.ts
+
+import { Hono } from 'hono';
+import type { JsonStorage } from './storage/jsonStorage.ts';
+import { notesRouter } from './routes/notes.ts';
+import { healthRouter } from './routes/health.ts';
+
+/**
+ * Create a new Hono application instance.
+ *
+ * @param storage - Instance of JsonStorage used by the routes.
+ * @returns Configured Hono app with /notes and /health endpoints mounted.
+ */
+export function createApp(storage: JsonStorage): Hono {
+  const app = new Hono();
+
+  // Mount routers
+  app.route('/notes', notesRouter);
+  app.route('/health', healthRouter);
+
+  return app;
+}
+
+/**
+ * Default export for convenience; points to the named `createApp`.
+ */
+export default createApp;
+```

@@ -547,7 +547,12 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     # Plan EV.2, off until measured: how the page looks, scored - never a gate.
     from app.acceptance import screenshot_rubric
 
-    screenshot_rubric.score(root, getattr(ctx, "judgement_model", None), config["configurable"].get(APP_RUN_ID_KEY))
+    # On the run's own model when it has no judgement model (`context.a_model_to_call`); only a model that reads
+    # images is asked (`screenshot_rubric.score`).
+    from app.graph.context import a_model_to_call
+
+    screenshot_rubric.score(root, a_model_to_call(ctx) if screenshot_rubric.enabled() else None,
+                            config["configurable"].get(APP_RUN_ID_KEY))
     may_not_work, to_know = completion_verdict.split(gaps)
     cut = [gap for gap in to_know if completion_verdict.is_a_cut(gap)]
     known_defects = [gap for gap in to_know if completion_verdict.is_a_known_defect(gap)]

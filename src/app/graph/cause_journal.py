@@ -128,6 +128,7 @@ def record(root: str | Path | None, defect: Any, attempt: dict[str, Any], *, spr
             "did": _one_line(attempt.get("did")),
             "outcome": _one_line(attempt.get("outcome"), 300),
             "problem": problem_of(defect),
+            **({"calls": int(attempt["calls"])} if isinstance(attempt.get("calls"), int) else {}),
         }, sprint)
     except Exception:  # noqa: BLE001 - a journal must never fail the fix it records
         logger.debug("Could not record the fix in the journal", exc_info=True)
@@ -190,6 +191,22 @@ def failed_fixes_in_the_run(root: str | Path | None, defect: Any) -> int:
                             and _criteria_named(str(cause.get("defect") or "")) == named)))
     except Exception:  # noqa: BLE001
         return 0
+
+
+def calls_on_the_problem(root: str | Path | None, defect: Any) -> list[int]:
+    """The model calls of each attempt at this defect's problem over the whole run, oldest first, from every cause it
+    was raised under (`problem_of`): a re-plan, or the failing tests changing, gives the same problem a new cause key and
+    a new ledger id, and the count by either started again. [] when unreadable or none were counted."""
+    try:
+        problem = problem_of(defect)
+        if not problem:
+            return []
+        entries = [entry for cause in (_read(root).get("causes") or {}).values() if isinstance(cause, dict)
+                   for entry in cause.get("entries") or []
+                   if isinstance(entry, dict) and entry.get("problem") == problem and isinstance(entry.get("calls"), int)]
+        return [int(entry["calls"]) for entry in sorted(entries, key=lambda e: str(e.get("at") or ""))]
+    except Exception:  # noqa: BLE001
+        return []
 
 
 def _criteria_named(text: str) -> set[str]:
@@ -289,7 +306,8 @@ def diagnosed(root: str | Path | None, defect: Any, failure: str, model: Any, *,
 
 
 __all__ = [
-    "DIAGNOSE_AFTER", "DIAGNOSIS", "FILE", "HEADING", "LEAD_HEADING", "ON_BY_DEFAULT", "add_hypothesis", "diagnosed",
+    "DIAGNOSE_AFTER", "DIAGNOSIS", "FILE", "HEADING", "LEAD_HEADING", "ON_BY_DEFAULT", "add_hypothesis",
+    "calls_on_the_problem", "diagnosed",
     "diagnosis_enabled", "failed_fixes_in_the_run", "failures_on", "for_a_replan", "key_of", "needs_a_diagnosis",
     "problem_of", "record", "tried_before",
 ]

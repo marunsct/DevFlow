@@ -23,7 +23,7 @@ BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I
 def _fresh(monkeypatch):
     stage_memory.forget_everything()
     monkeypatch.setattr(docs, "enabled", lambda: True)
-    monkeypatch.setattr(docs, "read", lambda name, topic, ecosystem="": {"source": ["s"], "excerpt": f"{name} {topic}"})
+    monkeypatch.setattr(docs, "read", lambda name, topic, ecosystem="", **_: {"source": ["s"], "excerpt": f"{name} {topic}"})
     monkeypatch.setattr(package_registry, "look_up", lambda ecosystem, name: {"package": name, "version": "1.0.0"})
     yield
     stage_memory.forget_everything()

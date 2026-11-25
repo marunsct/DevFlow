@@ -250,10 +250,46 @@ def _readme(ecosystem: str, name: str, fetch: Fetch) -> tuple[str, str]:
     return "", ""
 
 
-def read(name: str, topic: str = "", ecosystem: str = "", *, fetch: Fetch | None = None) -> dict[str, Any]:
+#: The registries whose READMEs `_readme` reads, by `package_registry`'s name for each.
+_READABLE_REGISTRIES = frozenset({"npm", "pypi", "crates", "go"})
+#: How the stack document states the language (`doc_templates/templates/_stack.md.j2`).
+_STACK_LANGUAGE = re.compile(r"^- \*\*Language:\*\* *(.+?) *$", re.M)
+
+
+def the_run_s_ecosystem(repo_root: Any) -> str:
+    """The registry the run's stack installs from (`package_registry`'s name: npm, pypi, maven...), from the pack the
+    project was set up with, else the language of the approved stack (`docs/technology_stack.md`); "" when neither is
+    known yet. Never raises."""
+    if not repo_root:
+        return ""
+    try:
+        from pathlib import Path
+
+        from app.stacks import contract
+        from app.tools.package_registry import ecosystem_named
+
+        found = contract.the_pack(repo_root)
+        language = str(getattr(found[0], "language", "") or "") if found else ""
+        if not language:
+            stack = Path(repo_root) / "docs" / "technology_stack.md"
+            said = _STACK_LANGUAGE.search(stack.read_text(encoding="utf-8", errors="replace")) if stack.is_file() else None
+            language = said.group(1) if said else ""
+        return ecosystem_named(language.strip().lower()) or ""
+    except Exception:  # noqa: BLE001 - no default; every registry is tried, as before
+        return ""
+
+
+def read(name: str, topic: str = "", ecosystem: str = "", *, fetch: Fetch | None = None,
+         run_ecosystem: str = "") -> dict[str, Any]:
+    """The documentation of `name` about `topic`, or {"error": ...}.
+
+    `run_ecosystem`: the registry of the run's stack (`the_run_s_ecosystem`), read when `ecosystem` is not given. With
+    no ecosystem every registry was tried in turn, and a Java run asking for `spring-boot` was answered from the README
+    of an unrelated Rust crate of that name, labelled as the project's own documentation. A stack whose registry this
+    does not read is told so; no other registry is tried for it.
+    """
     from app.tools.untrusted_text import defanged
 
-    """The documentation of `name` about `topic`, or {"error": ...}."""
     fetch = fetch or _fetch
     name = str(name or "").strip()
     # `node:test`, `bun:test`: a module built into a runtime. Its documentation
@@ -269,6 +305,13 @@ def read(name: str, topic: str = "", ecosystem: str = "", *, fetch: Fetch | None
         return {"error": f"{name!r} is not a framework or package name."}
     wanted = _words(topic)
     key = re.sub(r"[\s.]*js$", "", name.lower()).replace(" ", "")
+    if not str(ecosystem or "").strip() and run_ecosystem and key not in INDEXES:
+        if run_ecosystem not in _READABLE_REGISTRIES:
+            return {"error": f"This project's packages come from {run_ecosystem}, whose READMEs this tool does not "
+                             f"read, so {name!r} was not looked up: a package of that name in another registry is "
+                             "another library. Give `ecosystem` (npm, pypi, crates or go) to read a package of one "
+                             "of those."}
+        ecosystem = run_ecosystem
     try:
         if key in INDEXES:
             excerpt, sources = _from_an_index(INDEXES[key], wanted, fetch)
@@ -290,7 +333,9 @@ def read(name: str, topic: str = "", ecosystem: str = "", *, fetch: Fetch | None
     }
 
 
-def build_docs_tool() -> Any:
+def build_docs_tool(repo_root: Any = None) -> Any:
+    """The `read_docs` tool; `repo_root`, the run's workspace, says which registry a package name with no ecosystem
+    is read from (`the_run_s_ecosystem`), looked up at each call since the stack is chosen part way through a run."""
     from langchain_core.tools import tool
 
     @tool
@@ -314,12 +359,12 @@ def build_docs_tool() -> Any:
         refusal = over_its_share("documentation")
         if refusal:
             return {"error": refusal}
-        answer = read(name, topic, ecosystem)
+        answer = read(name, topic, ecosystem, run_ecosystem=the_run_s_ecosystem(repo_root))
         found(f"read_docs {name}: {topic}", answer)
         return answer
 
     return read_docs
 
 
-def docs_tools() -> list[Any]:
-    return [build_docs_tool()] if enabled() else []
+def docs_tools(repo_root: Any = None) -> list[Any]:
+    return [build_docs_tool(repo_root)] if enabled() else []

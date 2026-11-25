@@ -89,7 +89,10 @@ HARNESS_RECORDS: dict[str, str] = {"repository_delivery": "message", "prompt_sha
                                    "summarised_later": "message",
                                    "reply_room": "message", "thinking_off_after_a_read": "message",
                                    "time_budget": "message", "request_budget": "message",
-                                   "measured_round": "message", "fixer_memory_chosen_again": "message"}
+                                   "measured_round": "message", "fixer_memory_chosen_again": "message",
+                                   # Each decision the run took, with its rationale (`app.decisions.record_decision`):
+                                   # switches whose acts are decisions say so only there.
+                                   "decision": "text"}
 
 
 @dataclass(frozen=True)
@@ -115,9 +118,15 @@ def _text(value: Any) -> str:
     return value if isinstance(value, str) else json.dumps(value, default=str)
 
 
-def fired(records: Iterable[Any]) -> list[str]:
-    """The switches in `SIGNALS` whose text appears in these transcript records, sorted."""
-    seen: set[str] = set()
+def fired(records: Iterable[Any], decisions: str = "") -> list[str]:
+    """The switches in `SIGNALS` whose text appears in these transcript records, or in the run's decision log
+    `decisions` (`docs/decision_log.md`), sorted.
+
+    A switch whose act is a decision writes its words to the decision log, and a run recorded before decisions were
+    kept in the transcript has them nowhere else: measured, `ONE_DESIGN_REVIEW` acted in 33 of 40 decision logs and
+    this register counted it in none of 29 runs, so the switch gate read it as never acting.
+    """
+    seen: set[str] = {name for name, needle in SIGNALS.items() if needle in (decisions or "")}
     for record in records:
         if not isinstance(record, dict):
             continue
@@ -142,7 +151,7 @@ def on_throughout(records: Iterable[Any]) -> list[str]:
 
 def silent(on: Iterable[str], records: Iterable[Any], decisions: str) -> list[tuple[str, str]]:
     """(switch, condition) for each of `on` whose chance came in this run and that left no sign of acting."""
-    acted = set(fired(records))
+    acted = set(fired(records, decisions))
     return [(name, CHANCES[name].condition) for name in on
             if name in CHANCES and name not in acted and CHANCES[name].in_the_decisions.search(decisions or "")]
 
@@ -152,7 +161,7 @@ def chance_lines(records: Iterable[Any], decisions: str) -> list[str]:
     records = list(records)
     on = [name for name in on_throughout(records) if name in CHANCES]
     never = dict(silent(on, records, decisions))
-    acted = set(fired(records))
+    acted = set(fired(records, decisions))
     lines = []
     for name in on:
         if name in never:
@@ -164,4 +173,20 @@ def chance_lines(records: Iterable[Any], decisions: str) -> list[str]:
     return lines
 
 
-__all__ = ["CHANCES", "Chance", "HARNESS_RECORDS", "SIGNALS", "chance_lines", "fired", "on_throughout", "silent"]
+def without_a_signal(records: Iterable[Any]) -> list[str]:
+    """The switches on throughout the run that have no firing signal here at all, sorted: whether they acted cannot be
+    told from the run's records, so the switch gate can say nothing of them (90 of 125 when measured)."""
+    return sorted(name for name in on_throughout(records) if name not in SIGNALS and name not in CHANCES)
+
+
+def no_signal_line(records: Iterable[Any]) -> str:
+    """The report line naming the switches on throughout with no firing signal; "" when there are none."""
+    names = without_a_signal(records)
+    if not names:
+        return ""
+    return (f"  {len(names):>4}  switches on throughout with no firing signal, so whether they acted cannot be told: "
+            + " ".join(names))
+
+
+__all__ = ["CHANCES", "Chance", "HARNESS_RECORDS", "SIGNALS", "chance_lines", "fired", "no_signal_line",
+           "on_throughout", "silent", "without_a_signal"]

@@ -1548,7 +1548,7 @@ def create_specialist_agent(
         # A framework's or package's current documentation, the web for what is
         # newer than the model, and the MCP servers: see `app.tools.docs`,
         # `app.tools.web_search` and `app.tools.mcp_tools`.
-        *docs_tools(),
+        *docs_tools(resolved_repo_root),
         *(web_tools_for_this_fix or web_tools(resolved_repo_root)),
         *mcp_tools_for("specialist", resolved_repo_root),
         # A runtime version the image lacks, for this project only: see `app.tools.runtimes`.

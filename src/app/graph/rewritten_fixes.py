@@ -780,6 +780,13 @@ def fix_by_rewriting(
                     _note_the_reply(defect, path, "no block")
                     came_to[path] = "came back with no file in the reply"
                     continue
+                if content != current and repeated_rewrite_prompts.reply_failed_before(root, {path: content}):
+                    # The same file an earlier rewrite wrote and the harness measured failing (35 of 215 replies
+                    # were byte-identical to an earlier one): not written and measured again.
+                    _note_the_reply(defect, path, "repeated")
+                    came_to[path] = "came back as the same file an earlier rewrite wrote, measured failing"
+                    unchanged.add(path)
+                    continue
                 _note_the_reply(defect, path, "changed" if content != current else "unchanged")
                 if content == current:
                     unchanged.add(path)
@@ -795,6 +802,8 @@ def fix_by_rewriting(
                         continue
                     if path not in changed:
                         changed.append(path)
+                    # Counted as failed when written, as its request is: a rewrite that holds closes its defect.
+                    repeated_rewrite_prompts.reply_failed(root, {path: content})
                     # Made now: what an earlier pass was told of its edits is past.
                     diagnostics = [d for d in diagnostics if not (AN_EDIT_NOT_APPLIED in d and f"`{path}`" in d)]
             except Exception as error:  # noqa: BLE001 - the agent loop takes what this could not
@@ -934,6 +943,10 @@ def fix_by_candidates(
         changed = [path for path, content in version.items() if content != originals[path]]
         if not changed:
             continue
+        if repeated_rewrite_prompts.reply_failed_before(root, {path: version[path] for path in changed}):
+            # The same files an earlier rewrite or candidate wrote and the defect's tests failed: not measured again.
+            logger.info("Candidate %d skipped: it writes what an earlier rewrite wrote, measured failing", number)
+            continue
         try:
             for path in changed:
                 write(str(root), path, version[path])
@@ -942,6 +955,8 @@ def fix_by_candidates(
             put_back()
             continue
         passed = check()
+        if passed is False:
+            repeated_rewrite_prompts.reply_failed(root, {path: version[path] for path in changed})
         if passed is not False:
             logger.info("Candidate fix %d of %d kept%s: %s", number, candidates,
                         "" if passed else " (nothing to check it against)", ", ".join(changed))

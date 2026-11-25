@@ -1,0 +1,31 @@
+{
+ "causes": {
+  "start_failure:compile:notes-api/server_test.go:error|compile:notes-api/store_test.go:error|test:notes_api › testmain": {
+   "defect": "The product does not start for the acceptance suite, so no test can reach it.",
+   "entries": [
+    {
+     "stage": "defect_fix_1_0",
+     "files": [
+      "notes-api/store_test.go",
+      "notes-api/server_test.go"
+     ],
+     "did": "Rewrote notes-api/store_test.go, notes-api/server_test.go from the failure output and the specification (fast delivery). The compiler still reports: - In `notes-api/store_test.go` line 15: buildTestServer redeclared in this block (the compi",
+     "outcome": "left open: its tests still fail",
+     "problem": "start_failure:compile:notes-api/server_test.go:error|compile:notes-api/store_test.go:error|test:notes_api › testmain",
+     "at": "2026-11-25T00:15:59+00:00"
+    },
+    {
+     "stage": "defect_fix_2_0",
+     "files": [
+      "notes-api/server_test.go"
+     ],
+     "did": "Rewrote notes-api/server_test.go from the failure output and the specification (fast delivery). The compiler still reports: - In `notes-api/server_test.go` line 415: other declaration of buildTestServer (the compiler); - In `notes-api/serve",
+     "outcome": "left open: its tests still fail",
+     "problem": "start_failure:compile:notes-api/server_test.go:error|compile:notes-api/store_test.go:error|test:notes_api › testmain",
+     "at": "2026-11-25T00:18:13+00:00"
+    }
+   ],
+   "sprint": 0
+  }
+ }
+}

@@ -90,6 +90,8 @@ x-app-env: &app-env
   DOMAIN_CRAFT_CHECKLISTS: ${DOMAIN_CRAFT_CHECKLISTS:-off}
   # Plan SP.3: each consulted specialist also reviews its own domain in the sprint's changed files (off until measured).
   SPECIALIST_DOMAIN_REVIEW: ${SPECIALIST_DOMAIN_REVIEW:-off}
+  # Plan PA.9: advice sized to the brief, items beyond it declined unless the brief line is quoted (off until measured).
+  ADVICE_SIZED_TO_THE_BRIEF: ${ADVICE_SIZED_TO_THE_BRIEF:-off}
   # Plan HK.10: cited suggestions from comparable products for the intake, only with the run owner's consent.
   PRODUCT_RESEARCH: ${PRODUCT_RESEARCH:-off}
   API_CARDS_FOR_NEWER_RELEASES: ${API_CARDS_FOR_NEWER_RELEASES:-off}

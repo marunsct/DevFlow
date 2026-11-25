@@ -19,6 +19,7 @@ from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from deepagents.backends import FilesystemBackend
+from deepagents.backends.utils import format_content_with_line_numbers
 from deepagents.middleware.summarization import SummarizationMiddleware
 
 from app.agents.compaction import RequestKeepingSummarization
@@ -298,7 +299,10 @@ def _a_reading_conversation() -> list:
             "id": f"read{n}", "name": "read_file",
             "args": {"file_path": f"shop/src/part{n % 3}.tsx", "offset": start - 1, "limit": 40},
         }]))
-        messages.append(ToolMessage(content="\n".join(f"{k:>6}\tconst line{k} = {k};" for k in range(start, start + 40)),
+        # Numbered as the read tool numbers it (deepagents' own formatter): the old tab gutter, assumed here, hid
+        # that every live summary counted no read (LF.1399).
+        lines = [f"const line{k} = {k};" for k in range(start, start + 40)]
+        messages.append(ToolMessage(content=format_content_with_line_numbers(lines, start_line=start),
                                     tool_call_id=f"read{n}", id=f"tool{n}"))
     messages.extend([AIMessage(content="Reading on.", id="ai-last"), HumanMessage(content="next", id="h-last")])
     return messages

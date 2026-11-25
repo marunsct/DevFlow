@@ -243,16 +243,20 @@ def chosen_again(named: Sequence[str], written: Sequence[str], reads: Sequence[S
     """The files a stage's memory holds whole after a summary, most wanted first (LF.1288): those it wrote, the
     latest first; then those it read, most reads first, then the latest; then those its opening named, in its order.
     Only files `under_review` accepts: the product's code, configuration and tests, not documents, generated folders
-    or the files the harness keeps. Never raises: [].
+    or the files the harness keeps; and not a throwaway the stage wrote for itself (`file_kinds.is_scratch`, LF.1400).
+    Never raises: [].
 
     Measured on one medium run: a lead summarised 21 times re-read 20 files 12 times each - its memory held what the
-    visit began with, and a summary deleted every file it had read since."""
+    visit began with, and a summary deleted every file it had read since. And a test round that wrote a repro script
+    held it first after its next summary, ahead of the route, schemas and tests it was reading."""
     try:
+        from app.analysis.file_kinds import is_scratch
+
         order = list(reversed(list(dict.fromkeys(str(p) for p in written or ()))))
         counted = [(str(item[0]), int(item[1]), index) for index, item in enumerate(reads or ()) if len(item) >= 2]
         order += [path for path, _, _ in sorted(counted, key=lambda r: (-r[1], -r[2]))]
         order += [str(p) for p in named or ()]
-        order = list(dict.fromkeys(p.strip().lstrip("/") for p in order if p))
+        order = [p for p in dict.fromkeys(p.strip().lstrip("/") for p in order if p) if not is_scratch(p)]
         accepted = {path for path, _ in under_review(repo_root, order)}
         return [path for path in order if path in accepted]
     except Exception:  # noqa: BLE001 - the memory as it is

@@ -223,8 +223,11 @@ def _files_written(messages: list[AnyMessage]) -> list[str]:
     return found
 
 
-#: A line of a read's result as `read_file` numbers it: `    12\t...`, a long line's continuation `    12.1\t...`.
-_NUMBERED_LINE = re.compile(r"^\s*(\d+)(?:\.\d+)?\t", re.M)
+#: A line of a read's result as `read_file` numbers it: `    12  ...`, a long line's continuation `    12.1  ...`; the
+#: tab of the older `cat -n` gutter too. Measured on one medium run (LF.1399): the read tool had moved to the two
+#: spaces, this read the tab alone, and every summary of every stage counted no read - the memory chosen again at a
+#: summary held what the stage wrote and what its opening named, never the files it read 6-14 times.
+_NUMBERED_LINE = re.compile(r"^[ \t]*(\d+)(?:\.\d+)?(?:\t|  )", re.M)
 MOST_FILES_READ_NAMED = 40
 
 

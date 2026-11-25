@@ -13,6 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 from deepagents.backends import FilesystemBackend
+from deepagents.backends.utils import format_content_with_line_numbers
 from langchain.agents.middleware.types import ModelRequest, ModelResponse
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
@@ -102,8 +103,9 @@ class _Visit:
 
 
 def _read(n: int, path: str, root) -> list:
+    """One read of `path`, its result numbered as the read tool numbers it (deepagents' own formatter)."""
     text = (root / path).read_text()
-    numbered = "\n".join(f"{k:>6}\t{line}" for k, line in enumerate(text.splitlines(), start=1))
+    numbered = format_content_with_line_numbers(text)
     return [AIMessage(content="", id=f"ai-read{n}", tool_calls=[
                 {"id": f"read{n}", "name": "read_file", "args": {"file_path": path}}]),
             ToolMessage(content=numbered, tool_call_id=f"read{n}", id=f"tool-read{n}")]
@@ -262,3 +264,49 @@ def test_a_builder_whose_files_fit_has_no_outline(tmp_path):
 
     assert {f"proj/app/part{n:02}.py" for n in range(3)} <= set(held)
     assert "=== Outline" not in memory and "(numbered lines" not in memory
+
+
+def _a_project_folder_past_its_room(root) -> tuple[str, ...]:
+    """A product in its own folder, as a run lays it out: two files the opening holds, three it does not."""
+    held = ("proj/pkg/models.py", "proj/pkg/main.py")
+    others = ("proj/pkg/routes/auth.py", "proj/pkg/schemas.py", "proj/tests/test_auth.py")
+    for name in (*held, *others):
+        _file(root, name, 12_000)
+    (root / "docs").mkdir(exist_ok=True)
+    (root / "docs" / "technical_specification.md").write_text("# Specification\nThe product keeps records.\n")
+    return held
+
+
+def test_a_test_round_holds_the_files_it_read_most_after_a_summary(tmp_path):
+    """LF.1399, measured on one medium run: a test round summarised four times kept the seven files its opening named
+    and never held the route, schemas and tests it read 14, 6 and 10 times - the summary counted no read, its
+    results numbered by the read tool's two-space gutter."""
+    held = _a_project_folder_past_its_room(tmp_path)
+    auth, schemas, tests = "proj/pkg/routes/auth.py", "proj/pkg/schemas.py", "proj/tests/test_auth.py"
+    opening = HumanMessage(content="Run the tests of this milestone.\n\n" + held_section(held, READER), id="opening")
+    with _Visit(tmp_path, READER, tmp_path) as visit:
+        visit.call([opening])
+        conversation = [opening]
+        for n, path in enumerate([auth, tests, auth, schemas, auth, tests]):
+            conversation += _read(n, path, tmp_path)
+        after = _first_message(visit.call(visit.summarised(conversation + _later())))
+
+    assert held_named_in(after)[:2] == (auth, tests)
+    assert f"=== {auth} (numbered lines) ===" in after
+
+
+def test_a_scratch_script_the_stage_wrote_is_not_held_in_place_of_what_it_read(tmp_path):
+    """LF.1400, measured on one medium run: a test round that wrote a repro script held it first after its next
+    summary, ahead of the product files it was reading."""
+    _a_product_past_its_room(tmp_path)
+    scratch = "app/tmp-diag.py"
+    _file(tmp_path, scratch, 18_000)
+    opening = _opening()
+    with _Visit(tmp_path, READER, tmp_path) as visit:
+        visit.call([opening])
+        conversation = [opening, *_read(0, C, tmp_path), *_wrote(1, scratch), *_read(2, D, tmp_path),
+                        *_read(3, C, tmp_path)]
+        after = _first_message(visit.call(visit.summarised(conversation + _later())))
+
+    assert held_named_in(after) == (C, D)
+    assert f"=== {scratch} (numbered" not in after

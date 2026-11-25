@@ -293,6 +293,11 @@ def current() -> ServerProfile | None:
     return _RECORDED
 
 
+def read_for() -> tuple[str, str] | None:
+    """(address, model) the recorded profile was read for, or None before the first read. No network."""
+    return _DESTINATION
+
+
 #: How old, at most, the profile the settings page names a model by may be.
 PAGE_MAX_AGE_SECONDS = 30
 

@@ -802,21 +802,21 @@ class CompatibleChatOpenAI(ChatOpenAI):
         # A server found to take no images is sent none: a stage's later calls carry its first call's pictures.
         messages = image_refusal.as_the_server_takes(server, messages)
         try:
-            result = self._generate_paced(messages, stop=stop, run_manager=run_manager, **kwargs)
+            result = self._generate_fitted(messages, stop=stop, run_manager=run_manager, **kwargs)
         except Exception as error:  # noqa: BLE001 - re-raised unless this is the refusal
             if image_refusal.says_images_are_refused(error) and image_refusal.has_images(messages):
                 # Refused for its pictures: once more without them, and the model kept as reading none
                 # (`app.models.image_refusal`).
                 image_refusal.remember(server, error)
                 messages = image_refusal.without_images(messages)
-                result = self._generate_paced(messages, stop=stop, run_manager=run_manager, **kwargs)
+                result = self._generate_fitted(messages, stop=stop, run_manager=run_manager, **kwargs)
             elif server not in _NAMED_CHOICE_BECOMES_REQUIRED and takes_only_string_tool_choices(error):
                 _NAMED_CHOICE_BECOMES_REQUIRED.add(server)
                 logger.warning(
                     "%s takes only string tool choices; a named choice is sent as `required` from now on",
                     server[1] or server[0],
                 )
-                result = self._generate_paced(messages, stop=stop, run_manager=run_manager, **kwargs)
+                result = self._generate_fitted(messages, stop=stop, run_manager=run_manager, **kwargs)
                 from app.models.reply_salvage import salvaged
 
                 result = salvaged(self, messages, result, stop=stop, **kwargs)
@@ -831,7 +831,7 @@ class CompatibleChatOpenAI(ChatOpenAI):
                     "%s refuses a forced tool call while the model reasons; its tools are "
                     "offered instead of forced from now on", server[1] or server[0],
                 )
-                result = self._generate_paced(messages, stop=stop, run_manager=run_manager, **kwargs)
+                result = self._generate_fitted(messages, stop=stop, run_manager=run_manager, **kwargs)
         # A reply cut off by the cap, salvaged from its own reasoning where
         # this model's server was measured to allow it (`app.models.reply_salvage`).
         from app.models.reply_salvage import salvaged
@@ -840,6 +840,42 @@ class CompatibleChatOpenAI(ChatOpenAI):
         # An object sent as a string of JSON is decoded where the tool wants
         # an object (`app.models.tool_arguments`).
         return decode_structured_arguments(result, kwargs.get("tools"))
+
+    def _generate_fitted(self, messages, stop=None, run_manager=None, **kwargs):
+        """One call whose request fits the server's context (`app.models.request_fit`, LF.1500-LF.1501).
+
+        Past the room the slot leaves the request, its tool results are cut before it is sent; a refusal for size is
+        cut harder and sent again, and is raised as a `ContextOverflowError` once nothing more can be cut, so the
+        summariser's overflow fallback answers it instead of the stage failing on the same request.
+        """
+        from app.models import request_fit
+
+        server = self._served_by()
+        reply = self.max_tokens if isinstance(self.max_tokens, int) and self.max_tokens > 0 else None
+        if not self.max_retries:
+            # The cap `_generate_paced` will send, so the reserve is what the reply may really take.
+            try:
+                reply = fix_stage_reply_cap(reply) or plan_review_reply_cap(reply) or reply
+            except Exception:  # noqa: BLE001 - the client's own ceiling
+                pass
+        tools = kwargs.get("tools")
+        messages, chars = request_fit.before_sending(server, list(messages), tools, reply)
+        attempt = 0
+        while True:
+            try:
+                result = self._generate_paced(messages, stop=stop, run_manager=run_manager, **kwargs)
+            except Exception as error:  # noqa: BLE001 - re-raised unless a smaller request can be sent
+                smaller = request_fit.after_a_refusal(server, error, messages, tools, reply, attempt)
+                if smaller is None:
+                    overflow = request_fit.as_overflow(error)
+                    if overflow is error:
+                        raise
+                    raise overflow from error
+                messages, chars = smaller
+                attempt += 1
+                continue
+            request_fit.after_reply(server, chars, result)
+            return result
 
     def _generate_paced(self, messages, stop=None, run_manager=None, **kwargs):
         """One call, retried by this class when the client is told not to retry.

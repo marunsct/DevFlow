@@ -375,6 +375,12 @@ def _batch_file_claims_middleware() -> Any:
     return build_middleware()
 
 
+def _tool_result_bound_middleware(repo_root: str | None = None) -> Any:
+    from app.agents.tool_result_bound import build_middleware
+
+    return build_middleware(repo_root)
+
+
 def _verify_after_write_middleware() -> Any:
     from app.graph.verify_after_write import build_middleware
 
@@ -449,6 +455,9 @@ def _compaction_middleware(agent_name: str, model: Any = None, role: str = "", r
                 role=role,
                 repo_root=repo_root,
                 fix_stage_trigger_tokens=fix_trigger,
+                # The room a whole request has in the slot, past which it is compacted at once (LF.1500).
+                reply_reserve_tokens=reserved,
+                window_tokens=budget.window_tokens,
                 trim_tokens_to_summarize=policy.trim_tokens_to_summarize,
                 # Shorten large tool-call arguments in older messages before
                 # resorting to summarisation. Left unset - which it was - the
@@ -900,6 +909,9 @@ def create_role_agent(
         # model will. `read_file` has its own, better notice in the backend;
         # this covers the listings and searches beside it, which had none.
         build_repeated_query_middleware(),
+        # A single result that by itself would push the next request past the model's context is cut to its start
+        # and end with a pointer (LF.1502). See `app.agents.tool_result_bound`.
+        _tool_result_bound_middleware(resolved_repo_root),
         # Only where there is a schema to recognise an answer by. A stage with
         # no response format has nothing to be finished with, so there is
         # nothing for this to decide. See `app.agents.settled_answer`.

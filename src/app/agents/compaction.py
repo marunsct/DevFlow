@@ -49,6 +49,8 @@ READS = "harness_reads"
 #: the tools gave, and each command run with how it ended.
 REFUSALS = "harness_refusals"
 COMMANDS = "harness_commands"
+#: How many messages the compaction left whole behind the summary (LF.1499): what "new since the summary" counts from.
+KEPT_TAIL = "harness_kept_tail"
 
 #: The tools that change a file, and the argument naming it.
 _WRITING_TOOLS = frozenset({
@@ -75,8 +77,8 @@ MOST_CARRIED_CHARACTERS = 48_000
 
 #: Messages a compacted conversation must gain past its kept tail before it is
 #: compacted again. Its kept tail sits near the trigger, so it fired again two
-#: calls later; a request too large for the window is still compacted at once
-#: (the summariser's own overflow fallback).
+#: calls later. Counted past the tail the compaction really kept (LF.1499), and
+#: never holding back a request that would not fit the slot (`request_fit`).
 NEW_MESSAGES_BEFORE_COMPACTING_AGAIN = 8
 
 #: The kept tail's ceiling, as a share of the compaction trigger (`role_agent`).
@@ -388,7 +390,8 @@ class RequestKeepingSummarization(SummarizationMiddleware):
 
     def __init__(self, *args: Any, most_kept_tokens: int | None = None, usual_trigger_tokens: int | None = None,
                  reply_room: tuple[str, int, int] | None = None, role: str = "", repo_root: str | None = None,
-                 fix_stage_trigger_tokens: int | None = None, **kwargs: Any) -> None:
+                 fix_stage_trigger_tokens: int | None = None, reply_reserve_tokens: int | None = None,
+                 window_tokens: int | None = None, **kwargs: Any) -> None:
         # The summary is the stage's work note (PA.2): asked for what was found, decided, changed and is left.
         kwargs.setdefault("summary_prompt", WORK_NOTE_PROMPT)
         super().__init__(*args, **kwargs)
@@ -410,6 +413,11 @@ class RequestKeepingSummarization(SummarizationMiddleware):
         self._kept: tuple[str, list[str], int, int, dict[str, list[list[int]]], int, list[list[Any]]] | None = None
         # (refusals, commands) of the whole stage so far, set with `_kept` (`work_note_ledger`, LF.1466).
         self._ledger: tuple[list[str], list[str]] = ([], [])
+        # The reply's reserve and the stage's window, for the room a whole request has (`request_fit`, LF.1500).
+        self._reply_reserve = reply_reserve_tokens
+        self._window = window_tokens
+        # How many messages the last cutoff left whole, set where it is chosen and kept on its summary (LF.1499).
+        self._kept_tail: int | None = None
 
     def _prepare(self, messages: list[AnyMessage]) -> list[AnyMessage]:
         """What the summariser is handed; records the request and the files for the message."""
@@ -510,15 +518,23 @@ class RequestKeepingSummarization(SummarizationMiddleware):
         """
         cutoff = super()._determine_cutoff_index(messages)
         cap = self._most_kept_tokens
-        if not cap or cutoff <= 0:
-            return cutoff
-        while len(messages) - cutoff > MOST_KEPT_FEWEST and self.token_counter(messages[cutoff:]) > cap:
-            moved = cutoff + 1
-            while moved < len(messages) and getattr(messages[moved], "type", None) == "tool":
-                moved += 1
-            if len(messages) - moved < MOST_KEPT_FEWEST:
-                break
-            cutoff = moved
+        summarised = bool(messages) and getattr(messages[0], "type", None) == "human" \
+            and self._is_summary_message(messages[0])
+        if cap and cutoff <= 0 and summarised and len(messages) > MOST_KEPT_FEWEST + 1:
+            # A summarised conversation no longer than the kept count (LF.1499): by count alone nothing could be
+            # summarised again until 15 messages followed the summary's own short tail, however large they were.
+            cutoff = 1
+        if cap and cutoff > 0:
+            while len(messages) - cutoff > MOST_KEPT_FEWEST and self.token_counter(messages[cutoff:]) > cap:
+                moved = cutoff + 1
+                while moved < len(messages) and getattr(messages[moved], "type", None) == "tool":
+                    moved += 1
+                if len(messages) - moved < MOST_KEPT_FEWEST:
+                    break
+                cutoff = moved
+        if summarised and cutoff == 1:
+            cutoff = 0  # nothing but the summary itself before the tail
+        self._kept_tail = len(messages) - cutoff if cutoff > 0 else None
         return cutoff
 
     def _truncate_args(self, messages: list[AnyMessage], total_tokens: int) -> tuple[list[AnyMessage], bool]:
@@ -598,6 +614,9 @@ class RequestKeepingSummarization(SummarizationMiddleware):
             from app.observability.transcript import _stage_from_config
 
             reply_room.note(_stage_from_config(""), *self._reply_room)
+        if self._past_the_room(messages):
+            # The next request would not fit the slot (LF.1500): compacted now, whatever the triggers below say.
+            return True
         trigger = getattr(self._lc_helper, "trigger", None)
         configured = int(trigger[1]) if isinstance(trigger, tuple) and len(trigger) == 2 else None
         own = self._the_trigger()
@@ -615,11 +634,42 @@ class RequestKeepingSummarization(SummarizationMiddleware):
                 summarise_later.note_kept_whole(_stage_from_config(""), total_tokens, usual, int(trigger[1]))
             return False
         if messages and getattr(messages[0], "type", None) == "human" and self._is_summary_message(messages[0]):
-            keep = getattr(self._lc_helper, "keep", None)
-            kept = keep[1] if isinstance(keep, tuple) and len(keep) == 2 and keep[0] == "messages" else 0
+            # Past the tail this summary really kept (LF.1499). Measured on one fast run: the tail was cut to its
+            # token share, three messages, but the count stood at the 15 configured, so 23 messages - ten calls -
+            # had to follow before another summary; the stage went from 54,263 to 81,370 reported tokens unsummarised
+            # and its next request was refused by a 93,184-token slot.
+            kept = (messages[0].additional_kwargs or {}).get(KEPT_TAIL)
+            if not isinstance(kept, int):
+                keep = getattr(self._lc_helper, "keep", None)
+                kept = keep[1] if isinstance(keep, tuple) and len(keep) == 2 and keep[0] == "messages" else 0
             if len(messages) - 1 < int(kept) + NEW_MESSAGES_BEFORE_COMPACTING_AGAIN:
                 return False
         return True
+
+    def _past_the_room(self, messages: list[AnyMessage]) -> bool:
+        """Whether the next request - the last reply's server-reported tokens and the messages since - would pass
+        the room the slot leaves once the reply's reserve is held back (`request_fit`, LF.1500), and summarising
+        what lies before the kept tail could bring it back: when the framing alone fills the room, a summary on every
+        call would gain nothing, and the client's guard cuts the results instead."""
+        from app.models import request_fit
+
+        try:
+            reserve = self._reply_reserve
+            if self._fix_stage_trigger and self._the_trigger() == self._fix_stage_trigger:
+                # A fix stage's replies are capped smaller, and its own trigger already counts on that (LF.1420).
+                from app.models import FIX_STAGE_REPLY_TOKENS
+
+                reserve = FIX_STAGE_REPLY_TOKENS
+            room = request_fit.room_tokens(reserve, window=self._window)
+            upcoming = request_fit.next_request_tokens(messages)
+            if not room or not upcoming or upcoming <= room * request_fit.MARGIN:
+                return False
+            cutoff = self._determine_cutoff_index(messages)
+            first = 1 if messages and self._is_summary_message(messages[0]) else 0
+            older = sum(request_fit.message_chars(m) for m in messages[first:max(cutoff, first)])
+            return older / request_fit.chars_per_token() >= upcoming - room * request_fit.MARGIN
+        except Exception:  # noqa: BLE001 - the triggers as configured
+            return False
 
     def _create_summary(self, messages_to_summarize: list[AnyMessage]) -> str:
         return super()._create_summary(self._prepare(messages_to_summarize))
@@ -647,6 +697,7 @@ class RequestKeepingSummarization(SummarizationMiddleware):
                                                self._repo_root)
         built = super()._build_new_messages_with_path(summary, file_path)
         kept, self._kept = self._kept, None
+        kept_tail, self._kept_tail = self._kept_tail, None
         refused, ran = self._ledger
         if not kept or not built:
             return built
@@ -692,11 +743,12 @@ class RequestKeepingSummarization(SummarizationMiddleware):
                 READS: reads,
                 REFUSALS: refused,
                 COMMANDS: ran,
+                **({KEPT_TAIL: kept_tail} if isinstance(kept_tail, int) else {}),
             },
         )]
 
 
-__all__ = ["CALLS_BEFORE", "COMMANDS", "FILES_READ", "READS", "REFUSALS", "LOST_BEFORE", "SUMMARIES", "files_read_line", "KEPT_TAIL_SHARE",
+__all__ = ["CALLS_BEFORE", "COMMANDS", "KEPT_TAIL", "FILES_READ", "READS", "REFUSALS", "LOST_BEFORE", "SUMMARIES", "files_read_line", "KEPT_TAIL_SHARE",
            "HELD_READS", "with_held_reads_named",
            "RequestKeepingSummarization", "KEPT_REQUEST", "FILES_WRITTEN", "WORK_NOTE", "WORK_NOTE_PROMPT", "aim_of",
            "role_of"]

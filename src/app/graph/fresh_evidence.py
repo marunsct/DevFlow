@@ -79,6 +79,8 @@ def _ends_of_a_log_block() -> tuple[str, ...]:
     from app.stacks.known_errors import KNOWN_CAUSE
 
     return ("\n" + acceptance_nodes.THE_PAGE_REPORTED_WHILE_LOADING, acceptance_nodes.WHAT_THE_PRODUCT_SHOWS,
+            # As a defect raised before LF.1458 stored it, at the end of a line.
+            " " + acceptance_nodes.PRODUCT_SHOWS_LABEL,
             "\nA fix was tried and reverted", "\nA batch of fixes including this one", "\nFixes of this defect reverted",
             "\nIf the behaviour this sprint delivers", "\nThe product before this fix passed", "\n" + KNOWN_CAUSE,
             acceptance_nodes.THE_SERVER_HID_THE_CAUSE[:60])
@@ -163,14 +165,19 @@ def with_the_tests_now(text: str, defect: Any, saved: dict[str, Any], others: It
     if not failed:
         return text
     first, newline, rest = text.partition("\n")
+    from app.graph.acceptance_nodes import PRODUCT_SHOWS_LABEL, the_failed_tests_line
+
+    # Only the failed-tests sentence is replaced (LF.1458): a label stored at the end of that line - the page at load,
+    # before any test - is kept, or the tree after it reads as the page the test failed on.
+    labelled = first.find(" " + PRODUCT_SHOWS_LABEL)
+    first, kept = (first[:labelled], first[labelled:]) if labelled >= 0 else (first, "")
     names = {_plain(t.get("name")) for t in tests}
     if not (first == "no test carrying this id ran" or any(first.startswith(f"{name}: ") for name in names if name)):
         return text
     stopped = _stopped_at_a_shared_step(others)
     failed = [t for t in failed if _plain(t.get("name")) not in stopped] or failed
-    from app.graph.acceptance_nodes import the_failed_tests_line
 
-    return the_failed_tests_line(failed) + newline + rest
+    return the_failed_tests_line(failed) + ("\n" + kept.lstrip() if kept else "") + newline + rest
 
 
 def actual_behavior_now(root: str | Path | None, defect: Any, others: Iterable[Any] = ()) -> str:

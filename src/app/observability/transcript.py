@@ -187,8 +187,12 @@ def read_live(run_id: str, kinds: set[str] | None = None) -> list[dict]:
 OBSERVED_OUTPUT_LINES = 40
 
 
-def last_failing_command(run_id: str | None) -> dict[str, str] | None:
-    """The most recent command that failed in this run, with what it printed.
+#: How old a failure may be, against the run's latest command, to be shown a fixer as what the product does now.
+MOST_AGE_MINUTES = 60
+
+
+def last_failing_command(run_id: str | None, about: Any = None) -> dict[str, str] | None:
+    """The most recent command that failed in this run, with what it printed; with `about`, only one about that defect.
 
     Written for `build_defect_fix_request`, which had a real problem: the
     defect handed to a fixer is the *reporting* specialist's prose reading of a
@@ -214,25 +218,38 @@ def last_failing_command(run_id: str | None) -> dict[str, str] | None:
     report. The suite had since grown to 61 and passed three times - through
     the validation tool, which this did not read - and the fixer spent twelve
     minutes looking for a failure that was gone.
+
+    With `about` - the defect a fixer is briefed on - a failure is shown only when it is about that defect (LF.1456):
+    its output names one of the defect's files, or prints its criterion among the lines shown; it ran on the run's
+    live branch (a rewound branch's commands are gone) within `MOST_AGE_MINUTES` of the latest command; and it exited
+    above zero - a withheld repeat answers -1, the harness declining a command that had passed. Measured on 17 runs:
+    53 briefs carried this section after "believe this", and 45 of the 49 readable named none of the defect's files -
+    an acceptance run of other tests, forty `PASSED` lines, a stage's own `python -c`, a browser install run by the
+    stack setup 3 h 38 min earlier, a refusal of a command that had passed three times. Otherwise nothing is shown.
     """
     if not run_id:
         return None
+    names, tags = _what_names(about) if about is not None else ((), ())
     calls: dict[str, dict] = {}
     latest: dict[str, dict[str, str] | None] = {}
-    for entry in read_transcript(run_id, {"tool_call", "tool_result"}):
+    newest = ""
+    for entry in read_live(run_id, {"tool_call", "tool_result"}):
         call_id = str(entry.get("call_id") or "")
         if not call_id:
             continue
         if entry.get("kind") == "tool_call":
             calls[call_id] = entry
             continue
+        newest = max(newest, str(entry.get("at") or ""))
         call = calls.get(call_id)
         content = str(entry.get("content") or "")
         outcome = _exit_code(content)
-        if call is None or outcome is None:
+        if call is None or outcome is None or int(outcome) < 0:
             continue
         command = _the_command(call)
         if not command or _runs_a_probe(call):
+            continue
+        if about is not None and outcome != "0" and not _about(content, names, tags):
             continue
         # Re-inserted so the dict's order is the order of each command's
         # latest result.
@@ -244,7 +261,45 @@ def last_failing_command(run_id: str | None) -> dict[str, str] | None:
             "stage": str(call.get("stage") or entry.get("stage") or ""),
         }
     failing = [found for found in latest.values() if found]
+    if about is not None:
+        failing = [found for found in failing if _recent(found["at"], newest)]
     return failing[-1] if failing else None
+
+
+#: A file a defect's text names: a path or a file name with an extension (`tests/bookmarks.test.js`, `main.rs`).
+_A_FILE_NAMED = re.compile(r"(?<![\w/.-])((?:[\w.-]+/)*[\w-][\w.-]*\.[A-Za-z][A-Za-z0-9]{0,5})(?![\w/-])")
+#: A criterion's tag as a defect and a runner's output print it.
+_A_TAG = re.compile(r"\b((?:AC|CR)-[\w.]*\d)\b")
+
+
+def _what_names(defect: Any) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """The file names (last part of each path) and the criterion tags a defect names."""
+    description = str(getattr(defect, "description", "") or "")
+    paths = [*(str(f) for f in getattr(defect, "affected_files", None) or []), *_A_FILE_NAMED.findall(description)]
+    names = tuple(dict.fromkeys(p.rstrip("/").rsplit("/", 1)[-1] for p in paths if len(p.rsplit("/", 1)[-1]) >= 4))
+    return names, tuple(dict.fromkeys(_A_TAG.findall(description)))
+
+
+def _about(content: str, names: tuple[str, ...], tags: tuple[str, ...]) -> bool:
+    """Whether a command's result names one of the defect's files, or prints its criterion in the lines shown."""
+    if any(name in content for name in names):
+        return True
+    shown = _last_lines(content, OBSERVED_OUTPUT_LINES)
+    return any(re.search(rf"\b{re.escape(tag)}\b", shown) for tag in tags)
+
+
+def _recent(at: str, newest: str) -> bool:
+    """Whether a result `at` came within `MOST_AGE_MINUTES` of the run's newest; True when either time is unknown."""
+    from datetime import datetime, timedelta
+
+    try:
+        return datetime.fromisoformat(newest) - datetime.fromisoformat(at) <= timedelta(minutes=MOST_AGE_MINUTES)
+    except (TypeError, ValueError):
+        return True
+
+
+#: An interpreter's flag for a script given inline: what follows is a stage's own probe, not the product's command.
+_INLINE_SCRIPT = frozenset({"-c", "-e", "--eval", "-p", "--print"})
 
 
 def _runs_a_probe(call: dict) -> bool:
@@ -252,12 +307,18 @@ def _runs_a_probe(call: dict) -> bool:
 
     Measured live: one fixer's `tmp-check-*.py` failed on its own import path,
     and two later fixes, of other defects, were briefed with that traceback
-    as the product's failure.
+    as the product's failure. A script given inline (`python -c`, `node -e`) is one too (LF.1456): the sandbox
+    writes it to a scratch file of its own, so its name never shows; one fixer was shown an earlier fixer's
+    `python -c` failing on a missing `pyrightconfig.json` as the product's failure.
     """
     from app.analysis.file_kinds import is_scratch
 
     argv = (call.get("args") or {}).get("command")
     words = argv if isinstance(argv, list) else str(argv or "").split()
+    # A shell's `-c` runs the commands it is given, which are what they are.
+    shell = bool(words) and str(words[0]).rsplit("/", 1)[-1] in {"sh", "bash", "zsh", "dash"}
+    if not shell and any(str(word) in _INLINE_SCRIPT for word in words[1:3]):
+        return True
     return any(is_scratch(str(word)) for word in words[:4] if "/" in str(word) or "." in str(word))
 
 

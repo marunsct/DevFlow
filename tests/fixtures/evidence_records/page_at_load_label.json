@@ -1,0 +1,12 @@
+{
+ "source": "fullstack bookmarks run, defect_fix_1_8 (2026-11-25 20:56 JST)",
+ "criterion": "AC-3",
+ "description": "[AC-3] Delete a bookmark - the acceptance suite says this does not work yet.",
+ "first_line": "[AC-3] Delete a bookmark via the page: ui.spec.js:224:1 › [AC-3] Delete a bookmark via the page ─────────────────────────────────────────",
+ "page_at_load": "- main:\n  - heading \"Bookmarks\" [level=1]\n  - text: Title\n  - textbox \"Title\"\n  - text: URL\n  - textbox \"URL\"\n  - text: Tag\n  - textbox \"Tag\"\n  - button \"Save bookmark\"\n  - text: Filter by tag\n  - textbox \"Filter by tag\"\n  - text: No bookmarks yet — add one above.",
+ "test": {
+  "name": "[AC-3] Delete a bookmark via the page",
+  "outcome": "failed",
+  "message": "ui.spec.js:224:1 › [AC-3] Delete a bookmark via the page ─────────────────────────────────────────\n\n    Error: expect(locator).toBeVisible() failed\n\n    Locator: getByRole('listitem').filter({ hasText: 'AC3 Delete Me' })\n    Expected: visible\n    Timeout: 3000ms\n    Error: element(s) not found\n\n    Call log:\n      - Expect \"toBeVisible\" getByRole('listitem').filter({ hasText: 'AC3 Delete Me' }) with timeout 3000ms\n      - waiting for getByRole('listitem').filter({ hasText: 'AC3 Delete Me' })\n\n\n      235 |   // Verify it appears.\n      236 |   const listItem = page.getByRole('listitem').filter({ hasText: 'AC3 Delete Me' });\n    > 237 |   await expect(listItem).toBeVisible();\n          |                          ^\n      238 |\n      239 |   // Delete it.\n      240 |   const deleteBtn = listItem.getByRole('button', { name: 'Delete', exact: true });\n        at /workspace/bookmarks/acceptance/ui.spec.js:237:26\n\n    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────\n    ../test-results/evidence/ui--AC-3-Delete-a-bookmark-via-the-page/test-failed-1.png\n    ────────────────────────────────────────────────────────────────────────────────────────────────\n\n    Error Context: ../test-results/evidence/ui--AC-3-Delete-a-bookmark-via-the-page/error-context.md"
+ }
+}

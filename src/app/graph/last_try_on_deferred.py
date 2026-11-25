@@ -55,6 +55,7 @@ def try_them(
     try:
         from app import ci
         from app.acceptance import junit, suite
+        from app.acceptance.failure_said import what_it_said
         from app.acceptance.mutation import passing
 
         root = Path(root)
@@ -79,8 +80,8 @@ def try_them(
         for criterion in chosen:
             tests = [t for t in getattr(getattr(before, "report", None), "tests", None) or []
                      if criterion in junit.tags_in(t.name)]
-            failures = [f"{t.name}: {((t.message or '').strip().splitlines() or ['failed'])[0][:300]}"
-                        for t in tests if t.outcome != "passed"]
+            # What each said past its runner's heading (LF.1461), not the heading.
+            failures = [f"{t.name}: {what_it_said(t.message) or 'failed'}" for t in tests if t.outcome != "passed"]
             if tests and not failures:
                 continue  # passing already: the release reads it as it is
             start = ci.commit(root, f"Before the last try at {criterion}")

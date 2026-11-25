@@ -2241,7 +2241,8 @@ def _what_the_last_failure_printed(run_id: str | None, defect: Any = None) -> di
             return None
         from app.observability.transcript import last_failing_command
 
-        return last_failing_command(run_id)
+        # Only a failure about this defect (LF.1456): another's is not the machine's word on this one.
+        return last_failing_command(run_id, about=defect if defect is not None else object())
     except Exception:  # noqa: BLE001 - a brief is better without it than absent
         logger.debug("Could not read the last failing command for %s", run_id)
         return None

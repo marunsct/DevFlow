@@ -114,7 +114,10 @@ def place(root: str | Path, name: str, files: dict[str, str] | None = None) -> P
 
 
 def _first_line(message: str) -> str:
-    return next((line.strip() for line in str(message or "").splitlines() if line.strip()), "")
+    """The first line a failure states past its runner's heading (LF.1461): by the heading, no two tests shared one."""
+    from app.acceptance.failure_said import first_line_said
+
+    return first_line_said(message)
 
 
 def _results(root: str | Path) -> list[dict[str, Any]]:

@@ -1648,7 +1648,8 @@ def _the_product_s_own_start(repo_root: str | Path, result: AcceptanceResult) ->
 #: How much of the page a failing test met is kept with it, and for how many
 #: failing tests: enough to see what was there, bounded so a red suite's
 #: summary stays readable.
-FAILURE_PAGE_CHARS = 900
+#: The cut keeps the part around what the test looked for (`failure_page.kept`, LF.1460).
+FAILURE_PAGE_CHARS = 1_500
 MOST_FAILURE_PAGES = 8
 
 
@@ -1679,19 +1680,25 @@ def _with_the_pages_they_failed_on(repo_root: str | Path, project: str, result: 
         return
     if not pages:
         return
+    from app.acceptance import failure_page
+    from app.acceptance.failure_said import what_it_sought
+    from app.acceptance.junit import tags_in
+
+    def page_of(test: Any) -> str:
+        return (pages.get(test.name) or pages.get(test.name.split(" › ")[-1].strip()) or "") if test.outcome == "failed" else ""
+
+    # The first failing test of each criterion first, then the rest (LF.1460).
+    with_a_page = [i for i, t in enumerate(result.report.tests) if page_of(t)]
+    order = failure_page.in_order([result.report.tests[i] for i in with_a_page], lambda t: tags_in(t.name))
+    given = {with_a_page[i] for i in order[:MOST_FAILURE_PAGES]}
     tests = []
-    added = 0
-    for test in result.report.tests:
-        page = (
-            pages.get(test.name) or pages.get(test.name.split(" › ")[-1].strip())
-            if test.outcome == "failed" and added < MOST_FAILURE_PAGES else None
-        )
+    for position, test in enumerate(result.report.tests):
+        page = page_of(test) if position in given else ""
         if page:
-            added += 1
             near = _a_near_miss(pack, test.message, page)
-            test = replace(test, message=(
-                f"{test.message}{_PAGE_MARK}{page[:FAILURE_PAGE_CHARS]}{near}"
-            ))
+            # Cut around what the test looked for, not at its head (LF.1460).
+            shown = failure_page.kept(page, what_it_sought(test.message), FAILURE_PAGE_CHARS)
+            test = replace(test, message=f"{test.message}{_PAGE_MARK}{shown}{near}")
         tests.append(test)
     result.report = replace(result.report, tests=tests)
 

@@ -56,7 +56,7 @@ def test_the_next_fixer_reads_its_own_attempts_and_those_of_the_defect_it_recurs
     block = ledger.earlier_attempts(now, [before])
 
     assert "--- Earlier attempts at this defect" in block
-    assert "- defect_fix_1_0: changed `app/auth.py`; Rewrote login -> fixed" in block
+    assert '- defect_fix_1_0: changed `app/auth.py`; it said, not measured: "Rewrote login" -> fixed' in block
     assert "- defect_fix_2_0: changed `app/main.py` -> reverted: it broke AC-2" in block
 
 

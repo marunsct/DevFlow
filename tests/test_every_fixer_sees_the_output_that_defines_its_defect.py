@@ -41,7 +41,7 @@ def test_a_defect_the_unit_command_caught_is_shown_its_failures(tmp_path, monkey
 
 def test_a_mutation_finding_is_never_shown_the_last_command(monkeypatch) -> None:
     monkeypatch.setattr("app.observability.transcript.last_failing_command",
-                        lambda run_id: {"command": "npm test", "output": "another defect's failure"})
+                        lambda run_id, about=None: {"command": "npm test", "output": "another defect's failure"})
     finding = SimpleNamespace(source=mutation_guided.SOURCE, description="a changed comparison went unnoticed")
     assert workflow._what_the_last_failure_printed("run-x", finding) is None
     other = SimpleNamespace(source="acceptance", description="x")

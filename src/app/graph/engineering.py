@@ -31,6 +31,7 @@ from langchain_core.runnables import RunnableConfig
 
 from app import ci
 from app.acceptance import suite
+from app.analysis.checker_contradicted import SUSPECTED_FALSE
 from app.agents.shared_facts import with_the_facts
 from app.agents.specialists import raised_by
 from app.sprint import cause as _cause
@@ -189,9 +190,11 @@ FAILS_WHEN_IT_RUNS = " - this fails when the code runs."
 #: (`workflow._one_defect_per_cause`).
 SAME_PROBLEM_ELSEWHERE = "\n\nThe same problem, as other checks reported it:\n"
 #: A merged finding the language service raised: `- [language service] <file> line N: <message>`, maybe cut short.
+#: Either ending: certain, or a finding the product's own run contradicts (LF.1455, `analysis.checker_contradicted`).
+_ITS_ENDING = r"(?:" + re.escape(FAILS_WHEN_IT_RUNS) + "|" + re.escape(SUSPECTED_FALSE) + r")"
 _A_MERGED_UNDERLINED = re.compile(r"^- \[language service\] (?P<file>\S+) line [\d, ]+: (?P<message>.+?)"
-                                  r"(?:" + re.escape(FAILS_WHEN_IT_RUNS) + r")?$", re.M)
-_AN_UNDERLINED_DEFECT = re.compile(r"^(?P<file>\S+) line [\d, ]+: (?P<message>.+)" + re.escape(FAILS_WHEN_IT_RUNS) + "$", re.S)
+                                  + _ITS_ENDING + r"?$", re.M)
+_AN_UNDERLINED_DEFECT = re.compile(r"^(?P<file>\S+) line [\d, ]+: (?P<message>.+?)" + _ITS_ENDING + "$", re.S)
 
 
 def still_underlined(root: str, description: str) -> bool:
@@ -341,6 +344,10 @@ def underlined_in_the_batch(state: Any, root: str, since: str) -> list[Any]:
     )
     findings = underlined_in(root, files, project, MOST_FILES_UNDERLINED)
     missing = _names_their_modules_lack(root, project, findings)
+    # The measurement this gate just took: an import the product's own run loaded is the service's word (LF.1455).
+    from app.analysis import checker_contradicted
+
+    measured = ci.load(root, "latest")
     defects = []
     for relative in files:
         grouped: dict[str, list[dict]] = {}
@@ -348,6 +355,9 @@ def underlined_in_the_batch(state: Any, root: str, since: str) -> list[Any]:
             grouped.setdefault(finding["message"], []).append(finding)
         for message, where in grouped.items():
             lines = ", ".join(str(f["line"]) for f in where[:6])
+            against = checker_contradicted.contradicted(relative, message, measured)
+            if against:
+                checker_contradicted.recorded(root, relative, message, against)
             module, defined, importers = missing.get((relative, message), ("", [], []))
             expected = "Every name the code uses is defined or imported, and every import names something its module exports."
             if "Cannot find module" in message:
@@ -365,11 +375,12 @@ def underlined_in_the_batch(state: Any, root: str, since: str) -> list[Any]:
                     f"`{module}`, or import a name it defines."
                 )
             defects.append(ReportedDefect(
-                description=f"{relative} line {lines}: {message}{FAILS_WHEN_IT_RUNS}",
-                severity="major",
+                description=f"{relative} line {lines}: {message}{SUSPECTED_FALSE if against else FAILS_WHEN_IT_RUNS}",
+                severity="minor" if against else "major",
                 reproduction_steps=f"Read {relative} at line {lines}: `{where[0]['text']}`.",
                 expected_behavior=expected,
-                actual_behavior=f"{message} ({service_name(relative)}, as an IDE would underline it)",
+                actual_behavior=f"{message} ({service_name(relative)}, as an IDE would underline it)"
+                + (f". The latest measurement contradicts it: {against}." if against else ""),
                 # The module alone when several files import the name from it:
                 # one definition there fixes them all, and its importers named
                 # as files would join every module they import from into one
@@ -541,7 +552,7 @@ def ci_gate(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         f"{len(after.acceptance)} pass."
         + (("\nRegressed - passed when the last sprint was accepted or before this batch, fails now:\n"
             + "\n".join(f"- {n}" for n in lost)) if lost else "")
-        + (("\nWhat an IDE underlines in the batch's files - each fails when the code runs:\n"
+        + (("\nWhat an IDE underlines in the batch's files, each as its language service states it:\n"
             + "\n".join(f"- {d.description}" for d in underlined)) if underlined else "")
     )
     return _handing_on(
@@ -696,19 +707,7 @@ def code_review(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     # Only what a test or a check shows becomes a defect; the rest is advice for
     # the milestone review. See `what_shows_it`.
     shown = [(finding, what_shows_it(state, finding)) for finding in serious]
-    found = [
-        ReportedDefect(
-            description=f"Code review ({finding.work_order}): {finding.problem}",
-            severity="blocking" if finding.severity == "blocking" else "major",
-            reproduction_steps=f"Read {finding.file or 'the files the work order names'}. {why}",
-            expected_behavior=finding.fix or "What the work order asked for.",
-            actual_behavior=finding.problem,
-            affected_files=[finding.file] if finding.file else [],
-            owner=_owner_of(state, finding.work_order),
-        )
-        for finding, why in shown
-        if why
-    ]
+    found = [review_defect(finding, why, _owner_of(state, finding.work_order)) for finding, why in shown if why]
     advice = [
         f"{finding.file or finding.work_order}: {' '.join(str(finding.problem).split())}"
         + (f" Suggested: {' '.join(str(finding.fix).split())}" if finding.fix else "")
@@ -736,6 +735,32 @@ def code_review(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
 
 #: How much code review advice a sprint keeps for its milestone review.
 MOST_REVIEW_ADVICE = 12
+
+#: What a code review finding's actual behaviour says after the measurement that shows it (LF.1462).
+REVIEWER_S_READING = ("Only that was measured. The defect above is a reviewer's reading of the code, not measured: "
+                      "check it against the code before changing anything, and if it does not hold, say so in "
+                      "`blockers` instead of changing the code to match it.")
+
+
+def review_defect(finding: Any, why: str, owner: str) -> Any:
+    """The defect for a code review finding that `why` - a measurement - shows.
+
+    Its actual behaviour is what was measured, not the reviewer's reading of the cause (LF.1462). Measured on one
+    medium run: "FastAPI processes middleware in reverse order of registration ... exceptions won't be caught" stood
+    under "Actual behavior" of what the brief called a test failure, word for word the description; nothing had
+    measured it, and its first fixer spent 21 minutes on it, then a second. The reading stays in the description.
+    """
+    from app.agents.specialists import ReportedDefect
+
+    return ReportedDefect(
+        description=f"Code review ({finding.work_order}): {finding.problem}",
+        severity="blocking" if finding.severity == "blocking" else "major",
+        reproduction_steps=f"Read {finding.file or 'the files the work order names'}. {why}",
+        expected_behavior=finding.fix or "What the work order asked for.",
+        actual_behavior=f"{why} {REVIEWER_S_READING}",
+        affected_files=[finding.file] if finding.file else [],
+        owner=owner,
+    )
 
 
 def what_shows_it(state: Any, finding: Any) -> str:
@@ -963,9 +988,15 @@ def _lines_added(root: str, base: str, relative: str) -> set[int] | None:
     return added
 
 
-def what_the_fix_made_certain_to_fail(root: str, base: str) -> list[str]:
-    """What the language service is sure fails when the code runs, on lines the fix wrote; [] when nothing. Never raises."""
+def what_the_fix_made_certain_to_fail(root: str, base: str, measured: Any = None) -> list[str]:
+    """What the language service is sure fails when the code runs, on lines the fix wrote; [] when nothing. Never raises.
+
+    A finding about an import that `measured` - the measurement after the fix - contradicts is the service's word and
+    reverts nothing (LF.1455): measured, two right fixes were reverted because their regression test imported names
+    the service could not resolve from the wrong folder, while the tests importing them passed.
+    """
     try:
+        from app.analysis import checker_contradicted
         from app.analysis.file_kinds import is_scratch
         from app.analysis.language_service import ALL_SUFFIXES, underlined_in
         from app.tools.repository import pinned_project_directory
@@ -983,6 +1014,10 @@ def what_the_fix_made_certain_to_fail(root: str, base: str) -> list[str]:
             added = _lines_added(root, base, relative)
             for finding in findings.get(relative) or []:
                 if added is None or int(finding.get("line") or 0) in added:
+                    against = checker_contradicted.contradicted(relative, str(finding.get("message") or ""), measured)
+                    if against:
+                        checker_contradicted.recorded(root, relative, str(finding.get("message") or ""), against)
+                        continue
                     found.append(f"`{relative}` line {finding.get('line')}: {finding.get('message')}")
         return found
     except Exception as error:  # noqa: BLE001 - a check that cannot run keeps the fix
@@ -1197,7 +1232,7 @@ def after_a_fix(
         # because the service did not start, a fix wrote calls to a function
         # its module never defined, was kept, and the service then crashed at
         # start for every later fixer.
-        certain = what_the_fix_made_certain_to_fail(root, base)
+        certain = what_the_fix_made_certain_to_fail(root, base, after)
         if certain:
             broken = ["it wrote code the language service is sure fails when it runs: " + "; ".join(certain[:3])]
         elif after.problem or after.unit.get(ci.UNIT_TESTS_DID_NOT_RUN) == "failed":

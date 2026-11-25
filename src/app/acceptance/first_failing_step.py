@@ -94,10 +94,16 @@ def the_wrong_answer(message: Any) -> str:
 
 
 def what_it_threw(message: Any) -> str:
-    """The first line of an error a test or its helper threw on purpose; "" for an assertion's own failure."""
+    """The first line of an error a test or its helper threw on purpose; "" for an assertion's own failure.
+
+    Read past the runner's heading for the test (LF.1461): measured on 466 saved failures, 412 opened with it, and in
+    all 79 where a test threw on purpose this answered the heading, never `Error: Login rate limited`.
+    """
+    from app.acceptance.failure_said import is_a_heading
+
     for line in _plain(message).splitlines():
         line = re.sub(r"^\s*E\s{2,}", "", line).strip()
-        if not line:
+        if not line or is_a_heading(line):
             continue
         return "" if _AN_ASSERTION.search(line) else line[:300]
     return ""

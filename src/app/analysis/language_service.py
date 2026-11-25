@@ -450,6 +450,8 @@ _PYRIGHT_RULES = {
 
 #: Which of its findings are kept, by rule.
 _PYTHON_RULES = frozenset({"reportUndefinedVariable", "reportAttributeAccessIssue", "reportMissingImports"})
+#: A finding that is a type's opinion of a value, not a name or attribute that does not exist.
+_A_TYPE_OPINION = __import__("re").compile(r"is not assignable|cannot be assigned|Cannot assign to attribute")
 
 
 def _pyright() -> str | None:
@@ -478,6 +480,58 @@ def _a_local_import(message: str, project: Path) -> bool:
     return (project / top).is_dir() or (project / f"{top}.py").is_file() or (project / "src" / top).is_dir()
 
 
+#: Files whose folder is a Python package's own root: where its runner and its imports start.
+_PYTHON_MANIFESTS = ("pyproject.toml", "setup.py", "setup.cfg", "pytest.ini", "tox.ini", "requirements.txt")
+#: Folders that are never a package's root: installed packages, caches, the harness's and the tools' own.
+_NOT_A_ROOT = frozenset({".venv", "venv", "node_modules", "__pycache__", "site-packages", "dist", "build", ".git",
+                         ".harness", ".pytest_cache", ".mypy_cache", "test-results"})
+#: How deep below the project a package's root is looked for.
+MOST_ROOT_DEPTH = 3
+
+
+def import_roots(project: Path) -> list[Path]:
+    """The folders imports resolve from in `project`: each folder below it holding a Python package's manifest (a
+    service kept in `backend/` with its own `pyproject.toml`), deepest first, then the project itself (LF.1455).
+
+    Measured on two medium runs: with the project folder as the one root, a FastAPI service in `backend/` - whose
+    tests and start run there - had every `from app.config import settings` underlined "unknown import symbol", 14
+    findings raised as "this fails when the code runs" while 15 of 15 acceptance tests and 18 unit tests passed; six
+    fixers spent 43 minutes on three false defects and two right fixes were reverted. With the root at `backend/`
+    Pyright found none.
+    """
+    roots: list[Path] = []
+
+    def walk(folder: Path, depth: int) -> None:
+        if depth > MOST_ROOT_DEPTH:
+            return
+        try:
+            entries = sorted(folder.iterdir())
+        except OSError:
+            return
+        if depth and any((folder / name).is_file() for name in _PYTHON_MANIFESTS):
+            roots.append(folder)
+        for entry in entries:
+            if entry.is_dir() and not entry.is_symlink() and entry.name not in _NOT_A_ROOT and not entry.name.startswith("."):
+                walk(entry, depth + 1)
+
+    walk(project, 0)
+    roots.sort(key=lambda folder: -len(folder.parts))
+    return [*roots, project]
+
+
+def _execution_environments(project: Path, scratch: str) -> list[dict]:
+    """One Pyright execution environment per import root, each also reading the other roots and each root's `src`."""
+    import os
+
+    roots = import_roots(project)
+    paths = [os.path.relpath(root, scratch) for root in roots]
+    sources = [os.path.relpath(root / "src", scratch) for root in roots if (root / "src").is_dir()]
+    return [
+        {"root": here, **({"extraPaths": extra} if (extra := [p for p in [*paths, *sources] if p != here]) else {})}
+        for here in paths
+    ]
+
+
 def _pyright_diagnostics(project: Path) -> list[dict] | None:
     """Pyright's diagnostics for every file of `project`, from one run; None when it cannot run."""
     import os
@@ -489,14 +543,14 @@ def _pyright_diagnostics(project: Path) -> list[dict] | None:
     try:
         with tempfile.TemporaryDirectory() as scratch:
             # Outside the product, so nothing is added to it; Pyright takes
-            # only relative paths from its configuration, and the project is
-            # the root its imports resolve from.
+            # only relative paths from its configuration. Imports resolve from
+            # each package's own root, the project's last (`import_roots`).
             here = os.path.relpath(project, scratch)
             config = dict(_PYRIGHT_RULES)
             config.update({
                 "include": [here],
                 "exclude": [f"{here}/**/.venv", f"{here}/**/node_modules", f"{here}/**/__pycache__"],
-                "executionEnvironments": [{"root": here}],
+                "executionEnvironments": _execution_environments(project, scratch),
             })
             if (project / ".venv").is_dir():
                 config.update({"venvPath": here, "venv": ".venv"})
@@ -520,6 +574,11 @@ def _kept(diagnostic: dict, project: Path) -> tuple[int, str] | None:
         return None
     message = str(diagnostic.get("message") or "").strip()
     if not _a_local_import(message, project):
+        return None
+    if _A_TYPE_OPINION.search(message):
+        # The attribute rule also carries a type's opinion of an assignment - `Cannot assign to attribute "priority"
+        # ... "Literal['high']" is not assignable to "Column[str]"` - which does not fail when the code runs (LF.1455):
+        # measured, one was raised as a defect against a model test and left open.
         return None
     return int(((diagnostic.get("range") or {}).get("start") or {}).get("line", 0)) + 1, message
 

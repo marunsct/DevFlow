@@ -2614,8 +2614,12 @@ THE_PAGE_REPORTED_WHILE_LOADING = "While it loaded, before any test acted, the p
 
 #: How a failing criterion's defect opens what the product's server logged while the suite ran (`server_log_block`).
 SERVER_LOG_HEADING = "What the product's server logged while the suite ran:"
-#: What the product shows when it loads, as a failing criterion's defect says it after the server's log.
-WHAT_THE_PRODUCT_SHOWS = " What the product shows when it loads, before any test touches it:\n"
+#: What the product shows when it loads, as a failing criterion's defect says it after the server's log: on a line of
+#: its own (LF.1458), for the first line - the failed tests - to be replaced without it (`fresh_evidence`). It opened
+#: with a space and sat at the end of that line; measured on one run, 15 briefs lost it, and the page at load, "No
+#: bookmarks yet", read as the page the test met, which listed the bookmark.
+PRODUCT_SHOWS_LABEL = "What the product shows when it loads, before any test touches it:"
+WHAT_THE_PRODUCT_SHOWS = f"\n{PRODUCT_SHOWS_LABEL}\n"
 
 
 def the_failed_tests_line(failed: list[dict]) -> str:
@@ -2640,13 +2644,16 @@ def server_log_block(root: Any, logged: str) -> str:
 
 def due_criteria_failing(state: Any) -> str:
     """What the milestone review must not accept: due criteria the suite says fail."""
+    from app.acceptance.failure_said import what_it_said
+
     failing, command = _failing_due(state)
     if not failing:
         return ""
     lines = [
         f"- {entry.get('id')}: {entry.get('text')}"
         + "".join(
-            f"\n    {t.get('name')}: {((t.get('message') or '').strip().splitlines() or ['failed'])[0][:200]}"
+            # What each said past its runner's heading (LF.1461), not the heading.
+            f"\n    {t.get('name')}: {what_it_said(t.get('message'), 200) or 'failed'}"
             for t in (entry.get("tests") or []) if t.get("outcome") == "failed"
         )
         for entry in failing

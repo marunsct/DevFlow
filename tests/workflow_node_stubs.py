@@ -142,7 +142,7 @@ def run_a_test_round(monkeypatch, tmp_path, *, found: list[Any] | None = None, f
     monkeypatch.setattr("app.graph.acceptance_nodes.pack_contract_defects", lambda state: [])
     monkeypatch.setattr("app.graph.acceptance_nodes.failing_due_defects", lambda state, reported: [])
     monkeypatch.setattr("app.agents.specialists.what_the_files_already_prove", lambda *a, **k: [])
-    monkeypatch.setattr(workflow, "_run_unit_tests_procedurally", lambda root: (False, "1 failing"))
+    monkeypatch.setattr(workflow, "_run_unit_tests_procedurally", lambda root: (None, "no unit test command is recorded for this project"))
     monkeypatch.setattr(workflow, "_with_the_contract_s_server_errors", lambda state, result, milestone: result)
     monkeypatch.setattr(workflow, "_with_the_lock_s_server_errors", lambda state, result, milestone: result)
     monkeypatch.setattr(workflow, "_a_suite_failure_the_round_did_not_report", lambda *a, **k: None)

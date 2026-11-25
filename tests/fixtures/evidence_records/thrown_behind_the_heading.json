@@ -1,0 +1,21 @@
+{
+ "r429": {
+  "criterion": "AC-1",
+  "name": "[AC-1][AC-8] user can register with valid credentials",
+  "message": "auth.spec.js:45:1 › [AC-1][AC-8] user can register with valid credentials ────────────────────────\n\n    Error: expect(received).toBe(expected) // Object.is equality\n\n    Expected: 201\n    Received: 429\n\n      45 | test('[AC-1][AC-8] user can register with valid credentials', async ({ request }) => {\n      46 |   const { response, email } = await registerUser(request);\n    > 47 |   expect(response.status()).toBe(201);\n         |                             ^\n      48 |   const body = await response.json();\n      49 |   expect(body).toHaveProperty('message');\n      50 | });\n        at /workspace/task-management-dashboard/acceptance/auth.spec.js:47:29\n\n    Error Context: ../test-results/evidence/auth--AC-1-AC-8-user-can-register-with-valid-credentials/error-context.md"
+ },
+ "rate": {
+  "criterion": "AC-2",
+  "name": "[AC-2][AC-9] create a task returns 201 with the created object",
+  "message": "tasks.spec.js:16:1 › [AC-2][AC-9] create a task returns 201 with the created object ──────────────\n\n    Error: Login rate limited\n\n       at test-utils.js:75\n\n      73 |\n      74 |       if (resp.status() === 429) {\n    > 75 |         lastErr = new Error('Login rate limited');\n         |                   ^\n      76 |         const retryAfter = parseInt(resp.headers()['retry-after'] || '3', 10);\n      77 |         // Cap wait at 3 s to avoid hanging the suite.\n      78 |         await new Promise((r) => setTimeout(r, Math.min(retryAfter * 1000, 3000)));\n        at getAccessToken (/workspace/task-management-dashboard/acceptance/test-utils.js:75:19)\n        at /workspace/task-management-dashboard/acceptance/tasks.spec.js:18:17\n\n    Error Context: ../test-results/evidence/tasks--AC-2-AC-9-create-a--a008b-201-with-the-created-object/error-context.md"
+ },
+ "s401": {
+  "criterion": "AC-2",
+  "name": "[AC-2][AC-9] update a task via PUT returns the updated object",
+  "message": "tasks.spec.js:89:1 › [AC-2][AC-9] update a task via PUT returns the updated object ───────────────\n\n    Error: Login failed with status 401\n\n       at test-utils.js:83\n\n      81 |\n      82 |       if (resp.status() !== 200) {\n    > 83 |         throw new Error(`Login failed with status ${resp.status()}`);\n         |               ^\n      84 |       }\n      85 |\n      86 |       const body = await resp.json();\n        at getAccessToken (/workspace/task-management-dashboard/acceptance/test-utils.js:83:15)\n        at /workspace/task-management-dashboard/acceptance/tasks.spec.js:91:17\n\n    Error Context: ../test-results/evidence/tasks--AC-2-AC-9-update-a--68e2c--returns-the-updated-object/error-context.md"
+ },
+ "rate2": {
+  "name": "[AC-2][AC-9] created task fields match the creation payload",
+  "message": "tasks.spec.js:33:1 › [AC-2][AC-9] created task fields match the creation payload ─────────────────\n\n    Error: Login rate limited\n\n       at test-utils.js:75\n\n      73 |\n      74 |       if (resp.status() === 429) {\n    > 75 |         lastErr = new Error('Login rate limited');\n         |                   ^\n      76 |         const retryAfter = parseInt(resp.headers()['retry-after'] || '3', 10);\n      77 |         // Cap wait at 3 s to avoid hanging the suite.\n      78 |         await new Promise((r) => setTimeout(r, Math.min(retryAfter * 1000, 3000)));\n        at getAccessToken (/workspace/task-management-dashboard/acceptance/test-utils.js:75:19)\n        at /workspace/task-management-dashboard/acceptance/tasks.spec.js:35:17\n\n    Error Context: ../test-results/evidence/tasks--AC-2-AC-9-created-t-bd975--match-the-creation-payload/error-context.md"
+ }
+}

@@ -228,6 +228,8 @@ def earlier_attempts(defect: Any, defects: Iterable[Any] = ()) -> str:
                          "of it was measured")
             continue
         files = ", ".join(f"`{f}`" for f in item.get("files") or []) or "no file"
-        did = f"; {item['did']}" if item.get("did") else ""
+        # What the fixer said it did is its own account, not the harness's measurement (LF.1463): measured, "changed no
+        # file; <its claim of a cause>" read as a finding under a heading that says "as the harness measured them".
+        did = f"; it said, not measured: \"{item['did']}\"" if item.get("did") else ""
         lines.append(f"- {item.get('stage', '?')}: changed {files}{did} -> {item.get('outcome', '?')}")
     return "\n" + ATTEMPTS_HEADING + "\n".join(lines) + "\n"

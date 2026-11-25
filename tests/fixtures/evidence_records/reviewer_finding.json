@@ -1,0 +1,11 @@
+{
+ "source": "medium run, defect_fix_1_0 (2026-11-25 21:38 JST)",
+ "finding": {
+  "work_order": "Fix the root cause of all auth endpoint failures: database.py line 91... (backend)",
+  "problem": "main.py line 105 registers the error_handler middleware AFTER the auth_router is included (line 110). FastAPI processes middleware in reverse order of registration. Since the router is mounted before the error handler, any unhandled exceptions from route handlers won't be caught by the error_handler — they'll bubble up as raw 500s without the structured JSON response shape (error + correlation_id) required by AC-13. The error_handler must wrap all routes.",
+  "fix": "Move app.include_router(auth_router, prefix='/api') to after app.middleware('http')(error_handler), or register the middleware before the router so it wraps all route handlers. The correct order is: middleware first, then router includes.",
+  "file": "",
+  "severity": "major"
+ },
+ "why": "The acceptance suite shows AC-13 failing."
+}

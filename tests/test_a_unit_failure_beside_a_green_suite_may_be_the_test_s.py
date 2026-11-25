@@ -34,7 +34,8 @@ def test_the_harness_round_says_it_when_nothing_due_fails(tmp_path, monkeypatch,
     from workflow_node_stubs import run_a_test_round
 
     seen = run_a_test_round(monkeypatch, tmp_path, failing_due=failing_due, saved_run={"ran": True, "failed": failed},
-                            overrides={"app.delivery.fast": lambda: True})
+                            overrides={"app.delivery.fast": lambda: True,
+                                       "app.graph.workflow._run_unit_tests_procedurally": lambda root: (False, "1 failing")})
 
     unit = [d for d in seen.update["remediation"].defects if d.description.startswith(workflow.UNIT_TESTS_FAIL)]
     assert len(unit) == 1

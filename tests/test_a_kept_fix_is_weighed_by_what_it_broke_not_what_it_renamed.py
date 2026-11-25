@@ -77,7 +77,7 @@ def test_a_fix_that_broke_only_what_is_not_a_test_is_not_kept_for_its_gain(monke
     before = ci.Snapshot(label="b", unit_ran=True, unit={"a": "passed"})
     after = ci.Snapshot(label="a", unit_ran=True, unit={"a": "passed"})
     _measure(monkeypatch, before, after, reverted)
-    monkeypatch.setattr(engineering, "what_the_fix_made_certain_to_fail", lambda root, base: ["`x.py` line 3: oops"])
+    monkeypatch.setattr(engineering, "what_the_fix_made_certain_to_fail", lambda root, base, measured=None: ["`x.py` line 3: oops"])
 
     broke = engineering.after_a_fix("/workspace", "abc1234", "defect_fix_2_1", "x")
 

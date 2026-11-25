@@ -316,6 +316,22 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
         )
         if "__test_result__" not in update:
             return update  # paused waiting for approval on a test artifact
+        # The harness's own unit run reaches the round's defects with its exception lines, or is raised as fast
+        # delivery raises it, not left to the round's prose and a count (LF.1457).
+        try:
+            from app.graph import unit_causes_carried, unit_test_quarantine
+
+            unit_ok, unit_output = _run_unit_tests_procedurally(root)
+            if unit_ok is False:
+                beside = not failing_due and int(saved_run.get("failed") or 0) == 0
+                failing = _the_failing_unit_tests(root)
+                own = (lambda: _the_unit_tests_fail(milestone, unit_output, beside_a_green_suite=beside, failing=failing)) \
+                    if not beside or unit_test_quarantine.raised_beside_a_green_suite(root) else None
+                round_s = update["__test_result__"]
+                update["__test_result__"] = round_s.model_copy(update={"defects": unit_causes_carried.carried(
+                    list(round_s.defects or []), unit_output, failing, own, state.get("review_defects") or [])})
+        except Exception as swallowed:  # noqa: BLE001 - the round's own report stands
+            degraded("triage.unit_causes_carried", swallowed)
 
     test_result: SpecialistOutput = update.pop("__test_result__")
     # Asked whenever the locked suite is green, whatever else the round found: measured on one run, failing unit

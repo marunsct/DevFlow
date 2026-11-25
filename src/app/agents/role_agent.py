@@ -381,7 +381,7 @@ def _verify_after_write_middleware() -> Any:
     return build_middleware()
 
 
-def _compaction_middleware(agent_name: str, model: Any = None) -> list:
+def _compaction_middleware(agent_name: str, model: Any = None, role: str = "") -> list:
     """Summarise this agent's history before it outgrows the model's window.
 
     Returns an empty list when compaction is disabled or cannot be built, so a
@@ -440,6 +440,8 @@ def _compaction_middleware(agent_name: str, model: Any = None) -> list:
                             if reserved != budget.max_output_tokens else None),
                 keep=("messages", policy.keep_recent_messages),
                 most_kept_tokens=int(trigger * KEPT_TAIL_SHARE),
+                # Whose work note a summary is (PA.2): the stage's role as its system prompt opens.
+                role=role,
                 trim_tokens_to_summarize=policy.trim_tokens_to_summarize,
                 # Shorten large tool-call arguments in older messages before
                 # resorting to summarisation. Left unset - which it was - the
@@ -804,7 +806,9 @@ def create_role_agent(
     # takes effect on the next agent, not the next restart. The context
     # directory is keyed by agent name (not thread id), which is stable per
     # role; see `_compaction_middleware` for why that is deliberate.
-    middleware = _compaction_middleware(name, model)
+    from app.agents.compaction import role_of
+
+    middleware = _compaction_middleware(name, model, role=role_of(system_prompt))
     middleware = [
         *middleware,
         # Ahead of the filesystem middleware so the path is already

@@ -37,6 +37,24 @@ MAX_FILES_NAMED = 12
 #: Commands named, most recent last. Enough to show what was tried.
 MAX_COMMANDS_NAMED = 8
 
+#: The most of the dead attempt's last work note carried, in characters.
+MOST_NOTE_CHARACTERS = 4_000
+
+
+def _its_last_work_note(thread_id: str) -> str:
+    """The work note the dead attempt's last summary made (`compaction.WORK_NOTE`, PA.2), or "".
+
+    Measured on one medium run: a suite writer's visit that passed its call ceiling was started again on an empty
+    conversation, with the files it had read named and nothing of what it had found in them or meant to do next, and
+    read them all again."""
+    from app.agents.compaction import WORK_NOTE
+    from app.agents.stage_memory import recall
+
+    note = str(recall(thread_id, WORK_NOTE).get("note") or "").strip()
+    if len(note) > MOST_NOTE_CHARACTERS:
+        note = note[:MOST_NOTE_CHARACTERS].rsplit("\n", 1)[0] + "\n..."
+    return note
+
 
 def _files_already_read(thread_id: str, repo_root: str | None) -> list[str]:
     """The files the dead attempt read, named the way its tools name them.
@@ -124,10 +142,11 @@ def carry_over_note(thread_id: str, repo_root: str | None, stage_name: str = "",
         looked_up = what_was_found(thread_id)
         refused = _files_refused_as_another_s(thread_id)
         changed = _files_it_changed(repo_root, stage_name)
+        work_note = _its_last_work_note(thread_id)
     except Exception:  # noqa: BLE001 - never fail a restart over a hint
         logger.debug("Could not build a carry-over note", exc_info=True)
         return ""
-    if not files and not commands and not looked_up and not refused and not changed:
+    if not files and not commands and not looked_up and not refused and not changed and not work_note:
         return ""
 
     lines = [
@@ -137,6 +156,10 @@ def carry_over_note(thread_id: str, repo_root: str | None, stage_name: str = "",
     ]
     if why:
         lines.append(f"\nIt ended because it {why}: answer sooner this time, with what you have.")
+    if work_note:
+        # What it had found, decided, changed and had left, at its last summary: where this attempt starts (PA.2).
+        lines.append("\nIts work note at its last summary - what it had found, decided and changed, and what it "
+                     "had left - start from here:\n" + work_note)
     if refused:
         lines.append(
             "\nFiles it was refused because another work order owns them: " + ", ".join(refused[:MAX_FILES_NAMED])

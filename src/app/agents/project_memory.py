@@ -450,6 +450,29 @@ def builds_on_code(repo_root: str | Path, stage: str) -> bool:
     return False
 
 
+#: The stage that writes the acceptance suite.
+_SUITE_WRITER = "acceptance_author"
+
+
+def written_from_the_interface(repo_root: str | Path, stage: str) -> tuple[str, ...]:
+    """The product's source a later sprint's suite writer's memory leaves out (PA.12, LF.1362); () for every other
+    stage and for a suite written whole or a first sprint's part.
+
+    The request hands it the product's routes, the shapes they take and give, and the earlier tests' helpers
+    (`app.acceptance.product_interface`). Measured on one medium run: a later sprint's writer read the product's
+    schemas 21 times and a service 19 in one visit of 123 calls, 118 of them reads. Never raises: ()."""
+    if not str(stage or "").startswith(_SUITE_WRITER):
+        return ()
+    try:
+        from app.acceptance import by_sprint, product_interface
+
+        if not by_sprint.earlier_files(repo_root):
+            return ()
+        return tuple(product_interface.the_product_s_source(repo_root, current(repo_root)))
+    except Exception:  # noqa: BLE001 - the memory as before
+        return ()
+
+
 def planning_stage(stage: str) -> bool:
     return str(stage or "").startswith(_PLANNING_STAGES)
 
@@ -472,7 +495,8 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
            for_a_fixer: bool = False, kept_out: tuple[str, ...] = (), sliced: bool = False,
            sprint_files: tuple[str, ...] = (), on_code: bool = False,
            documents_at_most: int = 0, review_files: tuple[str, ...] = (),
-           numbered_as: str = "", outlined: bool = False) -> tuple[str, dict[str, str]]:
+           numbered_as: str = "", outlined: bool = False,
+           interface_only: tuple[str, ...] = ()) -> tuple[str, dict[str, str]]:
     """The memory as text within `budget_characters`, and the files it holds by path.
 
     `for_a_fixer`: the product's code first, the acceptance criteria, and the specification as its outline and the
@@ -505,6 +529,9 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
     room for the whole files, each file held whole gives its share back, and the memory runs the documents, the
     outline, then the files held whole. Measured on one medium run: 13 of 45 files fit whole and the map of the rest
     had no line numbers, so a stage read whole each file it needed one function of.
+
+    `interface_only`: the product's source a later sprint's suite writer is not given (`written_from_the_interface`):
+    neither held, outlined nor mapped, and counted in one line of its own.
     """
     files = current(repo_root)
     if not files or budget_characters <= 0:
@@ -553,7 +580,9 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
 
     shorter_documents = document_limit(files)
     ranked = _ranked(files, focus, unserved)
-    under_review = [path for path in dict.fromkeys(review_files) if path in files and not path.startswith("docs/")]
+    not_given = set(interface_only)
+    under_review = [path for path in dict.fromkeys(review_files) if path in files and not path.startswith("docs/")
+                    and path not in not_given]
     review_room = budget_characters - min(REVIEW_DOCUMENTS_ROOM, budget_characters // 4)
     # Past the size gate (a review or reading stage's files under review), every code file not held whole is in an
     # outline with its line ranges (LF.1287), its room taken before the whole files are chosen: each file held whole
@@ -564,7 +593,7 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
 
         outline_blocks = {path: outline.block(path, files[path]) for path in ranked
                           if not path.startswith("docs/") and path not in kept_out and path not in later
-                          and not _RECORDS.match(path)}
+                          and path not in not_given and not _RECORDS.match(path)}
     outline_most = int(review_room * OUTLINE_SHARE)
     outline_left = sum(map(len, outline_blocks.values()))
 
@@ -599,6 +628,8 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
         if path in kept_out:
             # Measured on one run: the technical lead's memory held the harness's 44k `test-setup.mjs`.
             kept_named.append(path)
+            continue
+        if path in not_given:
             continue
         if path in later:
             # A later sprint's tests, handed over whole, read as this sprint's
@@ -694,6 +725,12 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
     if held_back:
         tail += ("\nNot included because every test in them is for a criterion a later sprint builds: "
                  + ", ".join(held_back) + "\n")
+    source = [path for path in ranked if path in not_given]
+    if source:
+        tail += (f"\nNot included: the product's source, {len(source)} files ("
+                 + ", ".join(source[:MOST_SOURCE_NAMED]) + (", ..." if len(source) > MOST_SOURCE_NAMED else "")
+                 + "). This sprint's tests are written from its interface, which the request gives - its routes, "
+                 "the shapes they take and give, and the earlier tests' helpers - not from its source.\n")
     sources = {path: files[path] for path in left_out if not path.startswith("docs/") and not outline_blocks}
     # Ranked by the request only when the memory's order may follow it
     # (`CANONICAL_MEMORY` off); otherwise by what does not change between
@@ -703,6 +740,10 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
     if shapes:
         tail += "\nWhat those files define (read one when you need its body):\n" + shapes + "\n"
     return head + "\n".join(parts) + tail, held
+
+
+#: The product's source files named one by one in the memory of a suite writer not given them, at most.
+MOST_SOURCE_NAMED = 12
 
 
 #: The most of a review's room (the budget less the documents' room) its outline of the other files may take.
@@ -810,7 +851,8 @@ def _arguments_for(repo_root: str | Path, stage: str) -> dict[str, Any]:
 
     return dict(for_a_fixer=str(stage or "").startswith("defect_fix"), kept_out=_kept_out_for(stage, repo_root),
                 sliced=memory_slices.enabled() and str(stage or "").startswith(("defect_fix", "specialist_")),
-                on_code=builds_on_code(repo_root, stage))
+                on_code=builds_on_code(repo_root, stage),
+                interface_only=written_from_the_interface(repo_root, stage))
 
 
 #: The room a review's memory leaves after the files under review for the documents' digests, at most a quarter.
@@ -1224,7 +1266,7 @@ def _holds_every_code_file(repo_root: str | Path, stage: str, held: dict[str, st
         later = set(later_sprints_files(repo_root))
     except Exception:  # noqa: BLE001 - every file is due
         later = set()
-    kept = set(_kept_out_for(stage, repo_root)) | later
+    kept = set(_kept_out_for(stage, repo_root)) | later | set(written_from_the_interface(repo_root, stage))
     code = [path for path, _ in under_review(repo_root, [p for p in now
                                                        if not p.startswith("docs/") and p not in kept])]
     return all(path in held for path in code)

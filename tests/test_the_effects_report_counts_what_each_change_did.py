@@ -77,6 +77,18 @@ def test_each_review_stage_s_summaries_and_reads_a_file_are_counted():
     assert "   0  specialist_backend: summaries; 1 reads of 1 files" in lines, "LF.1288: the builders too"
 
 
+def test_a_summary_made_as_the_stage_s_work_note_is_counted():
+    """PA.2: the summariser's request opens with the work note's words, not langchain's; a summary is still one."""
+    effects = runpy.run_path(str(SCRIPT))["effects"]
+    records = [
+        {"kind": "tool_call", "stage": "acceptance_author_2", "tool": "read_file", "args": {"file_path": "app/a.py"}},
+        {"kind": "model_request", "stage": "acceptance_author_2",
+         "messages": [{"content": "You keep the work note of one stage of a software build. ..."}]},
+    ]
+
+    assert "   1  acceptance_author: summaries; 1 reads of 1 files" in "\n".join(effects(records, ""))
+
+
 def test_whole_reads_are_counted_against_reads_by_range_and_the_suite_s_author_is_read_too():
     """LF.1287/LF.1288: the memory outlines what it does not hold so a stage reads by range, and the suite's author
     holds its own files after a summary; measured on one medium run, the author read its own file 3-8 times a visit."""

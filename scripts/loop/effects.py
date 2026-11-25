@@ -201,8 +201,9 @@ def budget_lines(records: list[dict]) -> list[str]:
 #: and the test rounds (LF.1286), the suite's author and the builders (LF.1288).
 _REVIEW_STAGE = re.compile(r"^(?:security_review|advice_review|code_review|milestone_review|acceptance_review"
                            r"|technical_lead|test_round|acceptance_author|specialist_)")
-#: The words langchain's summariser opens its request with: one such request is one summary of the stage.
-_SUMMARISER = "Context Extraction Assistant"
+#: The words a summariser's request opens with - langchain's, and the harness's work note (PA.2, LF.1360): one such
+#: request is one summary of the stage.
+_SUMMARISER = ("Context Extraction Assistant", "You keep the work note of one stage")
 
 
 def _arguments(record: dict) -> dict:
@@ -242,7 +243,7 @@ def review_reading_lines(records: list[dict]) -> list[str]:
                 reads[stage][path] += 1
                 if args.get("offset") not in (None, "", 0) or args.get("limit") not in (None, ""):
                     ranged[stage] += 1
-        elif record.get("kind") == "model_request" and _SUMMARISER in _text(record.get("messages")):
+        elif record.get("kind") == "model_request" and any(said in _text(record.get("messages")) for said in _SUMMARISER):
             summaries[stage] += 1
     label = "LF.1284/LF.1286 reading stages: summaries, and reads per distinct file (target <= 1.2, no summary)"
     stages = sorted(set(reads) | set(summaries))

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from app.acceptance import actions_within_a_view, suite
+from app.acceptance import product_interface
 from app.acceptance.api_reference import api_reference
 from app.acceptance.criteria import Criterion
 from app.agents import brief_over_spec
@@ -374,6 +375,8 @@ def build_author_request(
         + _the_names_the_brief_gives(brief)
         + _the_interface_contract(interface_contract)
         + api_reference(specification, brief)
+        # A later sprint's writers: the product the earlier sprints built, read by the harness (PA.12).
+        + (product_interface.block(repo_root, by_sprint.earlier_files(repo_root)) if adding else "")
         + "--- What to build them against ---\n"
         "Where the brief states the interface - the labels on controls, endpoints, commands, "
         "names - the tests use exactly those words: they are what the customer will check. "

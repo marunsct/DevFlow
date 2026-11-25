@@ -50,6 +50,12 @@ class SprintDefinition(BaseModel):
         default_factory=list,
         description="The ids of the numbered acceptance criteria this sprint makes pass, e.g. [\"AC-1\", \"AC-3\"].",
     )
+    # The specialists' adopted advice this sprint builds (SP.2): each adopted id belongs to one sprint, and the
+    # specialist checks it against the code from this sprint on.
+    advice: list[str] = Field(
+        default_factory=list,
+        description="The ids of the specialists' adopted advice this sprint builds, e.g. [\"UX-2\", \"DB-1\"].",
+    )
     test_strategy: list[str] = Field(default_factory=list, description="How this sprint's work will be verified.")
     security_checks: list[str] = Field(default_factory=list)
     documentation_work: list[str] = Field(default_factory=list)
@@ -102,6 +108,13 @@ class SprintPlanOutput(BaseModel):
             "One line per numbered success measure you were given, saying which "
             "sprint delivers it: 'N: Sprint K' (K counts from 1 in `sprints`), or "
             "'N: every sprint' for a constraint every sprint must keep."
+        ),
+    )
+    advice_declined: list[str] = Field(
+        default_factory=list,
+        description=(
+            "One line per adopted advice id no sprint builds, with why: 'DB-4: declined - <why>'. "
+            "Declining one changes the specification."
         ),
     )
 
@@ -270,7 +283,7 @@ def with_setup_folded_into_the_sprint_that_needs_it(
 
             def both(field: str) -> list[str]:
                 merged: list[str] = []
-                for item in [*getattr(first, field), *getattr(second, field)]:
+                for item in [*(getattr(first, field, None) or []), *(getattr(second, field, None) or [])]:
                     if item not in merged:
                         merged.append(item)
                 return merged
@@ -287,6 +300,7 @@ def with_setup_folded_into_the_sprint_that_needs_it(
                 # run's folded sprint lost its "3" and the criterion was
                 # assigned again from words.
                 "criteria": both("criteria"),
+                "advice": both("advice"),
                 "acceptance_criteria": both("acceptance_criteria"),
                 "test_strategy": both("test_strategy"),
                 "security_checks": both("security_checks"),
@@ -375,6 +389,7 @@ def with_capped_sprint_count(plan: Any, criteria_count: int, *, fast: bool = Fal
             "out_of_scope": [item for item in getattr(target, "out_of_scope", []) if not later.search(str(item))],
             "in_scope": both("in_scope"),
             "criteria": both("criteria"),
+            "advice": both("advice"),
             "acceptance_criteria": both("acceptance_criteria"),
             "test_strategy": both("test_strategy"),
             "security_checks": both("security_checks"),
@@ -445,6 +460,59 @@ def sprints_not_sized_by_work(plan: Any, criteria_count: int, *, fast: bool = Fa
         elif not ids:
             notes.append(f"Sprint {number} holds no criterion; every sprint makes at least one pass.")
     return notes
+
+
+def advice_not_scheduled(plan: Any, adopted_ids: list[str]) -> list[str]:
+    """The adopted advice ids no sprint places and the plan does not decline with a reason, in order (SP.2).
+
+    Measured on one medium run: the UI/UX specialist's ten adopted items were never due, because every sprint put
+    the interface out of scope, and its check each sprint found nothing to report. The product shipped without them.
+    """
+    from app.agents.advice_review import declined_with_a_reason, placed_in
+
+    placed = {ident for sprint in getattr(plan, "sprints", None) or [] for ident in placed_in(sprint)}
+    declined = declined_with_a_reason(getattr(plan, "advice_declined", None) or [], adopted_ids)
+    return [ident for ident in adopted_ids if ident not in placed and ident not in declined]
+
+
+def with_the_advice_scheduled(plan: Any, ids: list[str]) -> tuple[Any, list[str]]:
+    """`plan` with each of `ids` placed in its last sprint, and a note of what was placed, or `plan` and [].
+
+    The last sprint owes every adopted item not yet built, so an item the planner placed nowhere is built there.
+    """
+    sprints = list(getattr(plan, "sprints", None) or [])
+    if not ids or not sprints:
+        return plan, []
+    last = sprints[-1]
+    held = list(getattr(last, "advice", None) or [])
+    added = [ident for ident in ids if ident not in held]
+    if not added:
+        return plan, []
+    sprints[-1] = last.model_copy(update={"advice": held + added})
+    return plan.model_copy(update={"sprints": sprints}), [
+        f"Sprint {len(sprints)} (the last) builds the adopted advice no sprint placed: {', '.join(added)}."
+    ]
+
+
+def _the_adopted_advice(items: list[str], unscheduled: list[str]) -> str:
+    """The section listing the adopted advice each sprint must place, and what a previous plan left out, or ""."""
+    if not items:
+        return ""
+    section = (
+        "--- Specialist advice the specification adopted ---\n"
+        + "\n".join(f"- {item}" for item in items)
+        + "\nEach item is part of the product. Put each id in the `advice` of the sprint that builds the part of the "
+        "product it is about - in that sprint, not after it. An item that no longer holds is declined in "
+        "`advice_declined` with the reason; declining one changes the specification. An item no sprint places is "
+        "built in the last sprint.\n\n"
+    )
+    if unscheduled:
+        section += (
+            "YOUR LAST PLAN PLACED THESE IN NO SPRINT AND DECLINED NONE OF THEM: " + ", ".join(unscheduled)
+            + ".\nReturn the complete plan again with each in the `advice` of the sprint that builds it, or "
+            "declined with the reason.\n\n"
+        )
+    return section
 
 
 def _ids_an_item_names(item: Any, known: list[str]) -> list[str]:
@@ -695,6 +763,8 @@ def build_sprint_planning_request(
     acceptance_criteria: str = "",
     built_ahead: list[str] | None = None,
     unsized: list[str] | None = None,
+    adopted_advice: list[str] | None = None,
+    unscheduled_advice: list[str] | None = None,
 ) -> dict[str, list[dict[str, str]]]:
     """Build the Deep Agent input from the approved technical specification.
 
@@ -713,7 +783,9 @@ def build_sprint_planning_request(
     scope built before the sprint whose criteria need it - see
     `scope_a_later_sprint_delivers`. `unsized` is what a previous attempt's
     sprints held over the size limit, or that one held no criterion - see
-    `sprints_not_sized_by_work`.
+    `sprints_not_sized_by_work`. `adopted_advice` is the specialists' advice the specification adopted, as
+    "ID: item" lines, each placed in a sprint or declined; `unscheduled_advice` the ids a previous attempt placed
+    nowhere - see `advice_not_scheduled` (SP.2).
     """
     from app.agents.text_budget import excerpt, specification_budget
 
@@ -729,6 +801,7 @@ def build_sprint_planning_request(
         + _the_acceptance_criteria(acceptance_criteria)
         + _built_ahead(list(built_ahead or []))
         + _not_sized_by_work(list(unsized or []))
+        + _the_adopted_advice(list(adopted_advice or []), list(unscheduled_advice or []))
         + PLANNED_PROJECT_DIRECTORY
     )
     return {"messages": [{"role": "user", "content": brief}]}
@@ -1137,6 +1210,7 @@ def create_scrum_master_agent(
 __all__ = [
     "SprintDefinition",
     "SprintPlanOutput",
+    "advice_not_scheduled",
     "build_sprint_planning_request",
     "create_scrum_master_agent",
     "MOST_CRITERIA_PER_SPRINT",
@@ -1145,4 +1219,5 @@ __all__ = [
     "sprints_not_sized_by_work",
     "with_sprints_sized_by_work",
     "with_capped_sprint_count",
+    "with_the_advice_scheduled",
 ]

@@ -147,7 +147,7 @@ class TestThroughTheGraph:
         ))])
         agents.script("architecture_review", [responds_with(_approved_review())])
         agents.script("advice_reviewer_backend", [responds_with(answer)])
-        _script_through_sprint(agents)
+        _script_through_sprint(agents, advice=["BE-1"])  # the plan places the adopted item (SP.2)
         return start_workflow(_graph(), _document(), _repository(tmp_path), "run-domain-review")
 
     def test_the_specialist_is_asked_to_review_its_domain_against_the_specification(self, agents, monkeypatch, tmp_path) -> None:

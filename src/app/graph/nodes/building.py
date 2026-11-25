@@ -75,6 +75,20 @@ def _with_the_files_it_reads(state: Any, request: dict[str, Any], model: Any) ->
         return request
 
 
+def _the_advice_this_sprint_builds(state: Any) -> str:
+    """The lead's section of the adopted advice the sprint plan places in this sprint, or "" (SP.2)."""
+    from app.agents.advice_review import adopted_to_build, advice_for_the_lead, placed_in
+
+    sprints = list(getattr(state.get("sprint_plan"), "sprints", None) or [])
+    index = int(state.get("current_sprint_index") or 0)
+    if not 0 <= index < len(sprints):
+        return ""
+    here = set(placed_in(sprints[index]))
+    items = adopted_to_build(state.get("specialist_advice"), state.get("technical_specification"),
+                             declined=dict(state.get("advice_declined") or {}))
+    return advice_for_the_lead([line for line in items if line.split(":", 1)[0] in here])
+
+
 def technical_lead_node(state: WorkflowGraphState, config: RunnableConfig, ctx: GraphContext) -> dict[str, Any]:
     from app.graph.workflow import (
         APP_RUN_ID_KEY, MAX_REMEDIATION_ATTEMPTS, _ASSIGNMENT_RETRIES, _READINESS_RETRIES,
@@ -148,6 +162,8 @@ def technical_lead_node(state: WorkflowGraphState, config: RunnableConfig, ctx: 
 
             request["messages"][-1]["content"] += cause_journal.for_a_replan(
                 state["repository"].root_path, state.get("current_sprint_index", 0))
+        # The adopted specialist advice the sprint plan places in this sprint, whole (SP.2): the plan names only ids.
+        request["messages"][-1]["content"] += _the_advice_this_sprint_builds(state)
     # The previous answer was not ready to hand out: say exactly why, with
     # the plan it was, so this attempt fixes it rather than starting over.
     from app.graph import acceptance_nodes

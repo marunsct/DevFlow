@@ -503,6 +503,12 @@ class WorkflowGraphState(TypedDict, total=False):
     # this sprint, and which review it belongs to. See `app.agents.advice_review`.
     advice_findings: dict[str, list[str]]
     advice_review_cycle: str
+    # The adopted items the milestone sent back once as not built; the ones declined since with a reason (id -> the
+    # line), each a change to the specification; and the open gaps of those still not built after their send-back
+    # (SP.1). See `nodes.milestone._the_adopted_advice_owed`.
+    advice_sent_back: list[str]
+    advice_declined: dict[str, str]
+    advice_open_gaps: list[str]
     technical_specification: TechnicalSpecificationOutput
     architecture_review: ArchitectureReviewOutput
     architecture_revision_count: int
@@ -548,6 +554,9 @@ class WorkflowGraphState(TypedDict, total=False):
     # What a sprint plan's sprints held over the size limit, or that one held no criterion, carried into the one
     # re-plan that asks for sprints sized by work. See `scrum_master.sprints_not_sized_by_work` (LF.1315).
     sprint_plan_unsized: list[str]
+    # The adopted advice ids a sprint plan neither placed in a sprint nor declined, carried into the one re-plan that
+    # asks for them (SP.2). See `scrum_master.advice_not_scheduled`.
+    sprint_plan_unscheduled_advice: list[str]
     current_sprint_index: int
     # Every attempt at every sprint, oldest first, each one a mapping of the
     # shape `sprint_summary.render_sprint_summary` documents. A sprint that

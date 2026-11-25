@@ -66,6 +66,10 @@ _NOTES = re.compile(
         r"The judgement model .* could not be built ",
         # What the intake assumed where the brief does not say (deep review C8): the reader is told, nothing failed.
         r"Assumed at intake where the brief does not say:",
+        # A specialist's adopted item still not built after its one send-back (SP.1): the specification's promise is
+        # stated unkept, but a specialist's reading of the code is no measure that the product fails - the suite,
+        # measured at release, is. Not yet calibrated on the hidden tests; a note until it is.
+        r"Adopted specialist advice still not built after its one send-back",
         # Calibrated on the hidden and quality tests (deep review 2026-11-18, item B4): 427 scored runs, 92 of them
         # (22%) lost a hidden or quality test, and a "not deliverable" verdict lost no more often than "delivered"
         # (39 of 181 against 53 of 246). Each kind of gap that blocked, the runs it was in, and how many lost one:

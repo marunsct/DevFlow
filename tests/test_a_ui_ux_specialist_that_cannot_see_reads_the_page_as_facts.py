@@ -132,7 +132,7 @@ class TestThroughTheGraph:
         ))])
         agents.script("architecture_review", [responds_with(_approved_review())])
         agents.script("advice_reviewer_ui_ux", [responds_with(AdviceReview())])
-        _script_through_sprint(agents)
+        _script_through_sprint(agents, advice=["UX-1"])  # the plan places the adopted item (SP.2)
         repository = _repository(tmp_path)
         # The report alone, at the workspace's root as a product with no pack keeps it: a pack's contract would start
         # the pack's own installs and commands in this run.

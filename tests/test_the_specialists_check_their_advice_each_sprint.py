@@ -103,14 +103,26 @@ class TestThroughTheGraph:
             specialist_advice_decisions=["UX-1: adopted - interface_design"],
         ))])
         agents.script("architecture_review", [responds_with(_approved_review())])
-        agents.script("advice_reviewer_ui_ux", [responds_with(AdviceReview(not_built=["UX-1: no rule below 600px in styles.css"]))])
-        _script_through_sprint(agents)
+        agents.script("advice_reviewer_ui_ux", [
+            responds_with(AdviceReview(not_built=["UX-1: no rule below 600px in styles.css"])),
+            responds_with(AdviceReview()),
+        ])
+        _script_through_sprint(agents, advice=["UX-1"])
+        # The adopted item not built is sent back once (SP.1): one more round of the sprint.
+        from test_graph_routing import _milestone, _milestone_review, _security_review, _specialist
+
+        agents.script("technical_lead", [responds_with(_milestone("testing"))] * 2)
+        agents.script("specialist_testing", [responds_with(_specialist())] * 4)
+        agents.script("milestone_reviewer", [responds_with(_milestone_review())] * 2)
+        agents.script("security_reviewer", [responds_with(_security_review())] * 2)
 
         state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-advice-review")
 
-        asked = agents.last_request_text("milestone_reviewer")
-        assert "[UI/UX specialist] not built: UX-1: no rule below 600px in styles.css" in asked
+        heard = agents.requests["milestone_reviewer"][0]["messages"][-1]["content"]
+        assert "[UI/UX specialist] not built: UX-1: no rule below 600px in styles.css" in heard
         assert "UX-1: Stack the form above the list below 600px." in agents.last_request_text("advice_reviewer_ui_ux")
+        assert "UX-1: no rule below 600px in styles.css" in agents.last_request_text("technical_lead")
+        assert state["advice_sent_back"] == ["UX-1"] and not state.get("advice_open_gaps")
         assert state["stage"] == "complete"
 
     def test_a_finding_from_another_review_is_not_carried_into_this_one(self) -> None:
@@ -126,14 +138,14 @@ class TestWhatTheyFindIsCarriedForward:
     word about any, and the next two sprints closed with nothing to build - so
     none of it was built, taken or declined."""
 
-    def test_a_specialist_s_findings_are_one_minor_finding_of_the_sprint_s_own(self) -> None:
+    def test_what_names_no_owed_item_is_one_minor_finding_of_the_sprint_s_own(self) -> None:
         """One per specialist: one run's lead, carried fifteen items, was sent back
         twice a plan for recording a decision on six, then ten, then fourteen."""
         from app.agents.advice_review import as_sprint_findings
         from app.sprint.record import carried_from, with_dispositions
 
         findings = as_sprint_findings([
-            "[UI/UX specialist] not built: UX-4: no feedback after a change",
+            "[UI/UX specialist] not built: no feedback after a change",
             "[UI/UX specialist] design: the phone screenshot shows the list beside the form",
         ], 1)
 
@@ -144,7 +156,7 @@ class TestWhatTheyFindIsCarriedForward:
         )
         [carried] = carried_from(findings, 1)
         assert carried.startswith(
-            "[UI/UX specialist] 2 adopted item(s) the code does not follow: UX-4: no feedback after a "
+            "[UI/UX specialist] 2 adopted item(s) the code does not follow: no feedback after a "
             "change; design: the phone screenshot shows the list beside the form (sprint 1 advice review"
         )
         assert as_sprint_findings([], 1) == []
@@ -195,11 +207,11 @@ class TestWhatTheyFindIsCarriedForward:
         ))])
         agents.script("architecture_review", [responds_with(_approved_review())])
         agents.script("advice_reviewer_ui_ux", [
-            responds_with(AdviceReview(not_built=["UX-1: no rule below 600px in styles.css"])),
+            responds_with(AdviceReview(not_built=["no rule below 600px in styles.css"])),
             responds_with(AdviceReview()),
         ])
         agents.script("scrum_master", [responds_with(SprintPlanOutput(sprints=[
-            SprintDefinition(goal="Sprint 1: booking", user_value="v"),
+            SprintDefinition(goal="Sprint 1: booking", user_value="v", advice=["UX-1"]),
             SprintDefinition(goal="Sprint 2: more", user_value="v"),
         ]))])
         agents.script("technical_lead", [responds_with(_milestone("testing")), responds_with(second_plan)])
@@ -218,7 +230,7 @@ class TestWhatTheyFindIsCarriedForward:
         state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-advice-carried")
 
         asked = agents.last_request_text("technical_lead")
-        assert "[UI/UX specialist] 1 adopted item(s) the code does not follow: UX-1: no rule below 600px in styles.css" in asked
+        assert "[UI/UX specialist] 1 adopted item(s) the code does not follow: no rule below 600px in styles.css" in asked
         assert "Every criterion due by this sprint already passes" in asked
         assert state["stage"] == "complete"
         closed = [d for d in state["decisions"] if d.get("decision") == "accept without new work"]

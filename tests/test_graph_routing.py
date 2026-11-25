@@ -11,7 +11,7 @@ could not assert deterministic routing anyway.
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Any
+from typing import Any, Sequence
 
 import pytest
 from langgraph.graph import END
@@ -244,8 +244,11 @@ def _security_review() -> SecurityReviewOutput:
     )
 
 
-def _sprint_plan() -> SprintPlanOutput:
-    return SprintPlanOutput(sprints=[SprintDefinition(goal="Sprint 1: booking", user_value="Patients can book")])
+def _sprint_plan(advice: Sequence[str] = ()) -> SprintPlanOutput:
+    """One sprint; `advice` the adopted advice ids it places (SP.2)."""
+    return SprintPlanOutput(sprints=[
+        SprintDefinition(goal="Sprint 1: booking", user_value="Patients can book", advice=list(advice)),
+    ])
 
 
 def _milestone(*roles: str, assignments: list[str] | None = None) -> MilestonePlanOutput:
@@ -335,14 +338,15 @@ def _script_through_architecture(agents: ScriptedAgents, review: ArchitectureRev
     agents.script("architecture_review", [responds_with(review)])
 
 
-def _script_through_sprint(agents: ScriptedAgents) -> None:
+def _script_through_sprint(agents: ScriptedAgents, advice: Sequence[str] = ()) -> None:
     """Script sprint planning plus a clean implementation and verification round.
 
     The testing specialist is invoked twice on the happy path: once for its
     delegated implementation task, then again for the dedicated verification
-    round that triages failures into defects (Step 5.4).
+    round that triages failures into defects (Step 5.4). `advice`: the adopted
+    advice ids the sprint plan places, so it is not sent back for them.
     """
-    agents.script("scrum_master", [responds_with(_sprint_plan())])
+    agents.script("scrum_master", [responds_with(_sprint_plan(advice))])
     agents.script("technical_lead", [responds_with(_milestone("testing"))])
     agents.script("specialist_testing", [responds_with(_specialist()), responds_with(_specialist())])
     agents.script("milestone_reviewer", [responds_with(_milestone_review())])

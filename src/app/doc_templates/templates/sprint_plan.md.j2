@@ -11,6 +11,8 @@
 
 **Makes these acceptance criteria pass:** {{ s.criteria | join(", ") | text("none assigned") }}
 
+**Builds this adopted specialist advice:** {{ (s.advice or []) | join(", ") | text("none") }}
+
 **In scope:**
 {{ s.in_scope | bullets }}
 
@@ -45,5 +47,8 @@ _No sprints were planned._
 
 ## Success measure coverage
 {{ o.success_measure_coverage | section }}
+
+## Adopted specialist advice declined
+{{ (o.advice_declined or []) | section }}
 
 <!-- Generated from this stage's structured response. Editing this file does not change what the pipeline reads. -->

@@ -115,13 +115,30 @@ def security_review_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
 
 
 def _advice_reviews_due(state: Any) -> list[str]:
-    """The consulted specialists whose advice review this sprint and revision has not had."""
+    """The consulted specialists whose advice review this sprint and revision has not had.
+
+    Only a role with an item due by now (`_the_items_due`): one whose items the sprint plan places in later sprints
+    has nothing to check yet.
+    """
     from app.agents.advice_review import roles_to_review
 
     cycle = f"{state.get('current_sprint_index', 0)}:{state.get('milestone_revision_count', 0)}"
     found = dict(state.get("advice_findings") or {}) if state.get("advice_review_cycle") == cycle else {}
     advice, specification = state.get("specialist_advice"), state.get("technical_specification")
-    return [role for role in roles_to_review(advice, specification) if role not in found]
+    return [
+        role for role in roles_to_review(advice, specification)
+        if role not in found and _the_items_due(state, role)[0]
+    ]
+
+
+def _the_items_due(state: Any, role: str) -> tuple[list[str], str]:
+    """One role's adopted items due by the end of this sprint, and why. See `advice_review.items_due` (SP.2)."""
+    from app.agents.advice_review import items_due
+
+    return items_due(
+        state.get("specialist_advice"), state.get("technical_specification"), role, state.get("sprint_plan"),
+        int(state.get("current_sprint_index") or 0), declined=dict(state.get("advice_declined") or {}),
+    )
 
 
 def _one_advice_review(state: Any, config: RunnableConfig, role: str, ctx: GraphContext) -> tuple[dict[str, Any] | None, list[Any]]:
@@ -133,9 +150,9 @@ def _one_advice_review(state: Any, config: RunnableConfig, role: str, ctx: Graph
     )
 
     from app.agents.advice_review import build_advice_review_request, findings_from
-    from app.agents.specialist_advice import adopted
 
-    advice, specification = state.get("specialist_advice"), state.get("technical_specification")
+    specification = state.get("technical_specification")
+    due, due_because = _the_items_due(state, role)
     changed_files = _the_files_this_milestone_changed(state, state.get("specialist_outputs", {}))
     if role == "database" and not state.get("pending_inner_thread_id") and not _changes_any_code(changed_files):
         return None, []
@@ -145,11 +162,12 @@ def _one_advice_review(state: Any, config: RunnableConfig, role: str, ctx: Graph
     def built(held: list[str]) -> dict[str, Any]:
         request = build_advice_review_request(
             role,
-            adopted(advice, specification, role),
+            due,
             str(getattr(milestone, "selected_sprint_goal", "") or ""),
             _this_sprint_s_scope_for_review(state),
             changed_files,
             held=held,
+            due_because=due_because,
         )
         # The facts the work is built and judged under (plan CM.1).
         request = with_the_facts(request, root)
@@ -199,7 +217,7 @@ def _one_advice_review(state: Any, config: RunnableConfig, role: str, ctx: Graph
     )
     if _hand_back(update, "__advice_review__"):
         return update, []
-    found = findings_from(role, update.pop("__advice_review__"))
+    found = findings_from(role, update.pop("__advice_review__"), [line.split(":", 1)[0] for line in due])
     if found:
         logger.info("The %s specialist found %d adopted item(s) not built", role, len(found))
     return None, found

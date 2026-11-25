@@ -277,7 +277,7 @@ class TestThroughTheGraph:
             specialist_advice_decisions=["UX-1: adopted", "UX-2: adopted", "DB-1: adopted"],
         ))])
         agents.script("architecture_review", [responds_with(_approved_review())])
-        _script_through_sprint(agents)
+        _script_through_sprint(agents, advice=["UX-1", "UX-2", "DB-1"])
 
         state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-advised")
 
@@ -297,7 +297,7 @@ class TestThroughTheGraph:
             )),
         ])
         agents.script("architecture_review", [responds_with(_approved_review())])
-        _script_through_sprint(agents)
+        _script_through_sprint(agents, advice=["UX-1"])
 
         start_workflow(_graph(), _document(), _repository(tmp_path), "run-advice-owed")
 

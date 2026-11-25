@@ -46,7 +46,7 @@ class PartWriter(BaseChatModel):
 
 
 def test_a_plan_is_split_into_its_list_and_the_rest():
-    assert parts_of(SprintPlanOutput) == [("sprints",), ("open_questions", "success_measure_coverage")]
+    assert parts_of(SprintPlanOutput) == [("sprints",), ("open_questions", "success_measure_coverage", "advice_declined")]
 
 
 def test_the_plan_is_written_an_outline_then_item_by_item_each_part_seeing_the_ones_before():

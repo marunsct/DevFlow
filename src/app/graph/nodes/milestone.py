@@ -461,6 +461,12 @@ def _review_the_milestone(state: WorkflowGraphState, config: RunnableConfig, ctx
             **summary,
         )
 
+    # Adopted specialist advice found not built when due (SP.1): sent back once, then an open gap of the product.
+    sent_back, noted = _the_adopted_advice_owed(state, review, MAX_MILESTONE_REVISIONS)
+    if sent_back is not None:
+        return sent_back
+    state = {**state, **noted}
+
     # Accepted: the tests ran, the reviewer read them and said yes. This is
     # the only point in a sprint where the workflow has an opinion that the
     # work is sound, so it is the only sensible thing to record as a state
@@ -496,6 +502,7 @@ def _review_the_milestone(state: WorkflowGraphState, config: RunnableConfig, ctx
                     unbuilt[:160],
                 )
                 return _handing_on(
+                    **noted,
                     stage="technical_lead",
                     revision_comments=state.get("revision_comments", []) + [unbuilt],
                     milestone_revision_count=revision_count,
@@ -538,4 +545,74 @@ def _review_the_milestone(state: WorkflowGraphState, config: RunnableConfig, ctx
     else:
         next_stage = "release"
 
-    return _handing_on(**accepted, stage=next_stage, milestone_review=review)
+    return _handing_on(**{**noted, **accepted}, stage=next_stage, milestone_review=review)
+
+
+def _the_adopted_advice_owed(state: Any, review: Any, most_revisions: int) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    """(the send-back to the lead, or None; what to record whichever way) for adopted advice not built (SP.1).
+
+    The specialists' "not built" lines that name an adopted item due by this sprint are owed work, not opinions:
+    each is sent back to the lead once, like any gating finding, while revisions remain. One the lead declined with
+    a reason when it was sent back is a change to the specification, recorded in the decision log. One still not
+    built after its send-back - or with no revision left to send it in - is recorded as an open gap: a decision,
+    and a note of the release. Measured on one medium run: sprint 2's database and security specialists found
+    eleven adopted items not built, recorded as minor; the sprint was accepted and the product shipped without them.
+    """
+    from app.agents.advice_review import (
+        declined_with_a_reason, item_owed, open_gap, owed_and_not_built, send_back_text,
+    )
+    from app.decisions import record_decision
+    from app.graph.workflow import _handing_on, _this_review_s_advice_findings
+
+    found = _this_review_s_advice_findings(state)
+    noted: dict[str, Any] = {}
+    if not any(found.values()):
+        return None, noted
+    sent = [str(ident) for ident in state.get("advice_sent_back") or []]
+    declined = dict(state.get("advice_declined") or {})
+    plan = state.get("milestone_plan")
+    newly = {
+        ident: line for ident, line in declined_with_a_reason(
+            [*(getattr(plan, "review_task_assignments", None) or []),
+             *(getattr(plan, "carried_forward_decisions", None) or [])], sent,
+        ).items() if ident not in declined
+    }
+    if newly:
+        declined.update(newly)
+        noted["advice_declined"] = declined
+        record_decision(
+            state, noted, point="technical_specification",
+            question="Change the specification: decline adopted specialist advice " + ", ".join(newly) + "?",
+            options=["build it", "decline it"],
+            decision="decline " + ", ".join(newly),
+            rationale="The specification adopted these items; sent back as not built, the lead declined them:\n"
+            + "\n".join(f"- {line}" for line in newly.values()),
+        )
+    now, still = owed_and_not_built(found, sent_back=sent, declined=declined)
+    revision_count = int(state.get("milestone_revision_count", 0) or 0) + 1
+    if now and revision_count < most_revisions:
+        logger.warning("Milestone accepted with %d adopted advice item(s) not built; sending them back once", len(now))
+        return _handing_on(
+            **noted,
+            stage="technical_lead",
+            revision_comments=list(state.get("revision_comments") or []) + [send_back_text(now)],
+            milestone_revision_count=revision_count,
+            milestone_review=review,
+            advice_sent_back=sent + [item_owed(line) for line in now],
+        ), noted
+    recorded = {item_owed(gap.split("): ", 1)[-1]) for gap in state.get("advice_open_gaps") or []}
+    sprint = int(state.get("current_sprint_index", 0) or 0) + 1
+    gaps = [line for line in [*still, *now] if item_owed(line) not in recorded]
+    if gaps:
+        logger.warning("%d adopted advice item(s) still not built after one send-back; recorded as open gaps", len(gaps))
+        record_decision(
+            {**state, **noted}, noted, point="sprint",
+            question=f"Sprint {sprint}: adopted specialist advice is still not built after its one send-back. "
+            "Hold the sprint, or go on with it recorded as an open gap?",
+            options=["hold the sprint", "go on, recorded as an open gap"],
+            decision="go on, recorded as an open gap",
+            rationale="Each item was sent back once, or no revision was left to send it in; the specialist's line:\n"
+            + "\n".join(f"- {line}" for line in gaps),
+        )
+        noted["advice_open_gaps"] = [*(state.get("advice_open_gaps") or []), *(open_gap(line, sprint) for line in gaps)]
+    return None, noted

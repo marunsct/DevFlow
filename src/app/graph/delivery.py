@@ -482,6 +482,8 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         for issue in left_open
     )
     gaps.extend(_findings_recorded_as_risks(state))
+    # Adopted specialist advice still not built after its one send-back (SP.1), with the specialist's own line.
+    gaps.extend(str(gap) for gap in state.get("advice_open_gaps") or [] if str(gap).strip())
     # What the intake assumed where the brief does not say, with `INTAKE_ASKS_FIRST` (deep review C8): notes, not gaps.
     from app.agents import assumptions
 

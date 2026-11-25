@@ -361,6 +361,33 @@ def specialist_consultation_node(state: WorkflowGraphState, config: RunnableConf
     })
 
 
+def _record_the_advice_the_plan_declines(state: Any, update: dict[str, Any], advice_ids: list[str]) -> None:
+    """Each adopted advice item the sprint plan declines with a reason, as a change to the specification (SP.2).
+
+    In the decision log, and kept in `advice_declined` so no sprint owes the item and no specialist checks it.
+    """
+    from app.agents.advice_review import declined_with_a_reason
+    from app.decisions import record_decision
+
+    known = dict(state.get("advice_declined") or {})
+    declined = {
+        ident: line for ident, line in declined_with_a_reason(
+            getattr(update.get("sprint_plan"), "advice_declined", None) or [], advice_ids,
+        ).items() if ident not in known
+    }
+    if not declined:
+        return
+    record_decision(
+        state, update, point="technical_specification",
+        question="Change the specification: decline adopted specialist advice " + ", ".join(declined) + "?",
+        options=["build it", "decline it"],
+        decision="decline " + ", ".join(declined),
+        rationale="The specification adopted these items; the sprint plan declines them:\n"
+        + "\n".join(f"- {line}" for line in declined.values()),
+    )
+    update["advice_declined"] = {**known, **declined}
+
+
 def scrum_master_node(state: WorkflowGraphState, config: RunnableConfig, ctx: GraphContext) -> dict[str, Any]:
     from app.graph.workflow import (
         StageGaveNoAnswer, _as_text, _hand_back, _handing_on, _missing_upstream, _record_document,
@@ -379,6 +406,14 @@ def scrum_master_node(state: WorkflowGraphState, config: RunnableConfig, ctx: Gr
     gaps_already_asked_about = list(state.get("sprint_plan_gaps") or [])
     built_ahead_asked_about = list(state.get("sprint_plan_built_ahead") or [])
     unsized_asked_about = list(state.get("sprint_plan_unsized") or [])
+    # Every adopted advice item a sprint builds and a specialist checks, placed in a sprint or declined (SP.2).
+    from app.agents.advice_review import adopted_to_build
+
+    advice_to_place = adopted_to_build(
+        state.get("specialist_advice"), state.get("technical_specification"),
+        declined=dict(state.get("advice_declined") or {}),
+    )
+    unscheduled_asked_about = list(state.get("sprint_plan_unscheduled_advice") or [])
     from app.acceptance import by_sprint
     from app.acceptance import suite as acceptance_suite
     from app.acceptance.requests import criteria_text as numbered_criteria
@@ -397,6 +432,8 @@ def scrum_master_node(state: WorkflowGraphState, config: RunnableConfig, ctx: Gr
         ),
         built_ahead=built_ahead_asked_about,
         unsized=unsized_asked_about,
+        adopted_advice=advice_to_place,
+        unscheduled_advice=unscheduled_asked_about,
     )
     from app.agents.specification_rulings import with_the_rulings
 
@@ -421,8 +458,9 @@ def scrum_master_node(state: WorkflowGraphState, config: RunnableConfig, ctx: Gr
         )
     except StageGaveNoAnswer as gave_none:
         update = _the_harness_s_sprint_plan(state, measures, root_path, str(gave_none))
-        # The planner spent every way to answer: its plan is sized here, never sent back to it.
+        # The planner spent every way to answer: its plan is sized and given the advice here, never sent back to it.
         unsized_asked_about = unsized_asked_about or ["the harness wrote the plan"]
+        unscheduled_asked_about = unscheduled_asked_about or ["the harness wrote the plan"]
     if not _hand_back(update, "sprint_plan"):
         earlier = state.get("sprint_plan") if gaps_already_asked_about else None
         if earlier is not None and how_much_a_plan_leaves_out(
@@ -559,6 +597,24 @@ def scrum_master_node(state: WorkflowGraphState, config: RunnableConfig, ctx: Gr
             )
             logger.warning("Sprint plan still not sized by work; split by the harness: %s", "; ".join(split))
         update["sprint_plan_unsized"] = []
+        # Every adopted advice item in a sprint or declined with a reason (SP.2): a plan that places some nowhere is
+        # sent back once naming them; a second one has them placed in its last sprint, which owes every adopted item
+        # not yet built. See `scrum_master.advice_not_scheduled`.
+        from app.agents.scrum_master import advice_not_scheduled, with_the_advice_scheduled
+
+        advice_ids = [line.split(":", 1)[0] for line in advice_to_place]
+        unscheduled = advice_not_scheduled(update["sprint_plan"], advice_ids)
+        if unscheduled and not unscheduled_asked_about:
+            logger.warning("Sprint plan places adopted advice in no sprint; asking once more: %s", unscheduled)
+            return _handing_on(
+                stage="scrum_master",
+                sprint_plan_unscheduled_advice=unscheduled,
+                sprint_plan=update["sprint_plan"],
+            )
+        update["sprint_plan"], advice_placed = with_the_advice_scheduled(update["sprint_plan"], unscheduled)
+        if advice_placed:
+            logger.warning("Sprint plan still places adopted advice in no sprint: %s", "; ".join(advice_placed))
+        update["sprint_plan_unscheduled_advice"] = []
         # Once, as for the success measures: a sprint whose scope builds a
         # later sprint's criteria has its lead write work orders for them
         # and its builders build every sprint in the first. See
@@ -580,6 +636,7 @@ def scrum_master_node(state: WorkflowGraphState, config: RunnableConfig, ctx: Gr
                 "sprints deliver: %s", ahead,
             )
         update["sprint_plan_built_ahead"] = []
+        _record_the_advice_the_plan_declines(state, update, advice_ids)
         from app.decisions import record_decision
 
         planned = list(getattr(update["sprint_plan"], "sprints", None) or [])
@@ -597,6 +654,7 @@ def scrum_master_node(state: WorkflowGraphState, config: RunnableConfig, ctx: Gr
                    "; every success measure is assigned a sprint")
                 + (f"; sprints split by the harness to at most {most_criteria_a_sprint(criteria_count, fast=delivery.fast())} "
                    f"criteria each: {'; '.join(split)}" if split else "")
+                + (f"; {' '.join(advice_placed)}" if advice_placed else "")
                 + "."
             )[:1500],
         )

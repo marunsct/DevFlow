@@ -66,9 +66,11 @@ def principal_architect_node(state: WorkflowGraphState, config: RunnableConfig, 
         request = with_the_map(request, state["repository"].root_path)
 
     # The open questions' assumed answers, recorded at intake (plan IN.1).
-    from app.agents import assumptions
+    from app.agents import assumptions, interface_states
 
     request["messages"][-1]["content"] += assumptions.block(state)
+    # A page's empty, busy and failed states as lines a test can find (PQ.8, `INTERFACE_STATES_AS_CRITERIA`).
+    request["messages"][-1]["content"] += interface_states.rule_for(state)
     # Fast delivery: the architect writes the core and the other sections
     # are written from it at once. See `app.graph.specification_parts`.
     in_parts = _fast_delivery() and not (required_changes and previous_specification is not None)
@@ -118,7 +120,8 @@ def principal_architect_node(state: WorkflowGraphState, config: RunnableConfig, 
               for title, key in (("Product intake", "product_intake"), ("Stack", "stack_selection"))
               if state.get(key)),
             *([advice[:20_000]] if advice else []),
-        ]) + _the_scaffold_s_layout(state)  # These calls write the sections that name the runner, the start and the files.
+        # These calls write the sections that name the runner, the start and the files, and the interface design.
+        ]) + interface_states.rule_for(state) + _the_scaffold_s_layout(state)
 
     update = None
     # Fast delivery revises in place: only the sections the review's
@@ -244,6 +247,8 @@ def principal_architect_node(state: WorkflowGraphState, config: RunnableConfig, 
             owed = what_the_specification_owes(
                 update.get("technical_specification"), state.get("specialist_advice")
             )
+            states_missing = (interface_states.missing(update.get("technical_specification"))
+                              if interface_states.applies(state) else [])
             if owed and not unrunnable and repairs < MAX_SPECIFICATION_REPAIRS:
                 # The specialists were asked; an answer that ignores them
                 # leaves the advice where nobody reads it.
@@ -256,6 +261,11 @@ def principal_architect_node(state: WorkflowGraphState, config: RunnableConfig, 
                     "Do not return the whole specification from the beginning or repeat unchanged sections. "
                     "Return only `specialist_advice_decisions` answering those items; unchanged sections are automatically preserved."
                 ]
+            elif not unrunnable and states_missing and repairs < MAX_SPECIFICATION_REPAIRS:
+                # A page's empty, busy and failed states, each a line a test can find (PQ.8).
+                update["specification_repair_count"] = repairs + 1
+                update["stage"] = "principal_architect"
+                update["revision_comments"] = [interface_states.repair(states_missing)]
             elif unrunnable and repairs < MAX_SPECIFICATION_REPAIRS:
                 update["specification_repair_count"] = repairs + 1
                 update["stage"] = "principal_architect"

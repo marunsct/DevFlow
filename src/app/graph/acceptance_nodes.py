@@ -612,6 +612,24 @@ def acceptance_author(state: Any, config: RunnableConfig, ctx: Context) -> dict[
             logger.warning("No acceptance criteria could be read from the brief or the intake")
             return _handing_on(stage="scrum_master")
         suite.save_criteria(root, criteria)
+        # The brief's requirement and constraint lines numbered as criteria, recorded once, when first numbered (PQ.1).
+        from app.acceptance.brief_requirements import decision
+
+        added = decision(brief, criteria)
+        if added:
+            from app.decisions import record_decision
+
+            update = _writing_the_suite(state, config, ctx, root, criteria)
+            record_decision(state, update, **added)
+            return update
+    return _writing_the_suite(state, config, ctx, root, criteria)
+
+
+def _writing_the_suite(state: Any, config: RunnableConfig, ctx: Context, root: str, criteria: list) -> dict[str, Any]:
+    """The rest of `acceptance_author`, once the criteria are numbered."""
+    from app.agents.specialists import create_specialist_agent
+    from app.graph.workflow import _handing_on, _run_gated_agent
+
     round_ = int(state.get("acceptance_round") or 0)
     feedback = [*(state.get("acceptance_feedback") or []), *(state.get("revision_comments") or [])]
     from app import delivery

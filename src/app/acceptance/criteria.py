@@ -16,6 +16,18 @@ disabled its add control instead, and the customer's check timed out on it.
 Constraints - the stack, the storage, a line budget, "no authentication" - are not
 criteria: they are checked by the cross-file checks and the reviews, not by a test
 that drives the product.
+
+But a requirement line or a constraint that names something the product must have -
+an interface a person uses, database migrations, a container definition, an API
+documentation page, a CI pipeline - is a criterion when no criterion already carries
+it (`brief_requirements`, plan PQ.1). Measured on a medium brief: its "User
+Interface: Modern web application", "Frontend: React or Vue.js", "Database
+migrations required" and "Docker containerization" became no criterion, the sprint
+plan put the interface out of scope in every sprint, and the product had none. A
+brief that already numbers what it asks for (an interface section, "Responsive
+design for mobile and desktop") gets nothing added; the decision log records what
+was added and what already carried each line, and a criterion the release cannot
+prove ships named as a scope cut.
 """
 
 from __future__ import annotations
@@ -37,6 +49,12 @@ _NOT_CRITERIA_HEADING = re.compile(
     r"nice[- ]to[- ]have|assumption|risk|question|background|overview|context",
     re.I,
 )
+#: Headings whose items are requirements or constraints, not behaviours: read for what the product must have (PQ.1).
+_HOLDS_REQUIREMENTS = re.compile(r"constraint|non[- ]functional|technical", re.I)
+#: Headings whose items the product need not have, whatever else the heading says.
+_NEVER_REQUIRED = re.compile(
+    r"out of scope|deferred|future|later|nice[- ]to[- ]have|optional|assumption|risk|question|background|overview|"
+    r"context|non[- ]goals?", re.I)
 #: Under a broad heading ("Requirements"), a labelled item is a group of
 #: criteria only when its label says so; "**Data Storage**: local storage" is a
 #: constraint, "**Features**:" a list of things to do.
@@ -84,7 +102,22 @@ def _key(text: str) -> str:
 
 def from_brief(brief: str) -> list[str]:
     """The behaviours the brief lists, in its own words and order."""
+    return _read(brief)[0]
+
+
+def requirement_lines(brief: str) -> list[str]:
+    """The brief's requirement and constraint lines that are not criteria as they stand, in its own words and order.
+
+    A labelled item under a broad heading that is not a group of features ("**User Interface**: ...", "**Data
+    Storage**: ...") with its sub-items, and every item under a constraints heading ("Technical Constraints",
+    "Non-functional requirements"). Never an out-of-scope, deferred or future list."""
+    return _read(brief)[1]
+
+
+def _read(brief: str) -> tuple[list[str], list[str]]:
+    """(the behaviours the brief lists, its other requirement and constraint lines)."""
     found: list[str] = []
+    other: list[str] = []
     heading = ""
     # The open labelled item under a broad heading, and whether it is a group of
     # features: (indent, is_features).
@@ -98,14 +131,16 @@ def from_brief(brief: str) -> list[str]:
         bullet = _BULLET.match(line)
         if not bullet or not heading:
             continue
+        if _HOLDS_REQUIREMENTS.search(heading) and not _NEVER_REQUIRED.search(heading):
+            other.append(_labelled_plain(bullet.group(2)))
+            continue
         if _NOT_CRITERIA_HEADING.search(heading) or not _CRITERIA_HEADING.search(heading):
             continue
         indent = len(bullet.group(1).expandtabs(4))
         body = bullet.group(2)
         label = _LABEL.match(body)
         if group is not None and indent > group[0]:
-            if group[1]:
-                found.append(_plain(body))
+            (found if group[1] else other).append(_plain(body))
             continue
         group = None
         if _STRONG_HEADING.search(heading) and not _NOT_CRITERIA_HEADING.search(heading):
@@ -124,10 +159,20 @@ def from_brief(brief: str) -> list[str]:
                     found.append(_plain(rest))
                 group = (indent, True)
             else:
+                other.append(_labelled_plain(body))
                 group = (indent, False)
             continue
         found.append(_plain(body))
-    return [item for item in found if item]
+    return [item for item in found if item], [item for item in other if item]
+
+
+def _labelled_plain(body: str) -> str:
+    """"**User Interface**: Modern web app" as "User Interface: Modern web app"."""
+    label = _LABEL.match(body)
+    if not label:
+        return _plain(body)
+    name, rest = _plain(label.group(1)).rstrip(":"), _plain(label.group(2))
+    return f"{name}: {rest}" if rest else name
 
 
 def number(brief: str, intake: Any = None) -> list[Criterion]:
@@ -147,6 +192,14 @@ def number(brief: str, intake: Any = None) -> list[Criterion]:
             continue
         seen.add(key)
         criteria.append(Criterion(id=f"AC-{len(criteria) + 1}", text=text, source=source))
+    # What a requirement or constraint line asks the product to have, when no criterion carries it yet (PQ.1).
+    from app.acceptance.brief_requirements import to_add
+
+    for text in to_add(brief or "", [criterion.text for criterion in criteria]):
+        key = _key(text)
+        if key and key not in seen:
+            seen.add(key)
+            criteria.append(Criterion(id=f"AC-{len(criteria) + 1}", text=text, source="brief"))
     return criteria
 
 

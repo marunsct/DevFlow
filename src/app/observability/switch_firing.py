@@ -48,6 +48,7 @@ SIGNALS: dict[str, str] = {
     "CONTESTED_TESTS_CONFIRMED": "The harness ran a copy of this test with",
     "WEB_TOOLS_AFTER_TWO_FAILED_FIXES": "Two fixes of this defect have failed, so `search_the_web` and `read_web_page`",
     "STUCK_LOOKUP_CONDENSED": "A note on this error, condensed from what others found",
+    "INTERFACE_STATES_AS_CRITERIA": "name what a person sees in three states",
     "PRODUCT_RESEARCH": "Comparable products: suggestions the brief does not require",
     "API_CARDS_FOR_NEWER_RELEASES": "Libraries whose installed release line is newer than this model's training data",
     "FRAMEWORK_GUIDANCE_FOR_ADVISERS": "its own guidance, for the release this project uses",

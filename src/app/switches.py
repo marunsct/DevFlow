@@ -221,6 +221,9 @@ GROUPS: dict[str, tuple[str, ...]] = {
     # Where a changed existing product goes at the end (plan WS.7): a pull request to the repository it was seeded
     # from, else a bundle and a patch for download. Off until measured: it writes to the owner's repository.
     "Existing projects": ("PULL_REQUEST_DELIVERY",),
+    # A page's empty, busy and failed states named in the specification as lines a test can find (plan PQ.8):
+    # presentation only, off until measured on two runs per family.
+    "Interface design": ("INTERFACE_STATES_AS_CRITERIA",),
 }
 #: Every grouped switch, in the admin page's order.
 EXPERIMENTS = tuple(name for members in GROUPS.values() for name in members)

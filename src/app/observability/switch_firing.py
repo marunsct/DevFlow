@@ -74,6 +74,9 @@ SIGNALS: dict[str, str] = {
     "LONG_REASONING_BEFORE_A_READ": "Thinking switched off for the reply after one that reasoned at length and then only read",
     # Recorded by the harness each red thorough round it measures alone (`app.graph.measured_round`).
     "MEASURED_ROUND_WHEN_RED": "A red round measured by the harness alone in thorough delivery",
+    # Recorded by the harness each time a fixer's memory is chosen again at a summary
+    # (`app.agents.fixers_hold_what_they_read`).
+    "FIXERS_HOLD_WHAT_THEY_READ": "A fixer's memory holds the files it was reading after a summary",
 }
 #: Transcript records the harness writes of what it did itself, with no model reading it: kind -> the field whose
 #: text a switch's signal is looked for in.
@@ -81,7 +84,7 @@ HARNESS_RECORDS: dict[str, str] = {"repository_delivery": "message", "prompt_sha
                                    "summarised_later": "message",
                                    "reply_room": "message", "thinking_off_after_a_read": "message",
                                    "time_budget": "message", "request_budget": "message",
-                                   "measured_round": "message"}
+                                   "measured_round": "message", "fixer_memory_chosen_again": "message"}
 
 
 @dataclass(frozen=True)

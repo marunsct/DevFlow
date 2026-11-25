@@ -1273,6 +1273,18 @@ def the_read_tool_is_withheld() -> bool:
         return False
 
 
+def withheld_now() -> set[str]:
+    """The tools the stage's latest model call withheld: a call to one is refused, not run. Empty outside a stage.
+
+    For a middleware that would answer such a call before the refusal is reached (`project_memory`, LF.1405)."""
+    try:
+        from app.agents.stage_memory import store
+
+        return set(store("withheld tools", {}).get("names") or ())
+    except Exception:  # noqa: BLE001 - nothing known withheld
+        return set()
+
+
 def _refused_reads(messages: list[Any]) -> int:
     """How many redundant reads this stage has been refused.
 
@@ -2985,6 +2997,7 @@ def build_settled_answer_middleware(
 
 
 __all__ = [
+    "withheld_now",
     "ANSWER_LOOKBACK_MESSAGES",
     "BUDGET_WARNING_FRACTION",
     "CALLS_RESERVED_FOR_THE_ANSWER",

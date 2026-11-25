@@ -75,6 +75,29 @@ def claim(run_id: str | None, stage: str, tool: str, args: Any) -> None:
             _written.setdefault((run, stage), {})[path] = time.monotonic()
 
 
+def held_by_another(run_id: str | None, stage: str, path: str) -> str:
+    """The other fixer of `stage`'s batch that holds `path` or has written it, or "" when `stage` may write it: the
+    filter of a rewrite a batch fixer is given after it gave up (LF.1404), which writes no file through a tool."""
+    run, name = str(run_id or ""), str(path or "").strip().lstrip("./")
+    if not name:
+        return ""
+    with _lock:
+        if stage not in _active.get(run, set()):
+            return ""
+        owner = _claims.get((run, name), "")
+        if owner and owner != stage and owner in _active.get(run, set()):
+            return owner
+        return next((other for (each, other), files in _written.items()
+                     if each == run and other != stage and name in files), "")
+
+
+def written_by_a_rewrite(run_id: str | None, stage: str, paths: list[str]) -> None:
+    """The files a batch fixer's rewrite wrote are its, as its own writes are: claimed while it runs, and told apart
+    when its batch is measured."""
+    for path in paths or []:
+        claim(run_id, stage, "write_artifact", {"relative_path": str(path)})
+
+
 def written_by(run_id: str | None, stage: str) -> list[str]:
     """The files batch fixer `stage` wrote, as its writes named them; [] when none was recorded."""
     with _lock:
@@ -126,5 +149,5 @@ def build_middleware() -> Any:
     return BatchFileClaimsMiddleware()
 
 
-__all__ = ["REFUSED", "WRITES", "build_middleware", "claim", "forget", "holding", "last_write_at", "owner_of",
-           "written_by"]
+__all__ = ["REFUSED", "WRITES", "build_middleware", "claim", "forget", "held_by_another", "holding", "last_write_at",
+           "owner_of", "written_by", "written_by_a_rewrite"]

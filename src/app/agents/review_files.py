@@ -67,7 +67,12 @@ def is_a_review_stage(stage: str) -> bool:
 
 
 def holds_what_it_reads(stage: str) -> bool:
-    """Whether a stage's memory may hold the files it reads first, numbered: a review, or another reading stage."""
+    """Whether a stage's memory may hold the files it reads first, numbered: a review, or another reading stage; a
+    fix stage with `FIXERS_HOLD_WHAT_THEY_READ` on (LF.1406)."""
+    from app.agents import fixers_hold_what_they_read
+
+    if fixers_hold_what_they_read.is_a_fixer(stage):
+        return fixers_hold_what_they_read.enabled()
     return str(stage or "").startswith(REVIEW_STAGES + READING_STAGES + WRITING_STAGES)
 
 

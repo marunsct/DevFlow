@@ -1284,6 +1284,10 @@ def _chosen_again_at_a_summary(repo_root: str | Path, visit: dict[str, Any], mar
         visit["held_line"] = [path for path in chosen if path in now_held]
         logger.info("%s: after a summary its memory holds %d files whole, numbered: %s", stage,
                     len(visit["held_line"]), ", ".join(visit["held_line"][:10]))
+        from app.agents import fixers_hold_what_they_read
+
+        if fixers_hold_what_they_read.is_a_fixer(stage):
+            fixers_hold_what_they_read.note(stage, visit["held_line"])
     except Exception:  # noqa: BLE001 - the memory as it was
         logger.debug("Could not choose a stage's held files again", exc_info=True)
 
@@ -1449,6 +1453,14 @@ def build_project_memory_middleware(repo_root: str) -> Any:
             # to disk for lines already in the conversation.
             visit = self._visit()
             if call.get("name") == "read_file" and visit.get("held"):
+                from app.agents.settled_answer import withheld_now
+
+                if "read_file" in withheld_now():
+                    # The call withheld reading and said a read is refused: the refusal answers it, not a pointer.
+                    # Measured on one medium run: a fixer told reading was withheld read one held file six times
+                    # more, each answered with this pointer, so the guards that count refusals never saw one
+                    # (LF.1405).
+                    return handler(request)
                 path = str(args.get("file_path") or args.get("path") or "").strip().lstrip("/")
                 held = visit["held"].get(path)
                 if held is not None and _a_narrow_window(args, held):

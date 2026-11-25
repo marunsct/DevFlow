@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from langchain_core.runnables import RunnableConfig
 
@@ -320,7 +320,7 @@ def _diagnosed_if_it_keeps_failing(state: Any, defect: Any, ctx: GraphContext) -
 def _fixed_by_rewriting(
     state: Any, config: RunnableConfig, defect: Any, fix_model: Any, failed_tries: int = 0,
     after_a_surrender: bool = False, why: dict[str, str] | None = None, *, ctx: GraphContext,
-    surrendered: Any = None, stage: str = "", since: str = "",
+    surrendered: Any = None, stage: str = "", since: str = "", beside: Callable[[str], str] | None = None,
 ) -> Any:
     """A fast-delivery fix by rewriting the defect's files, or None for the agent loop.
 
@@ -330,7 +330,8 @@ def _fixed_by_rewriting(
 
     After a surrender, `surrendered` is the answer of the stage `stage` that began at `since`: the files it wrote,
     tried to write or named are the rewrite's too (`surrender_evidence`, LF.1401), and a rewrite that finds no file
-    says which rule left out which file (LF.1402).
+    says which rule left out which file (LF.1402). `beside`, for a fixer of a batch, names the other fixer that holds
+    or wrote a file, which this rewrite then leaves alone (LF.1404).
     """
     from app.graph.workflow import (
         APP_RUN_ID_KEY, MOST_DIAGNOSTICS_FOR_A_PASS, _diagnostics_in_files_touched, _fast_delivery,
@@ -370,6 +371,10 @@ def _fixed_by_rewriting(
                 return False
             if not defect_fix_modes.may_write(state, config, defect, root, path):
                 not_writable[path] = "this attempt may write tests only"
+                return False
+            other = beside(path) if beside is not None else ""
+            if other:
+                not_writable[path] = f"another fix of its batch is changing it ({other})"
                 return False
             return True
 
@@ -497,6 +502,35 @@ def _repaired_forward(
         return None
 
 
+def _rewritten_after_a_surrender(
+    state: Any, config: RunnableConfig, defect_index: int, stage_name: str, fix_model: Any, fix_result: Any,
+    since: str, *, ctx: GraphContext, beside: Callable[[str], str] | None = None,
+) -> Any:
+    """`fix_result`, or the harness's rewrite's answer when it changed no file (behind `SURRENDER_TO_REWRITE`).
+
+    An answer that changed no file - a surrender, or the harness's record of a fixer that gave no answer - goes to
+    the rewrite once, fixed alone or in a batch (LF.1404: measured on one medium run, two batch fixers that read for
+    17 and 19 calls and ended with no answer never got it). `beside`: a batch fixer's filter of the files another
+    fixer of its batch holds."""
+    from app.graph.surrender_to_rewrite import after_a_surrender
+    from app.graph.workflow import failed_fix_tries
+    from app.observability import defect_ledger
+
+    defect = state["remediation"].defects[defect_index]
+    tries = failed_fix_tries(state["remediation"], defect_index)
+    why: dict[str, str] = {}
+    return after_a_surrender(
+        fix_result,
+        lambda: _fixed_by_rewriting(state, config, defect, fix_model, tries, after_a_surrender=True, why=why, ctx=ctx,
+                                    surrendered=fix_result, stage=stage_name, since=since, beside=beside),
+        note=lambda outcome: defect_ledger.note(
+            "rewrite after surrender", stage_name, defect=defect, index=defect_index,
+            round_=state.get("test_round", 0),
+            detail=outcome + (f": {why['why']}" if outcome == "declined" and why.get("why") else ""),
+        ),
+    )
+
+
 def _fix_one(state: Any, config: RunnableConfig, defect_index: int, ctx: GraphContext) -> dict[str, Any]:
     """Route one open defect to its owner, measure the fix, and record what it settled."""
     from app.graph.workflow import (
@@ -615,24 +649,8 @@ def _fix_one(state: Any, config: RunnableConfig, defect_index: int, ctx: GraphCo
             update["fix_started"] = started
             return update  # paused waiting for approval on this fix
 
-        fix_result = update.pop("__fix_result__")
-        # An answer that changed no file goes to the harness's rewrite once (behind `SURRENDER_TO_REWRITE`).
-        from app.graph.surrender_to_rewrite import after_a_surrender
-
-        from app.observability import defect_ledger as _surrender_ledger
-
-        why: dict[str, str] = {}
-        gave_up = fix_result
-        fix_result = after_a_surrender(fix_result,
-            lambda: _fixed_by_rewriting(state, config, defect, fix_model, failed_fix_tries(cycle, defect_index),
-                                        after_a_surrender=True, why=why, ctx=ctx,
-                                        surrendered=gave_up, stage=stage_name, since=started),
-            note=lambda outcome: _surrender_ledger.note(
-                "rewrite after surrender", stage_name, defect=defect, index=defect_index,
-                round_=state.get("test_round", 0),
-                detail=outcome + (f": {why['why']}" if outcome == "declined" and why.get("why") else ""),
-            ),
-        )
+        fix_result = _rewritten_after_a_surrender(
+            state, config, defect_index, stage_name, fix_model, update.pop("__fix_result__"), started, ctx=ctx)
     defect_fix_modes.end(config, stage_name)
     # A fix that stopped the product is handed back to its own model once before it is reverted (LF.1271).
     repair = judged_fixes.ForwardRepair(
@@ -990,13 +1008,25 @@ def defect_fix_worker_node(state: dict, config: RunnableConfig, ctx: GraphContex
     root = Path(state["repository"].root_path)
     from app.graph import batch_file_claims
 
+    run_id = config["configurable"].get(APP_RUN_ID_KEY)
     with verify_after_write.watching(
-        config["configurable"].get(APP_RUN_ID_KEY), stage_name, lambda: _the_defect_s_tests_pass(root, defect),
-    ), batch_file_claims.holding(config["configurable"].get(APP_RUN_ID_KEY), stage_name):
+        run_id, stage_name, lambda: _the_defect_s_tests_pass(root, defect),
+    ), batch_file_claims.holding(run_id, stage_name):
         update = _run_gated_agent(
             temp_state, config, stage_name=stage_name, agent=agent, initial_request=request,
             output_key="__fix_result__", next_stage="defect_remediation",
         )
+        if "__fix_result__" in update:
+            # A fixer of a batch that changed nothing gets the rewrite a fixer alone gets, on the files no other fixer
+            # of its batch holds; what it writes is this fixer's when the batch is measured (LF.1404).
+            its_own = update["__fix_result__"]
+            update["__fix_result__"] = _rewritten_after_a_surrender(
+                state, config, index, stage_name, fix_model, its_own, str(state.get("fix_batch_started") or ""),
+                ctx=ctx, beside=lambda path: batch_file_claims.held_by_another(run_id, stage_name, path),
+            )
+            if update["__fix_result__"] is not its_own:
+                batch_file_claims.written_by_a_rewrite(
+                    run_id, stage_name, list(getattr(update["__fix_result__"], "changed_files", None) or []))
     answered_in_a_batch = bool((state.get("queued_decisions") or {}).get(stage_name))
     if "__fix_result__" not in update:
         # Queued, not returned, for the reason `specialist_worker_node` gives.

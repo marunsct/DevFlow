@@ -58,7 +58,9 @@ CEILINGS = {
     # "The 3" where words are compared in lower case, and no locked test gave a capital.
     # 6,450 since a test of a group of such values checks the key it reports, not only the merged count (LF.1317): two
     # runs passed their locked suite and printed "The 3".
-    "acceptance_reviewer": 6_450,
+    # 7,000 since each finding is given a severity by what it breaks (TG.2): in thorough delivery a blocking or major
+    # one keeps the suite from locking, and the reviewer's findings had no severity to gate on.
+    "acceptance_reviewer": 7_000,
 }
 # 4,300 for the same read-only wording (LF.967).
 OTHERWISE = 4_300

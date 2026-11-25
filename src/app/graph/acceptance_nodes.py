@@ -1283,6 +1283,8 @@ def _reviewed_and_locked(state: Any, config: RunnableConfig, ctx: Context) -> di
         return _handing_on(stage="acceptance_author", acceptance_feedback=again)
 
     findings: list[str] = []
+    # The QA lead's severity of each of its findings, when it read the suite this time (TG.2).
+    graded: dict[str, str] | None = None
     update: dict[str, Any] = {}
     # Plan item 10: a repair that changed only the tests sent for it is judged by the checks above, not reviewed again.
     targeted = not problems and suite.targeted_repair_switch.enabled() and suite.only_the_repaired_tests_changed(root)
@@ -1306,9 +1308,16 @@ def _reviewed_and_locked(state: Any, config: RunnableConfig, ctx: Context) -> di
     targeted = targeted or bool(no_fault_found)
     # Findings held back from the writers are the QA lead's to judge: a suite with any is read, not locked unread.
     targeted = targeted and not suspected
+    from app.graph import suite_gate
+
+    # A person approved locking it as it stands, with the gating findings in front of them: locked, not read again (TG.2).
+    approved_by_a_person = suite_gate.approved_as_it_stands(state)
+    targeted = targeted or approved_by_a_person
     # At the limit with the harness's own problems still open, a suite the QA lead never read would be locked unread
     # (per-role audit: 3 of 30 runs, one a false acceptance): it is read once, and what it finds is handled as below.
     unread_at_the_limit = bool(problems) and rounds >= MAX_ACCEPTANCE_ROUNDS and not _the_qa_lead_has_read_it(config)
+    # A gating finding of the QA lead's still open is settled only by its own reading of the suite (TG.2).
+    unread_at_the_limit = unread_at_the_limit or (bool(problems) and suite_gate.the_qa_lead_reads_again(state))
     if unread_at_the_limit:
         logger.info("At the limit with %d problem(s) open and no review yet: the QA lead reads the suite once", len(problems))
     if (not problems or unread_at_the_limit) and not targeted:
@@ -1380,6 +1389,7 @@ def _reviewed_and_locked(state: Any, config: RunnableConfig, ctx: Context) -> di
             return update
         review = update.pop("__acceptance_review__")
         update.pop("stage", None)
+        graded = {str(item): str(getattr(item, "severity", "") or "minor") for item in review.findings or []}
         if not review.approved and review.findings:
             findings = suite.findings_about_the_suite([str(item) for item in review.findings])
             findings = by_sprint.about_the_addition(root, findings)
@@ -1407,6 +1417,12 @@ def _reviewed_and_locked(state: Any, config: RunnableConfig, ctx: Context) -> di
                 suite._save_state(root, {**suite._state(root), "strengthened_once": True})
                 return _handing_on(**update, stage="acceptance_author", acceptance_feedback=[STRENGTHEN_ONLY, *weak])
 
+    if approved_by_a_person:
+        findings = [*findings, *suite_gate.approved_qa_lead_findings(state)]
+    # Thorough delivery locks no suite with a gating finding open: it waits for a person instead (TG.2).
+    if (waiting := suite_gate.before_the_lock(state, update, root=root, problems=problems, findings=findings,
+                                              graded=graded, cannot=cannot, raised=raised)) is not None:
+        return waiting
     if suite.undefer_what_a_test_now_carries(root):
         logger.info("Deferred criteria a test now carries are no longer deferred")
     suite.lock(root)

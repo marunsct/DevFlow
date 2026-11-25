@@ -96,15 +96,18 @@ async def approve_what_is_due(runner: Any, now: datetime | None = None) -> list[
 
 def _held_for_a_person(record: Any) -> bool:
     """Whether the run's open gate holds what only a person may approve: thorough delivery's gating design findings
-    (`app.graph.design_gate`). Its timeout does not answer it. Never raises."""
+    (`app.graph.design_gate`) or gating findings about the acceptance suite (`app.graph.suite_gate`). Its timeout
+    does not answer it. Never raises."""
     if record is None or not str(getattr(record, "current_stage", "") or "").endswith(":escalation"):
         return False
     try:
-        from app.graph.design_gate import held_for_a_person
+        from app.graph import design_gate, suite_gate
 
         read = getattr(record, "graph_state", None)
         state = read() if callable(read) else {}
-        return held_for_a_person(state or {}, getattr(record, "delivery_mode", None))
+        mode = getattr(record, "delivery_mode", None)
+        return (design_gate.held_for_a_person(state or {}, mode)
+                or suite_gate.held_for_a_person(state or {}, mode))
     except Exception:  # noqa: BLE001 - unknown is not held: the gate behaves as it did
         logger.debug("Could not read whether %s is held for a person", getattr(record, "run_id", ""), exc_info=True)
         return False

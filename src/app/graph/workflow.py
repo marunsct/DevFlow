@@ -527,6 +527,8 @@ class WorkflowGraphState(TypedDict, total=False):
     approved_but_for_the_harness: list[str]
     # Thorough delivery's ledger of gating design findings and how each ended. See `app.graph.design_gate`.
     design_gate: dict[str, Any]
+    # Thorough delivery's ledger of gating findings about the acceptance suite. See `app.graph.suite_gate`.
+    suite_gate: dict[str, Any]
     specification_repair_count: int
     layout_repair_count: int
     # Per-stage count of attempts that ended without a structured response.

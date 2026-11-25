@@ -11,18 +11,46 @@ would fail if its criterion were not met.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Literal, Sequence
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.agents.role_agent import create_role_agent
+from app.agents.severity import validator_for as severity_in
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 from app.acceptance.requests import TESTS_ASSUME_ONLY_WHAT_THEY_MADE  # one text for the writer and its reviewer
 
 _NAME = "acceptance_reviewer"
 _STAGE = "acceptance"
+
+
+#: The QA lead's severities, the milestone reviewer's words (`app.agents.severity`). Blocking and major gate: in thorough
+#: delivery a suite is not locked with one open (`app.graph.suite_gate`).
+SEVERITIES = ("blocking", "major", "minor", "suggestion")
+
+
+class AcceptanceReviewFinding(BaseModel):
+    """One problem with the suite, and how much it matters."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    description: str = Field(
+        ...,
+        description=(
+            "The problem, starting with the criterion id it concerns (\"AC-3: the test only checks the list "
+            "exists; it never checks the item was removed\")."
+        ),
+    )
+    # Absent, the finding locks at the round limit as every finding did before severities (TG.2).
+    severity: Literal["blocking", "major", "minor", "suggestion"] = Field(
+        default="minor", description="How much the problem matters; see the rule on severities."
+    )
+    _known_severity = field_validator("severity", mode="before")(severity_in(*SEVERITIES))
+
+    def __str__(self) -> str:
+        return self.description
 
 
 class AcceptanceReviewOutput(BaseModel):
@@ -37,14 +65,31 @@ class AcceptanceReviewOutput(BaseModel):
             "False when any test is too weak, tests the wrong thing, or is missing."
         ),
     )
-    findings: list[str] = Field(
+    findings: list[AcceptanceReviewFinding] = Field(
         default_factory=list,
-        description=(
-            "One line per problem, each starting with the criterion id it concerns "
-            "(\"AC-3: the test only checks the list exists; it never checks the item "
-            "was removed\"). Empty when approved."
-        ),
+        description="One entry per problem, each with its severity. Empty when approved.",
     )
+
+    @field_validator("findings", mode="before")
+    @classmethod
+    def _a_line_is_a_finding(cls, value: Any) -> Any:
+        """A finding written as one line, as the schema once asked, is that finding at the default severity."""
+        if not isinstance(value, list):
+            return value
+        return [{"description": item} if isinstance(item, str) else item for item in value]
+
+
+#: How the QA lead grades each finding (TG.2): what a finding breaks, not how much there is to change.
+SEVERITY_RULE = """Give every finding a severity, by what it breaks in the definition of done:
+- blocking: no product could pass the test - it contradicts another test,
+  asserts something no correct product does, or stops the suite from finishing;
+- major: a criterion whose tests would still pass if the product did not meet
+  it, or a criterion with no test;
+- minor: a test that checks the right result less closely than it could;
+- suggestion: anything else worth saying.
+A blocking or major finding can keep the suite from being locked until it is
+resolved, so give those two only to what makes passing the suite a wrong
+measure of done."""
 
 
 _SYSTEM_PROMPT = f"""You are the QA lead reviewing an acceptance suite before it is locked.
@@ -87,6 +132,8 @@ and stops it after, and a test that runs its start command waits for a process
 that never ends, so the whole suite stops there with no result for any test.
 Name every test that does, and ask for it to check the running product instead.
 A program that runs and exits is run by its tests, as its user runs it.
+
+{SEVERITY_RULE}
 
 Do not ask for style changes, more comments, or tests of things no criterion
 asks for. Do not judge the product: whatever part of it is built, it is not the
@@ -163,7 +210,10 @@ def create_acceptance_reviewer_agent(
 
 
 __all__ = [
+    "AcceptanceReviewFinding",
     "AcceptanceReviewOutput",
+    "SEVERITIES",
+    "SEVERITY_RULE",
     "build_acceptance_review_request",
     "create_acceptance_reviewer_agent",
 ]

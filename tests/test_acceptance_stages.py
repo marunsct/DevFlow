@@ -465,7 +465,11 @@ def test_a_suite_the_lead_has_read_is_locked_at_the_limit_without_asking_again(t
     config = {"configurable": {"thread_id": "t", "app_run_id": "run-x"}}
     monkeypatch.setattr("app.observability.transcript.read_transcript",
                         lambda run_id, kinds=None: [{"kind": "model_request", "stage": "acceptance_review_1"}])
+    from app import delivery
 
-    last = nodes.acceptance_review(_state(tmp_path, acceptance_round=nodes.MAX_ACCEPTANCE_ROUNDS), config, CTX)
+    # Fast delivery: in thorough delivery a criterion with no test is a gating finding, and the suite waits for a
+    # person instead of locking (`app.graph.suite_gate`).
+    with delivery.for_the_run("fast"):
+        last = nodes.acceptance_review(_state(tmp_path, acceptance_round=nodes.MAX_ACCEPTANCE_ROUNDS), config, CTX)
 
     assert gated.asked == [] and last["stage"] == "scrum_master" and suite.is_locked(tmp_path)

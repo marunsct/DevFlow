@@ -38,7 +38,9 @@ ESCALATION_REVIEW = "escalation"
 
 #: How many escalations a run may have before it stops: one decision per
 #: stuck sprint is the expectation, and a run that keeps getting stuck is not
-#: converging on anything.
+#: converging on anything. A design escalation the person sent back is not one
+#: of them (TG.3), nor is a suite held for a person (`app.graph.suite_gate`):
+#: a person asking for changes is the run converging on what they want.
 MAX_ESCALATIONS = 3
 
 
@@ -196,6 +198,8 @@ def escalation(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     from app.graph.workflow import _handing_on, _record_document
 
     error = str((state.get("escalation") or {}).get("error") or "")
+    if _kind(state) == SUITE:
+        return _the_suite_waits_for_a_person(state, error)
     count = int(state.get("escalation_count") or 0) + 1
     root = _root(state)
     update: dict[str, Any] = {"escalation_count": count}
@@ -269,6 +273,31 @@ def escalation(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
             return _the_foundation_first(state, update, failing, error, needed)
 
     return _defer_and_continue(state, update, failing, error, decided_by="auto")
+
+
+#: The kind of an acceptance suite held for a person (`app.graph.suite_gate`), in `state["escalation"]["kind"]`.
+from app.graph.suite_gate import SUITE  # noqa: E402 - beside the other kind
+
+
+def _the_suite_waits_for_a_person(state: Any, error: str) -> dict[str, Any]:
+    """Thorough delivery locks no suite with a gating finding open: the run waits for a person, whoever it asked.
+
+    Not counted toward `MAX_ESCALATIONS`: only a person answers it, so it cannot keep a run stuck on its own.
+    """
+    from app.decisions import record_decision
+    from app.graph import suite_gate
+    from app.graph.workflow import _handing_on, _record_document
+
+    update: dict[str, Any] = {}
+    record_decision(
+        state, update, point="escalation",
+        question="The acceptance suite still has findings of a gating severity open: how does the run go on?",
+        options=[suite_gate.WAITS, "lock the suite with them recorded as open"],
+        decision=suite_gate.WAITS,
+        rationale=error or suite_gate.why_it_waits(state, int(state.get("acceptance_round") or 1)),
+    )
+    _record_document(state, "docs/reviews/escalation.md", suite_gate.page(error, suite_gate.the_open_findings_text(state)))
+    return _handing_on(**update, stage="user_review_escalation")
 
 
 def _the_foundation_first(
@@ -395,20 +424,30 @@ def _approved_by_the_gate_s_timeout(state: Any) -> bool:
 
 
 def _waits_again_for_a_person(state: Any) -> dict[str, Any]:
-    """The escalation gate opened again: its timeout approved gating design findings, which only a person may."""
+    """The escalation gate opened again: its timeout approved gating findings, which only a person may."""
     from app.decisions import record_decision
-    from app.graph import design_gate
+    from app.graph import design_gate, suite_gate
     from app.graph.workflow import _handing_on
 
     update: dict[str, Any] = {}
-    record_decision(
-        state, update, point="escalation",
-        question="The escalation gate's timeout approved building with gating design findings open: does the run build?",
-        options=[design_gate.WAITS, "build from the latest specification"],
-        decision=design_gate.WAITS,
-        rationale="A timeout is nobody's decision, and thorough delivery builds with a gating design finding open "
-                  "only when a person approves it. Open: " + "; ".join(design_gate.the_open_findings_text(state)),
-    )
+    if _kind(state) == SUITE:
+        record_decision(
+            state, update, point="escalation",
+            question="The escalation gate's timeout approved locking the suite with gating findings open: is it locked?",
+            options=[suite_gate.WAITS, "lock the suite as it stands"],
+            decision=suite_gate.WAITS,
+            rationale="A timeout is nobody's decision, and thorough delivery locks a suite with a gating finding open "
+                      "only when a person approves it. Open: " + "; ".join(suite_gate.the_open_findings_text(state)),
+        )
+    else:
+        record_decision(
+            state, update, point="escalation",
+            question="The escalation gate's timeout approved building with gating design findings open: does the run build?",
+            options=[design_gate.WAITS, "build from the latest specification"],
+            decision=design_gate.WAITS,
+            rationale="A timeout is nobody's decision, and thorough delivery builds with a gating design finding open "
+                      "only when a person approves it. Open: " + "; ".join(design_gate.the_open_findings_text(state)),
+        )
     reviews = {point: review for point, review in (state.get("reviews") or {}).items() if point != ESCALATION_REVIEW}
     return _handing_on(**update, stage="user_review_escalation", reviews=reviews)
 
@@ -416,6 +455,16 @@ def _waits_again_for_a_person(state: Any) -> dict[str, Any]:
 def accept(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     """The person approved going on: defer what fails, or build from the design, and continue."""
     error = str((state.get("escalation") or {}).get("error") or "")
+    if _kind(state) == SUITE:
+        from app.graph import suite_gate
+        from app.graph.workflow import _handing_on
+
+        if _approved_by_the_gate_s_timeout(state) and suite_gate.holds(state):
+            return _waits_again_for_a_person(state)
+        # Back to the review, which locks the suite as it stands with each finding recorded as the person's.
+        update: dict[str, Any] = {}
+        suite_gate.approved_by_the_person(state, update)
+        return _handing_on(**update, stage="acceptance_review", escalation=None)
     if _kind(state) == DESIGN and _approved_by_the_gate_s_timeout(state):
         from app.graph import design_gate
 
@@ -434,10 +483,23 @@ def retry(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     from app.graph.workflow import _handing_on
 
     guidance = [c for c in state.get("revision_comments") or [] if str(c).strip()]
+    if _kind(state) == SUITE:
+        # The suite's writers revise it with the open findings and the guidance; its next review reads them again.
+        from app.graph import suite_gate
+
+        return _handing_on(
+            stage="acceptance_author",
+            escalation=None,
+            acceptance_feedback=[finding.get("text") for finding in suite_gate.open_findings(state)],
+            revision_comments=guidance,
+        )
     if _kind(state) == DESIGN:
         # A fresh round of reviews: the architect revises with the guidance
         # (its request carries `revision_comments`), and a review that still
-        # does not converge comes back here, bounded by MAX_ESCALATIONS.
+        # does not converge comes back here. The escalation the person sent
+        # back is not counted toward MAX_ESCALATIONS (TG.3): counted, a
+        # thorough run whose person kept asking for changes would stop as
+        # failed on its fourth escalation, for the person's own answers.
         from app.agents import specification_rulings
 
         specification_rulings.forget(_root(state))
@@ -446,6 +508,8 @@ def retry(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
             escalation=None,
             revision_comments=guidance,
             architecture_revision_count=0,
+            escalation_count=max(int(state.get("escalation_count") or 0) - 1, 0),
+            design_escalation_count=max(int(state.get("design_escalation_count") or 0) - 1, 0),
         )
     return _handing_on(
         stage="technical_lead",

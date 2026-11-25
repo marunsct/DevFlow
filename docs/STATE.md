@@ -15,10 +15,10 @@ decisions in force are `docs/owner-decisions.md`; old information is found throu
 |---|---|
 | Phase | **Learning runs, fixes deployed at once** (deep-review plan, owner 11-18: implement all; frozen-version measuring for Measure batches). The release-candidate count starts only when a full audit cycle finds nothing to fix. |
 | Models | :8888 `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` (key); :1234 `qwen3.6-35b-a3b-mtp@iq4_nl` (no key). Both the owner's; both take runs; each run is pinned to its port. |
-| Harness | Deployed 11-21 08:48 JST: 8cf5ae39 (LF.1140-1204; LF.1201-1204 off). Deploying after both suites: LF.1205 the Slim pack names a container passed to the app factory first. |
+| Harness | Deploying 11-25 ~11:25 JST: the 11-25 review bundle (`docs/improvement-plan.md` 3.0, waves A and B: LF.1318-1323, LF.1330-1331, LF.1335-1336, LF.1340-1341, LF.1345-1347, LF.1350-1357, LF.1360-1362). Next: LF.1365 (the suite writer with no answer does not end the run). |
 | Switches | 53 fixes built in (always on). 29 optional switches (9 groups, `docs/measuring.md`); `WEB_LOOKUP_WHEN_STUCK` is off and set per run. Measure arms use `SWITCHES_OFF` per run. |
-| Operations | Nightly backups (`loop.sh backup --check`); finished runs older than 60 days cleared. Audit cron `01339d0d` every ~10 minutes (7-day expiry: recreate by 11-27). |
-| Suites | `loop.sh suite` and `loop.sh suite-production` both green at 18,701 passed. |
+| Operations | Nightly backups (`loop.sh backup --check`); finished runs older than 60 days cleared. **:8888 PAUSED by the owner 11-25 10:04 JST until the owner resumes it** (run-f4bab632 paused); medium-run audit cron `f1dc472e` at :07 and :37 (7-day expiry). |
+| Suites | `loop.sh suite` and `loop.sh suite-production` both green at 21,004 passed (11-25 11:20 JST). |
 
 ## Off until measured
 BATCH_ACCEPTANCE_AUTHOR (web tools are on since 11-23, measured from there). Hosted-model
@@ -48,27 +48,8 @@ Earlier runs (11-22 and before): `reports/product-reviews/`, `reports/status-boa
 - **LF.1276-1277 deployed 16:55 JST 11-24 (1576e3b; the three Rust packs scaffold):** a run stopped mid-drafting or mid-rewrite ends the stage instead of leaving its
   files to the loop; every Rust pack has cargo choose the crate releases its toolchain builds (`.cargo/config.toml`,
   `incompatible-rust-versions = "fallback"`) - a likely root cause of Rust's 0/9: rustc 1.85 met crates needing 1.86-1.88.
-- **LF.1278 deployed 17:21 JST (the Rust service pack scaffolds):** sqlx's compile-time `query!` macros (they need a live database to build) answered for the
-  Rust fixer and kept out of the Rust design - the next failure on the same run once its crates resolved.
-- **LF.1279 deployed 17:34 JST:** three one-line Rust faults answered (`sqlx::sqlite::SqlitePoolOptions`, `SqliteJournalMode`, `let mut`).
-- **LF.1280-1281 deployed 18:26 JST (the Rust service pack scaffolds):** axum's `JsonRejection` path; and the general answer - a Rust import the crate does not
-  have is answered from the crate's own source (`analysis/rust_crate_exports.py`: where the name is public, or the nearest names).
-- **LF.1282 deployed 19:25 JST** - a forward repair may rewrite the file the start's error names, not only the fix's own.
-- **LF.1283-1285 deployed 21:09 JST:** a message's body or a quoted answer no longer holds a field to a floor (the kept-when-empty
-  probe asked nothing on Hono); a review holds the files it judges in its memory, in any language, and a summary names what was read.
-- **LF.1286 deployed 21:47 JST:** the same for the technical lead (code and the sprint's due tests), the QA lead's suite review and the
-  test rounds - sprint 2's lead had read 32 files 145+ times with 14 summaries in 40 calls.
-- **LF.1287-1289 deployed 22:56 JST** (`reports/audits/2026-11-24-reading-stages-past-their-room.md`): past the room, an outline of every
-  file with line ranges, whole files chosen again at each summary (what the stage wrote, then read most) - the suite author and
-  builders included; `READS_SIZED_TO_THE_ROOM` (off; M18) answers a whole read past the room with the outline - ON for the
-  medium rerun only from 23:36 JST (its sprint 2 testing builder: 121 reads of 27 files, 7 summaries, 1 write in 25 min).
-- **`REQUEST_BUDGET_FOR_EVERY_STAGE` ON for the medium rerun only, from 19:16 JST** (`docs/measuring.md` M17): its code review re-read
-  19 files 6-8 times each over 20 minutes; every other run keeps it off.
-- **`REPLY_ROOM_SIZED_PER_ROLE` ON for the medium rerun only, from 19:47 JST:** its security review was summarised after nearly every
-  batch of six reads (155 reads of 21 files, 34 calls) even with the memory cut; a review's short reply needs less than the 32K kept.
-  **Found since (design review `reports/audits/2026-11-24-review-stages-reread-loop.md`):** neither switch touches the loop - the summary
-  trigger never counts the memory, and doubled review rows hit the 32K cap. LF.1284-1285 (deployed 21:09) is the fix; judged on
-  the medium run's sprint 2 reviews by `loop.sh effects` (target: at most 1.2 reads a file, no summary in a review).
+- **LF.1278-1289 deployed 11-24 17:21-22:56 JST:** Rust pack faults answered (sqlx macros, crate exports from source), a forward repair may
+  rewrite the start error's file, reviews, the lead and the suite author hold the files they judge (re-read loop, `reports/audits/2026-11-24-*`).
 - Scored 2026-11-25: **notes-api-go 13 (9/9, 8/8; delivered, 63 min; a stuck lookup closed by the next fix, HK.4)**, **wordstats-cli 17 (6/8, 6/6; delivered - a false acceptance: "The 3" printed where the brief compares in lower case, LF.1317)**, **fullstack-bookmarks 15 (8/8, 7/7; delivered, 3 h 24 min - unit tests sharing one store, LF.1316)**, **tasks-api 24 (10/10, 7/7; delivered, 94 min; HK.6 advisories asked)**, **notes-api-java 12 (9/9, 8/8; not deliverable - 4 own unit tests failing, locked 15/16)**, **notes-api-csharp 16 (9/9, 8/8; delivered, 40 min - the first with stack facts; the empty-body probe asked 3)**, **notes-api-rust 4 (9/9, 7/8; delivered, 58 min - the second local Rust pass; a body limit the spec added, LF.1298)**.
 - Scored 2026-11-24: **notes-api-hono 11 (9/9, 8/8; delivered, about 51 min active; the empty body kept - LF.1283 for the probe that asked nothing)**, **notes-api-rust 3 (9/9, 8/8; delivered, 74 min - the first local Rust pass, after LF.1277; three fixes reverted, LF.1282)**, **notes-api-rust 2 (0/9, 0/8; failed: never built - rustc 1.85 vs newer crates, then sqlx macros and three one-line faults, LF.1277-1279)**, **notes-api-js 1 (9/9, 7/8; delivered, 50 min, mixed; an empty body refused - the fifth family with that loss, LF.1273 building)**, **web-todo 6 (10/10, 6/6; delivered, 57 min, mixed; a unit test set aside, the sprint accepted at an escalation)**, **textkit-lib 9 (8/8, 7/7; delivered in 18 min)**, **notes-api-go 13 (9/9, 7/8; not deliverable: a false check finding kept a right suite in repair until the budget ran out - LF.1256/1267)**,
   **notes-api-java 11 (9/9, 8/8; delivered with cuts: AC-18; the :8888 server was down 6 h 47 min)**, **wordstats-cli 7 (6/8, 6/6; delivered, 36 min; "The 3" where words are compared in lower case - LF.1255)**,
@@ -90,9 +71,11 @@ Earlier runs (11-22 and before): `reports/product-reviews/`, `reports/status-boa
    sized by work: at most 6 criteria, an empty or oversized sprint sent back once, then split) deployed 05:32; LF.1316 (unit tests that share
    one store shown the leaked records; actual values kept in the defect listing) deployed 07:56; LF.1317 (a group compared in a normal form
    is reported in it) deployed 09:05. Owner: a GitHub token.
-0b. **Medium 3 live: run-bc3cbd00 (`tests/brief_medium.md`, thorough, :1234, started 01:53 JST 11-25)** with every fix from its first stage; `READS_SIZED_TO_THE_ROOM` on for it from 05:14 JST (M18); rewound to its scrum master at
-   05:33 JST after its plan put all 13 criteria in sprint 1 (LF.1315). Medium 2
-   (run-c53e7bd2) failed at sprint 2 on its time budget: `reports/product-reviews/2026-11-25-medium-brief-rerun.md`. Hold deploys into it.
+0b. **Owner 11-25:** thorough delivery resolves every blocking/major/critical/high design finding before development (LF.1318, a person
+   decides past 6 revisions, even on benchmark runs); review findings organised into waves A-E (`docs/improvement-plan.md` 3.0), A and B
+   built 11-25. **Medium 3 (run-bc3cbd00) failed 10:27 JST** in sprint 3's suite authoring (no answer, no fallback; LF.1365 builds one),
+   9 of 13 criteria, quality 31: `reports/product-reviews/2026-11-25-medium-3.md`. **Next: Medium 4** (`tests/brief_medium.md`, thorough,
+   :1234) once the bundle is live; check its decision log for the design gate and `earlier_findings` answers, and PA.2/PA.12's reads.
 1. Score the live runs when they finish (full run id), update this file, write the end-of-run review to `reports/product-reviews/`,
    start the next family on each port through the gated start (`ready` must print ALL READY).
 2. Internet lookups: WL.3-WL.7 built (`WEB_LOOKUP_WHEN_STUCK`, `WEB_TOOLS_AFTER_TWO_FAILED_FIXES` off, measured per run)

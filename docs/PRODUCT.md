@@ -306,7 +306,7 @@ A role whose document the workflow renders has no write tool: the model returns 
 | Technical Lead | `agents/technical_lead.py` | planning | `MilestonePlanOutput` (work orders) | nothing |
 | Specialists (six roles) | `agents/specialists.py` | build model; judgement after failures or on a retried sprint | `SpecialistOutput` | their work order's files |
 | Test engineer (testing specialist) | `agents/specialists.py` | judgement | defects | test files only in a test round; nothing else |
-| Fixers (the defect's owning specialist) | `agents/specialists.py` + fix request | build model with reasoning on; judgement after 2 failed fixes or a revert | `SpecialistOutput` | files the defect and its mode allow |
+| Fixers (the defect's owning specialist) | `agents/specialists.py` (`fixing=True`: `agents/lean_fixer.py`'s prompt and few tools) + fix request | build model with reasoning on; judgement after 2 failed fixes or a revert | `SpecialistOutput` | files the defect and its mode allow |
 | Code Reviewer | `agents/code_reviewer.py` | judgement | findings | nothing |
 | Security Reviewer | `agents/security_reviewer.py` | judgement | `SecurityReviewOutput` | nothing |
 | Advice reviewers | `agents/advice_review.py`, `agents/specialist_domain_review.py`, `agents/page_facts.py` | judgement | adopted advice not built; with `SPECIALIST_DOMAIN_REVIEW`, defects in their own domain | nothing |
@@ -623,17 +623,44 @@ Defects that share a cause are bundled so one fixer sees all of them (`_bundle_c
   product's own files (library frames left out); the cap (12 lines, 1,500 characters) keeps the latest, so a chain's
   root cause survives. The lines answering a 5xx are found by number or named constant (`HTTP_500_...`,
   `INTERNAL_SERVER_ERROR`).
+- **Where the failure is handled, found first** (FX.2, LF.1416, always on, `graph/localised_fix.py`): the requests its
+  failing tests made (`POST /api/x` in a log, `.post('/api/x'` in a test's code) are matched to the lines of the
+  product's code that declare a route - a quoted path beside a routing word, any language (`declares_a_route`) - by the
+  end of the path, the request's own method first; the product's own frames in a stack trace are added; where neither
+  places it and the defect names no file, one localisation call without reasoning is asked (`localisation.asked`, the
+  rewrite path's, whatever `LOCALISE_FIRST` says), once a fixer. The files found and what they import (the code graph)
+  are named in the evidence under "Where the failure is handled"; the memory holds them whole first, and a sliced
+  fixer memory no longer holds the locked suite's files its tests' output alone named (`held_whole`); past the target,
+  the memory keeps room for them, at most `MOST_SHARE_HELD` = 0.6 of the target. One `fixer_localised` record a fixer
+  (how: route, trace, asked or none).
+- **A lean fixer** (FX.3, LF.1417-LF.1418, always on, `agents/lean_fixer.py`): a fixer is its own agent
+  (`create_specialist_agent(fixing=True)`), not its owner's builder: a short prompt (how to find the cause, read by
+  range, change by exact passage, run the test again, answer once; the owner's product rules, no logic removed, no
+  route only for tests, the locked suite and `docs/` left alone; about 6,400 characters against the builder's 15,300
+  before the stack's guidance) and its few tools - `read_file`, `grep`, `edit_artifact`, `write_artifact`,
+  `delete_artifact` (a stack's guidance names it for a lock file), `run_terminal_command`, `read_command_output` (the
+  harness's own pointers name it), `module_exports` where the run offers it - beside its answer, and the web tools
+  when a twice-failed fixer is given them (16,000 characters of descriptions against 23,600). The page viewer is
+  not offered, so the request's "See the page" section is left out. What its failing tests printed shows each way they
+  failed once, whole, and every other test that failed the same way as one line with where it stopped
+  (`failures_once`).
 - **Sized to a target** (one input budget per request, `agents/request_budget.py`; the fixer's shape in
   `graph/fixer_request_shape.py`): the opening request - request and project memory - leaves room
   for `WORKING_CALLS` = 10 calls of one command's output each before the first summary (`ContextBudget.trigger_tokens`;
-  at least 24,000 characters). Under it the request is as built. Past it: the defect's evidence first (defect,
+  at least 24,000 characters). A fixer's target also takes off its agent's system prompt and tool descriptions and is
+  at most what they leave of `FIXER_OPENING_SHARE` = 0.5 of the trigger (`request_budget.fixer_target`, FX.3, LF.1419;
+  the memory middleware sizes the memory with the call's exact framing). Under it the request is as built. Past it: the defect's evidence first (defect,
   reproduction, expected, actual, files, its failing tests' output, bundled failures), then an open defect the previous
   round raised for a step this defect's tests stop at, named as the shared cause; then what is kept whole (how the fix is
   settled, earlier attempts as measured, fixes to keep, the cause journal, the stub note); then, under one heading, the
   standing context cut to what the defect touches - the API only for the routes its failing tests call (whole when none
   can be read), facts and unserved-code lines only about its files and their imports - and the project memory holds whole
   only the files its evidence names and what they import (`project_memory.render_for_a_stage`). Still past the target,
-  whole standing sections go, largest first, each named with where to read it.
+  whole standing sections go, those that do not bear on the defect first (that name none of its files, the routes its
+  tests call or its criteria, `lean_fixer.bearing_on`, LF.1418), largest first, each named with where to read it.
+  Measured by rebuilding a medium run's AC-1 fixer request: 129,967 characters (31,776 tokens) before; 81,100 after
+  (about 19,800 tokens, 0.46 of the 43,020-token trigger), the route file and the database module held whole in
+  place of the locked suite's test and helper.
 - **The rewrite path's request under the same budget** (`rewritten_fixes.fix_request`, LF.1274): one file's rewrite past
   the target opens with its instruction, the defect, what failed, the bundled failures, the compiler's word and the file
   to correct (a long file as the parts its failure points at); keeps earlier attempts, the cause journal, the fixes to

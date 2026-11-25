@@ -708,6 +708,23 @@ def a_chat_model(model: Any) -> Any:
     return model
 
 
+def _framing_as_built(system_prompt: str, tools: list[Any], middleware: list[Any], response_format: Any) -> int:
+    """The characters of an agent's system prompt and tool descriptions as it is built - its own tools, the tools its
+    middleware registers (the workspace readers) and its answer tool. What middleware adds to the prompt at each call
+    (the stack's guidance, the environment) is counted there (`opening_room.framing_of`). 0 when it cannot be read."""
+    try:
+        from types import SimpleNamespace
+
+        from app.agents.opening_room import framing_of
+
+        offered = [*tools, *(t for m in middleware for t in (getattr(m, "tools", None) or []))]
+        if isinstance(response_format, type):
+            offered.append(response_format)  # the answer tool is described by its schema
+        return framing_of(SimpleNamespace(system_prompt=system_prompt, tools=offered))
+    except Exception:  # noqa: BLE001 - not known
+        return 0
+
+
 def create_role_agent(
     *,
     name: str,
@@ -722,6 +739,8 @@ def create_role_agent(
     can_write: bool = True,
     kept_tools: tuple[str, ...] = (),
     suite_folder: str | None = None,
+    only_tools: frozenset[str] | None = None,
+    writing_rules: str | None = None,
 ) -> Any:
     """Create a narrow, safe Deep Agent for one workflow role.
 
@@ -751,6 +770,9 @@ def create_role_agent(
             writes in ("" when not known yet): the layout and scratch rules
             say it in place of "tests live beside the code" and "the project
             directory". None for every other agent.
+        only_tools: the names of the only tools offered, the built-in readers among them, beside the answer (a
+            fixer's, `app.agents.lean_fixer`); None for every tool the role is given.
+        writing_rules: the rules a writing role is given in place of the general ones (a fixer's); None for those.
 
     Returns:
         A compiled LangGraph graph (the same shape `create_deep_agent` always
@@ -787,6 +809,10 @@ def create_role_agent(
         *stage_tools.without_the_seldom_called(extra_tools or [], keep=kept_tools),
     ]
     readers = stage_tools.workspace_readers(resolved_repo_root, can_write, system_prompt)
+    if only_tools is not None:
+        # A fixer's own few tools (FX.3): fewer descriptions on every call, and fewer for a small model to choose among.
+        tools = [tool for tool in tools if str(getattr(tool, "name", "")) in only_tools]
+        readers = [reader for reader in readers if reader in only_tools]
 
     # The directory and write-tool rules are only true for an agent that has
     # workflow now renders - was handed "CRITICAL DIRECTORY RULES: Write all
@@ -795,7 +821,8 @@ def create_role_agent(
     # `write_artifact` tool or any file-writing/editing tools available"
     # instead of returning its structured response. Contradictory instructions
     # cost a stage; withholding the irrelevant half costs nothing.
-    full_system_prompt = without_line_edits(f"{system_prompt}\n\n" + (_WRITING_RULES if can_write else _read_only_rules(readers)))
+    full_system_prompt = without_line_edits(f"{system_prompt}\n\n" + (
+        (_WRITING_RULES if writing_rules is None else writing_rules) if can_write else _read_only_rules(readers)))
     from app.agents.project_layout import for_this_workspace
 
     full_system_prompt = for_this_workspace(full_system_prompt, resolved_repo_root)
@@ -919,6 +946,8 @@ def create_role_agent(
     # And the model it runs on, for the answer asked for in parts when whole
     # replies run out (`app.agents.answered_in_parts`).
     agent.workflow_model = selected_model
+    # And what every call carries before its messages, as built here: the request's size target takes it off (FX.3).
+    agent.workflow_framing = _framing_as_built(full_system_prompt, tools, middleware, response_format)
     return agent
 
 

@@ -518,7 +518,7 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
            sprint_files: tuple[str, ...] = (), on_code: bool = False,
            documents_at_most: int = 0, review_files: tuple[str, ...] = (),
            numbered_as: str = "", outlined: bool = False,
-           interface_only: tuple[str, ...] = ()) -> tuple[str, dict[str, str]]:
+           interface_only: tuple[str, ...] = (), localised: tuple[str, ...] = ()) -> tuple[str, dict[str, str]]:
     """The memory as text within `budget_characters`, and the files it holds by path.
 
     `for_a_fixer`: the product's code first, the acceptance criteria, and the specification as its outline and the
@@ -554,6 +554,9 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
 
     `interface_only`: the product's source a later sprint's suite writer is not given (`written_from_the_interface`):
     neither held, outlined nor mapped, and counted in one line of its own.
+
+    `localised`: where a sliced fixer's failure is handled (`app.graph.localised_fix`, FX.2): those files and what they
+    import are held whole first, and the locked suite's files its tests' output alone named are not held.
     """
     files = current(repo_root)
     if not files or budget_characters <= 0:
@@ -563,6 +566,10 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
     ask = memory_slices.the_ask(focus)
     product = [path for path in files if not path.startswith(("docs/", "."))]
     the_slice = memory_slices.the_slice(repo_root, ask, files) if sliced else None
+    if sliced and localised:
+        from app.graph import localised_fix
+
+        the_slice = localised_fix.held_whole(repo_root, the_slice, files, localised)
     replan = _the_sprint_s_slice(repo_root, sprint_files, files) if sprint_files else None
     if replan is not None:
         the_slice = replan
@@ -602,6 +609,10 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
 
     shorter_documents = document_limit(files)
     ranked = _ranked(files, focus, unserved)
+    if localised:
+        # Where the failure is handled first, before the other files its evidence names (FX.2).
+        first_of_all = [path for path in localised if path in files]
+        ranked = first_of_all + [path for path in ranked if path not in set(first_of_all)]
     not_given = set(interface_only)
     under_review = [path for path in dict.fromkeys(review_files) if path in files and not path.startswith("docs/")
                     and path not in not_given]
@@ -926,10 +937,15 @@ def render_for_a_stage(repo_root: str | Path, model: Any, opening: str, stage: s
         from app.graph import fixer_request_shape
 
         if fixer_request_shape.reshaped(opening):
-            target = fixer_request_shape.opening_target(model)
+            from app.agents.request_budget import fixer_target
+            from app.graph import localised_fix
+
+            # Within what the call's system prompt and tool descriptions leave of half its summary trigger (FX.3).
+            target = fixer_target(model, framing)
             least = int(target * fixer_request_shape.MEMORY_LEAST_SHARE)
-            return render(repo_root, min(budget_for(model), max(least, target - len(opening))),
-                          fixer_request_shape.the_evidence(opening), for_a_fixer=True, sliced=True)
+            evidence = fixer_request_shape.the_evidence(opening)
+            return render(repo_root, min(budget_for(model), max(least, target - len(opening))), evidence,
+                          for_a_fixer=True, sliced=True, localised=localised_fix.files_in(evidence))
     from app.agents import review_files
 
     named = review_files.held_named_in(opening) if not fixer and review_files.holds_what_it_reads(stage) else ()
@@ -939,9 +955,12 @@ def render_for_a_stage(repo_root: str | Path, model: Any, opening: str, stage: s
             _noted_as_built(stage, model, opening, memory)
         return memory, held
     arguments = _arguments_for(repo_root, stage)
-    memory, held = render(repo_root, budget_for(model), opening, **arguments)
     if fixer:
-        return memory, held  # sized with its request (`nodes.fixes._sized_to_its_target`)
+        from app.graph import localised_fix
+
+        # Where its failure is handled first (FX.2); sized with its request (`nodes.fixes._sized_to_its_target`).
+        return render(repo_root, budget_for(model), opening, **arguments, localised=localised_fix.files_in(opening))
+    memory, held = render(repo_root, budget_for(model), opening, **arguments)
     if str(stage or "").startswith(_BUILDER_STAGES) and memory and not _holds_every_code_file(
             repo_root, stage, held, current(repo_root)):
         # A builder past its room: the code files it does not hold are outlined with their lines (LF.1287).

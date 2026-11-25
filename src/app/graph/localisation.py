@@ -83,6 +83,16 @@ def localised(defect: Any, failure: str, root: str | Path, model: Any, found: li
     """The files to rewrite: `found` when off or few enough, else the ones the localisation confirms. Never raises."""
     if not enabled() or model is None or 1 <= len(found) <= MOST_FILES_UNASKED:
         return found
+    return asked(defect, failure, root, model, may_write, found) or found
+
+
+def asked(defect: Any, failure: str, root: str | Path, model: Any, may_write: Callable[[str], bool],
+          found: list[str] = ()) -> list[str]:
+    """The files the one localisation call names and the workspace confirms - each exists, may be written and holds
+    a symbol it names; [] when it names none or cannot be asked. Whatever `LOCALISE_FIRST` says: a fixer whose
+    failure no route and no stack frame places asks it (FX.2, `app.graph.localised_fix`). Never raises."""
+    if model is None:
+        return []
     try:
         from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -109,16 +119,15 @@ def localised(defect: Any, failure: str, root: str | Path, model: Any, found: li
 
         answer = _read(reply_text(reply), Localisation)
         if answer is None:
-            return found
+            return []
         kept = _confirmed(base, answer, may_write)
-        if not kept:
-            return found
-        logger.info("Localised %s to %s: %s", str(getattr(defect, "description", ""))[:80], ", ".join(kept),
-                    " ".join(answer.hypothesis.split())[:200])
+        if kept:
+            logger.info("Localised %s to %s: %s", str(getattr(defect, "description", ""))[:80], ", ".join(kept),
+                        " ".join(answer.hypothesis.split())[:200])
         return kept
-    except Exception:  # noqa: BLE001 - the files as found
+    except Exception:  # noqa: BLE001 - nothing confirmed
         logger.debug("Could not localise the defect", exc_info=True)
-        return found
+        return []
 
 
 #: A diagnosis may reason at length; its answer is one short object.
@@ -169,4 +178,5 @@ def diagnosis(defect: Any, failure: str, root: str | Path, model: Any, tried: st
         return ""
 
 
-__all__ = ["Localisation", "MOST_FILES", "MOST_FILES_UNASKED", "ON_BY_DEFAULT", "diagnosis", "enabled", "localised"]
+__all__ = ["Localisation", "MOST_FILES", "MOST_FILES_UNASKED", "ON_BY_DEFAULT", "asked", "diagnosis", "enabled",
+           "localised"]

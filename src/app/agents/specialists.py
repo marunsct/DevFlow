@@ -1496,6 +1496,7 @@ def create_specialist_agent(
     writing_the_suite: bool = False,
     setting_up_the_stack: bool = False,
     web_tools_for_this_fix: list[Any] | None = None,
+    fixing: bool = False,
 ) -> Any:
     """Create one specialist role worker.
 
@@ -1510,8 +1511,24 @@ def create_specialist_agent(
     `web_tools_for_this_fix`: the web search and page reader a fixer whose defect failed twice is offered
     (`app.graph.web_tools_after_two_failed_fixes`); they take the place of the stage's own and are kept when tool lists
     are lean.
+
+    `fixing`: the fixer of a defect `role` owns, with a fixer's own short prompt and its few tools in place of the
+    builder's (`app.agents.lean_fixer`, FX.3).
     """
     resolved_repo_root = str(repo_root) if repo_root is not None else str(default_repo_root())
+    if fixing:
+        from app.agents import lean_fixer
+
+        offered = [build_terminal_command_tool(resolved_repo_root, role_name=f"{role}_specialist"),
+                   build_journal_read_tool(resolved_repo_root), *exports_tools(resolved_repo_root),
+                   *(web_tools_for_this_fix or [])]
+        return create_role_agent(
+            name=f"specialist_{role}", stage=_STAGE, system_prompt=lean_fixer.system_prompt(role),
+            response_format=AGENT_ANSWER, model=model, checkpointer=checkpointer, repo_root=repo_root,
+            allow_subdirectories=allow_subdirectories, extra_tools=offered,
+            kept_tools=tuple(str(getattr(t, "name", "")) for t in web_tools_for_this_fix or ()),
+            only_tools=lean_fixer.tools_for(web_tools_for_this_fix or ()), writing_rules="",
+        )
 
     # One execution path only. The previous `get_execution_tools` helpers ran
     # `subprocess.run(shell=True)` directly on the host with no containment, and

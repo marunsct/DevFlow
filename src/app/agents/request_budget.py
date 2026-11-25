@@ -76,8 +76,21 @@ class _ForEveryStage:
 for_every_stage_switch = _ForEveryStage()
 
 
-def opening_target(model: Any = None) -> int:
-    """The opening request's size target, in characters, for `model`'s window (the deployment's when None)."""
+#: A fixer's whole opening - its system prompt, tool descriptions, request and memory - fills at most this share of
+#: its summary trigger (FX.3, LF.1419). Measured on a medium run: fixers opened at 61-79% of the trigger before their
+#: first read, were summarised twice in 16-19 calls and read the same files again after each summary; a model of this
+#: size solves bugs in short trajectories (passed runs averaged under 9,000 tokens, failed ones about 17,600).
+FIXER_OPENING_SHARE = 0.5
+
+
+def opening_target(model: Any = None, framing: int = 0, share: float | None = None) -> int:
+    """The opening request's size target, in characters, for `model`'s window (the deployment's when None).
+
+    `framing`: the characters of the stage's system prompt and tool descriptions, which every call carries before
+    its messages, taken off the target (FX.3: it sized the message alone, and 45,000 characters of framing beside a
+    77,000-character target left a fixer at 61-79% of its trigger). `share`: at most that share of the summary
+    trigger for the whole opening, framing included (`FIXER_OPENING_SHARE` for a fixer).
+    """
     from app.agents.context_budget import CHARS_PER_TOKEN, ContextBudget
 
     try:
@@ -86,8 +99,17 @@ def opening_target(model: Any = None) -> int:
         budget = ContextBudget.resolve(environment_of(model))
     except Exception:  # noqa: BLE001 - the deployment's own window
         budget = ContextBudget.resolve()
-    room = budget.trigger_tokens * CHARS_PER_TOKEN - WORKING_CALLS * budget.tool_output_bytes
+    trigger = budget.trigger_tokens * CHARS_PER_TOKEN
+    room = trigger - WORKING_CALLS * budget.tool_output_bytes - max(0, int(framing))
+    if share is not None:
+        room = min(room, trigger * share - max(0, int(framing)))
     return max(LEAST_OPENING_CHARACTERS, int(room))
+
+
+def fixer_target(model: Any = None, framing: int = 0) -> int:
+    """A fixer's opening target: request and memory within what its framing leaves of `FIXER_OPENING_SHARE` of its
+    summary trigger, and of the room its working calls need (FX.3, LF.1419)."""
+    return opening_target(model, framing=framing, share=FIXER_OPENING_SHARE)
 
 
 @dataclass
@@ -135,14 +157,17 @@ def heading_of(section: str) -> str:
 
 
 def fit(parts: list[Part], *, target: int, memory: int = 0, cause: str = "",
-        memory_text: Callable[[int], str] | None = None, heading: str = STANDING_HEADING) -> Fitted:
+        memory_text: Callable[[int], str] | None = None, heading: str = STANDING_HEADING,
+        touches: Callable[[str], bool] | None = None) -> Fitted:
     """`parts` past their target: instructions where they stand, the evidence and `cause` first, what is kept whole
     next, the standing context cut and, while the request and its memory are still past `target`, whole standing
     sections left out, largest first.
 
     `memory`: the characters a project memory given beside the request will hold at least. `memory_text`: a memory
     held inside the request instead, rendered within the room the rest leaves it (at least `memory`), last of the
-    standing context.
+    standing context. `touches`: whether a standing section bears on the work (a fixer's: it names the defect's files,
+    the routes its tests call or its criteria); those that do not go first, largest first, before any that do
+    (FX.3, LF.1418).
     """
     built = sum(len(p.text) for p in parts)
     first = next((i for i, p in enumerate(parts) if p.kind != INSTRUCTION), len(parts))
@@ -162,8 +187,14 @@ def fit(parts: list[Part], *, target: int, memory: int = 0, cause: str = "",
     def total() -> int:
         return len(head) + len(kept) + len(heading) + 4 + sum(len(s) for s, _ in standing) + tail
 
+    def bears(section: str) -> bool:
+        try:
+            return touches is None or bool(touches(section))
+        except Exception:  # noqa: BLE001 - a section that cannot be judged bears on the work
+            return True
+
     while standing and total() > room:
-        largest = max(range(len(standing)), key=lambda i: len(standing[i][0]))
+        largest = max(range(len(standing)), key=lambda i: (not bears(standing[i][0]), len(standing[i][0])))
         section, where = standing.pop(largest)
         name = heading_of(section) or "part of the setup"
         left_out.append(f"{name} (in {where})" if where else name)
@@ -198,7 +229,8 @@ def noted(stage: str, *, built: int, target: int, sent: int | None = None, fitte
 
 
 __all__ = [
-    "EVIDENCE", "Fitted", "INSTRUCTION", "KEPT", "LEAST_OPENING_CHARACTERS", "MEMORY_LEAST_SHARE", "Part",
+    "EVIDENCE", "FIXER_OPENING_SHARE", "Fitted", "INSTRUCTION", "KEPT", "LEAST_OPENING_CHARACTERS", "MEMORY_LEAST_SHARE",
+    "Part", "fixer_target",
     "RECORD_KIND", "SAID_FOR_EVERY_STAGE", "STANDING", "STANDING_HEADING", "WORKING_CALLS", "fit",
     "for_every_stage_switch", "heading_of", "noted", "opening_target", "sections",
 ]

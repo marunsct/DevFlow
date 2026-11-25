@@ -24,14 +24,18 @@ logger = logging.getLogger("app.graph.workflow")
 
 
 def _the_fix_request(
-    state: Any, config: RunnableConfig, cycle: Any, defect_index: int, model: Any = None,
+    state: Any, config: RunnableConfig, cycle: Any, defect_index: int, model: Any = None, framing: int = 0,
 ) -> tuple[dict[str, Any], list[tuple[int, Any]]]:
     """What one defect's fixer is asked, and the related failures bundled with it.
 
     Its actual behaviour, its failing tests' output and the server's log are the latest measurement's
     (`fresh_evidence`). A request that, with the project memory it is given, is past its size target opens with the
     defect's evidence and the round's shared cause, and carries its standing context cut to what the defect touches
-    (`fixer_request_shape`, LF.1270); one under it is as built. `model`: the fixer's, whose window sets the target.
+    (`fixer_request_shape`, LF.1270); one under it is as built. `model`: the fixer's, whose window sets the target;
+    `framing`: its agent's system prompt and tool descriptions, which the target leaves room for (FX.3).
+
+    Where the failure is handled is found first and named with its evidence (`localised_fix`, FX.2); its failing
+    tests' output is printed once for each way they failed (`lean_fixer.failures_once`, FX.3).
     """
     from app.graph.workflow import (
         APP_RUN_ID_KEY, _bundle_co_defects, _the_database_section, _the_last_attempt_section,
@@ -82,14 +86,23 @@ def _the_fix_request(
         ),
         what_settles_it=mutation_guided.what_settles_it(defect, mutation_gaps_bundled.not_bundled(cycle.defects, co_defects)),
     )
-    request = build_defect_fix_request(*brief_args, **brief_kwargs)
+    # Each way its tests failed printed once, the other tests failing the same way one line each (FX.3).
+    from app.agents import lean_fixer
+
+    shown_args = (*brief_args[:8], lean_fixer.failures_once(brief_args[8]))
+    request = build_defect_fix_request(*shown_args, **brief_kwargs)
+    # A fixer is not offered the page viewer (FX.3): the section naming it is not its own.
+    from app.agents.specialists import LOOK_BEFORE_CHANGING_THE_PAGE
+
+    request["messages"][-1]["content"] = request["messages"][-1]["content"].replace(LOOK_BEFORE_CHANGING_THE_PAGE, "", 1)
     brief = request["messages"][-1]["content"]
     # Each part as it is added, for a request past its size target to be put in another order and cut.
     parts: list[Part] = []
     try:
         from app.agents.specialists import defect_fix_brief_parts
 
-        pieces = defect_fix_brief_parts(*brief_args, **brief_kwargs)
+        pieces = defect_fix_brief_parts(*shown_args, **brief_kwargs)
+        pieces["page"] = pieces["page"].replace(LOOK_BEFORE_CHANGING_THE_PAGE, "", 1)
         if "".join(pieces.values()) == brief:
             parts += [Part(KEPT, pieces["workspace"]), Part(STANDING, pieces["setup"]), Part(EVIDENCE, pieces["evidence"]),
                       Part(STANDING, pieces["page"]), Part(KEPT, pieces["settled"])]
@@ -132,6 +145,20 @@ def _the_fix_request(
     from app.graph import first_failure
 
     add(EVIDENCE, first_failure.for_a_fixer(state, defect))
+    # Where the failure is handled: the route its tests reached, the product's frames in a trace, or one cheap
+    # localisation call when neither places it and the defect names no file (FX.2).
+    from app.graph import localised_fix
+
+    named = [*(defect.affected_files or []), *(f for _, d in co_defects for f in (d.affected_files or []))]
+    stage = f"defect_fix_{state.get('test_round', 0)}_{defect_index}"
+    # Once a fixer: not on each resume of its stage after a gated tool call, alone or in a batch.
+    first_visit = not state.get("pending_inner_thread_id") and not (state.get("queued_decisions") or {}).get(stage)
+    located = localised_fix.where(
+        root, "".join(p.text for p in parts if p.kind == EVIDENCE) + str((brief_args[8] or {}).get("output") or ""),
+        named=named, defect=defect, model=model, ask=first_visit)
+    add(EVIDENCE, localised_fix.section(located))
+    if first_visit:
+        localised_fix.noted(stage, located, defect)
     # A defect on its last permitted attempt gets a different shape of
     # work, not a third variation of the instruction that failed twice.
     # See `_the_last_attempt_section`.
@@ -161,7 +188,8 @@ def _the_fix_request(
     add(KEPT, _the_stub_still_served_section(root))
     # The files its evidence names and what they import: the facts about other files are cut past the target.
     touched = shape.the_files_it_touches(root, "".join(p.text for p in parts if p.kind == EVIDENCE), [
-        *(defect.affected_files or []), *(f for _, d in co_defects for f in (d.affected_files or []))])
+        *(defect.affected_files or []), *(f for _, d in co_defects for f in (d.affected_files or [])),
+        *located.files])
     unserved = _the_unserved_code_section(root)
     add(STANDING, unserved, cut=shape.the_facts_cut(unserved, touched))
     add(STANDING, _the_database_section(root))
@@ -180,7 +208,12 @@ def _the_fix_request(
 
     added_by(lambda r: project_graph.with_the_neighbourhood(r, root, [
         *(defect.affected_files or []), *(f for _, d in co_defects for f in (d.affected_files or []))]))
-    request = _sized_to_its_target(request, parts, state, cycle, defect_index, model)
+    # Past its target, the standing sections that do not bear on this defect go first (FX.3).
+    touches = lean_fixer.bearing_on(touched, shape.routes_called([
+        str((brief_args[8] or {}).get("output") or ""), str(getattr(shown, "actual_behavior", "") or ""),
+        str(getattr(shown, "reproduction_steps", "") or "")]), tags_in(str(defect.description or "")))
+    request = _sized_to_its_target(request, parts, state, cycle, defect_index, model, framing=framing,
+                                   touches=touches)
     # The page as a person sees it, for a build model that reads images:
     # only the reviewer was shown it. Last, as it makes the request's text
     # a list of parts.
@@ -197,6 +230,13 @@ def _the_fix_request(
             round_=state.get("test_round", 0), index=defect_index, sprint=state.get("current_sprint_index", 0),
         )
     return request, co_defects
+
+
+def _framing_of(agent: Any) -> int:
+    """The characters of a fixer agent's system prompt and tool descriptions as built (`create_role_agent`); 0 when
+    it does not say."""
+    framing = getattr(agent, "workflow_framing", 0)
+    return framing if isinstance(framing, int) else 0
 
 
 def _what_the_failing_unit_tests_show(root: Any, defect: Any) -> str:
@@ -225,15 +265,16 @@ def _the_specification_cut(state: Any, specification: str, observed: Any, shown:
 
 
 def _sized_to_its_target(request: dict[str, Any], parts: list[Any], state: Any, cycle: Any, defect_index: int,
-                         model: Any) -> dict[str, Any]:
+                         model: Any, framing: int = 0, touches: Any = None) -> dict[str, Any]:
     """`request` as built when it and its project memory are within the size target; reshaped past it (LF.1270).
-    Never raises: the request as built."""
+    The target leaves room for the fixer's `framing` within half its summary trigger, and past it the standing
+    sections `touches` says do not bear on the defect go first (FX.3). Never raises: the request as built."""
     try:
         from app.agents import project_memory, request_budget
         from app.graph import fixer_request_shape as shape
 
         content = request["messages"][-1]["content"]
-        target = shape.opening_target(model)
+        target = request_budget.fixer_target(model, framing)
         stage = f"defect_fix_{state.get('test_round', 0)}_{defect_index}"
         # Once a fixer, as its `shown` record: not on each resume of its stage after a gated tool call.
         first_visit = not state.get("pending_inner_thread_id")
@@ -244,20 +285,27 @@ def _sized_to_its_target(request: dict[str, Any], parts: list[Any], state: Any, 
                 if first_visit:
                     request_budget.noted(stage, built=len(content), target=target)
                 return request
-            memory = len(project_memory.render_for_a_stage(state["repository"].root_path, model, content, stage)[0])
+            memory = len(project_memory.render_for_a_stage(state["repository"].root_path, model, content, stage,
+                                                           framing=framing)[0])
             if memory + 2 + len(content) <= target:
                 if first_visit:
                     request_budget.noted(stage, built=len(content) + memory + 2, target=target)
                 return request
         least = int(target * shape.MEMORY_LEAST_SHARE) if project_memory.enabled() else 0
+        if least:
+            # Room to hold where the failure is handled whole (FX.2): what does not bear on the defect makes way.
+            from app.graph import localised_fix
+
+            least = max(least, localised_fix.room_for(state["repository"].root_path, content, target))
         # The round that raised this round's defects: a fix stage runs under the next round's number.
         raised_in = int(state.get("test_round", 0) or 0) - 1
         cause = shape.the_round_s_cause(cycle, defect_index, raised_in if raised_in >= 0 else None)
-        fitted = request_budget.fit(parts, target=target, memory=least, cause=cause)
+        fitted = request_budget.fit(parts, target=target, memory=least, cause=cause, touches=touches)
         shaped = fitted.text
         if first_visit:
             # With the memory it is given then, as `project_memory.render_for_a_stage` cuts it for a reshaped request.
-            given = (len(project_memory.render_for_a_stage(state["repository"].root_path, model, shaped, stage)[0]) + 2
+            given = (len(project_memory.render_for_a_stage(state["repository"].root_path, model, shaped, stage,
+                                                           framing=framing)[0]) + 2
                      if project_memory.enabled() else 0)
             request_budget.noted(stage, built=len(content) + (memory + 2 if memory else 0), sent=len(shaped) + given,
                                  target=target, fitted=fitted)
@@ -632,8 +680,10 @@ def _fix_one(state: Any, config: RunnableConfig, defect_index: int, ctx: GraphCo
             web_tools_for_this_fix=web_tools_after_two_failed_fixes.tools_for(
                 cycle, defect_index, stage_name, root=state["repository"].root_path,
                 resumed=bool(state.get("pending_inner_thread_id"))),
+            fixing=True,
         )
-        request, co_defects = _the_fix_request(state, config, cycle, defect_index, model=fix_model)
+        request, co_defects = _the_fix_request(state, config, cycle, defect_index, model=fix_model,
+                                               framing=_framing_of(agent))
         # Each write followed by the defect's own tests (plan AY step 3, off until measured).
         from app.acceptance import mutant_check_in_stage
         from app.graph import verify_after_write
@@ -1017,10 +1067,12 @@ def defect_fix_worker_node(state: dict, config: RunnableConfig, ctx: GraphContex
         web_tools_for_this_fix=web_tools_after_two_failed_fixes.tools_for(
             cycle, index, stage_name, root=state["repository"].root_path,
             resumed=bool((state.get("queued_decisions") or {}).get(stage_name))),
+        fixing=True,
     )
     if not (state.get("queued_decisions") or {}).get(stage_name):
         _diagnosed_if_it_keeps_failing(state, defect, ctx)
-    request, _ = _the_fix_request(state, config, cycle, index, model=fix_model)
+    request, _ = _the_fix_request(state, config, cycle, index, model=fix_model,
+                                  framing=_framing_of(agent))
     temp_state: Any = dict(state)
     # A worker may only answer its own approval gate: see `specialist_worker_node`.
     temp_state.update(_only_this_worker_s_pause(state, stage_name))

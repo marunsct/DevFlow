@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { RunDashboard } from './RunDashboard';
 import { FeedbackProvider } from '../components/Feedback';
 
@@ -273,6 +273,54 @@ describe('the workspace tab', () => {
     expect((await screen.findByRole('tab', { name: 'Workspace' })).getAttribute('aria-selected')).toBe('true');
     await waitFor(() => expect(known.getWorkspaceFileDiff).toHaveBeenCalledWith('run-1', 'src/app.py'));
     expect((await screen.findByRole('switch', { name: /Changed since the scaffold/ }) as HTMLInputElement).checked).toBe(true);
+  });
+});
+
+describe('room for the work (plan UX.1)', () => {
+  const Where = () => <output aria-label="where">{useLocation().search}</output>;
+  const at = (address: string) => render(
+    <MemoryRouter initialEntries={[address]}>
+      <FeedbackProvider>
+        <Routes><Route path="/runs/:runId" element={<><RunDashboard /><Where /></>} /></Routes>
+      </FeedbackProvider>
+    </MemoryRouter>,
+  );
+  const STAGES = { name: "The run's stages" };
+  const LEDGER = { name: 'What the run has proven' };
+  beforeEach(() => localStorage.removeItem('runRails'));
+
+  it('fills the window with the work alone, and Escape gives the page back', async () => {
+    at('/runs/run-1?view=workspace&fill=1');
+    await screen.findByRole('tab', { name: 'Workspace' });
+    const filled = [screen.queryByRole('complementary', STAGES), screen.queryByRole('complementary', LEDGER)];
+
+    await userEvent.keyboard('{Escape}');
+
+    expect(filled).toEqual([null, null]);
+    expect(screen.getByLabelText('where').textContent).toBe('?view=workspace');
+    expect(screen.getByRole('complementary', STAGES)).toBeTruthy();
+    expect(screen.getByRole('complementary', LEDGER)).toBeTruthy();
+  });
+
+  it('keeps a rail hidden on the next visit once it is hidden', async () => {
+    const first = at('/runs/run-1');
+    await userEvent.click(await screen.findByRole('button', { name: 'Hide the stages' }));
+    first.unmount();
+
+    at('/runs/run-1');
+    await screen.findByRole('tab', { name: 'Workspace' });
+
+    expect(screen.queryByRole('complementary', STAGES)).toBeNull();
+    expect(screen.getByRole('complementary', LEDGER)).toBeTruthy();
+  });
+
+  it('offers the workspace and the preview each in a window of its own', async () => {
+    at('/runs/run-1?view=workspace&file=src%2Fapp.py');
+
+    const link = await screen.findByRole('link', { name: 'Open in its own window' });
+
+    expect(link.getAttribute('href')).toBe('/runs/run-1/workspace?file=src%2Fapp.py');
+    expect(link.getAttribute('target')).toBe('_blank');
   });
 });
 

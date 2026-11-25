@@ -91,7 +91,8 @@ def test_one_file_s_text_is_read(tmp_path, monkeypatch):
     shown = client.get("/api/runs/run-1/files/content", params={"path": "src/app.py"})
 
     assert shown.status_code == 200
-    assert shown.json() == {"path": "src/app.py", "content": "print('sprint one')\nprint('being written')\n"}
+    assert shown.json()["path"] == "src/app.py"
+    assert shown.json()["content"] == "print('sprint one')\nprint('being written')\n"
 
 
 @pytest.mark.parametrize("attack", ["/etc/passwd", "../../../../etc/passwd", "src/../../../../etc/hosts"])
@@ -113,6 +114,7 @@ def test_a_file_the_tree_hides_is_not_read_by_name(tmp_path, monkeypatch, hidden
     for route in ("content", "diff"):
         assert client.get(f"/api/runs/run-1/files/{route}", params={"path": "src/app.py"}).status_code == 200
         assert client.get(f"/api/runs/run-1/files/{route}", params={"path": hidden}).status_code == 404
+    assert client.get("/api/runs/run-1/files/content", params={"path": hidden, "at": "accepted"}).status_code == 404
 
 
 def test_a_link_out_of_a_shown_folder_is_judged_by_where_it_leads(tmp_path, monkeypatch):
@@ -182,3 +184,83 @@ def test_a_run_in_another_tenant_shows_no_files(tmp_path, monkeypatch):
     assert client.get("/api/runs/run-1/files").status_code == 404
     assert client.get("/api/runs/run-1/files/content", params={"path": "src/app.py"}).status_code == 404
     assert client.get("/api/runs/run-1/files/diff", params={"path": "src/app.py"}).status_code == 404
+
+
+# -- the VS Code-style workspace (plan UX.7, UX.8): search across files, the hash and the base text --
+
+
+def test_a_search_finds_text_in_a_listed_file_with_its_line(tmp_path, monkeypatch):
+    client = _client(_workspace(tmp_path), monkeypatch)
+
+    found = client.get("/api/runs/run-1/files/search", params={"q": "BEING written"})
+
+    assert found.status_code == 200
+    assert found.json()["hits"] == [{"path": "src/app.py", "line": 2, "column": 8, "text": "print('being written')"}]
+    assert found.json()["truncated"] is False
+
+
+def test_a_search_never_reaches_a_file_the_tree_hides(tmp_path, monkeypatch):
+    """`.git`, the harness's records, installed folders, credential files and a link into `.git` are never searched."""
+    root = _workspace(tmp_path)
+    (root / ".harness" / "contract.json").write_text('{"zebra": 1}')
+    (root / ".git" / "description").write_text("zebra\n")
+    (root / "node_modules" / "left-pad" / "index.js").write_text("// zebra\n")
+    (root / ".env").write_text("ZEBRA=1\n")
+    (root / "src" / "config").symlink_to(root / ".git" / "description")
+    (root / "src" / "zoo.py").write_text("ANIMAL = 'zebra'\n")
+    client = _client(root, monkeypatch)
+
+    found = client.get("/api/runs/run-1/files/search", params={"q": "zebra"}).json()
+
+    assert [hit["path"] for hit in found["hits"]] == ["src/zoo.py"]
+
+
+def test_a_search_stops_at_its_cap_and_says_so(tmp_path):
+    from app.server.workspace_files import search
+
+    root = _workspace(tmp_path)
+
+    capped = search(root, "print", most_hits=1)  # two lines hold it
+    out_of_time = search(root, "print", seconds=0)
+
+    assert len(capped["hits"]) == 1 and capped["truncated"] is True
+    assert out_of_time["hits"] == [] and out_of_time["timed_out"] is True
+
+
+def test_a_search_of_a_run_in_another_tenant_is_not_found(tmp_path, monkeypatch):
+    root = _workspace(tmp_path)
+    assert _client(root, monkeypatch).get("/api/runs/run-1/files/search", params={"q": "print"}).status_code == 200
+    client = _client(root, monkeypatch, tenant="someone-else")
+
+    assert client.get("/api/runs/run-1/files/search", params={"q": "print"}).status_code == 404
+
+
+def test_a_file_s_hash_changes_when_the_file_does(tmp_path, monkeypatch):
+    root = _workspace(tmp_path)
+    client = _client(root, monkeypatch)
+    read = lambda: client.get("/api/runs/run-1/files/content", params={"path": "src/new.py"}).json()["hash"]
+    first, again = read(), read()
+
+    (root / "src" / "new.py").write_text("NEW = 2\n")
+
+    assert first == again
+    assert read() != first
+
+
+def test_the_base_text_is_the_last_accepted_sprint_s(tmp_path, monkeypatch):
+    client = _client(_workspace(tmp_path, sprint_accepted=True), monkeypatch)
+
+    base = client.get("/api/runs/run-1/files/content", params={"path": "src/app.py", "at": "accepted"}).json()
+
+    assert base["content"] == "print('sprint one')\n"
+    assert base["since"] == "sprint 1" and base["exists"] is True
+
+
+def test_before_any_sprint_the_base_text_is_the_scaffold_s_and_a_new_file_has_none(tmp_path, monkeypatch):
+    client = _client(_workspace(tmp_path), monkeypatch)
+
+    base = client.get("/api/runs/run-1/files/content", params={"path": "src/app.py", "at": "accepted"}).json()
+    new = client.get("/api/runs/run-1/files/content", params={"path": "src/new.py", "at": "accepted"}).json()
+
+    assert base["content"] == "print('scaffold')\n" and base["since"] == "the scaffold"
+    assert new["content"] == "" and new["exists"] is False

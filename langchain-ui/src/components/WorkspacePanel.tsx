@@ -14,9 +14,9 @@ import { DiffText } from './DiffText';
 /** How long after the last write the tree reloads: a stage writes in bursts. */
 export const RELOAD_AFTER_MS = 1500;
 
-interface Folder { name: string; path: string; folders: Folder[]; files: { name: string; path: string; size: number }[] }
+export interface Folder { name: string; path: string; folders: Folder[]; files: { name: string; path: string; size: number }[] }
 
-function asTree(files: WorkspaceTree['files']): Folder {
+export function asTree(files: WorkspaceTree['files']): Folder {
   const root: Folder = { name: '', path: '', folders: [], files: [] };
   for (const file of files) {
     const parts = file.path.split('/');
@@ -42,7 +42,8 @@ const TOKEN_CLASS: Record<TokenKind, string> = {
   plain: '',
 };
 
-const Code: React.FC<{ text: string; path: string }> = ({ text, path }) => {
+/** The present highlighter: also the workspace editor's view on a phone or when the editor does not load (plan UX.6). */
+export const Code: React.FC<{ text: string; path: string }> = ({ text, path }) => {
   const lines = useMemo(() => highlight(text, path), [text, path]);
   return (
     <pre className="p-3 text-[12px] leading-5 font-mono" aria-label={`The text of ${path}`}>
@@ -58,9 +59,13 @@ const Code: React.FC<{ text: string; path: string }> = ({ text, path }) => {
   );
 };
 
-const FolderRows: React.FC<{
+interface EntryProps {
   folder: Folder; depth: number; changed: Set<string>; selected: string | null; onSelect: (path: string) => void;
-}> = ({ folder, depth, changed, selected, onSelect }) => {
+  /** A double click: keep the file open in its own tab (the workspace window, plan UX.5). */
+  onPin?: (path: string) => void;
+}
+
+const FolderRows: React.FC<EntryProps> = ({ folder, depth, changed, selected, onSelect, onPin }) => {
   const [open, setOpen] = useState(depth < 1 || (!!selected && selected.startsWith(`${folder.path}/`)));
   const indent = { paddingLeft: `${0.75 + depth * 0.9}rem` };
   return (
@@ -75,23 +80,22 @@ const FolderRows: React.FC<{
         {open ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}
         <span className="truncate">{folder.name}</span>
       </button>
-      {open && <Entries folder={folder} depth={depth + 1} changed={changed} selected={selected} onSelect={onSelect} />}
+      {open && <Entries folder={folder} depth={depth + 1} changed={changed} selected={selected} onSelect={onSelect} onPin={onPin} />}
     </li>
   );
 };
 
-const Entries: React.FC<{
-  folder: Folder; depth: number; changed: Set<string>; selected: string | null; onSelect: (path: string) => void;
-}> = ({ folder, depth, changed, selected, onSelect }) => (
+const Entries: React.FC<EntryProps> = ({ folder, depth, changed, selected, onSelect, onPin }) => (
   <ul>
     {folder.folders.map((f) => (
-      <FolderRows key={f.path} folder={f} depth={depth} changed={changed} selected={selected} onSelect={onSelect} />
+      <FolderRows key={f.path} folder={f} depth={depth} changed={changed} selected={selected} onSelect={onSelect} onPin={onPin} />
     ))}
     {folder.files.map((file) => (
       <li key={file.path}>
         <button
           type="button"
           onClick={() => onSelect(file.path)}
+          onDoubleClick={onPin ? () => onPin(file.path) : undefined}
           aria-current={selected === file.path ? 'true' : undefined}
           title={`${file.path} · ${file.size.toLocaleString()} bytes`}
           style={{ paddingLeft: `${0.75 + depth * 0.9 + 1}rem` }}
@@ -105,30 +109,29 @@ const Entries: React.FC<{
   </ul>
 );
 
-type Shown = { path: string; text: string } | { path: string; problem: string };
-type Diff = { path: string; text: string; truncated: boolean; since: string | null };
+/** The workspace's files as a folding tree, the changed ones marked. */
+export const FileTree: React.FC<{
+  tree: WorkspaceTree | null; selected: string | null; onSelect: (path: string) => void; onPin?: (path: string) => void;
+}> = ({ tree, selected, onSelect, onPin }) => {
+  const root = useMemo(() => asTree(tree?.files ?? []), [tree]);
+  const changed = useMemo(() => new Set(tree?.changed ?? []), [tree]);
+  return (
+    <>
+      {tree && !tree.files.length && <p className="p-3 text-sm text-text-muted">No files have been written yet.</p>}
+      <Entries folder={root} depth={0} changed={changed} selected={selected} onSelect={onSelect} onPin={onPin} />
+      {tree?.truncated && <p className="p-3 text-xs text-text-muted">Only the first {tree.files.length.toLocaleString()} files are listed.</p>}
+    </>
+  );
+};
 
-export const WorkspacePanel: React.FC<{
-  runId: string;
-  refreshKey: string;
-  logs: LogEntry[];
-  selected: string | null;
-  onSelect: (path: string | null) => void;
-  /** Open the selected file on its change since the last accepted sprint: a written file opened from the feed (plan WS.2). */
-  diff?: boolean;
-}> = ({ runId, refreshKey, logs, selected, onSelect, diff: diffAsked = false }) => {
+/**
+ * The workspace's tree, read again when `refreshKey` moves and once a burst of writes in `logs` ends. `loads` counts
+ * the reads, so an open file can follow them.
+ */
+export function useWorkspaceTree(runId: string, refreshKey: string, logs: LogEntry[]) {
   const [tree, setTree] = useState<WorkspaceTree | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [loads, setLoads] = useState(0);
-  const [shown, setShown] = useState<Shown | null>(null);
-  const [showDiff, setShowDiff] = useState(diffAsked);
-  // Asked again for another file while the tab is open: show that file's change too.
-  const [asked, setAsked] = useState({ diffAsked, selected });
-  if (asked.diffAsked !== diffAsked || asked.selected !== selected) {
-    setAsked({ diffAsked, selected });
-    if (diffAsked) setShowDiff(true);
-  }
-  const [diff, setDiff] = useState<Diff | null>(null);
   const written = useMemo(() => lastWriteSequence(logs), [logs]);
 
   const load = useCallback(() => {
@@ -143,6 +146,31 @@ export const WorkspacePanel: React.FC<{
     const timer = setTimeout(load, RELOAD_AFTER_MS);
     return () => clearTimeout(timer);
   }, [load, written]);
+  return { tree, problem, loads };
+}
+
+type Shown = { path: string; text: string } | { path: string; problem: string };
+type Diff = { path: string; text: string; truncated: boolean; since: string | null };
+
+export const WorkspacePanel: React.FC<{
+  runId: string;
+  refreshKey: string;
+  logs: LogEntry[];
+  selected: string | null;
+  onSelect: (path: string | null) => void;
+  /** Open the selected file on its change since the last accepted sprint: a written file opened from the feed (plan WS.2). */
+  diff?: boolean;
+}> = ({ runId, refreshKey, logs, selected, onSelect, diff: diffAsked = false }) => {
+  const { tree, problem, loads } = useWorkspaceTree(runId, refreshKey, logs);
+  const [shown, setShown] = useState<Shown | null>(null);
+  const [showDiff, setShowDiff] = useState(diffAsked);
+  // Asked again for another file while the tab is open: show that file's change too.
+  const [asked, setAsked] = useState({ diffAsked, selected });
+  if (asked.diffAsked !== diffAsked || asked.selected !== selected) {
+    setAsked({ diffAsked, selected });
+    if (diffAsked) setShowDiff(true);
+  }
+  const [diff, setDiff] = useState<Diff | null>(null);
 
   // The open file follows the tree: read again whenever the tree is.
   useEffect(() => {
@@ -161,8 +189,6 @@ export const WorkspacePanel: React.FC<{
     return () => { current = false; };
   }, [runId, selected, loads, showDiff]);
 
-  const root = useMemo(() => asTree(tree?.files ?? []), [tree]);
-  const changed = useMemo(() => new Set(tree?.changed ?? []), [tree]);
   const file = shown && shown.path === selected ? shown : null;
   const fileDiff = diff && diff.path === selected ? diff : null;
   // A workspace with no history has no change to show, whatever was asked.
@@ -172,9 +198,7 @@ export const WorkspacePanel: React.FC<{
   return (
     <div className="h-full grid grid-cols-1 md:grid-cols-[minmax(0,16rem)_minmax(0,1fr)] min-h-0">
       <nav aria-label="The workspace's files" className="overflow-y-auto border-b md:border-b-0 md:border-r border-border/40 min-h-0 max-h-48 md:max-h-none py-1">
-        {tree && !tree.files.length && <p className="p-3 text-sm text-text-muted">No files have been written yet.</p>}
-        <Entries folder={root} depth={0} changed={changed} selected={selected} onSelect={(path) => onSelect(path)} />
-        {tree?.truncated && <p className="p-3 text-xs text-text-muted">Only the first {tree.files.length.toLocaleString()} files are listed.</p>}
+        <FileTree tree={tree} selected={selected} onSelect={(path) => onSelect(path)} />
       </nav>
       <div className="flex min-h-0 flex-col">
         {selected && (

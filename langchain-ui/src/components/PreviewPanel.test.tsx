@@ -107,6 +107,60 @@ describe('the preview tab', () => {
   });
 });
 
+describe('the preview toolbar (plan UX.3)', () => {
+  const shown = async () => {
+    api.getPreview.mockResolvedValue(ready());
+    render(<PreviewPanel runId="r" />);
+    return screen.findByTitle('The product');
+  };
+
+  it('sizes the frame as a phone, and turns it on its side', async () => {
+    await shown();
+
+    await userEvent.click(screen.getByRole('button', { name: /^Phone/ }));
+    const upright = screen.getByTitle('The product');
+    const tall = [upright.style.width, upright.style.height];
+    await userEvent.click(screen.getByRole('button', { name: 'Turn the device' }));
+    const turned = screen.getByTitle('The product');
+
+    expect(tall).toEqual(['390px', '844px']);
+    expect([turned.style.width, turned.style.height]).toEqual(['844px', '390px']);
+  });
+
+  it('opens a path typed for it under the signed link', async () => {
+    await shown();
+
+    await userEvent.type(screen.getByLabelText('Path in the product'), '/items/7?view=full{Enter}');
+
+    expect(screen.getByTitle('The product').getAttribute('src')).toBe(`${LINK}items/7?view=full`);
+  });
+
+  it.each([
+    ['another host', 'https://elsewhere.example/'],
+    ['a protocol-relative address', '//elsewhere.example/x'],
+    ['a climb out of the link', '../../../files'],
+    ['an encoded climb', '%2e%2e/%2e%2e/x'],
+    ['a script address', 'javascript:alert(1)'],
+  ])('never leaves the signed link: %s', async (_, typed) => {
+    await shown();
+
+    await userEvent.type(screen.getByLabelText('Path in the product'), `${typed}{Enter}`);
+
+    expect(screen.getByTitle('The product').getAttribute('src')).toBe(LINK);
+    expect(screen.getByRole('alert').textContent).toContain('inside this preview');
+  });
+
+  it('loads the page again on reload', async () => {
+    const before = await shown();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Reload the page' }));
+
+    const after = screen.getByTitle('The product');
+    expect(after).not.toBe(before);
+    expect(after.getAttribute('src')).toBe(LINK);
+  });
+});
+
 describe('pointing at a part of the page (plan WS.5)', () => {
   const PICK_LINK = '/api/runs/r/preview/app/1700000000.abc.sig.pick/';
   const element = {

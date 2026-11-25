@@ -2,11 +2,13 @@
 
 The tree is the listing every stage sees (`list_repository_files`), so `.git`, the harness's own records, installed
 and build folders and credential files are left out by the one set of rules; a file is shown only when that listing
-would name it. Nothing here writes.
+would name it, and searched (plan UX.7) only then too. Nothing here writes.
 """
 
 from __future__ import annotations
 
+import hashlib
+import time
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +16,11 @@ from typing import Any
 MOST_FILES = 5_000
 #: Bytes of one file shown at most: a code view, not a download.
 MOST_FILE_BYTES = 512 * 1024
+#: Search hits returned at most, in all and from one file; characters of a hit's line; seconds one search may take.
+MOST_HITS = 500
+MOST_HITS_PER_FILE = 50
+MOST_LINE_CHARS = 240
+SEARCH_SECONDS = 3.0
 
 
 class NotShown(ValueError):
@@ -65,3 +72,65 @@ def read(root: str | Path, relative: str) -> str:
         return data.decode("utf-8")
     except UnicodeDecodeError as error:
         raise NotReadable(f"{relative} is not UTF-8 text; download it instead.") from error
+
+
+def digest(text: str) -> str:
+    """The hash of a file's text as it is shown: what an editor names when it asks whether the file has moved on."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def search(
+    root: str | Path,
+    query: str,
+    *,
+    case_sensitive: bool = False,
+    most_hits: int = MOST_HITS,
+    seconds: float = SEARCH_SECONDS,
+) -> dict[str, Any]:
+    """The lines of the listed files that hold `query`, as plain text (never a pattern), capped in hits and in time.
+
+    Only what the tree lists is searched, each path judged where it leads: a link to a hidden or outside file is
+    skipped, as are files too large or not text for `read`. `truncated` says hits were left out; `timed_out` that
+    files were left unsearched.
+    """
+    from app.tools.repository import list_repository_files
+
+    root = Path(root).expanduser().resolve()
+    deadline = time.monotonic() + seconds
+    needle = query if case_sensitive else query.lower()
+    listed = list_repository_files(root)[:MOST_FILES]
+    shown = set(listed)
+    hits: list[dict[str, Any]] = []
+    truncated = timed_out = False
+    searched = 0
+    for relative in listed:
+        if len(hits) >= most_hits and truncated:
+            break
+        if time.monotonic() >= deadline:
+            timed_out = True
+            break
+        try:
+            target = (root / relative).resolve()
+            if target.relative_to(root).as_posix() not in shown or target.stat().st_size > MOST_FILE_BYTES:
+                continue
+            data = target.read_bytes()
+        except (OSError, ValueError):
+            continue  # removed since the listing, or leading out of the workspace
+        if b"\x00" in data[:8192]:
+            continue
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            continue
+        searched += 1
+        in_file = 0
+        for number, line in enumerate(text.splitlines(), start=1):
+            column = (line if case_sensitive else line.lower()).find(needle)
+            if column < 0:
+                continue
+            if len(hits) >= most_hits or in_file >= MOST_HITS_PER_FILE:
+                truncated = True
+                break
+            hits.append({"path": relative, "line": number, "column": column + 1, "text": line[:MOST_LINE_CHARS]})
+            in_file += 1
+    return {"query": query, "hits": hits, "truncated": truncated, "timed_out": timed_out, "files_searched": searched}

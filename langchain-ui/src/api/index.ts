@@ -671,8 +671,25 @@ export const getWorkspaceFiles = async (runId: string): Promise<WorkspaceTree> =
   return response.data;
 };
 
-export const getWorkspaceFile = async (runId: string, path: string): Promise<{ path: string; content: string }> => {
+export const getWorkspaceFile = async (runId: string, path: string): Promise<{ path: string; content: string; hash?: string }> => {
   const response = await api.get(`/runs/${runId}/files/content`, { params: { path } });
+  return response.data;
+};
+
+/** A file's text at the last accepted sprint (the scaffold before the first), the left side of the diff (plan UX.8). */
+export interface AcceptedText { path: string; content: string; hash: string; since: string | null; exists: boolean }
+
+export const getWorkspaceFileAccepted = async (runId: string, path: string): Promise<AcceptedText> => {
+  const response = await api.get<AcceptedText>(`/runs/${runId}/files/content`, { params: { path, at: 'accepted' } });
+  return response.data;
+};
+
+/** One line of a listed file that holds the searched text (plan UX.7). */
+export interface SearchHit { path: string; line: number; column: number; text: string }
+export interface SearchAnswer { query: string; hits: SearchHit[]; truncated: boolean; timed_out: boolean; files_searched: number }
+
+export const searchWorkspaceFiles = async (runId: string, q: string, caseSensitive = false): Promise<SearchAnswer> => {
+  const response = await api.get<SearchAnswer>(`/runs/${runId}/files/search`, { params: { q, case: caseSensitive } });
   return response.data;
 };
 

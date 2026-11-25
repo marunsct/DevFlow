@@ -6437,7 +6437,7 @@
   },
   "/api/runs/{run_id}/files/content": {
    "get": {
-    "description": "One workspace file's text, for reading: a file the tree hides, a large one or a binary one is refused.",
+    "description": "One workspace file's text and its hash, for reading: a file the tree hides, a large one or a binary one is\nrefused. With `at=accepted`, its text at the last accepted sprint (the scaffold before the first) instead: the\nbase of the side-by-side diff (plan UX.8); `exists` is false for a file new since then.",
     "operationId": "get_workspace_file_api_runs__run_id__files_content_get",
     "parameters": [
      {
@@ -6456,6 +6456,23 @@
       "schema": {
        "title": "Path",
        "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "at",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "const": "accepted",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "At"
       }
      }
     ],
@@ -6548,6 +6565,77 @@
      }
     ],
     "summary": "Get Workspace File Diff",
+    "tags": [
+     "runs"
+    ]
+   }
+  },
+  "/api/runs/{run_id}/files/search": {
+   "get": {
+    "description": "The lines of the workspace's listed files that hold `q` as plain text (plan UX.7): never a file the tree\nhides, at most `MOST_HITS` hits and `SEARCH_SECONDS` seconds, said in `truncated` and `timed_out`.",
+    "operationId": "search_workspace_files_api_runs__run_id__files_search_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "title": "Run Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "q",
+      "required": true,
+      "schema": {
+       "maxLength": 200,
+       "minLength": 1,
+       "title": "Q",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "case",
+      "required": false,
+      "schema": {
+       "default": false,
+       "title": "Case",
+       "type": "boolean"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Search Workspace Files Api Runs  Run Id  Files Search Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Search Workspace Files",
     "tags": [
      "runs"
     ]

@@ -120,21 +120,34 @@ def accepted_base(root: str | Path) -> tuple[str | None, str | None]:
     return (first, "the first commit") if _A_HASH.match(first) else (None, None)
 
 
+def accepted_text(root: str | Path, path: str) -> dict[str, Any]:
+    """One file's text at `accepted_base` (plan UX.8): the left side of the side-by-side diff.
+
+    `exists` is false for a file new since then (its text is empty), and `since` is None with no commit yet. The path
+    is a listed workspace file, taken literally.
+    """
+    root = Path(root)
+    base, label = accepted_base(root)
+    if base is None:
+        return {"since": None, "exists": False, "text": ""}
+    there = _git(root, "--literal-pathspecs", "ls-tree", "--name-only", base, "--", path).strip() == path
+    text = _git(root, "cat-file", "blob", f"{base}:{path}") if there else ""
+    if "\x00" in text:
+        raise ChangesUnavailable("This file is not text.")
+    return {"since": label, "exists": there, "text": text}
+
+
 def file_diff(root: str | Path, path: str, now: str) -> dict[str, Any]:
     """One file's diff from its copy at `accepted_base` to `now`, its text on disk; a file new since then is all added.
 
     Compared here, not by `git diff`, so a file never committed (most of what a stage writes) has a diff too. The
     path is a listed workspace file, taken literally; the base is the harness's own tag or a hash.
     """
-    root = Path(root)
-    base, label = accepted_base(root)
-    found = {"path": path, "since": label, "diff": "", "truncated": False}
-    if base is None:
+    base = accepted_text(root, path)
+    found = {"path": path, "since": base["since"], "diff": "", "truncated": False}
+    if base["since"] is None:
         return found
-    there = _git(root, "--literal-pathspecs", "ls-tree", "--name-only", base, "--", path).strip() == path
-    before = _git(root, "cat-file", "blob", f"{base}:{path}") if there else ""
-    if "\x00" in before:
-        raise ChangesUnavailable("This file is not text.")
+    there, before = base["exists"], base["text"]
     text = "\n".join(difflib.unified_diff(
         before.splitlines(), now.splitlines(),
         fromfile=f"a/{path}" if there else "/dev/null", tofile=f"b/{path}", lineterm="",

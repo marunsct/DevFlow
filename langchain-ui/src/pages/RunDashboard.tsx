@@ -66,6 +66,17 @@ import { Activity, CheckCircle2, Clock, XCircle, AlertCircle, ArrowLeft, Ban, Pl
 import { describeStage, describeStatus, RESUMABLE } from '../lib/activity';
 import { useNow } from '../lib/usePageVisible';
 import { useFeedback } from '../components/Feedback';
+import { ExternalLink, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { remember, remembered, RAILS_KEY, type Rails } from '../lib/layoutMemory';
+
+/** The classic view's grid by which rails are shown: the work area takes the room a hidden rail leaves. */
+const GRID: Record<'both' | 'right' | 'left' | 'none', string> = {
+  both: 'lg:grid-cols-[17rem_minmax(0,1fr)] xl:grid-cols-[19rem_minmax(0,1fr)_23rem] 2xl:grid-cols-[22rem_minmax(0,1fr)_28rem] min-[2200px]:grid-cols-[26rem_minmax(0,1fr)_34rem]',
+  right: 'xl:grid-cols-[minmax(0,1fr)_23rem] 2xl:grid-cols-[minmax(0,1fr)_28rem] min-[2200px]:grid-cols-[minmax(0,1fr)_34rem]',
+  left: 'lg:grid-cols-[17rem_minmax(0,1fr)] xl:grid-cols-[19rem_minmax(0,1fr)] 2xl:grid-cols-[22rem_minmax(0,1fr)] min-[2200px]:grid-cols-[26rem_minmax(0,1fr)]',
+  none: '',
+};
+const panelTool = 'inline-flex h-7 w-7 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-overlay hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]';
 
 /** What a best attempt passed, for its download's label: criteria when measured, else acceptance tests, else nothing. */
 function bestAttemptPassed(found: ProductSummary): string {
@@ -204,6 +215,37 @@ export const RunDashboard: React.FC = () => {
     next.set('view', 'changes');
     if (sha) next.set('change', sha); else next.delete('change');
     setSearchParams(next, { replace: true });
+  };
+  // Plan UX.1: the work area can fill the window (kept in the address, so a link or a reload keeps it; Escape gives
+  // the page back), and either rail can be hidden, remembered per browser.
+  const filled = searchParams.get('fill') === '1';
+  const setFilled = (on: boolean) => {
+    const next = new URLSearchParams(searchParams);
+    if (on) next.set('fill', '1'); else next.delete('fill');
+    setSearchParams(next, { replace: !on });
+  };
+  useEffect(() => {
+    if (!filled) return undefined;
+    const onKey = (event: KeyboardEvent) => {
+      // A dialog or an editor that used the key has had it.
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      const next = new URLSearchParams(searchParams);
+      next.delete('fill');
+      setSearchParams(next, { replace: true });
+    };
+    window.addEventListener('keydown', onKey);
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = overflow;
+    };
+  }, [filled, searchParams, setSearchParams]);
+  const [rails, setRails] = useState<Rails>(() => remembered<Rails>(RAILS_KEY, { left: true, right: true }));
+  const toggleRail = (side: keyof Rails) => {
+    const next = { ...rails, [side]: !rails[side] };
+    setRails(next);
+    remember(RAILS_KEY, next);
   };
   // A failure message can be a paragraph or twenty lines. Collapsed by default
   // so a short screen still has room for the panels underneath; the first lines
@@ -657,13 +699,17 @@ export const RunDashboard: React.FC = () => {
 
   const actionButton =
     'flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium rounded-lg border transition-colors';
+  // A filled work area leaves no room for a rail.
+  const showLeft = rails.left && !filled;
+  const showRight = rails.right && !filled;
 
   return (
     // `min-h`, not `h`: the panels below fill whatever the viewport has left
     // after the summary, but when they cannot fit their own minimum the page
     // grows and scrolls. Pinning the height instead made the workspace overflow
     // its container on a short screen and render underneath the footer.
-    <div className="animate-fade-in flex flex-col gap-4 xl:min-h-[calc(100vh-11rem)]">
+    // Not while filled: the fade keeps a stacking context that would hold the filled work area under the header.
+    <div className={`${filled ? '' : 'animate-fade-in '}flex flex-col gap-4 xl:min-h-[calc(100vh-11rem)]`}>
       {(error || streamDown) && (
         <div role="status" className="flex items-center gap-2 rounded-xl border border-warning/30 bg-warning-bg px-4 py-2 text-sm text-warning">
           <span className="h-2 w-2 rounded-full bg-warning animate-pulse" aria-hidden="true" />
@@ -1009,11 +1055,12 @@ export const RunDashboard: React.FC = () => {
           </details>
         </>
       ) : (
-      <div className="grid gap-4 grid-cols-1 lg:grid-cols-[17rem_minmax(0,1fr)] xl:grid-cols-[19rem_minmax(0,1fr)_23rem] 2xl:grid-cols-[22rem_minmax(0,1fr)_28rem] min-[2200px]:grid-cols-[26rem_minmax(0,1fr)_34rem] xl:flex-1 xl:min-h-[28rem]">
+      <div className={`grid gap-4 grid-cols-1 ${GRID[showLeft && showRight ? 'both' : showLeft ? 'left' : showRight ? 'right' : 'none']} xl:flex-1 xl:min-h-[28rem]`}>
         {/* At desktop width each column fills the row and scrolls inside it:
             no column's length sets the row's height, so the page ends where
             the window does. */}
-        <div className="relative min-h-0 h-[22rem] sm:h-[26rem] lg:h-[32rem] xl:h-auto">
+        {showLeft && (
+        <aside aria-label="The run's stages" className="relative min-h-0 h-[22rem] sm:h-[26rem] lg:h-[32rem] xl:h-auto">
           <div className="flex h-full flex-col gap-3 xl:absolute xl:inset-0">
             <LatestChange runId={runId!} refreshKey={stageKey} onOpen={selectChange} />
             <ModelPressure runId={runId!} live={live} slotContext={health?.slot_context} />
@@ -1021,16 +1068,45 @@ export const RunDashboard: React.FC = () => {
               <ExecutionFlow stages={run.stages || []} currentStage={run.current_stage} isTerminal={isTerminal} />
             </div>
           </div>
-        </div>
+        </aside>
+        )}
 
-        <div className="relative min-h-0 h-[26rem] sm:h-[30rem] lg:h-[32rem] xl:h-auto">
-        <div className="h-full xl:absolute xl:inset-0 glass-card rounded-2xl flex flex-col overflow-hidden px-3 pt-1">
+        <section aria-label="The run's work" className={filled
+          ? 'fixed inset-0 z-[80] bg-canvas p-2 sm:p-3'
+          : 'relative min-h-0 h-[26rem] sm:h-[30rem] lg:h-[32rem] xl:h-auto'}>
+        <div className={`h-full glass-card flex flex-col overflow-hidden px-3 pt-1 ${filled ? 'rounded-xl' : 'xl:absolute xl:inset-0 rounded-2xl'}`}>
           <Tabs
             label="The run's work"
             className="flex h-full min-h-0 flex-col"
             panelClassName="flex-1 min-h-0"
             selected={centreTab}
             onSelect={(id) => setCentreTab(id as CentreTab)}
+            actions={
+              <>
+                {!filled && (
+                  <button type="button" className={`${panelTool} hidden lg:inline-flex`} onClick={() => toggleRail('left')}
+                    aria-label={rails.left ? 'Hide the stages' : 'Show the stages'} title={rails.left ? 'Hide the stages' : 'Show the stages'}>
+                    {rails.left ? <PanelLeftClose size={15} aria-hidden="true" /> : <PanelLeftOpen size={15} aria-hidden="true" />}
+                  </button>
+                )}
+                {(centreTab === 'workspace' || centreTab === 'preview') && (
+                  <a href={centreTab === 'workspace' ? `/runs/${runId}/workspace${selectedFile ? `?file=${encodeURIComponent(selectedFile)}` : ''}` : `/runs/${runId}/preview`}
+                    target="_blank" rel="noopener" className={panelTool} aria-label="Open in its own window" title="Open in its own window">
+                    <ExternalLink size={15} aria-hidden="true" />
+                  </a>
+                )}
+                <button type="button" className={panelTool} onClick={() => setFilled(!filled)}
+                  aria-label={filled ? 'Leave the full window (Esc)' : 'Fill the window'} title={filled ? 'Leave the full window (Esc)' : 'Fill the window'}>
+                  {filled ? <Minimize2 size={15} aria-hidden="true" /> : <Maximize2 size={15} aria-hidden="true" />}
+                </button>
+                {!filled && (
+                  <button type="button" className={`${panelTool} hidden lg:inline-flex`} onClick={() => toggleRail('right')}
+                    aria-label={rails.right ? 'Hide what is proven' : 'Show what is proven'} title={rails.right ? 'Hide what is proven' : 'Show what is proven'}>
+                    {rails.right ? <PanelRightClose size={15} aria-hidden="true" /> : <PanelRightOpen size={15} aria-hidden="true" />}
+                  </button>
+                )}
+              </>
+            }
             items={[
               {
                 id: 'activity',
@@ -1093,11 +1169,12 @@ export const RunDashboard: React.FC = () => {
             ]}
           />
         </div>
-        </div>
+        </section>
 
         {/* The ledger scrolls inside its column: its length must not set the
             row's height, or the work area and the rail stretch with it. */}
-        <div className="relative min-h-0 lg:col-span-2 xl:col-span-1">
+        {showRight && (
+        <aside aria-label="What the run has proven" className={`relative min-h-0 ${showLeft ? 'lg:col-span-2 xl:col-span-1' : ''}`}>
           <div className="space-y-4 xl:absolute xl:inset-0 xl:overflow-y-auto">
             {/* The sprints first, one short row each (owner, 2026-11-05: below
                 every criterion they were out of sight), then the acceptance
@@ -1107,7 +1184,8 @@ export const RunDashboard: React.FC = () => {
             <DeliveryPanel runId={runId!} refreshKey={stageKey} onOpenChange={selectChange} />
             {run?.status === 'completed' && <OwnerRating runId={runId!} />}
           </div>
-        </div>
+        </aside>
+        )}
       </div>
       )}
     </div>

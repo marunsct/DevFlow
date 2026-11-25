@@ -91,13 +91,25 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return isValid ? <>{children}</> : <Navigate to="/login" state={{ from: location }} replace />;
 }
 
-function App() {
+// A run's preview and workspace in windows of their own (plan UX.2), loaded only when one is opened.
+const RunPreviewWindow = React.lazy(() => import('./pages/RunWindows').then((m) => ({ default: m.RunPreviewWindow })));
+const RunWorkspaceWindow = React.lazy(() => import('./pages/RunWindows').then((m) => ({ default: m.RunWorkspaceWindow })));
+
+const OwnWindow: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <ProtectedRoute>
+    <React.Suspense fallback={<div className="grid h-dvh place-items-center bg-canvas text-sm text-text-muted">Opening…</div>}>
+      {children}
+    </React.Suspense>
+  </ProtectedRoute>
+);
+
+/** Every page of the app by its address; outside the page shell, the sign-in page and a run's own windows. */
+export function AppRoutes() {
   return (
-    <FeedbackProvider>
-    <BrowserRouter>
-      <ErrorBoundary>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/runs/:runId/preview" element={<OwnWindow><RunPreviewWindow /></OwnWindow>} />
+          <Route path="/runs/:runId/workspace" element={<OwnWindow><RunWorkspaceWindow /></OwnWindow>} />
           {/* The component kit's page, for the accessibility measure and the theme screenshots; never in a production build. */}
           {import.meta.env.DEV && <Route path="/dev/ui" element={<DevUI />} />}
           <Route
@@ -120,6 +132,15 @@ function App() {
             <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>
+  );
+}
+
+function App() {
+  return (
+    <FeedbackProvider>
+    <BrowserRouter>
+      <ErrorBoundary>
+        <AppRoutes />
       </ErrorBoundary>
     </BrowserRouter>
     </FeedbackProvider>

@@ -19,6 +19,8 @@ interface TabsProps {
   /** Controlled: the selected tab, kept by the caller (which then keeps the address too). */
   selected?: string;
   onSelect?: (id: string) => void;
+  /** Controls at the right end of the tab row that act on the panel as a whole (fill the window, a rail). */
+  actions?: React.ReactNode;
 }
 
 function fromTheUrl(param?: string): string | null {
@@ -31,7 +33,7 @@ function fromTheUrl(param?: string): string | null {
  * a click is not needed to show one (selection follows focus), and the choice is
  * kept in the address when `param` is given.
  */
-export const Tabs: React.FC<TabsProps> = ({ items, param, initial, label, className, panelClassName, selected: chosen, onSelect }) => {
+export const Tabs: React.FC<TabsProps> = ({ items, param, initial, label, className, panelClassName, selected: chosen, onSelect, actions }) => {
   const base = useId();
   const asked = fromTheUrl(param);
   const first = items.find((item) => item.id === asked)?.id ?? items.find((item) => item.id === initial)?.id ?? items[0]?.id;
@@ -66,7 +68,8 @@ export const Tabs: React.FC<TabsProps> = ({ items, param, initial, label, classN
 
   return (
     <div className={className}>
-      <div role="tablist" aria-label={label} className="flex flex-wrap gap-1 border-b border-border">
+      <div className={actions ? 'flex items-end gap-2 border-b border-border' : undefined}>
+      <div role="tablist" aria-label={label} className={actions ? 'flex min-w-0 flex-1 flex-wrap gap-1' : 'flex flex-wrap gap-1 border-b border-border'}>
         {items.map((item, index) => {
           const on = item.id === selected;
           return (
@@ -91,6 +94,8 @@ export const Tabs: React.FC<TabsProps> = ({ items, param, initial, label, classN
             </button>
           );
         })}
+      </div>
+      {actions && <div className="flex shrink-0 items-center gap-0.5 self-start pt-1">{actions}</div>}
       </div>
       {items.map((item) => (
         <div

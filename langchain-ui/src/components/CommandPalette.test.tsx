@@ -70,6 +70,38 @@ describe('the command palette', () => {
   });
 });
 
+describe("the run's own windows from the palette (plan UX.2)", () => {
+  const onAPage = (address: string) =>
+    render(
+      <MemoryRouter initialEntries={[address]}>
+        <FeedbackProvider>
+          <CommandPalette />
+        </FeedbackProvider>
+      </MemoryRouter>,
+    );
+
+  it("opens the run's workspace in a window of its own", async () => {
+    const opened = vi.spyOn(window, 'open').mockImplementation(() => null);
+    onAPage('/runs/run-77aa01bc-bbbb?view=activity');
+    await userEvent.keyboard('{Control>}k{/Control}');
+
+    await userEvent.type(screen.getByRole('combobox'), 'workspace window');
+    await userEvent.keyboard('{Enter}');
+
+    expect(opened).toHaveBeenCalledWith('/runs/run-77aa01bc-bbbb/workspace', '_blank', 'noopener');
+    opened.mockRestore();
+  });
+
+  it('offers no run window away from a run', async () => {
+    onAPage('/runs');
+    await userEvent.keyboard('{Control>}k{/Control}');
+
+    await userEvent.type(screen.getByRole('combobox'), 'own window');
+
+    expect(screen.queryByRole('option', { name: /own window/ })).toBeNull();
+  });
+});
+
 describe('the shortcuts sheet', () => {
   it('opens on ?, but not while typing in a field', async () => {
     render(

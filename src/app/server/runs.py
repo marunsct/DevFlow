@@ -16,7 +16,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
@@ -1143,11 +1143,45 @@ def create_runs_router(
 
     @runs.get("/{run_id}/files/content")
     async def get_workspace_file(
-        run_id: str, path: str, user: UserInDB = Depends(get_current_active_user)
+        run_id: str,
+        path: str,
+        at: Literal["accepted"] | None = None,
+        user: UserInDB = Depends(get_current_active_user),
     ) -> dict[str, Any]:
-        """One workspace file's text, for reading: a file the tree hides, a large one or a binary one is refused."""
-        relative, text = await asyncio.to_thread(_listed_text, _workspace_of(run_id, user), path)
-        return {"path": relative, "content": text}
+        """One workspace file's text and its hash, for reading: a file the tree hides, a large one or a binary one is
+        refused. With `at=accepted`, its text at the last accepted sprint (the scaffold before the first) instead: the
+        base of the side-by-side diff (plan UX.8); `exists` is false for a file new since then."""
+        from app.server.changes import ChangesUnavailable, accepted_text
+        from app.server.workspace_files import MOST_FILE_BYTES, digest
+
+        root = _workspace_of(run_id, user)
+        relative, text = await asyncio.to_thread(_listed_text, root, path)
+        if at is None:
+            return {"path": relative, "content": text, "hash": digest(text)}
+        try:
+            base = await asyncio.to_thread(accepted_text, root, relative)
+        except ChangesUnavailable as error:
+            raise HTTPException(status_code=415, detail=str(error))
+        if len(base["text"].encode("utf-8")) > MOST_FILE_BYTES:
+            raise HTTPException(status_code=415, detail=f"{relative} was larger than {MOST_FILE_BYTES // 1024} KB then.")
+        return {
+            "path": relative, "content": base["text"], "hash": digest(base["text"]),
+            "at": "accepted", "since": base["since"], "exists": base["exists"],
+        }
+
+    @runs.get("/{run_id}/files/search")
+    async def search_workspace_files(
+        run_id: str,
+        q: str = Query(..., min_length=1, max_length=200),
+        case: bool = False,
+        user: UserInDB = Depends(get_current_active_user),
+    ) -> dict[str, Any]:
+        """The lines of the workspace's listed files that hold `q` as plain text (plan UX.7): never a file the tree
+        hides, at most `MOST_HITS` hits and `SEARCH_SECONDS` seconds, said in `truncated` and `timed_out`."""
+        from app.server.workspace_files import search
+
+        root = _workspace_of(run_id, user)
+        return await asyncio.to_thread(search, root, q, case_sensitive=case)
 
     @runs.get("/{run_id}/files/diff")
     async def get_workspace_file_diff(

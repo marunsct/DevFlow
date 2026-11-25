@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { matchPath, useLocation, useNavigate } from 'react-router-dom';
 import { Command as CommandIcon } from 'lucide-react';
 import { listRuns } from '../api';
 import type { RunListResponse, RunSummary } from '../types';
@@ -19,6 +19,7 @@ export const CommandPalette: React.FC<{
   loadRuns?: () => Promise<RunListResponse>;
 }> = ({ loadRuns = listRuns }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { notify } = useFeedback();
   const [open, setOpen] = useState(false);
   const [sheet, setSheet] = useState(false);
@@ -94,6 +95,16 @@ export const CommandPalette: React.FC<{
         }
       },
     }));
+    // On a run's page (or one of its windows): that run's preview and workspace in windows of their own (plan UX.2).
+    const here = matchPath('/runs/:runId/*', location.pathname)?.params.runId;
+    const thisRun = here && here !== 'compare' ? here : null;
+    const windows: Command[] = thisRun ? (['workspace', 'preview'] as const).map((what) => ({
+      id: `window:${what}`,
+      title: `Open the ${what} in its own window`,
+      hint: shortRunId(thisRun),
+      keywords: `${what} window full screen monitor ${what === 'workspace' ? 'code files editor' : 'product try'}`,
+      run: () => { window.open(`/runs/${thisRun}/${what}`, '_blank', 'noopener'); },
+    })) : [];
     const visits: Command[] = runs.slice(0, 20).map((run) => ({
       id: `run:${run.run_id}`,
       title: `Go to ${shortRunId(run.run_id)}`,
@@ -101,8 +112,8 @@ export const CommandPalette: React.FC<{
       keywords: `${run.run_id} ${run.status} ${(run.document_names ?? []).join(' ')}`,
       run: go(`/runs/${run.run_id}`),
     }));
-    return [...approvals, ...fixed, ...visits];
-  }, [runs, navigate, notify]);
+    return [...approvals, ...windows, ...fixed, ...visits];
+  }, [runs, navigate, notify, location.pathname]);
 
   const shown = useMemo(() => matchCommands(commands, query), [commands, query]);
   const current = Math.min(active, Math.max(0, shown.length - 1));

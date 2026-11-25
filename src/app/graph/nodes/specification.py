@@ -88,6 +88,12 @@ def principal_architect_node(state: WorkflowGraphState, config: RunnableConfig, 
     # cheaper than the repair after it, which on one run never ran. A revision is
     # told too: measured, sent back over the harness's files, it had nothing to answer from.
     request["messages"][-1]["content"] += _the_scaffold_s_layout(state)
+    # The design tokens the pack ships, which the interface design names (SK.2 with PQ.6, off until measured).
+    from app.agents.domain_craft import tokens_note
+
+    tokens = tokens_note(state.get("stack_pack"))
+    if tokens:
+        request["messages"][-1]["content"] += "\n\n" + tokens.rstrip() + "\n"
     # The reading done first, by the harness and the build model, and
     # handed over: the architect's reasoning goes on the specification,
     # not on which page to read next. See `app.agents.research_brief`.
@@ -120,6 +126,8 @@ def principal_architect_node(state: WorkflowGraphState, config: RunnableConfig, 
               for title, key in (("Product intake", "product_intake"), ("Stack", "stack_selection"))
               if state.get(key)),
             *([advice[:20_000]] if advice else []),
+            # The pack's design tokens, for the section calls that write the interface design (SK.2 with PQ.6).
+            *([tokens.rstrip()] if tokens else []),
         # These calls write the sections that name the runner, the start and the files, and the interface design.
         ]) + interface_states.rule_for(state) + _the_scaffold_s_layout(state)
 

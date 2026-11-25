@@ -315,6 +315,7 @@ def specialist_consultation_node(state: WorkflowGraphState, config: RunnableConf
         create_specialist_advice_agent,
     )
 
+    from app.agents import domain_craft
     from app.agents.specialist_advice import advice_from, build_advice_request, roles_to_consult
     from app.stacks import framework_guidance
 
@@ -336,10 +337,11 @@ def specialist_consultation_node(state: WorkflowGraphState, config: RunnableConf
         config,
         stage_name=f"consult_{role}",
         agent=agent,
-        # The framework's own security or testing guidance for its release, for those two roles (plan HK.9).
-        initial_request=framework_guidance.for_a_consultant(build_advice_request(
+        # The framework's own security or testing guidance for its release, for those two roles (plan HK.9); the
+        # data and service bars and the pack's design tokens (SK.2 with PQ.6 and PQ.9, off until measured).
+        initial_request=framework_guidance.for_a_consultant(domain_craft.for_an_adviser(build_advice_request(
             role, brief, _as_text(state.get("product_intake")), _as_text(state.get("stack_selection"))
-        ), role, getattr(state.get("stack_selection"), "technology_stack", None),
+        ), role, state.get("stack_pack")), role, getattr(state.get("stack_selection"), "technology_stack", None),
             getattr(state.get("repository"), "root_path", None)),
         output_key="__advice__",
         next_stage="specialist_consultation",

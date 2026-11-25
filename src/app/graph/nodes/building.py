@@ -468,6 +468,14 @@ def technical_lead_node(state: WorkflowGraphState, config: RunnableConfig, ctx: 
         if key != _READINESS_RETRIES
     }
 
+    # A builder's work order goes to the role owning the domain most of its files are in (SK.1): measured, a backend
+    # builder wrote the database models with none of the database specialist's guidance.
+    from app.agents.domain_advice import with_roles_owning_their_domains
+
+    update["milestone_plan"], moved = with_roles_owning_their_domains(update["milestone_plan"])
+    if moved:
+        logger.info("Work orders given to the role owning their files' domain: %s", "; ".join(moved))
+
     # A command the sandbox will refuse was noted on its work order before the readiness check (HR2.P.1).
     # And a command whose file another work order writes - see
     # `app.analysis.work_orders.with_borrowed_files_noted`.
@@ -625,6 +633,8 @@ def _drafted_from_the_specification(state: Any, config: RunnableConfig, ctx: Gra
             most=MOST_DIAGNOSTICS_FOR_A_PASS,
         ),
         kept=kept,
+        # The adopted advice of each file's domain (SK.1).
+        advice=state.get("specialist_advice"),
     )
     outputs = {
         f"specialist_{tasks[index].specialist_role}_{index}": output for index, output in drafted.items()
@@ -759,6 +769,10 @@ def specialist_dispatch_node(state: WorkflowGraphState, config: RunnableConfig, 
         )
         # The facts the work is built and judged under (plan CM.1).
         request = with_the_facts(request, state["repository"].root_path, built=False)
+        # The adopted advice of the domains its files are in, and their guidance (SK.1); a craft checklist (SK.2).
+        from app.agents import domain_advice, domain_craft
+
+        request = domain_craft.with_it(domain_advice.with_it(request, state, task), state, task)
         # And what the work orders before it reported about its files (plan CM.3).
         from app.agents import ledger
 
@@ -853,6 +867,10 @@ def specialist_worker_node(state: dict, config: RunnableConfig, ctx: GraphContex
     )
     # The facts the work is built and judged under (plan CM.1).
     request = with_the_facts(request, state["repository"].root_path, built=False)
+    # The adopted advice of the domains its files are in, and their guidance (SK.1); a craft checklist (SK.2).
+    from app.agents import domain_advice, domain_craft
+
+    request = domain_craft.with_it(domain_advice.with_it(request, state, task), state, task)
     # What the work orders finished before it reported about its files (plan CM.3), as the linear builder gives:
     # found in the launch review, the parallel site left it out, although a deferred work order sharing a file
     # runs after the one it shares it with.

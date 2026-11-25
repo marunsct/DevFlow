@@ -364,14 +364,17 @@ def _an_empty_store_of_its_own(path: str) -> str:
 
 def draft_request(root: Path, path: str, task: Any, specification: Any, stack: Any,
                   diagnostics: list[str] | None = None, code_under_test: Collection[str] = (),
-                  written_before: Collection[str] = ()) -> str:
+                  written_before: Collection[str] = (), advice: dict[str, list[str]] | None = None) -> str:
     """What one file's draft is asked; `diagnostics` are what the compiler reported on its last draft.
 
     `code_under_test` are the product files a unit test tests, already written: shown first, so the test uses
     their real names, signatures, messages and storage set-up instead of guessing them from the specification.
     `written_before` are the files of earlier drafting waves this file depends on (`drafting_waves`), shown first
     of all, so it wires to what they declare instead of declaring it again.
+    `advice` is the specialists' advice (`specialist_advice`): the items the specification adopted for the file's
+    domain, and that domain's guidance, are shown with the work order (`domain_advice`, SK.1).
     """
+    from app.agents import domain_advice, domain_craft
     from app.agents.normal_form import for_a_draft as _a_group_in_its_normal_form
     from app.agents.shared_facts import the_facts_section
     from app.agents.specialists import specification_for_the_work_order
@@ -406,6 +409,9 @@ def draft_request(root: Path, path: str, task: Any, specification: Any, stack: A
         detail.strip(),
         f"--- The work order it belongs to ---\n{getattr(task, 'task_description', '')}"
         + (f"\nDone when:\n{criteria}" if criteria else ""),
+        # The adopted advice of the file's domain and its guidance (SK.1); a craft checklist (SK.2, off until measured).
+        domain_advice.for_a_draft(advice, specification, task, path),
+        domain_craft.for_a_draft(root, task, path),
         f"--- The files it works with ---\n{neighbours}" if neighbours else "",
         f"--- `{path}` as it is now; keep what still holds ---\n{now}" if now.strip() else "",
         ("--- The compiler reports, in the draft above ---\n" + "\n".join(diagnostics)) if diagnostics else "",
@@ -429,7 +435,7 @@ def draft_request(root: Path, path: str, task: Any, specification: Any, stack: A
 
 def _draft_one(model: Any, root: Path, path: str, task: Any, specification: Any, stack: Any,
                diagnostics: list[str] | None = None, code_under_test: Collection[str] = (),
-               written_before: Collection[str] = ()) -> str:
+               written_before: Collection[str] = (), advice: dict[str, list[str]] | None = None) -> str:
     from langchain_core.messages import HumanMessage, SystemMessage
 
     from app.observability.direct_calls import config_for_this_run
@@ -440,7 +446,8 @@ def _draft_one(model: Any, root: Path, path: str, task: Any, specification: Any,
         bounded = model.bind(max_tokens=MOST_DRAFT_TOKENS)
     except Exception:  # noqa: BLE001 - a model that takes no limit is asked as it is
         bounded = model
-    request = draft_request(root, path, task, specification, stack, diagnostics, code_under_test, written_before)
+    request = draft_request(root, path, task, specification, stack, diagnostics, code_under_test, written_before,
+                            advice)
     for attempt in range(2):
         reply = bounded.invoke([
             SystemMessage(content="You write source files for a software product from its specification. "
@@ -675,6 +682,7 @@ def draft_work_orders(
     workers: int = 1,
     diagnose: Callable[[list[str]], list[str]] | None = None,
     kept: Collection[str] = (),
+    advice: dict[str, list[str]] | None = None,
 ) -> dict[int, Any]:
     """Each work order whose files were all drafted, by its index, with the output an agent would return.
 
@@ -721,7 +729,9 @@ def draft_work_orders(
         index, path, task = job
         attempt = "first"
         # The files of earlier waves it depends on, those that were written (`drafting_waves`).
-        earlier = {"written_before": needs[path]} if needs.get(path) else {}
+        earlier: dict[str, Any] = {"written_before": needs[path]} if needs.get(path) else {}
+        if advice:
+            earlier["advice"] = advice  # the adopted advice of the file's domain (SK.1)
         try:
             content = _draft_one(model, root, path, task, specification, stack, None, code_under_test, **earlier)
             if not content.strip():

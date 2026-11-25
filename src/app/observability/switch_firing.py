@@ -53,6 +53,7 @@ SIGNALS: dict[str, str] = {
     "API_CARDS_FOR_NEWER_RELEASES": "Libraries whose installed release line is newer than this model's training data",
     "FRAMEWORK_GUIDANCE_FOR_ADVISERS": "its own guidance, for the release this project uses",
     "PULL_REQUEST_DELIVERY": "Delivered to the seeded repository",
+    "DOMAIN_CRAFT_CHECKLISTS": "Craft checklist for your files",
     # Recorded by the harness once per run and role (`app.agents.prompt_size`); the lead's in its memory's own words.
     "QA_PROMPT_TRIMMED": "Stack guidance kept to its parts about tests for",
     "REVIEWER_SHAPED_PLUGIN_CONTENT": "Stack guidance kept to its review lines for",

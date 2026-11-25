@@ -472,4 +472,19 @@ DEVELOPMENT_SERVERS: dict[str, tuple[str, ...]] = {
     "javascript": ("http-server ", "live-server "),
 }
 
-__all__ = ["DEVELOPMENT_SERVERS", "HOW_TO_LABELS", "HOW_TO_TEXTS", "SEED_INSTRUCTIONS", "SETUP", "TESTING_LABELS", "TESTING_TEXTS"]
+#: Files of a data-layer tool, by name or folder (file-name globs over a workspace-relative path): what the harness
+#: reads as the product's data layer beside the generic words for it (`app.analysis.file_domains`, plan SK.1). A tool
+#: missing here is still read by its folder's or file's ordinary name (`models/`, `db.py`, `migrations/`).
+DATA_LAYER_FILES: tuple[str, ...] = (
+    "*.prisma", "*/prisma/*", "prisma/*", "*/alembic/*", "alembic/*", "alembic.ini", "*/drizzle/*", "drizzle/*",
+    "drizzle.config.*", "knexfile.*", "ormconfig.*", "*/db/migrate/*", "db/migrate/*", "*/db/schema.rb", "db/schema.rb",
+    "*/flyway/*", "*/liquibase/*", "*.dbml",
+)
+#: Template files of server-side page engines, by suffix: a page the product renders (`app.analysis.file_domains`).
+INTERFACE_TEMPLATE_SUFFIXES: tuple[str, ...] = (
+    ".ejs", ".hbs", ".handlebars", ".mustache", ".pug", ".njk", ".jinja", ".jinja2", ".j2", ".erb", ".twig",
+    ".liquid", ".cshtml", ".razor", ".blade.php", ".gohtml", ".tmpl", ".heex", ".eex", ".leex",
+)
+
+__all__ = ["DATA_LAYER_FILES", "DEVELOPMENT_SERVERS", "HOW_TO_LABELS", "HOW_TO_TEXTS", "INTERFACE_TEMPLATE_SUFFIXES",
+           "SEED_INSTRUCTIONS", "SETUP", "TESTING_LABELS", "TESTING_TEXTS"]

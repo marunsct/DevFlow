@@ -7450,9 +7450,13 @@ def _this_review_s_advice_findings(state: Any) -> dict[str, list[str]]:
 
 
 def _the_interface_design_for(state: Any, task: Any) -> list[str]:
-    """The specification's interface design, for a task that builds the interface; else []."""
+    """The specification's interface design, for a task that builds the interface - its role's, or one of its files
+    is the interface's (`file_domains`, SK.1); else []."""
     if str(getattr(task, "specialist_role", "") or "") != "ui_ux":
-        return []
+        from app.analysis.file_domains import domains_of_files
+
+        if "interface" not in domains_of_files(getattr(task, "files", None) or []):
+            return []
     return [
         str(line) for line in getattr(state.get("technical_specification"), "interface_design", None) or []
         if str(line).strip()

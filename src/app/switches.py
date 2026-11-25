@@ -224,6 +224,10 @@ GROUPS: dict[str, tuple[str, ...]] = {
     # A page's empty, busy and failed states named in the specification as lines a test can find (plan PQ.8):
     # presentation only, off until measured on two runs per family.
     "Interface design": ("INTERFACE_STATES_AS_CRITERIA",),
+    # Builders given a short craft checklist by the kinds of file they write; the UI/UX adviser and the architect told
+    # the pack's design tokens; the database and backend advisers asked for the same bars (plan SK.2 with PQ.6, PQ.9).
+    # Off until measured: it changes the advice, and so the specification.
+    "Builder craft": ("DOMAIN_CRAFT_CHECKLISTS",),
 }
 #: Every grouped switch, in the admin page's order.
 EXPERIMENTS = tuple(name for members in GROUPS.values() for name in members)

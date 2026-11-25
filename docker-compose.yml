@@ -92,6 +92,8 @@ x-app-env: &app-env
   SPECIALIST_DOMAIN_REVIEW: ${SPECIALIST_DOMAIN_REVIEW:-off}
   # Plan PA.9: advice sized to the brief, items beyond it declined unless the brief line is quoted (off until measured).
   ADVICE_SIZED_TO_THE_BRIEF: ${ADVICE_SIZED_TO_THE_BRIEF:-off}
+  # LF.1395: in thorough delivery a red test round takes the harness's own round (off until measured).
+  MEASURED_ROUND_WHEN_RED: ${MEASURED_ROUND_WHEN_RED:-off}
   # Plan HK.10: cited suggestions from comparable products for the intake, only with the run owner's consent.
   PRODUCT_RESEARCH: ${PRODUCT_RESEARCH:-off}
   API_CARDS_FOR_NEWER_RELEASES: ${API_CARDS_FOR_NEWER_RELEASES:-off}

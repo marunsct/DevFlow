@@ -1,0 +1,230 @@
+{
+  "ran": true,
+  "exit_code": 1,
+  "command": "npm run test:acceptance -- --grep /(?<![A-Za-z0-9])(?:AC[-_\u2010-\u2015\u2212\ufe58\ufe63\uff0d]?0*(?:12|1|8|13|15|14))(?![0-9])/i",
+  "passed": 9,
+  "failed": 12,
+  "skipped": 0,
+  "criteria": {
+    "AC-1": {
+      "id": "AC-1",
+      "text": "User registration and authentication (JWT-based)",
+      "status": "failed",
+      "tests": [
+        {
+          "name": "[AC-1] registration creates a new user",
+          "outcome": "failed",
+          "message": "auth.spec.js:23:1 \u203a [AC-1] registration creates a new user \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n    Error: expect(received).toBe(expected) // Object.is equality\n\n    Expected: 201\n    Received: 500\n\n      25 |   const response = await registerUser(request, suffix);\n      26 |\n    > 27 |   expect(response.status()).toBe(201);\n         |                             ^\n      28 |   const body = await response.json();\n      29 |\n      30 |   expect(body).toHaveProperty('id');\n        at /workspace/task-management-dashboard/acceptance/auth.spec.js:27:29\n\n    Error Context: ../test-results/evidence/auth--AC-1-registration-creates-a-new-user/error-context.md"
+        },
+        {
+          "name": "[AC-1] registration rejects duplicate username",
+          "outcome": "failed",
+          "message": "auth.spec.js:44:1 \u203a [AC-1] registration rejects duplicate username \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n    Error: expect(received).toBe(expected) // Object.is equality\n\n    Expected: 201\n    Received: 500\n\n      51 |     data: { username, email, password: 'SecurePass123!' },\n      52 |   });\n    > 53 |   expect(firstResponse.status()).toBe(201);\n         |                                  ^\n      54 |\n      55 |   // Second registration with same username should fail\n      56 |   const secondResponse = await request.post('/api/register', {\n        at /workspace/task-management-dashboard/acceptance/auth.spec.js:53:34\n\n    Error Context: ../test-results/evidence/auth--AC-1-registration-rejects-duplicate-username/error-context.md"
+        },
+        {
+          "name": "[AC-1] registration rejects duplicate email",
+          "outcome": "failed",
+          "message": "auth.spec.js:69:1 \u203a [AC-1] registration rejects duplicate email \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n    Error: expect(received).toBe(expected) // Object.is equality\n\n    Expected: 201\n    Received: 500\n\n      76 |     data: { username, email, password: 'SecurePass123!' },\n      77 |   });\n    > 78 |   expect(firstResponse.status()).toBe(201);\n         |                                  ^\n      79 |\n      80 |   // Second registration with same email should fail\n      81 |   const secondResponse = await request.post('/api/register', {\n        at /workspace/task-management-dashboard/acceptance/auth.spec.js:78:34\n\n    Error Context: ../test-results/evidence/auth--AC-1-registration-rejects-duplicate-email/error-context.md"
+        },
+        {
+          "name": "[AC-1] login with valid credentials returns JWT token",
+          "outcome": "failed",
+          "message": "auth.spec.js:95:1 \u203a [AC-1] login with valid credentials returns JWT token \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n    Error: expect(received).toBe(expected) // Object.is equality\n\n    Expected: 201\n    Received: 500\n\n      100 |   // Register first\n      101 |   const registerResponse = await registerUser(request, suffix);\n    > 102 |   expect(registerResponse.status()).toBe(201);\n          |                                     ^\n      103 |\n      104 |   // Now login\n      105 |   const loginResponse = await request.post('/api/login', {\n        at /workspace/task-management-dashboard/acceptance/auth.spec.js:102:37\n\n    Error Context: ../test-results/evidence/auth--AC-1-login-with-valid-credentials-returns-JWT-token/error-context.md"
+        },
+        {
+          "name": "[AC-1] login with invalid credentials returns 401",
+          "outcome": "failed",
+          "message": "auth.spec.js:129:1 \u203a [AC-1] login with invalid credentials returns 401 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n    Error: expect(received).toBe(expected) // Object.is equality\n\n    Expected: 401\n    Received: 429\n\n      138 |     data: { email, password: 'WrongPassword123!' },\n      139 |   });\n    > 140 |   expect(loginResponse.status()).toBe(401);\n          |                                  ^\n      141 |   const body = await loginResponse.json();\n      142 |   expect(body.error).toBe('Invalid credentials');\n      143 | });\n        at /workspace/task-management-dashboard/acceptance/auth.spec.js:140:34\n\n    Error Context: ../test-results/evidence/auth--AC-1-login-with-invalid-credentials-returns-401/error-context.md"
+        }
+      ]
+    },
+    "AC-2": {
+      "id": "AC-2",
+      "text": "Create, read, update, delete tasks",
+      "status": "not_yet_due",
+      "tests": []
+    },
+    "AC-3": {
+      "id": "AC-3",
+      "text": "Assign tasks to team members",
+      "status": "not_yet_due",
+      "tests": []
+    },
+    "AC-4": {
+      "id": "AC-4",
+      "text": "Set priorities (low, medium, high, urgent)",
+      "status": "not_yet_due",
+      "tests": []
+    },
+    "AC-5": {
+      "id": "AC-5",
+      "text": "Due dates and reminders",
+      "status": "not_yet_due",
+      "tests": []
+    },
+    "AC-6": {
+      "id": "AC-6",
+      "text": "Task categories and tags",
+      "status": "not_yet_due",
+      "tests": []
+    },
+    "AC-7": {
+      "id": "AC-7",
+      "text": "Search and filter functionality",
+      "status": "not_yet_due",
+      "tests": []
+    },
+    "AC-8": {
+      "id": "AC-8",
+      "text": "Users can register, login, logout securely",
+      "status": "failed",
+      "tests": [
+        {
+          "name": "[AC-8] logout invalidates the access token",
+          "outcome": "failed",
+          "message": "auth.spec.js:152:1 \u203a [AC-8] logout invalidates the access token \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n    Error: expect(received).toBe(expected) // Object.is equality\n\n    Expected: 201\n    Received: 429\n\n      157 |   // Register and login\n      158 |   const registerResponse = await registerUser(request, suffix);\n    > 159 |   expect(registerResponse.status()).toBe(201);\n          |                                     ^\n      160 |\n      161 |   const loginResponse = await request.post('/api/login', {\n      162 |     data: { email, password },\n        at /workspace/task-management-dashboard/acceptance/auth.spec.js:159:37\n\n    Error Context: ../test-results/evidence/auth--AC-8-logout-invalidates-the-access-token/error-context.md"
+        }
+      ]
+    },
+    "AC-9": {
+      "id": "AC-9",
+      "text": "Task CRUD operations work correctly",
+      "status": "not_yet_due",
+      "tests": []
+    },
+    "AC-10": {
+      "id": "AC-10",
+      "text": "Team collaboration features function properly",
+      "status": "not_yet_due",
+      "tests": []
+    },
+    "AC-11": {
+      "id": "AC-11",
+      "text": "Analytics dashboard shows task statistics",
+      "status": "not_yet_due",
+      "tests": []
+    },
+    "AC-12": {
+      "id": "AC-12",
+      "text": "API documentation available (Swagger/OpenAPI)",
+      "status": "passed",
+      "tests": [
+        {
+          "name": "[AC-12] /docs returns Swagger/OpenAPI documentation",
+          "outcome": "passed",
+          "message": ""
+        },
+        {
+          "name": "[AC-12] /openapi.json returns valid OpenAPI schema",
+          "outcome": "passed",
+          "message": ""
+        }
+      ]
+    },
+    "AC-13": {
+      "id": "AC-13",
+      "text": "All endpoints have proper error handling",
+      "status": "failed",
+      "tests": [
+        {
+          "name": "[AC-13] POST /register with empty body returns 422",
+          "outcome": "passed",
+          "message": ""
+        },
+        {
+          "name": "[AC-13] POST /login with missing email returns 401",
+          "outcome": "failed",
+          "message": "error-handling.spec.js:43:1 \u203a [AC-13] POST /login with missing email returns 401 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n    Error: expect(received).toBe(expected) // Object.is equality\n\n    Expected: 401\n    Received: 429\n\n      46 |   });\n      47 |\n    > 48 |   expect(response.status()).toBe(401);\n         |                             ^\n      49 |   const body = await response.json();\n      50 |   expect(body).toHaveProperty('error');\n      51 | });\n        at /workspace/task-management-dashboard/acceptance/error-handling.spec.js:48:29\n\n    Error Context: ../test-results/evidence/error-handling--AC-13-POST-50ca3-h-missing-email-returns-401/error-context.md"
+        },
+        {
+          "name": "[AC-13] POST /login with missing password returns 401",
+          "outcome": "failed",
+          "message": "error-handling.spec.js:58:1 \u203a [AC-13] POST /login with missing password returns 401 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n    Error: expect(received).toBe(expected) // Object.is equality\n\n    Expected: 401\n    Received: 429\n\n      61 |   });\n      62 |\n    > 63 |   expect(response.status()).toBe(401);\n         |                             ^\n      64 |   const body = await response.json();\n      65 |   expect(body).toHaveProperty('error');\n      66 | });\n        at /workspace/task-management-dashboard/acceptance/error-handling.spec.js:63:29\n\n    Error Context: ../test-results/evidence/error-handling--AC-13-POST-8b241-issing-password-returns-401/error-context.md"
+        },
+        {
+          "name": "[AC-13] POST /tasks without authorization returns 401",
+          "outcome": "failed",
+          "message": "error-handling.spec.js:74:1 \u203a [AC-13] POST /tasks without authorization returns 401 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n    Error: expect(received).toBe(expected) // Object.is equality\n\n    Expected: 401\n    Received: 404\n\n      77 |   });\n      78 |\n    > 79 |   expect(response.status()).toBe(401);\n         |                             ^\n      80 |   const body = await response.json();\n      81 |   expect(body).toHaveProperty('error');\n      82 |   expect(body).toHaveProperty('correlation_id');\n        at /workspace/task-management-dashboard/acceptance/error-handling.spec.js:79:29\n\n    Error Context: ../test-results/evidence/error-handling--AC-13-POST-8d598-t-authorization-returns-401/error-context.md"
+        },
+        {
+          "name": "[AC-13] PUT /tasks/1 with invalid JSON returns 422",
+          "outcome": "failed",
+          "message": "error-handling.spec.js:91:1 \u203a [AC-13] PUT /tasks/1 with invalid JSON returns 422 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n    Error: expect(received).toBe(expected) // Object.is equality\n\n    Expected: 422\n    Received: 404\n\n       98 |   });\n       99 |\n    > 100 |   expect(response.status()).toBe(422);\n          |                             ^\n      101 |   const body = await response.json();\n      102 |   expect(body).toHaveProperty('error');\n      103 | });\n        at /workspace/task-management-dashboard/acceptance/error-handling.spec.js:100:29\n\n    Error Context: ../test-results/evidence/error-handling--AC-13-PUT--673d2-th-invalid-JSON-returns-422/error-context.md"
+        },
+        {
+          "name": "[AC-13] GET /tasks without authorization returns 401",
+          "outcome": "failed",
+          "message": "error-handling.spec.js:110:1 \u203a [AC-13] GET /tasks without authorization returns 401 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n    Error: expect(received).toBe(expected) // Object.is equality\n\n    Expected: 401\n    Received: 404\n\n      111 |   const response = await request.get('/api/tasks');\n      112 |\n    > 113 |   expect(response.status()).toBe(401);\n          |                             ^\n      114 |   const body = await response.json();\n      115 |   expect(body).toHaveProperty('error');\n      116 | });\n        at /workspace/task-management-dashboard/acceptance/error-handling.spec.js:113:29\n\n    Error Context: ../test-results/evidence/error-handling--AC-13-GET--3757b-t-authorization-returns-401/error-context.md"
+        },
+        {
+          "name": "[AC-13] GET /tasks/999999 with invalid token returns 401",
+          "outcome": "failed",
+          "message": "error-handling.spec.js:123:1 \u203a [AC-13] GET /tasks/999999 with invalid token returns 401 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n    Error: expect(received).toBe(expected) // Object.is equality\n\n    Expected: 401\n    Received: 404\n\n      126 |     });\n      127 |\n    > 128 |     expect(response.status()).toBe(401);\n          |                               ^\n      129 |     const body = await response.json();\n      130 |     expect(body).toHaveProperty('error');\n      131 |   });\n        at /workspace/task-management-dashboard/acceptance/error-handling.spec.js:128:31\n\n    Error Context: ../test-results/evidence/error-handling--AC-13-GET--bf90a-h-invalid-token-returns-401/error-context.md"
+        }
+      ]
+    },
+    "AC-14": {
+      "id": "AC-14",
+      "text": "User Interface: Modern web application with responsive design",
+      "status": "passed",
+      "tests": [
+        {
+          "name": "[AC-14] main container is visible on page load",
+          "outcome": "passed",
+          "message": ""
+        },
+        {
+          "name": "[AC-14] viewport meta tag is present",
+          "outcome": "passed",
+          "message": ""
+        },
+        {
+          "name": "[AC-14] page loads without console errors",
+          "outcome": "passed",
+          "message": ""
+        },
+        {
+          "name": "[AC-14] page has a title",
+          "outcome": "passed",
+          "message": ""
+        }
+      ]
+    },
+    "AC-15": {
+      "id": "AC-15",
+      "text": "Database migrations required",
+      "status": "passed",
+      "tests": [
+        {
+          "name": "[AC-15] service starts with migrations applied",
+          "outcome": "passed",
+          "message": ""
+        },
+        {
+          "name": "[AC-15] service remains stable after startup",
+          "outcome": "passed",
+          "message": ""
+        }
+      ]
+    },
+    "AC-16": {
+      "id": "AC-16",
+      "text": "Docker containerization",
+      "status": "not_yet_due",
+      "tests": []
+    }
+  },
+  "change_requests": {},
+  "repairs": [],
+  "problem": "",
+  "output": "ec.js:100:29\n\n    Error Context: test-results/evidence/error-handling--AC-13-PUT--673d2-th-invalid-JSON-returns-422/error-context.md\n\n  11) acceptance/error-handling.spec.js:110:1 \u203a [AC-13] GET /tasks without authorization returns 401 \n\n    Error: expect(received).toBe(expected) // Object.is equality\n\n    Expected: 401\n    Received: 404\n\n      111 |   const response = await request.get('/api/tasks');\n      112 |\n    > 113 |   expect(response.status()).toBe(401);\n          |                             ^\n      114 |   const body = await response.json();\n      115 |   expect(body).toHaveProperty('error');\n      116 | });\n        at /workspace/task-management-dashboard/acceptance/error-handling.spec.js:113:29\n\n    Error Context: test-results/evidence/error-handling--AC-13-GET--3757b-t-authorization-returns-401/error-context.md\n\n  12) acceptance/error-handling.spec.js:123:1 \u203a [AC-13] GET /tasks/999999 with invalid token returns 401 \n\n    Error: expect(received).toBe(expected) // Object.is equality\n\n    Expected: 401\n    Received: 404\n\n      126 |     });\n      127 |\n    > 128 |     expect(response.status()).toBe(401);\n          |                               ^\n      129 |     const body = await response.json();\n      130 |     expect(body).toHaveProperty('error');\n      131 |   });\n        at /workspace/task-management-dashboard/acceptance/error-handling.spec.js:128:31\n\n    Error Context: test-results/evidence/error-handling--AC-13-GET--bf90a-h-invalid-token-returns-401/error-context.md\n\n  12 failed\n    acceptance/auth.spec.js:23:1 \u203a [AC-1] registration creates a new user \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n    acceptance/auth.spec.js:44:1 \u203a [AC-1] registration rejects duplicate username \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n    acceptance/auth.spec.js:69:1 \u203a [AC-1] registration rejects duplicate email \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n    acceptance/auth.spec.js:95:1 \u203a [AC-1] login with valid credentials returns JWT token \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n    acceptance/auth.spec.js:129:1 \u203a [AC-1] login with invalid credentials returns 401 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n    acceptance/auth.spec.js:152:1 \u203a [AC-8] logout invalidates the access token \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n    acceptance/error-handling.spec.js:43:1 \u203a [AC-13] POST /login with missing email returns 401 \u2500\u2500\u2500\u2500\n    acceptance/error-handling.spec.js:58:1 \u203a [AC-13] POST /login with missing password returns 401 \u2500\n    acceptance/error-handling.spec.js:74:1 \u203a [AC-13] POST /tasks without authorization returns 401 \u2500\n    acceptance/error-handling.spec.js:91:1 \u203a [AC-13] PUT /tasks/1 with invalid JSON returns 422 \u2500\u2500\u2500\u2500\n    acceptance/error-handling.spec.js:110:1 \u203a [AC-13] GET /tasks without authorization returns 401 \u2500\n    acceptance/error-handling.spec.js:123:1 \u203a [AC-13] GET /tasks/999999 with invalid token returns 401 \n  9 passed (8.2s)\n\n[WebServer] INFO:     Started server process [48]\n[WebServer] INFO:     Waiting for application startup.\n[WebServer] INFO:     Application startup complete.\n[WebServer] INFO:     Uvicorn running on http://127.0.0.1:56575 (Press CTRL+C to quit)\n",
+  "server_log": "INFO:     127.0.0.1:38450 - \"POST /api/register HTTP/1.1\" 500 Internal Server Error\nINFO:     127.0.0.1:38452 - \"POST /api/register HTTP/1.1\" 500 Internal Server Error\nINFO:     127.0.0.1:38468 - \"POST /api/register HTTP/1.1\" 500 Internal Server Error\nINFO:     127.0.0.1:38476 - \"POST /api/register HTTP/1.1\" 500 Internal Server Error\nINFO:     127.0.0.1:38486 - \"POST /api/register HTTP/1.1\" 500 Internal Server Error",
+  "runtime_problems": [],
+  "shows": "- navigation \"Main navigation\":\n  - heading \"Task Management\" [level=2]\n  - list:\n    - listitem:\n      - link \"Sign in\":\n        - /url: /\n    - listitem:\n      - link \"Register\":\n        - /url: /register\n- main:\n  - heading \"Task Management Dashboard\" [level=1]\n  - text: Email\n  - textbox \"Email\"\n  - text: Password\n  - textbox \"Password\"\n  - button \"Sign in\"\n  - paragraph:\n    - text: Don't have an account?\n    - link \"Create an account\":\n      - /url: /register",
+  "phone_overflow": 0,
+  "overlaps": [],
+  "small_targets": [],
+  "accessibility": [],
+  "unmeasured": "",
+  "fingerprint": "ce0316adc091eb4cd22b"
+}

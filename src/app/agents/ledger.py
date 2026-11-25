@@ -187,11 +187,16 @@ MOST_ATTEMPTS_LISTED = 6
 
 def attempt_record(stage: str, fix_result: Any, outcome: str) -> dict[str, Any]:
     """One fix attempt as the ledger keeps it: the stage, the files it changed, what it did, how it ended (plan PH.2)."""
+    from app.sprint import NOTHING_WAS_CHANGED
+
     decisions = [" ".join(str(d).split()) for d in (getattr(fix_result, "decisions", None) or []) if str(d).strip()]
+    # An attempt that wrote nothing has no change to describe (LF.1444): measured, the model's own "Changed both to
+    # call ..." of a fixer whose two edits were refused was shown to the next fixer as a change measured and failed.
+    wrote_nothing = str(outcome).startswith(NOTHING_WAS_CHANGED)
     return {
         "stage": str(stage),
-        "files": [str(f) for f in (getattr(fix_result, "changed_files", None) or [])][:8],
-        "did": decisions[0][:240] if decisions else "",
+        "files": [] if wrote_nothing else [str(f) for f in (getattr(fix_result, "changed_files", None) or [])][:8],
+        "did": decisions[0][:240] if decisions and not wrote_nothing else "",
         "outcome": " ".join(str(outcome).split())[:300],
     }
 
@@ -205,7 +210,7 @@ def earlier_attempts(defect: Any, defects: Iterable[Any] = ()) -> str:
     """
     if not enabled():
         return ""
-    from app.sprint import recurrence_chain
+    from app.sprint import NOTHING_WAS_CHANGED, recurrence_chain
 
     before = list(defects or ())
     try:
@@ -218,6 +223,10 @@ def earlier_attempts(defect: Any, defects: Iterable[Any] = ()) -> str:
         return ""
     lines = []
     for item in attempts[-MOST_ATTEMPTS_LISTED:]:
+        if str(item.get("outcome") or "").startswith(NOTHING_WAS_CHANGED):
+            lines.append(f"- {item.get('stage', '?')}: wrote nothing (no file of the product differs), so no change "
+                         "of it was measured")
+            continue
         files = ", ".join(f"`{f}`" for f in item.get("files") or []) or "no file"
         did = f"; {item['did']}" if item.get("did") else ""
         lines.append(f"- {item.get('stage', '?')}: changed {files}{did} -> {item.get('outcome', '?')}")

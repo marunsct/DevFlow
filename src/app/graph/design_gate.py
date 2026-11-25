@@ -94,15 +94,182 @@ def _dumped(finding: Any) -> dict[str, Any]:
     return dict(finding) if isinstance(finding, dict) else {"description": str(finding)}
 
 
-def _rebuilt(entry: dict[str, Any]) -> Any:
+def _rebuilt(entry: dict[str, Any], why_still_open: str = "") -> Any:
     from app.agents.architecture_reviewer import ArchitectureReviewFinding
 
     fields = dict(entry.get("finding") or {})
+    evidence = str(fields.get("evidence") or "Raised by an earlier review of the specification.")
     return ArchitectureReviewFinding(
         severity=str(fields.get("severity") or "major"),
         description=str(fields.get("description") or entry.get("text") or ""),
-        evidence=str(fields.get("evidence") or "Raised by an earlier review of the specification."),
+        evidence=(f"{evidence} Still open: {why_still_open}" if why_still_open else evidence),
         required_remediation=str(fields.get("required_remediation") or "Resolve it in the specification."),
+    )
+
+
+# --- What a resolution rests on (LF.1440) ---------------------------------------------------------------------------
+#
+# Measured on a medium run: three of the last six gating findings were resolved on the re-review's word about a
+# sentence of the specification that was false or could not be built - "SQLAlchemy maps ARRAY columns to JSON type" on
+# SQLite (it does not: the tables could not be created), "database.py calls alembic.command.upgrade(engine, 'head')"
+# (the command takes a configuration, not an engine), and "each acceptance test runs in its own Playwright worker
+# process with a separate SQLite file" (the harness starts the product once for the suite). Every quote was in the
+# specification, so "is the quote there" would not have caught them; what was wrong was the kind of evidence. Sprint 1
+# took 9 h 53 min for 8 -> 9 of 21 tests, with the three stacked blockers in the code.
+#
+# Now a resolution must quote the specification's own words; one that rests on how a tool of the chosen stack behaves
+# is resolved on a claim to verify, which every later builder and the lead read as such; and one that rests on how the
+# harness runs the acceptance suite is refused at the gate, since the product does not change that.
+
+#: Consecutive words of a resolution that must be found in the specification for it to count as quoting it.
+QUOTED_WORDS = 6
+#: Where the claims are kept for the stages that build on them.
+CLAIMS_FILE = ".harness/design-claims.json"
+#: Words a sentence uses about how a test runner runs the suite: its configuration, its workers or processes.
+_HOW_THE_SUITE_RUNS = re.compile(r"\bconfig\w*|\bworkers?\b|\bworkerid\b|\bprocess(?:es)?\b|\bparallel\b", re.I)
+#: Where a stack entry's tool name ends: its note in brackets, or what it is used for.
+_NAME_ENDS = re.compile(r"\s*\(|\s+(?:for|with|against|on|via|as)\s+", re.I)
+
+
+class _RestsOn:
+    """What a resolution rests on: the stack's tools it names, the claim it quotes, and why it is refused ("")."""
+
+    def __init__(self, tools: list[str] | None = None, claim: str = "", refused: str = "") -> None:
+        self.tools, self.claim, self.refused = list(tools or []), claim, refused
+
+
+def _strings(value: Any) -> list[str]:
+    if hasattr(value, "model_dump"):
+        value = value.model_dump()
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [text for item in value.values() for text in _strings(item)]
+    if isinstance(value, (list, tuple)):
+        return [text for item in value for text in _strings(item)]
+    return []
+
+
+def _word_list(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9_]+", str(text or "").lower())
+
+
+def quotes_the_specification(where: str, specification: Any) -> bool | None:
+    """Whether `where` holds `QUOTED_WORDS` consecutive words of the specification; None when there is none to read."""
+    spec_words = " " + " ".join(word for text in _strings(specification) for word in _word_list(text)) + " "
+    if not spec_words.strip():
+        return None
+    words = _word_list(where)
+    if len(words) < QUOTED_WORDS:
+        return False
+    return any(f" {' '.join(words[at:at + QUOTED_WORDS])} " in spec_words for at in range(len(words) - QUOTED_WORDS + 1))
+
+
+def _the_stack_s_tools(stack: Any) -> tuple[list[str], set[str]]:
+    """The tool names of the chosen stack, and those of them that run the acceptance tests."""
+    def field(name: str) -> Any:
+        return stack.get(name) if isinstance(stack, dict) else getattr(stack, name, None)
+
+    entries: list[tuple[str, bool]] = []
+    for name in ("framework", "frontend_framework", "database"):
+        entries.append((str(field(name) or ""), False))
+    for part in str(field("testing_framework") or "").split(","):
+        entries.append((part, "acceptance" in part.lower()))
+    entries.extend((str(item), False) for item in field("additional_tools") or [])
+    tools: list[str] = []
+    acceptance: set[str] = set()
+    for text, runs_acceptance in entries:
+        head = _NAME_ENDS.split(text.strip(), maxsplit=1)[0].strip(" .;:")
+        if len(head) < 3 or len(head) > 40:
+            continue
+        if head.lower() not in {tool.lower() for tool in tools}:
+            tools.append(head)
+        if runs_acceptance:
+            acceptance.add(head.lower())
+    unit_runners = {(_NAME_ENDS.split(part.strip(), maxsplit=1)[0].strip(" .;:")).lower()
+                    for part in str(field("testing_framework") or "").split(",") if "acceptance" not in part.lower()}
+    return tools, acceptance - unit_runners
+
+
+def _names(tool: str, text: str) -> bool:
+    return re.search(rf"(?<![\w-]){re.escape(tool)}(?![\w-])", text, re.I) is not None
+
+
+def what_a_resolution_rests_on(where: str, specification: Any, stack: Any) -> _RestsOn:
+    """What the re-review's resolution `where` rests on, judged against the specification and the chosen stack."""
+    quoted = quotes_the_specification(where, specification)
+    if quoted is False:
+        return _RestsOn(refused="the re-review said it is resolved without quoting the specification's own words; "
+                                "a resolution is the specification's text that resolves it, word for word")
+    tools, acceptance = _the_stack_s_tools(stack) if stack is not None else ([], set())
+    named = [tool for tool in tools if _names(tool, where)]
+    claim = " ".join(str(where or "").split())[:600]
+    if any(tool.lower() in acceptance for tool in named) and _HOW_THE_SUITE_RUNS.search(where):
+        return _RestsOn(named, claim, refused=(
+            "the resolution rests on how the acceptance tests are run (their runner's configuration, workers or "
+            "processes), which is the harness's and which the product does not change: the harness starts the product "
+            "once and runs the whole suite against it. Resolve it in what the product itself does"))
+    return _RestsOn(named, claim)
+
+
+def _what_it_rests_on(state: Any, where: str) -> _RestsOn:
+    try:
+        stack = getattr(state.get("stack_selection"), "technology_stack", None)
+        return what_a_resolution_rests_on(where, state.get("technical_specification"), stack)
+    except Exception as error:  # noqa: BLE001 - resolved as the re-review says, as before
+        from app.observability.degraded import degraded
+
+        degraded("design_gate.what_it_rests_on", error)
+        return _RestsOn()
+
+
+def _keep_the_claims(state: Any, entries: list[dict[str, Any]]) -> None:
+    """Keep the resolved findings that rest on a claim, for `the_claims_section`. Never raises."""
+    try:
+        import json
+        from pathlib import Path
+
+        claims = [{"finding": f"G{entry.get('number')}", "text": str(entry.get("text") or "")[:400],
+                   "claim": entry["assumption"].get("claim", ""), "rests_on": entry["assumption"].get("rests_on", [])}
+                  for entry in entries if entry.get("status") == "resolved" and isinstance(entry.get("assumption"), dict)]
+        root = getattr(state.get("repository"), "root_path", None) if hasattr(state, "get") else None
+        if not root or not claims:
+            return
+        path = Path(root) / CLAIMS_FILE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(claims, indent=1), encoding="utf-8")
+    except Exception as error:  # noqa: BLE001 - the decision log still says so
+        from app.observability.degraded import degraded
+
+        degraded("design_gate.keep_the_claims", error)
+
+
+#: The heading of the claims every later stage reads.
+CLAIMS_HEADING = "--- Design claims to verify, not facts ---"
+
+
+def the_claims_section(root: Any) -> str:
+    """The design findings resolved on a claim about how a tool of the stack behaves, as a block the lead and every
+    builder read; "" when there are none. Never raises."""
+    try:
+        import json
+        from pathlib import Path
+
+        if not root:
+            return ""
+        claims = json.loads((Path(root) / CLAIMS_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return ""
+    if not isinstance(claims, list) or not claims:
+        return ""
+    lines = [f"- {item.get('finding')} (about {', '.join(item.get('rests_on') or [])}): \"{item.get('claim')}\""
+             for item in claims if isinstance(item, dict)]
+    return (
+        f"\n\n{CLAIMS_HEADING}\n"
+        "The design review settled these findings on a sentence of the specification about how a library, a tool or "
+        "the test setup behaves. Nothing has checked the sentence. The first work that depends on one shows it holds "
+        "with a command or a test before building on it; a failure that contradicts one means the claim is wrong, not "
+        "the code around it.\n" + "\n".join(lines) + "\n"
     )
 
 
@@ -181,6 +348,19 @@ def _after_a_review(
             continue
         answer = answers.get(numbers.get(str(entry.get("text")), -1))
         if answer is not None and answer[0]:
+            rests = _what_it_rests_on(state, answer[1])
+            if rests.refused:
+                # Not resolved: kept open and sent back with the reason (LF.1440).
+                logger.info("Design gate: G%s kept open: %s", entry.get("number"), rests.refused)
+                entry["refused"] = rests.refused
+                carried.append(_rebuilt(entry, rests.refused))
+                continue
+            if rests.tools:
+                entry["assumption"] = {"claim": rests.claim, "rests_on": rests.tools}
+                resolved.append((entry, f"the re-review says it is resolved on a claim about how {', '.join(rests.tools)}"
+                                        f" behave{'s' if len(rests.tools) == 1 else ''}, which nothing has checked - a "
+                                        f"claim to verify, not a fact: {answer[1]}"))
+                continue
             resolved.append((entry, "the re-review says it is resolved" + (f": {answer[1]}" if answer[1] else "")))
             # Raised again in other words, the new one is open as a finding of this round (added below).
             continue
@@ -199,8 +379,10 @@ def _after_a_review(
             entries.append(_an_entry(len(entries) + 1, item, this_round))
     for entry, how in resolved:
         entry.update(status="resolved", settled=f"review round {this_round}", how=how)
-        _record(state, update, entry, f"resolved in review round {this_round}", how, decided_by="auto")
+        decision = f"resolved in review round {this_round}" + (", on a claim to verify" if entry.get("assumption") else "")
+        _record(state, update, entry, decision, how, decided_by="auto")
     update[KEY] = {"round": this_round, "findings": entries}
+    _keep_the_claims(state, entries)
     if carried:
         logger.info("Design gate: %d gating finding(s) the re-review says are still open put back into it", len(carried))
         review = review.model_copy(update={"findings": [*review.findings, *carried], "status": "changes_required"})

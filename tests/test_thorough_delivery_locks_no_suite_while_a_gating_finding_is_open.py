@@ -35,8 +35,12 @@ def _thorough():
 
 
 def _at_the_limit(tmp_path: Path, *findings, state=None):
-    """The acceptance review at the round limit, the QA lead answering with `findings` (description, severity)."""
+    """The acceptance review at the round limit, the QA lead answering with `findings` (description, severity), after
+    the one repair a test failing on a correct product gets before the lock (LF.1442) was made."""
+    from app.graph import suite_gate
+
     root = a_service_suite(tmp_path, A_FAIR_TEST)
+    suite._save_state(root, {**suite._state(root), suite_gate.REPAIRED_BEFORE_THE_LOCK: True})
     review = qa_lead(False, *({"description": text, "severity": severity} for text, severity in findings))
     return reviewed(root, measured(FAILED), rounds=3, review=review, state=state)
 

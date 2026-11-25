@@ -1,0 +1,207 @@
+{
+  "latest": {
+    "label": "after defect_fix_2_batch",
+    "commit": "01f57f7dffe6a0e83e8a47b6ceb2852e7d4df426",
+    "unit": {
+      "pytest \u203a tests.test_auth.TestHashPassword \u203a test_hash_starts_with_2b_12": "passed",
+      "pytest \u203a tests.test_auth.TestHashPassword \u203a test_hash_is_consistent_format": "passed",
+      "pytest \u203a tests.test_auth.TestHashPassword \u203a test_empty_password_hashes": "passed",
+      "pytest \u203a tests.test_auth.TestVerifyPassword \u203a test_correct_password_returns_true": "passed",
+      "pytest \u203a tests.test_auth.TestVerifyPassword \u203a test_wrong_password_returns_false": "passed",
+      "pytest \u203a tests.test_auth.TestVerifyPassword \u203a test_empty_password_with_empty_hash": "passed",
+      "pytest \u203a tests.test_auth.TestCreateAccessToken \u203a test_returns_jwt_string_three_parts": "passed",
+      "pytest \u203a tests.test_auth.TestCreateAccessToken \u203a test_sub_claim_is_user_id_as_string": "passed",
+      "pytest \u203a tests.test_auth.TestCreateAccessToken \u203a test_sub_claim_for_different_user_ids": "passed",
+      "pytest \u203a tests.test_auth.TestDecodeToken \u203a test_decoded_sub_matches_original": "passed",
+      "pytest \u203a tests.test_auth.TestDecodeToken \u203a test_decoded_payload_has_exp": "passed",
+      "pytest \u203a tests.test_auth.TestRegisterUser \u203a test_register_success": "failed",
+      "pytest \u203a tests.test_auth.TestRegisterUser \u203a test_register_duplicate_username": "failed",
+      "pytest \u203a tests.test_auth.TestRegisterUser \u203a test_register_duplicate_email": "failed",
+      "pytest \u203a tests.test_auth.TestLoginUser \u203a test_login_success": "failed",
+      "pytest \u203a tests.test_auth.TestLoginUser \u203a test_login_invalid_password": "failed",
+      "pytest \u203a tests.test_auth.TestLoginUser \u203a test_login_nonexistent_user": "failed",
+      "pytest \u203a tests.test_auth.TestLogoutUser \u203a test_logout_invalidates_tokens": "failed",
+      "pytest \u203a tests.test_auth.TestRefreshAccessToken \u203a test_refresh_returns_new_token": "failed",
+      "pytest \u203a tests.test_auth.TestRefreshAccessToken \u203a test_refresh_revoked_token_raises_401": "failed",
+      "pytest \u203a tests.test_auth.TestUserCreate \u203a test_valid_data_passes": "passed",
+      "pytest \u203a tests.test_auth.TestUserCreate \u203a test_username_min_length_fails": "passed",
+      "pytest \u203a tests.test_auth.TestUserCreate \u203a test_username_too_long_fails": "passed",
+      "pytest \u203a tests.test_auth.TestUserCreate \u203a test_password_min_length_fails": "passed",
+      "pytest \u203a tests.test_auth.TestUserCreate \u203a test_whitespace_in_username_fails": "passed",
+      "pytest \u203a tests.test_auth.TestUserCreate \u203a test_username_exactly_3_chars_passes": "passed",
+      "pytest \u203a tests.test_auth.TestUserCreate \u203a test_password_exactly_8_chars_passes": "passed",
+      "pytest \u203a tests.test_auth.TestLoginRequest \u203a test_valid_data_passes": "passed",
+      "pytest \u203a tests.test_auth.TestLoginRequest \u203a test_missing_email_is_none": "passed",
+      "pytest \u203a tests.test_auth.TestLoginRequest \u203a test_missing_password_is_none": "passed",
+      "pytest \u203a tests.test_auth.TestLoginResponse \u203a test_valid_data_passes": "passed",
+      "pytest \u203a tests.test_auth.TestRefreshResponse \u203a test_valid_data_passes": "passed"
+    },
+    "acceptance": {
+      "api-docs.spec.js \u203a api-docs.spec.js \u203a [AC-12] /docs returns Swagger/OpenAPI documentation": "passed",
+      "api-docs.spec.js \u203a api-docs.spec.js \u203a [AC-12] /openapi.json returns valid OpenAPI schema": "passed",
+      "auth.spec.js \u203a auth.spec.js \u203a [AC-1] registration creates a new user": "failed",
+      "auth.spec.js \u203a auth.spec.js \u203a [AC-1] registration rejects duplicate username": "failed",
+      "auth.spec.js \u203a auth.spec.js \u203a [AC-1] registration rejects duplicate email": "failed",
+      "auth.spec.js \u203a auth.spec.js \u203a [AC-1] login with valid credentials returns JWT token": "failed",
+      "auth.spec.js \u203a auth.spec.js \u203a [AC-1] login with invalid credentials returns 401": "failed",
+      "auth.spec.js \u203a auth.spec.js \u203a [AC-8] logout invalidates the access token": "failed",
+      "error-handling.spec.js \u203a error-handling.spec.js \u203a [AC-13] POST /register with empty body returns 422": "passed",
+      "error-handling.spec.js \u203a error-handling.spec.js \u203a [AC-13] POST /login with missing email returns 401": "failed",
+      "error-handling.spec.js \u203a error-handling.spec.js \u203a [AC-13] POST /login with missing password returns 401": "failed",
+      "error-handling.spec.js \u203a error-handling.spec.js \u203a [AC-13] POST /tasks without authorization returns 401": "failed",
+      "error-handling.spec.js \u203a error-handling.spec.js \u203a [AC-13] PUT /tasks/1 with invalid JSON returns 422": "failed",
+      "error-handling.spec.js \u203a error-handling.spec.js \u203a [AC-13] GET /tasks without authorization returns 401": "failed",
+      "error-handling.spec.js \u203a error-handling.spec.js \u203a [AC-13] GET /tasks/999999 with invalid token returns 401": "failed",
+      "migrations.spec.js \u203a migrations.spec.js \u203a [AC-15] service starts with migrations applied": "passed",
+      "migrations.spec.js \u203a migrations.spec.js \u203a [AC-15] service remains stable after startup": "passed",
+      "ui.spec.js \u203a ui.spec.js \u203a [AC-14] main container is visible on page load": "passed",
+      "ui.spec.js \u203a ui.spec.js \u203a [AC-14] viewport meta tag is present": "passed",
+      "ui.spec.js \u203a ui.spec.js \u203a [AC-14] page loads without console errors": "passed",
+      "ui.spec.js \u203a ui.spec.js \u203a [AC-14] page has a title": "passed"
+    },
+    "unit_ran": true,
+    "acceptance_ran": true,
+    "problem": "",
+    "unmeasured": ""
+  },
+  "accepted": {
+    "label": "suite locked",
+    "commit": "47a41db0b7c600a552e5ca12800e5f81d7eb24eb",
+    "unit": {},
+    "acceptance": {},
+    "unit_ran": false,
+    "acceptance_ran": false,
+    "problem": "",
+    "unmeasured": ""
+  },
+  "first_passed": {
+    "acceptance: api-docs.spec.js \u203a api-docs.spec.js \u203a [AC-12] /docs returns Swagger/OpenAPI documentation": {
+      "after": "after the work orders",
+      "at": "2026-11-25T10:12:27.514630+00:00"
+    },
+    "acceptance: api-docs.spec.js \u203a api-docs.spec.js \u203a [AC-12] /openapi.json returns valid OpenAPI schema": {
+      "after": "after the work orders",
+      "at": "2026-11-25T10:12:27.514630+00:00"
+    },
+    "acceptance: migrations.spec.js \u203a migrations.spec.js \u203a [AC-15] service remains stable after startup": {
+      "after": "after the work orders",
+      "at": "2026-11-25T10:12:27.514630+00:00"
+    },
+    "acceptance: migrations.spec.js \u203a migrations.spec.js \u203a [AC-15] service starts with migrations applied": {
+      "after": "after the work orders",
+      "at": "2026-11-25T10:12:27.514630+00:00"
+    },
+    "acceptance: ui.spec.js \u203a ui.spec.js \u203a [AC-14] main container is visible on page load": {
+      "after": "after the work orders",
+      "at": "2026-11-25T10:12:27.514630+00:00"
+    },
+    "acceptance: ui.spec.js \u203a ui.spec.js \u203a [AC-14] page has a title": {
+      "after": "after the work orders",
+      "at": "2026-11-25T10:12:27.514630+00:00"
+    },
+    "acceptance: ui.spec.js \u203a ui.spec.js \u203a [AC-14] page loads without console errors": {
+      "after": "after the work orders",
+      "at": "2026-11-25T10:12:27.514630+00:00"
+    },
+    "acceptance: ui.spec.js \u203a ui.spec.js \u203a [AC-14] viewport meta tag is present": {
+      "after": "after the work orders",
+      "at": "2026-11-25T10:12:27.514630+00:00"
+    },
+    "unit: pytest \u203a tests.test_auth.TestCreateAccessToken \u203a test_returns_jwt_string_three_parts": {
+      "after": "after the work orders",
+      "at": "2026-11-25T10:12:27.514630+00:00"
+    },
+    "unit: pytest \u203a tests.test_auth.TestCreateAccessToken \u203a test_sub_claim_for_different_user_ids": {
+      "after": "after the work orders",
+      "at": "2026-11-25T10:12:27.514630+00:00"
+    },
+    "unit: pytest \u203a tests.test_auth.TestCreateAccessToken \u203a test_sub_claim_is_user_id_as_string": {
+      "after": "after the work orders",
+      "at": "2026-11-25T10:12:27.514630+00:00"
+    },
+    "unit: pytest \u203a tests.test_auth.TestDecodeToken \u203a test_decoded_payload_has_exp": {
+      "after": "after the work orders",
+      "at": "2026-11-25T10:12:27.514630+00:00"
+    },
+    "unit: pytest \u203a tests.test_auth.TestDecodeToken \u203a test_decoded_sub_matches_original": {
+      "after": "after the work orders",
+      "at": "2026-11-25T10:12:27.514630+00:00"
+    },
+    "unit: pytest \u203a tests.test_auth.TestHashPassword \u203a test_empty_password_hashes": {
+      "after": "after the work orders",
+      "at": "2026-11-25T10:12:27.514630+00:00"
+    },
+    "unit: pytest \u203a tests.test_auth.TestHashPassword \u203a test_hash_is_consistent_format": {
+      "after": "after the work orders",
+      "at": "2026-11-25T10:12:27.514630+00:00"
+    },
+    "unit: pytest \u203a tests.test_auth.TestHashPassword \u203a test_hash_starts_with_2b_12": {
+      "after": "after the work orders",
+      "at": "2026-11-25T10:12:27.514630+00:00"
+    },
+    "unit: pytest \u203a tests.test_auth.TestLoginRequest \u203a test_missing_email_is_none": {
+      "after": "after the work orders",
+      "at": "2026-11-25T10:12:27.514630+00:00"
+    },
+    "unit: pytest \u203a tests.test_auth.TestLoginRequest \u203a test_missing_password_is_none": {
+      "after": "after the work orders",
+      "at": "2026-11-25T10:12:27.514630+00:00"
+    },
+    "unit: pytest \u203a tests.test_auth.TestLoginRequest \u203a test_valid_data_passes": {
+      "after": "after the work orders",
+      "at": "2026-11-25T10:12:27.514630+00:00"
+    },
+    "unit: pytest \u203a tests.test_auth.TestLoginResponse \u203a test_valid_data_passes": {
+      "after": "after the work orders",
+      "at": "2026-11-25T10:12:27.514630+00:00"
+    },
+    "unit: pytest \u203a tests.test_auth.TestRefreshResponse \u203a test_valid_data_passes": {
+      "after": "after the work orders",
+      "at": "2026-11-25T10:12:27.514630+00:00"
+    },
+    "unit: pytest \u203a tests.test_auth.TestUserCreate \u203a test_password_exactly_8_chars_passes": {
+      "after": "after the work orders",
+      "at": "2026-11-25T10:12:27.514630+00:00"
+    },
+    "unit: pytest \u203a tests.test_auth.TestUserCreate \u203a test_password_min_length_fails": {
+      "after": "after the work orders",
+      "at": "2026-11-25T10:12:27.514630+00:00"
+    },
+    "unit: pytest \u203a tests.test_auth.TestUserCreate \u203a test_username_exactly_3_chars_passes": {
+      "after": "after the work orders",
+      "at": "2026-11-25T10:12:27.514630+00:00"
+    },
+    "unit: pytest \u203a tests.test_auth.TestUserCreate \u203a test_username_min_length_fails": {
+      "after": "after the work orders",
+      "at": "2026-11-25T10:12:27.514630+00:00"
+    },
+    "unit: pytest \u203a tests.test_auth.TestUserCreate \u203a test_username_too_long_fails": {
+      "after": "after the work orders",
+      "at": "2026-11-25T10:12:27.514630+00:00"
+    },
+    "unit: pytest \u203a tests.test_auth.TestUserCreate \u203a test_valid_data_passes": {
+      "after": "after the work orders",
+      "at": "2026-11-25T10:12:27.514630+00:00"
+    },
+    "unit: pytest \u203a tests.test_auth.TestUserCreate \u203a test_whitespace_in_username_fails": {
+      "after": "after the work orders",
+      "at": "2026-11-25T10:12:27.514630+00:00"
+    },
+    "unit: pytest \u203a tests.test_auth.TestVerifyPassword \u203a test_correct_password_returns_true": {
+      "after": "after the work orders",
+      "at": "2026-11-25T10:12:27.514630+00:00"
+    },
+    "unit: pytest \u203a tests.test_auth.TestVerifyPassword \u203a test_empty_password_with_empty_hash": {
+      "after": "after the work orders",
+      "at": "2026-11-25T10:12:27.514630+00:00"
+    },
+    "unit: pytest \u203a tests.test_auth.TestVerifyPassword \u203a test_wrong_password_returns_false": {
+      "after": "after the work orders",
+      "at": "2026-11-25T10:12:27.514630+00:00"
+    },
+    "acceptance: error-handling.spec.js \u203a error-handling.spec.js \u203a [AC-13] POST /register with empty body returns 422": {
+      "after": "after defect_fix_1_batch",
+      "at": "2026-11-25T12:59:34.664278+00:00"
+    }
+  }
+}

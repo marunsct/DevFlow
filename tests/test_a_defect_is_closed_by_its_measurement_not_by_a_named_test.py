@@ -20,7 +20,9 @@ def _settled(tmp_path, unit: dict[str, str]) -> Defect:
     ci.save(tmp_path, ci.Snapshot(label=LABEL, unit=unit, unit_ran=bool(unit)))
     defect = Defect(description="Saving a note loses its title", severity="major", reproduction_steps="save a note",
                     expected_behavior="the title is kept", actual_behavior="it is empty", owner="backend",
-                    affected_files=["src/notes_store.py"], regression_test_required=True)
+                    affected_files=["src/notes_store.py"], regression_test_required=True,
+                    # Raised from its failing unit test, which is what answers for it (LF.1443).
+                    kind="failing_test", evidence=[{"test": "test_keeps_the_title"}])
     state = {"repository": SimpleNamespace(root_path=str(tmp_path)), "specialist_outputs": {}}
     fix = SpecialistOutput(changed_files=["src/notes_store.py"], tests=[], decisions=["kept the title on save"])
 

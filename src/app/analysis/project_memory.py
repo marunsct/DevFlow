@@ -428,15 +428,35 @@ def _write_atomically(path: Path, content: str) -> None:
         raise
 
 
+#: Seconds a file may be newer than its writer's record and still be that writer's: the record keeps whole seconds.
+_RECORD_LAG_SECONDS = 2.0
+
+
 def who_changed(root: str | Path, relative_path: str) -> str:
-    """The stage that last wrote this file, or "". Never raises."""
+    """The stage that last wrote this file, or "" when unknown. Never raises.
+
+    "" too when the file on disk is newer than the record (LF.1450): the record is made after a write's checks pass,
+    so a stage's write in flight, or one made where the stage cannot be read, left the previous writer named.
+    Measured on a medium run: a fixer was told a builder that had ended four hours earlier, "a stage working
+    alongside you", changed the file, when the fixer beside it in the same batch had.
+    """
     try:
         from app.agents.workspace_paths import the_same_place
 
-        entry = _load(Path(root)).get(the_same_place(str(relative_path)), {})
-        return str(entry.get("changed_by") or "")
+        path = the_same_place(str(relative_path))
+        entry = _load(Path(root)).get(path, {})
+        writer = str(entry.get("changed_by") or "")
     except Exception:  # noqa: BLE001
         return ""
+    try:
+        if writer and entry.get("changed_at"):
+            recorded = datetime.fromisoformat(str(entry["changed_at"]))
+            on_disk = datetime.fromtimestamp((Path(root) / path).stat().st_mtime, tz=timezone.utc)
+            if (on_disk - recorded).total_seconds() > _RECORD_LAG_SECONDS:
+                return ""
+    except (OSError, ValueError):  # no file on disk to compare with: the record stands
+        pass
+    return writer
 
 
 def files_changed_by(root: str | Path, stage: str) -> list[str]:

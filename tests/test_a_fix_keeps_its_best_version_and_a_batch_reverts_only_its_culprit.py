@@ -78,14 +78,16 @@ def test_the_gather_reverts_only_the_culprit_and_settles_the_rest(tmp_path, monk
             (tmp_path / path).write_text(text)
             batch_file_claims.claim("", stage, "write_artifact", {"relative_path": path})
 
-    def a_defect(description, files):
+    def a_defect(description, files, test):
+        # Raised from a failing unit test, which is what its unit tests answer for (LF.1443).
         return Defect(description=description, severity="major", reproduction_steps="r", expected_behavior="e",
-                      actual_behavior="a", owner="backend", affected_files=files)
+                      actual_behavior="a", owner="backend", affected_files=files, kind="failing_test",
+                      evidence=[{"test": test}])
 
     state = {
         "repository": SimpleNamespace(root_path=str(tmp_path)), "test_round": 2, "current_sprint_index": 0,
-        "remediation": RemediationCycle(sprint_goal="g", defects=[a_defect("Notes are lost", ["app/notes.py"]),
-                                                                  a_defect("Tags are lost", ["app/tags.py"])]),
+        "remediation": RemediationCycle(sprint_goal="g", defects=[a_defect("Notes are lost", ["app/notes.py"], "t_notes"),
+                                                                  a_defect("Tags are lost", ["app/tags.py"], "t_tags")]),
         "fix_batch": [0, 1], "fix_base_commit": base,
         "specialist_outputs": {name: SpecialistOutput(changed_files=[path], tests=["t"]) for name, path in
                                (("defect_fix_2_0", "app/notes.py"), ("defect_fix_2_1", "app/tags.py"))},

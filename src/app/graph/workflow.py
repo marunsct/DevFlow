@@ -687,6 +687,8 @@ class WorkflowGraphState(TypedDict, total=False):
     design_escalation_count: int
     # The sprints planned again because later sprints build on what they would defer (`escalation._the_foundation_first`).
     foundation_replanned_sprints: list[int]
+    # When the last of them was planned again: the sprint's time budget starts the new attempt there (LF.1448).
+    foundation_replanned_at: str
     known_issues: list[str]
     unit_failures_accepted_at_an_escalation: list[str]
     # Plan QM.2, off until measured: the sprint attempts whose sources were
@@ -1590,6 +1592,15 @@ def _with_the_attempt(cycle: Any, index: int, stage: str, fix_result: Any, outco
         from app.agents.ledger import attempt_record
 
         defect = cycle.defects[index]
+        if root:
+            # A product change put back while its tests were kept is a revert, named with what it broke (LF.1447).
+            from app.graph.engineering import what_was_put_back
+
+            if said := what_was_put_back(root, stage):
+                from app.observability import defect_ledger
+
+                defect_ledger.note("reverted", stage, defect=defect, index=index, sprint=sprint, detail=said)
+                outcome = f"reverted: {said}; measured after that: {outcome}"
         record = attempt_record(stage, fix_result, outcome)
         if calls is not None:
             record["calls"] = calls
@@ -3798,12 +3809,33 @@ def _the_defect_s_tests_in(root: str, label: str, defect: Any) -> bool | None:
             if mine:
                 return None
         if snapshot.unit_ran and snapshot.unit:
-            about = _the_unit_tests_about(defect, snapshot.unit)
+            about = _the_unit_tests_it_was_raised_from(defect, snapshot.unit)
             return all(outcome != "failed" for outcome in about.values()) if about else None
         return None
     except Exception as swallowed:  # noqa: BLE001 - a measurement that cannot answer says nothing
         degraded("measure.defect_tests_in_snapshot", swallowed)
         return None
+
+
+def _the_unit_tests_it_was_raised_from(defect: Any, unit: dict[str, str]) -> dict[str, str]:
+    """The unit tests that answer for a defect raised from failing ones; {} for any other defect (LF.1443).
+
+    As `_the_defect_s_tests_pass` already holds: passing unit tests answer only for a defect raised from failing ones.
+    Here the fallback took the unit tests whose names mention the defect's files for any defect with no criterion.
+    Measured on a medium run: a tester's "JWT HMAC key is 31 bytes", fixed in `auth.py`, was settled "its own tests
+    still fail" on nine `tests.test_auth` cases failing on another defect's mapper error; on another run five tester
+    findings were closed "fixed" on unit tests that only mentioned their files and were raised again 6 hours later.
+    Such a defect is now `unverified`, and the next round decides.
+    """
+    from app.sprint import cause
+
+    if str(getattr(defect, "description", "") or "").startswith(UNIT_TESTS_FAIL):
+        return _the_unit_tests_about(defect, unit)
+    if str(getattr(defect, "kind", "") or "") != cause.FAILING_TEST:
+        return {}
+    named = [str(item.get("test")) for item in getattr(defect, "evidence", None) or []
+             if isinstance(item, dict) and item.get("test") and not item.get("criterion")]
+    return {key: outcome for key, outcome in unit.items() if any(name in key for name in named)}
 
 
 def _what_measures_it_gone(state: Any, defect: Any) -> str:

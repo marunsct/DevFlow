@@ -115,7 +115,10 @@ def test_a_failing_test_is_still_a_failure_beside_a_skipped_one(tmp_path) -> Non
 
 
 def _about(files, description="The note store loses the last note on save"):
-    return _defect(description).model_copy(update={"affected_files": files})
+    # Raised from the failing unit tests about its file, which are what answer for it (LF.1443).
+    return _defect(description).model_copy(update={
+        "affected_files": files, "kind": "failing_test",
+        "evidence": [{"test": "keeps every note"}]})
 
 
 def test_another_file_s_failing_unit_test_does_not_hold_this_defect_open(tmp_path) -> None:

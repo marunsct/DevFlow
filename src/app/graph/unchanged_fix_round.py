@@ -1,8 +1,9 @@
 """A fix round that closes no defect on a product it leaves unchanged ends the attempt (LR.53, behind
 `FIX_STAGES_THAT_CLOSE_NOTHING`).
 
-A fix round is every defect_fix stage between two test rounds. When one closes nothing and the product the next round
-measures is the one the round before measured - the same files, `app.acceptance.unstable.fingerprint` - the next fix
+A fix round is every defect_fix stage between two test rounds. When one closes nothing, no fixer of it wrote a change
+(none reverted, repaired forward or left a file changed: LF.1445), and the product the next round measures is the one
+the round before measured - the same files, `app.acceptance.unstable.fingerprint` - the next fix
 round starts from exactly where the last one did, and spends its stages the same way. So the attempt ends there and
 goes where an exhausted attempt goes (`app.graph.nodes.triage._replan_or_escalate`: settle, stop or plan again) instead of another round.
 
@@ -45,8 +46,36 @@ def closed(cycle: Any) -> int:
     return sum(1 for defect in getattr(cycle, "defects", None) or [] if getattr(defect, "status", "") in CLOSED)
 
 
+#: How an attempt's outcome reads when its fix was written and then put back, or repaired forward (`judged_fixes`).
+_WRITTEN_AND_JUDGED = ("reverted", "repaired forward")
+
+
+def written(cycle: Any) -> int:
+    """How many fix attempts of the attempt's defects wrote a change: one reverted or repaired forward, or one whose
+    files the product shows changed (an attempt that wrote nothing records none, LF.1444)."""
+    from app.sprint import NOTHING_WAS_CHANGED
+
+    count = 0
+    for defect in getattr(cycle, "defects", None) or []:
+        for attempt in getattr(defect, "attempts", None) or []:
+            if not isinstance(attempt, dict):
+                continue
+            outcome = str(attempt.get("outcome") or "")
+            if outcome.startswith(NOTHING_WAS_CHANGED):
+                continue
+            if any(word in outcome for word in _WRITTEN_AND_JUDGED) or attempt.get("files"):
+                count += 1
+    return count
+
+
 def closed_nothing(before: dict[str, Any] | None, now: dict[str, Any]) -> bool:
-    """Whether the fix round between these two test rounds closed nothing on an unchanged product."""
+    """Whether the fix round between these two test rounds closed nothing on an unchanged product, and wrote nothing.
+
+    A round whose fix was written and then reverted leaves the product as it was too, and is not the round the rule is
+    for (LF.1445): all 11 firings in 43 runs were such rounds - 9 sprints planned again and 2 escalations for fixes that
+    were written - and the next round starts from what the revert measured, which is new. A record from before this
+    count was kept answers no.
+    """
     if not before or not now.get("fingerprint"):
         return False
     try:
@@ -55,6 +84,8 @@ def closed_nothing(before: dict[str, Any] | None, now: dict[str, Any]) -> bool:
             and int(before.get("round", -2)) == int(now.get("round", 0)) - 1
             and before.get("fingerprint") == now["fingerprint"]
             and int(now.get("closed", 0)) <= int(before.get("closed", 0))
+            and "written" in before
+            and int(now.get("written", 0)) <= int(before["written"])
         )
     except (TypeError, ValueError):
         return False
@@ -82,7 +113,7 @@ def ends_the_attempt(root: str | Path, cycle: Any, *, attempt: str, test_round: 
         if before and before.get("attempt") == attempt and before.get("round") == test_round:
             return bool(before.get("ended"))  # the same round entered again after a pause
         now: dict[str, Any] = {"attempt": attempt, "round": test_round, "fingerprint": unstable.fingerprint(root),
-                               "closed": closed(cycle)}
+                               "closed": closed(cycle), "written": written(cycle)}
         now["ended"] = closed_nothing(before, now)
         path = Path(root) / RECORD
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -93,4 +124,5 @@ def ends_the_attempt(root: str | Path, cycle: Any, *, attempt: str, test_round: 
         return False
 
 
-__all__ = ["CLOSED", "ON_BY_DEFAULT", "RECORD", "SAID", "closed", "closed_nothing", "enabled", "ends_the_attempt"]
+__all__ = ["CLOSED", "ON_BY_DEFAULT", "RECORD", "SAID", "closed", "closed_nothing", "enabled", "ends_the_attempt",
+           "written"]

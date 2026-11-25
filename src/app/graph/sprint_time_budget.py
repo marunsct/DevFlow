@@ -131,10 +131,15 @@ class Budget:
         return self.minutes > self.limit * FIX_ROUND_FACTOR
 
     def why(self, root: str | Path) -> str:
+        from app.acceptance import passed_unbuilt
+
         failing = still_failing(root, self.due)
+        # Not met either (LF.1446): criteria passing only on tests that passed before anything was built.
+        unproven = sorted(cid for cid in passed_unbuilt.unproven(root) if not self.due or cid in self.due)
         return (f"{SAID}: {self.minutes:.0f} active minutes against {self.limit:.0f} for a sprint of {self.size} "
                 f"criteria" + (f" and {self.items} adopted specialist items" if self.items else "")
-                + (f"; still failing: {', '.join(failing)}" if failing else ""))
+                + (f"; still failing: {', '.join(failing)}" if failing else "")
+                + (f"; {passed_unbuilt.SAID}: {', '.join(unproven)}" if unproven else ""))
 
 
 def _when(text: str) -> datetime | None:
@@ -262,11 +267,33 @@ def a_fix_round_already_sent(state: Any, *, stage: str) -> bool:
     return False
 
 
+def resumed_minutes(path: Path, since: datetime | None) -> float:
+    """The active minutes between a stop and its resume, from the sprint's first plan on: each gap (at most
+    `PAUSE_GAP_SECONDS`) that ends on a `resumed` record. A pause, a rewind or a deploy is not the sprint working
+    (LF.1448: 9 such minutes in one medium run's sprint). Taken off its active minutes."""
+    seconds, last = 0.0, None
+    for moment, stage, kind in _entries(path, since):
+        if last is not None and kind == "resumed" and not _REVIEW_STAGE.match(stage):
+            gap = (moment - last).total_seconds()
+            if _on_the_clock(gap):
+                seconds += gap
+        last = moment
+    return seconds / 60
+
+
 def _the_sprint_began_after(state: Any) -> datetime | None:
-    """When the previous sprint's last attempt ended, or None for the first sprint."""
+    """When the previous sprint's last attempt ended, or when the escalation planned this sprint again for its
+    foundation, whichever is later; None for the first sprint never planned again.
+
+    The re-planned attempt is a new attempt (LF.1448): measured on a medium run, the escalation planned sprint 1 again
+    at 219 active minutes against 102, and the new attempt began on the same clock, past twice its budget, so the
+    budget ended it one test round after the tester had found the next causes.
+    """
     index = int(state.get("current_sprint_index") or 0)
     ends = [_when(str(entry.get("ended_at"))) for entry in state.get("sprint_attempts") or []
             if isinstance(entry, dict) and entry.get("ended_at") and int(entry.get("sprint_index") or 0) < index]
+    if index in [int(n) for n in state.get("foundation_replanned_sprints") or []] and state.get("foundation_replanned_at"):
+        ends.append(_when(str(state.get("foundation_replanned_at"))))
     ends = [end for end in ends if end is not None]
     return max(ends) if ends else None
 
@@ -291,7 +318,7 @@ def measure(state: Any, *, run_id: str | None = None, now: datetime | None = Non
         due = tuple(criteria_due(state) or own)
         since = _the_sprint_began_after(state)
         spent = (active_minutes(moments, now or datetime.now(timezone.utc)) - review_minutes(path, since)
-                 - failed_call_minutes(path, since))
+                 - failed_call_minutes(path, since) - resumed_minutes(path, since))
         return Budget(round(max(spent, 0.0), 1), limit_for(size, items), size, due, items)
     except Exception as error:  # noqa: BLE001 - a sprint with no measured time is planned as before
         degraded("measure.sprint_time", error)
@@ -326,5 +353,5 @@ def stops_the_fix_round(state: Any, *, stage: str) -> str:
 
 __all__ = ["BASE_MINUTES", "Budget", "FIX_ROUND_FACTOR", "ON_BY_DEFAULT", "RECORD_KIND", "PAUSE_GAP_SECONDS",
            "PER_ADOPTED_ITEM_MINUTES", "PER_CRITERION_MINUTES", "SAID", "a_fix_round_already_sent", "active_minutes",
-           "adopted_items", "enabled", "failed_call_minutes", "limit_for", "measure", "moments_since", "sprint_size",
-           "still_failing", "stops_the_fix_round"]
+           "adopted_items", "enabled", "failed_call_minutes", "limit_for", "measure", "moments_since",
+           "resumed_minutes", "sprint_size", "still_failing", "stops_the_fix_round"]

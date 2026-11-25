@@ -1181,6 +1181,10 @@ def _reviewed_and_locked(state: Any, config: RunnableConfig, ctx: Context) -> di
                      and not any(str(key).startswith("specialist_") for key in (state.get("specialist_outputs") or {})))
     problems.extend(_noted("tests_that_pass_before_the_product",
                                          suite.tests_that_pass_before_the_product(result, nothing_built)))
+    # Kept by name, so no later status line reads a criterion as met on them alone (LF.1446).
+    from app.acceptance import passed_unbuilt
+
+    passed_unbuilt.record(root, result, nothing_built)
     # Too lenient rather than impossible: a suite that passes a product it
     # should fail. The review sends these back; a test round has nothing to
     # charge for them.
@@ -1420,6 +1424,15 @@ def _reviewed_and_locked(state: Any, config: RunnableConfig, ctx: Context) -> di
                 _keep_before_the_send_back(root)
                 suite._save_state(root, {**suite._state(root), "strengthened_once": True})
                 return _handing_on(**update, stage="acceptance_author", acceptance_feedback=[STRENGTHEN_ONLY, *weak])
+            # A test the QA lead says fails on a correct product is repaired once before the lock, in either delivery
+            # mode, rather than found by fix rounds against it (LF.1442).
+            from app.graph import suite_gate as _the_gate
+
+            if repair := _the_gate.repair_before_the_lock(root, findings, graded):
+                logger.info("At the review's limit, %d finding(s) of tests that fail on a correct product go back once "
+                            "to be repaired", len(repair) - 1)
+                _keep_before_the_send_back(root)
+                return _handing_on(**update, stage="acceptance_author", acceptance_feedback=repair)
 
     if approved_by_a_person:
         findings = [*findings, *suite_gate.approved_qa_lead_findings(state)]
@@ -1698,12 +1711,15 @@ def criteria_brief(state: Any) -> str:
         **{k: v.get("status") for k, v in (saved.get("criteria") or {}).items()},
         **{k: v.get("status") for k, v in (saved.get("change_requests") or {}).items()},
     }
+    from app.acceptance import passed_unbuilt
+
+    unproven = passed_unbuilt.unproven(root, saved)
     lines = []
     for item in due:
         tests = covered.get(item, [])
         lines.append(
             f"- {item}: {texts.get(item, '')}"
-            + (f" - currently {str(status[item]).upper()}" if status.get(item) else "")
+            + (f" - currently {passed_unbuilt.shown(status[item], item, unproven)}" if status.get(item) else "")
             + (f"\n    tests: {'; '.join(tests[:4])}" if tests else "")
         )
     return (

@@ -429,11 +429,18 @@ def _kept(root: str | Path | None) -> list[dict[str, Any]]:
 
 
 def the_rulings_section(root: str | Path | None) -> str:
-    """The block a request carries the rulings in; "" when there are none or it is off. Never raises."""
+    """The block a request carries the rulings in; "" when there are none or it is off. Never raises.
+
+    Preceded, with no switch, by the design findings resolved on a claim about a library, a tool or the test setup,
+    each a claim to verify, not a fact (`design_gate.the_claims_section`, LF.1440).
+    """
+    from app.graph.design_gate import the_claims_section
+
+    claims = the_claims_section(root)
     rulings = _kept(root)
     if not rulings:
-        return ""
-    return f"\n\n{HEADING}\n" + "\n".join(
+        return claims
+    return claims + f"\n\n{HEADING}\n" + "\n".join(
         (f"- {r.get('decision')}: the brief's \"{r.get('stands')}\" stands, over the specification's "
          f"\"{r.get('gives_way')}\". {r.get('why')} Build and test to the brief's words."
          if r.get("from_the_brief") else

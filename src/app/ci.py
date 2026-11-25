@@ -263,11 +263,36 @@ def _what_it_says(message: str) -> str:
     return ("\n  ".join(stated) if stated else text)[:MOST_MESSAGE]
 
 
-def _its_cause(message: str) -> str:
-    """The one line a failure's cause is grouped by: its first stated error, else its first line."""
+#: A line that gives one of the values an assertion compared, after the assertion's own line (LF.1451): `Expected:`,
+#: `Received:`, `Actual:`, Rust's `left:` / `right:`, `got` / `want`.
+_A_COMPARED_VALUE = re.compile(r"^(?:expected|received|actual|left|right|got|want)\b(?:\s+\w+)?\s*:", re.I)
+#: What a runner prints around a test that says nothing of why it failed: a bare `Failed`, `=== RUN` and `--- FAIL`
+#: framing lines.
+_SAYS_ONLY_THAT_IT_FAILED = re.compile(r"^(?:failed\.?|={3}\s|-{3}\s)", re.I)
+
+
+def _its_cause(message: str, name: str = "") -> str:
+    """The text a failure's cause is grouped by: its first stated error with the values it compared, else its first
+    line that says more than that it failed or what the test is called.
+
+    The first stated error alone grouped unlike failures (LF.1451): in several runners it is the assertion's generic
+    header (`assertion \\`left == right\\` failed`, `Assert.Equal() Failure: Values differ`, a bare `Failed`), so a 500
+    where a 422 was wanted and an empty list where two notes were were one cause, and every Go failure was `Failed`.
+    """
+    lines = [" ".join(line.split()) for line in str(message or "").splitlines()]
     stated = _its_error_lines(message)
-    first = stated[0] if stated else next((" ".join(l.split()) for l in str(message or "").splitlines() if l.strip()), "")
-    return first[:200]
+    own = " ".join(str(name or "").split())
+    first = stated[0] if stated else next(
+        (line for line in lines if line and not _SAYS_ONLY_THAT_IT_FAILED.match(line) and line != own), "")
+    if not first:
+        first = next((line for line in lines if line), "")
+    values: list[str] = []
+    if first in lines:
+        for line in lines[lines.index(first) + 1:]:
+            if not _A_COMPARED_VALUE.match(line):
+                break
+            values.append(line)
+    return "; ".join([first, *values[:3]])[:200]
 
 
 def what_the_failing_unit_tests_say(tests: Sequence[Any]) -> str:
@@ -286,7 +311,7 @@ def what_the_failing_unit_tests_say(tests: Sequence[Any]) -> str:
     ) + (f"\n... and {len(failed) - 12} more" if len(failed) > 12 else "")
     groups: dict[str, list[Any]] = {}
     for test in failed:
-        groups.setdefault(_its_cause(test.message), []).append(test)
+        groups.setdefault(_its_cause(test.message, getattr(test, "name", "")), []).append(test)
     if len(failed) < 2:
         return listed
     lines = []
@@ -616,18 +641,28 @@ def changed_since(root: str | Path, commit_id: str) -> list[str]:
     return [line.strip() for line in result.stdout.splitlines() if line.strip() and (Path(root) / line.strip()).is_file()]
 
 
+#: Paths a fix stage's measurement and the harness write that are not the product (LF.1444): the workflow's documents,
+#: the harness's records, test reports, caches, and the file a command line's code was saved to (`tmp-inline-*`).
+NOT_THE_PRODUCT = (":(exclude)docs", ":(exclude,glob).harness/**", ":(exclude,glob)**/test-results/**",
+                   ":(exclude,glob)**/__pycache__/**", ":(exclude,glob)**/tmp-inline-*")
+
+
 def unchanged_since(root: str | Path, commit_id: str) -> bool | None:
-    """Whether the workspace is exactly as `commit_id` left it: no file changed since, committed or not; None when git
-    cannot say (no commit to compare with, git refused). Files git ignores - the harness's own records - are not
-    changes."""
+    """Whether the product is exactly as `commit_id` left it: no file of it changed since, committed or not; None when
+    git cannot say (no commit to compare with, git refused). Files git ignores and `NOT_THE_PRODUCT` are not changes.
+
+    Read over the whole workspace (LF.1444), a fixer whose two edits were both refused counted as a change because the
+    harness had saved its one `python3 -c` command to `tmp-inline-<hash>.py`; it was settled "its own tests still
+    fail", and the next fixer was told the change it never made was measured and failed.
+    """
     if not commit_id:
         return None
-    committed = _git(root, "diff", "--quiet", commit_id, "HEAD", "--")
+    committed = _git(root, "diff", "--quiet", commit_id, "HEAD", "--", ".", *NOT_THE_PRODUCT)
     if committed is None or committed.returncode not in (0, 1):
         return None
     if committed.returncode == 1:
         return False
-    status = _git(root, "status", "--porcelain")
+    status = _git(root, "status", "--porcelain", "--", ".", *NOT_THE_PRODUCT)
     if status is None or status.returncode != 0:
         return None
     return not status.stdout.strip()

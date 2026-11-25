@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="68" failures="2" errors="0" time="0.020233">
+	<testsuite tests="68" failures="2" time="0.020000" name="notes_api" timestamp="2026-11-19T15:16:12Z">
+		<properties>
+			<property name="go.version" value="go1.26.9 linux/amd64"></property>
+		</properties>
+		<testcase classname="notes_api" name="TestContentTypeAllHandlers/DeleteNote" time="0.000000">
+			<failure message="Failed" type="">=== RUN   TestContentTypeAllHandlers/DeleteNote&#xA;    handlers_test.go:619: Content-Type = &#34;&#34;; want &#34;application/json&#34;&#xA;--- FAIL: TestContentTypeAllHandlers/DeleteNote (0.00s)&#xA;</failure>
+		</testcase>
+		<testcase classname="notes_api" name="TestContentTypeAllHandlers" time="0.000000">
+			<failure message="Failed" type="">=== RUN   TestContentTypeAllHandlers&#xA;--- FAIL: TestContentTypeAllHandlers (0.00s)&#xA;</failure>
+		</testcase>
+		<testcase classname="notes_api" name="TestHandleCreateNoteValidBody" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestHandleCreateNoteEmptyTitle" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestHandleCreateNoteMissingTitle" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestHandleCreateNoteInvalidJSON" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestHandleCreateNoteEmptyBody" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestHandleCreateNoteOnlyTitle" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestHandleCreateNoteNullTitle" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestHandleListNotesEmpty" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestHandleListNotesWithNotes" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestHandleGetNoteFound" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestHandleGetNoteNotFound" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestHandleGetNoteInvalidIDNonInteger" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestHandleGetNoteInvalidIDZero" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestHandleGetNoteInvalidIDNegative" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestHandleUpdateNoteValid" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestHandleUpdateNoteNotFound" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestHandleUpdateNoteInvalidID" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestHandleUpdateNoteEmptyTitle" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestHandleUpdateNoteInvalidJSON" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestHandleUpdateNoteMissingTitle" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestHandleDeleteNoteFound" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestHandleDeleteNoteNotFound" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestHandleDeleteNoteInvalidID" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestHandleDeleteNoteZeroID" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestHandleDeleteNoteNegativeID" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestHandleDeleteNoteThenVerifyGone" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestHandleHealth" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestContentTypeAllHandlers/CreateNote" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestContentTypeAllHandlers/ListNotes" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestContentTypeAllHandlers/GetNote" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestContentTypeAllHandlers/UpdateNote" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestContentTypeAllHandlers/Health" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestCreateNoteEmptyTitleDoesNotStore" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestCreateNoteMissingTitleDoesNotStore" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestCreateNoteInvalidJSONDoesNotStore" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestNoteSchemaExactlyThreeFields" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestNewStorageCreatesDataDir" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestCreateIncrementsID" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestCreateEmptyStorage" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestNextIDInternalWithNotes" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestNextIDSingleNote" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestNextIDInternalEmpty" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestNextIDWithGaps" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestNextIDAfterOneNote" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestRoundTripSaveLoad" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestNextIDEmpty" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestSaveOverwritesCorrectly" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestMalformedJSONRecovery" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestDeleteNonExistent" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestDeleteExisting" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestUpdateNonExistent" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestUpdatePersistedToFile" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestConcurrentCreateUniqueIDs" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestUpdateExisting" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestGetNonExistent" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestGetExisting" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestCreateWithEmptyBody" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestCreatePersistedToFile" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestLoadValidJSON" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestLoadEmptyFile" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestSaveCreatesAtomicFile" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestLoadMalformedJSON" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestSaveWritesJSONFile" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestLoadMissingFile" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestLoadValidEmptyArray" time="0.000000"></testcase>
+		<testcase classname="notes_api" name="TestNewStorageReturnsErrorOnInvalidDir" time="0.000000"></testcase>
+	</testsuite>
+</testsuites>

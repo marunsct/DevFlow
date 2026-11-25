@@ -23,14 +23,17 @@ import subprocess
 from pathlib import Path
 
 #: Paths whose changes are the harness's or a runner's, never the product's.
+#: The file a command line's code was saved to (`tmp-inline-<hash>.<ext>`) is the harness's too (LF.1444): measured on
+#: a medium run, two measurements 11 seconds apart read two products when only such a file had been written.
 _NOT_THE_PRODUCT = (":(exclude,glob).harness/**", ":(exclude,glob)**/test-results/**",
-                    ":(exclude,glob)**/__pycache__/**", ":(exclude,glob)docs/**")
+                    ":(exclude,glob)**/__pycache__/**", ":(exclude,glob)docs/**", ":(exclude,glob)**/tmp-inline-*")
 
 
 def _the_harness_s(path: str) -> bool:
     """Whether `path` is one `_NOT_THE_PRODUCT` leaves out: the harness's records, test results, caches."""
     parts = path.split("/")
-    return parts[0] in (".harness", "docs") or "test-results" in parts[:-1] or "__pycache__" in parts[:-1]
+    return (parts[0] in (".harness", "docs") or "test-results" in parts[:-1] or "__pycache__" in parts[:-1]
+            or parts[-1].startswith("tmp-inline-"))
 
 
 def _git(root: Path, *args: str) -> str | None:

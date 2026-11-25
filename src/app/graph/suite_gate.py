@@ -17,10 +17,14 @@ At the lock, in thorough delivery, for a suite written before its development (n
 - a gating finding the next review no longer raises is resolved in that round, recorded in the decision log.
 
 Fast delivery, a suite reopened for a repair, and findings below the gating severities lock as before.
+
+In both delivery modes, before any lock at the review's limit, a QA lead's finding that a test fails on a correct
+product gets one repair of those tests alone (`repair_before_the_lock`, LF.1442).
 """
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Iterable
 
 logger = logging.getLogger(__name__)
@@ -75,6 +79,58 @@ def severity_of_a_check(check: str) -> str:
     if check in _PASSES_WITHOUT_THE_PRODUCT:
         return "major"
     return "minor"
+
+
+#: Said by a finding that a test fails on a product that does what its criterion says: no product can be measured
+#: done by it. The QA lead's words (`acceptance_reviewer.SEVERITY_RULE`) and the harness's own (`cannot pass for any
+#: product`).
+_FAILS_A_CORRECT_PRODUCT = re.compile(
+    r"\b(?:on|for) a correct product\b|regardless of whether the product|\bno product (?:could|can) pass\b"
+    r"|\bcannot pass for any product\b|\beven though the product correctly\b", re.I)
+
+#: The suite's state key that says the one repair before the lock was made.
+REPAIRED_BEFORE_THE_LOCK = "correct_product_repaired_once"
+
+
+def fails_a_correct_product(findings: Iterable[Any], graded: dict[str, str] | None) -> list[str]:
+    """The QA lead's findings that say a test fails on a correct product: graded blocking (its rule's "no product
+    could pass the test"), or of a gating severity in those words."""
+    if graded is None:
+        return []
+    found = []
+    for finding in dict.fromkeys(str(item) for item in findings):
+        severity = str(graded.get(finding) or "minor")
+        if severity == "blocking" or (_gates(severity) and _FAILS_A_CORRECT_PRODUCT.search(finding)):
+            found.append(finding)
+    return found
+
+
+def repair_before_the_lock(root: Any, findings: Iterable[Any], graded: dict[str, str] | None) -> list[str]:
+    """The feedback that sends tests that fail on a correct product back for one repair of those tests alone before
+    the suite locks, in either delivery mode; [] when there are none or the one repair was made (LF.1442).
+
+    Measured on a fast run: the suite locked after 3 rounds "with these still open", one of them the QA lead's
+    blocking finding that a test left a record behind which made a later test fail "even though the product correctly
+    rejected" the request. Fix rounds ran against that suite for 88 minutes before the harness's own check reached the
+    same conclusion and reopened it; the repair took two more hours. Once per suite, so a repair that did not take
+    locks as before. Never raises.
+    """
+    try:
+        from app.acceptance import suite
+        from app.graph.acceptance_nodes import REPAIR_ONLY
+
+        if suite._state(root).get(REPAIRED_BEFORE_THE_LOCK):
+            return []
+        found = fails_a_correct_product(findings, graded)
+        if not found:
+            return []
+        suite._save_state(root, {**suite._state(root), REPAIRED_BEFORE_THE_LOCK: True})
+        return [REPAIR_ONLY, *found]
+    except Exception as error:  # noqa: BLE001 - the suite locks as before
+        from app.observability.degraded import degraded
+
+        degraded("suite_gate.repair_before_the_lock", error)
+        return []
 
 
 def _gates(severity: Any) -> bool:
@@ -351,8 +407,8 @@ SUITE = "suite"
 
 
 __all__ = [
-    "KEY", "QA_LEAD", "SUITE", "WAITS", "applies", "approved_as_it_stands", "approved_by_the_person",
-    "approved_qa_lead_findings", "before_the_lock", "gating_findings", "held_for_a_person", "holds",
-    "open_findings", "page", "severity_of_a_check", "the_open_findings_text", "the_qa_lead_reads_again",
-    "why_it_waits",
+    "KEY", "QA_LEAD", "REPAIRED_BEFORE_THE_LOCK", "SUITE", "WAITS", "applies", "approved_as_it_stands",
+    "approved_by_the_person", "approved_qa_lead_findings", "before_the_lock", "fails_a_correct_product",
+    "gating_findings", "held_for_a_person", "holds", "open_findings", "page", "repair_before_the_lock",
+    "severity_of_a_check", "the_open_findings_text", "the_qa_lead_reads_again", "why_it_waits",
 ]

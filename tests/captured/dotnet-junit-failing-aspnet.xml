@@ -1,0 +1,636 @@
+<testsuites>
+  <testsuite name="UnitTests.dll" tests="18" skipped="0" failures="15" errors="0" time="0.3411557999999999" timestamp="2026-11-17T08:36:16" hostname="e92a6ed831f9" id="0" package="UnitTests.dll">
+    <properties />
+    <testcase classname="NotesApi.UnitTests.NotesApiTests" name="NotesApiTests.LargeRequestBody_Returns400" time="0.0988912">
+      <failure type="failure" message="Assert.Equal() Failure: Values differ&#xA;Expected: BadRequest&#xA;Actual:   InternalServerError">Assert.Equal() Failure: Values differ
+Expected: BadRequest
+Actual:   InternalServerError
+Stack Trace:
+   at NotesApi.UnitTests.NotesApiTests.LargeRequestBody_Returns400() in /workspace/notes-api/tests/UnitTests/NotesApiTests.cs:line 362
+--- End of stack trace from previous location ---</failure>
+    </testcase>
+    <testcase classname="NotesApi.UnitTests.NotesApiTests" name="NotesApiTests.ListNotes_ReturnsEmptyArray" time="0.0319403" />
+    <testcase classname="NotesApi.UnitTests.NotesApiTests" name="NotesApiTests.ListNotes_ReturnsSortedByAscendingId" time="0.0241474">
+      <failure type="failure" message="Assert.Equal() Failure: Values differ&#xA;Expected: 2&#xA;Actual:   0">Assert.Equal() Failure: Values differ
+Expected: 2
+Actual:   0
+Stack Trace:
+   at NotesApi.UnitTests.NotesApiTests.ListNotes_ReturnsSortedByAscendingId() in /workspace/notes-api/tests/UnitTests/NotesApiTests.cs:line 197
+--- End of stack trace from previous location ---</failure>
+    </testcase>
+    <testcase classname="NotesApi.UnitTests.NotesApiTests" name="NotesApiTests.HealthEndpoint_Returns200" time="0.0158077">
+      <failure type="failure" message="Assert.Equal() Failure: Strings differ&#xA;Expected: &quot;application/json&quot;&#xA;Actual:   null">Assert.Equal() Failure: Strings differ
+Expected: "application/json"
+Actual:   null
+Stack Trace:
+   at NotesApi.UnitTests.NotesApiTests.HealthEndpoint_Returns200() in /workspace/notes-api/tests/UnitTests/NotesApiTests.cs:line 87
+--- End of stack trace from previous location ---</failure>
+    </testcase>
+    <testcase classname="NotesApi.UnitTests.NotesApiTests" name="NotesApiTests.CreateNote_Returns201AndNote" time="0.0095920">
+      <failure type="failure" message="Assert.Equal() Failure: Values differ&#xA;Expected: Created&#xA;Actual:   InternalServerError">Assert.Equal() Failure: Values differ
+Expected: Created
+Actual:   InternalServerError
+Stack Trace:
+   at NotesApi.UnitTests.NotesApiTests.CreateNote_Returns201AndNote() in /workspace/notes-api/tests/UnitTests/NotesApiTests.cs:line 100
+--- End of stack trace from previous location ---</failure>
+    </testcase>
+    <testcase classname="NotesApi.UnitTests.NotesApiTests" name="NotesApiTests.CreateNote_RejectsMissingTitle" time="0.0095982">
+      <failure type="failure" message="Assert.Equal() Failure: Values differ&#xA;Expected: BadRequest&#xA;Actual:   InternalServerError">Assert.Equal() Failure: Values differ
+Expected: BadRequest
+Actual:   InternalServerError
+Stack Trace:
+   at NotesApi.UnitTests.NotesApiTests.CreateNote_RejectsMissingTitle() in /workspace/notes-api/tests/UnitTests/NotesApiTests.cs:line 163
+--- End of stack trace from previous location ---</failure>
+    </testcase>
+    <testcase classname="NotesApi.UnitTests.NotesApiTests" name="NotesApiTests.DeleteNote_Returns204" time="0.0120956">
+      <failure type="failure" message="Assert.Equal() Failure: Values differ&#xA;Expected: NoContent&#xA;Actual:   NotFound">Assert.Equal() Failure: Values differ
+Expected: NoContent
+Actual:   NotFound
+Stack Trace:
+   at NotesApi.UnitTests.NotesApiTests.DeleteNote_Returns204() in /workspace/notes-api/tests/UnitTests/NotesApiTests.cs:line 291
+--- End of stack trace from previous location ---</failure>
+    </testcase>
+    <testcase classname="NotesApi.UnitTests.NotesApiTests" name="NotesApiTests.UpdateNote_Returns404" time="0.0094626">
+      <failure type="failure" message="Assert.Equal() Failure: Values differ&#xA;Expected: NotFound&#xA;Actual:   InternalServerError">Assert.Equal() Failure: Values differ
+Expected: NotFound
+Actual:   InternalServerError
+Stack Trace:
+   at NotesApi.UnitTests.NotesApiTests.UpdateNote_Returns404() in /workspace/notes-api/tests/UnitTests/NotesApiTests.cs:line 261
+--- End of stack trace from previous location ---</failure>
+    </testcase>
+    <testcase classname="NotesApi.UnitTests.NotesApiTests" name="NotesApiTests.UpdateNote_ReturnsUpdatedNote" time="0.0117775">
+      <failure type="failure" message="Assert.Equal() Failure: Values differ&#xA;Expected: OK&#xA;Actual:   InternalServerError">Assert.Equal() Failure: Values differ
+Expected: OK
+Actual:   InternalServerError
+Stack Trace:
+   at NotesApi.UnitTests.NotesApiTests.UpdateNote_ReturnsUpdatedNote() in /workspace/notes-api/tests/UnitTests/NotesApiTests.cs:line 247
+--- End of stack trace from previous location ---</failure>
+    </testcase>
+    <testcase classname="NotesApi.UnitTests.NotesApiTests" name="NotesApiTests.CreateNote_RejectsWhitespaceTitle" time="0.0085670">
+      <failure type="failure" message="Assert.Equal() Failure: Values differ&#xA;Expected: BadRequest&#xA;Actual:   InternalServerError">Assert.Equal() Failure: Values differ
+Expected: BadRequest
+Actual:   InternalServerError
+Stack Trace:
+   at NotesApi.UnitTests.NotesApiTests.CreateNote_RejectsWhitespaceTitle() in /workspace/notes-api/tests/UnitTests/NotesApiTests.cs:line 150
+--- End of stack trace from previous location ---</failure>
+    </testcase>
+    <testcase classname="NotesApi.UnitTests.NotesApiTests" name="NotesApiTests.UpdateNote_InvalidTitle_Returns400" time="0.0099130">
+      <failure type="failure" message="Assert.Equal() Failure: Values differ&#xA;Expected: BadRequest&#xA;Actual:   InternalServerError">Assert.Equal() Failure: Values differ
+Expected: BadRequest
+Actual:   InternalServerError
+Stack Trace:
+   at NotesApi.UnitTests.NotesApiTests.UpdateNote_InvalidTitle_Returns400() in /workspace/notes-api/tests/UnitTests/NotesApiTests.cs:line 274
+--- End of stack trace from previous location ---</failure>
+    </testcase>
+    <testcase classname="NotesApi.UnitTests.NotesApiTests" name="NotesApiTests.GetNoteById_ReturnsNote" time="0.0103231">
+      <failure type="failure" message="Assert.Equal() Failure: Values differ&#xA;Expected: OK&#xA;Actual:   NotFound">Assert.Equal() Failure: Values differ
+Expected: OK
+Actual:   NotFound
+Stack Trace:
+   at NotesApi.UnitTests.NotesApiTests.GetNoteById_ReturnsNote() in /workspace/notes-api/tests/UnitTests/NotesApiTests.cs:line 214
+--- End of stack trace from previous location ---</failure>
+    </testcase>
+    <testcase classname="NotesApi.UnitTests.NotesApiTests" name="NotesApiTests.PersistenceAcrossRestart" time="0.0165154">
+      <failure type="failure" message="Assert.Equal() Failure: Values differ&#xA;Expected: Created&#xA;Actual:   InternalServerError">Assert.Equal() Failure: Values differ
+Expected: Created
+Actual:   InternalServerError
+Stack Trace:
+   at NotesApi.UnitTests.NotesApiTests.PersistenceAcrossRestart() in /workspace/notes-api/tests/UnitTests/NotesApiTests.cs:line 329
+--- End of stack trace from previous location ---</failure>
+    </testcase>
+    <testcase classname="NotesApi.UnitTests.NotesApiTests" name="NotesApiTests.CreateNote_RejectsEmptyTitle" time="0.0085191">
+      <failure type="failure" message="Assert.Equal() Failure: Values differ&#xA;Expected: BadRequest&#xA;Actual:   InternalServerError">Assert.Equal() Failure: Values differ
+Expected: BadRequest
+Actual:   InternalServerError
+Stack Trace:
+   at NotesApi.UnitTests.NotesApiTests.CreateNote_RejectsEmptyTitle() in /workspace/notes-api/tests/UnitTests/NotesApiTests.cs:line 139
+--- End of stack trace from previous location ---</failure>
+    </testcase>
+    <testcase classname="NotesApi.UnitTests.NotesApiTests" name="NotesApiTests.NoteHasExactlyThreeKeys" time="0.0093640">
+      <failure type="failure" message="Assert.Equal() Failure: Values differ&#xA;Expected: Created&#xA;Actual:   InternalServerError">Assert.Equal() Failure: Values differ
+Expected: Created
+Actual:   InternalServerError
+Stack Trace:
+   at NotesApi.UnitTests.NotesApiTests.NoteHasExactlyThreeKeys() in /workspace/notes-api/tests/UnitTests/NotesApiTests.cs:line 116
+--- End of stack trace from previous location ---</failure>
+    </testcase>
+    <testcase classname="NotesApi.UnitTests.NotesApiTests" name="NotesApiTests.DeleteNonexistentNote_Returns404" time="0.0353268" />
+    <testcase classname="NotesApi.UnitTests.NotesApiTests" name="NotesApiTests.GetNoteById_Returns404" time="0.0092111" />
+    <testcase classname="NotesApi.UnitTests.NotesApiTests" name="NotesApiTests.DeleteNote_RemovesFromStore" time="0.0101038">
+      <failure type="failure" message="Assert.Equal() Failure: Values differ&#xA;Expected: NoContent&#xA;Actual:   NotFound">Assert.Equal() Failure: Values differ
+Expected: NoContent
+Actual:   NotFound
+Stack Trace:
+   at NotesApi.UnitTests.NotesApiTests.DeleteNote_RemovesFromStore() in /workspace/notes-api/tests/UnitTests/NotesApiTests.cs:line 303
+--- End of stack trace from previous location ---</failure>
+    </testcase>
+    <system-out>
+Test Framework Informational Messages:
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.0.2+dd36e86129 (64-bit .NET 8.0.34)
+[xUnit.net 00:00:00.08]   Discovering: UnitTests
+[xUnit.net 00:00:00.11]   Discovered:  UnitTests
+[xUnit.net 00:00:00.12]   Starting:    UnitTests
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 POST http://localhost/notes - application/json 1048606
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: POST /notes =&gt; CreateNoteHandler'
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: POST /notes =&gt; CreateNoteHandler'
+fail: Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddleware[1]
+      An unhandled exception has occurred while executing the request.
+      Microsoft.AspNetCore.Http.BadHttpRequestException: Required parameter "string title" was not provided from query string.
+         at lambda_method41(Closure, Object, HttpContext)
+         at Microsoft.AspNetCore.Routing.EndpointMiddleware.Invoke(HttpContext httpContext)
+         at Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddlewareImpl.Invoke(HttpContext context)
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 POST http://localhost/notes - 500 - application/json 48.5597ms
+[xUnit.net 00:00:00.85]       Assert.Equal() Failure: Values differ
+[xUnit.net 00:00:00.85]       Expected: BadRequest
+[xUnit.net 00:00:00.85]       Actual:   InternalServerError
+[xUnit.net 00:00:00.85]       Stack Trace:
+[xUnit.net 00:00:00.85]         /workspace/notes-api/tests/UnitTests/NotesApiTests.cs(362,0): at NotesApi.UnitTests.NotesApiTests.LargeRequestBody_Returns400()
+[xUnit.net 00:00:00.85]         --- End of stack trace from previous location ---
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 GET http://localhost/notes - - -
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: GET /notes =&gt; GetAllNotesHandler'
+info: Microsoft.AspNetCore.Http.Result.OkObjectResult[1]
+      Setting HTTP status code 200.
+info: Microsoft.AspNetCore.Http.Result.OkObjectResult[3]
+      Writing value of type 'List`1' as Json.
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: GET /notes =&gt; GetAllNotesHandler'
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 GET http://localhost/notes - 200 - application/json;+charset=utf-8 11.6857ms
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 POST http://localhost/notes - application/json;+charset=utf-8 29
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: POST /notes =&gt; CreateNoteHandler'
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: POST /notes =&gt; CreateNoteHandler'
+fail: Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddleware[1]
+      An unhandled exception has occurred while executing the request.
+      Microsoft.AspNetCore.Http.BadHttpRequestException: Required parameter "string title" was not provided from query string.
+         at lambda_method53(Closure, Object, HttpContext)
+         at Microsoft.AspNetCore.Routing.EndpointMiddleware.Invoke(HttpContext httpContext)
+         at Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddlewareImpl.Invoke(HttpContext context)
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 POST http://localhost/notes - 500 - application/json 6.0027ms
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 POST http://localhost/notes - application/json;+charset=utf-8 28
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: POST /notes =&gt; CreateNoteHandler'
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: POST /notes =&gt; CreateNoteHandler'
+fail: Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddleware[1]
+      An unhandled exception has occurred while executing the request.
+      Microsoft.AspNetCore.Http.BadHttpRequestException: Required parameter "string title" was not provided from query string.
+         at lambda_method53(Closure, Object, HttpContext)
+         at Microsoft.AspNetCore.Routing.EndpointMiddleware.Invoke(HttpContext httpContext)
+         at Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddlewareImpl.Invoke(HttpContext context)
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 POST http://localhost/notes - 500 - application/json 0.5371ms
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 GET http://localhost/notes - - -
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: GET /notes =&gt; GetAllNotesHandler'
+info: Microsoft.AspNetCore.Http.Result.OkObjectResult[1]
+      Setting HTTP status code 200.
+info: Microsoft.AspNetCore.Http.Result.OkObjectResult[3]
+      Writing value of type 'List`1' as Json.
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: GET /notes =&gt; GetAllNotesHandler'
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 GET http://localhost/notes - 200 - application/json;+charset=utf-8 0.7680ms
+[xUnit.net 00:00:00.91]       Assert.Equal() Failure: Values differ
+[xUnit.net 00:00:00.91]       Expected: 2
+[xUnit.net 00:00:00.91]       Actual:   0
+[xUnit.net 00:00:00.91]       Stack Trace:
+[xUnit.net 00:00:00.91]         /workspace/notes-api/tests/UnitTests/NotesApiTests.cs(197,0): at NotesApi.UnitTests.NotesApiTests.ListNotes_ReturnsSortedByAscendingId()
+[xUnit.net 00:00:00.91]         --- End of stack trace from previous location ---
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 GET http://localhost/health - - -
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: GET /health =&gt; HealthCheckHandler'
+info: Microsoft.AspNetCore.Http.Result.OkObjectResult[1]
+      Setting HTTP status code 200.
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: GET /health =&gt; HealthCheckHandler'
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 GET http://localhost/health - 200 - - 5.8556ms
+[xUnit.net 00:00:00.93]       Assert.Equal() Failure: Strings differ
+[xUnit.net 00:00:00.93]       Expected: "application/json"
+[xUnit.net 00:00:00.93]       Actual:   null
+[xUnit.net 00:00:00.93]       Stack Trace:
+[xUnit.net 00:00:00.93]         /workspace/notes-api/tests/UnitTests/NotesApiTests.cs(87,0): at NotesApi.UnitTests.NotesApiTests.HealthEndpoint_Returns200()
+[xUnit.net 00:00:00.93]         --- End of stack trace from previous location ---
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 POST http://localhost/notes - application/json;+charset=utf-8 40
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: POST /notes =&gt; CreateNoteHandler'
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: POST /notes =&gt; CreateNoteHandler'
+fail: Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddleware[1]
+      An unhandled exception has occurred while executing the request.
+      Microsoft.AspNetCore.Http.BadHttpRequestException: Required parameter "string title" was not provided from query string.
+         at lambda_method65(Closure, Object, HttpContext)
+         at Microsoft.AspNetCore.Routing.EndpointMiddleware.Invoke(HttpContext httpContext)
+         at Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddlewareImpl.Invoke(HttpContext context)
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 POST http://localhost/notes - 500 - application/json 5.2175ms
+[xUnit.net 00:00:00.95]       Assert.Equal() Failure: Values differ
+[xUnit.net 00:00:00.95]       Expected: Created
+[xUnit.net 00:00:00.95]       Actual:   InternalServerError
+[xUnit.net 00:00:00.95]       Stack Trace:
+[xUnit.net 00:00:00.95]         /workspace/notes-api/tests/UnitTests/NotesApiTests.cs(100,0): at NotesApi.UnitTests.NotesApiTests.CreateNote_Returns201AndNote()
+[xUnit.net 00:00:00.95]         --- End of stack trace from previous location ---
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 POST http://localhost/notes - application/json;+charset=utf-8 15
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: POST /notes =&gt; CreateNoteHandler'
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: POST /notes =&gt; CreateNoteHandler'
+fail: Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddleware[1]
+      An unhandled exception has occurred while executing the request.
+      Microsoft.AspNetCore.Http.BadHttpRequestException: Required parameter "string title" was not provided from query string.
+         at lambda_method71(Closure, Object, HttpContext)
+         at Microsoft.AspNetCore.Routing.EndpointMiddleware.Invoke(HttpContext httpContext)
+         at Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddlewareImpl.Invoke(HttpContext context)
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 POST http://localhost/notes - 500 - application/json 5.0988ms
+[xUnit.net 00:00:00.98]       Assert.Equal() Failure: Values differ
+[xUnit.net 00:00:00.98]       Expected: BadRequest
+[xUnit.net 00:00:00.98]       Actual:   InternalServerError
+[xUnit.net 00:00:00.98]       Stack Trace:
+[xUnit.net 00:00:00.98]         /workspace/notes-api/tests/UnitTests/NotesApiTests.cs(163,0): at NotesApi.UnitTests.NotesApiTests.CreateNote_RejectsMissingTitle()
+[xUnit.net 00:00:00.98]         --- End of stack trace from previous location ---
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 POST http://localhost/notes - application/json;+charset=utf-8 35
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: POST /notes =&gt; CreateNoteHandler'
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: POST /notes =&gt; CreateNoteHandler'
+fail: Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddleware[1]
+      An unhandled exception has occurred while executing the request.
+      Microsoft.AspNetCore.Http.BadHttpRequestException: Required parameter "string title" was not provided from query string.
+         at lambda_method77(Closure, Object, HttpContext)
+         at Microsoft.AspNetCore.Routing.EndpointMiddleware.Invoke(HttpContext httpContext)
+         at Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddlewareImpl.Invoke(HttpContext context)
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 POST http://localhost/notes - 500 - application/json 5.0373ms
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 DELETE http://localhost/notes/0 - - -
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: DELETE /notes/{id:int} =&gt; DeleteNoteHandler'
+info: Microsoft.AspNetCore.Http.Result.NotFoundObjectResult[1]
+      Setting HTTP status code 404.
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: DELETE /notes/{id:int} =&gt; DeleteNoteHandler'
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 DELETE http://localhost/notes/0 - 404 - - 1.1270ms
+[xUnit.net 00:00:00.99]       Assert.Equal() Failure: Values differ
+[xUnit.net 00:00:00.99]       Expected: NoContent
+[xUnit.net 00:00:00.99]       Actual:   NotFound
+[xUnit.net 00:00:00.99]       Stack Trace:
+[xUnit.net 00:00:00.99]         /workspace/notes-api/tests/UnitTests/NotesApiTests.cs(291,0): at NotesApi.UnitTests.NotesApiTests.DeleteNote_Returns204()
+[xUnit.net 00:00:00.99]         --- End of stack trace from previous location ---
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 PUT http://localhost/notes/999999 - application/json;+charset=utf-8 29
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: PUT /notes/{id:int} =&gt; UpdateNoteHandler'
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: PUT /notes/{id:int} =&gt; UpdateNoteHandler'
+fail: Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddleware[1]
+      An unhandled exception has occurred while executing the request.
+      Microsoft.AspNetCore.Http.BadHttpRequestException: Required parameter "string title" was not provided from query string.
+         at lambda_method86(Closure, Object, HttpContext)
+         at Microsoft.AspNetCore.Routing.EndpointMiddleware.Invoke(HttpContext httpContext)
+         at Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddlewareImpl.Invoke(HttpContext context)
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 PUT http://localhost/notes/999999 - 500 - application/json 5.0213ms
+[xUnit.net 00:00:01.01]       Assert.Equal() Failure: Values differ
+[xUnit.net 00:00:01.01]       Expected: NotFound
+[xUnit.net 00:00:01.01]       Actual:   InternalServerError
+[xUnit.net 00:00:01.01]       Stack Trace:
+[xUnit.net 00:00:01.01]         /workspace/notes-api/tests/UnitTests/NotesApiTests.cs(261,0): at NotesApi.UnitTests.NotesApiTests.UpdateNote_Returns404()
+[xUnit.net 00:00:01.01]         --- End of stack trace from previous location ---
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 POST http://localhost/notes - application/json;+charset=utf-8 33
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: POST /notes =&gt; CreateNoteHandler'
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: POST /notes =&gt; CreateNoteHandler'
+fail: Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddleware[1]
+      An unhandled exception has occurred while executing the request.
+      Microsoft.AspNetCore.Http.BadHttpRequestException: Required parameter "string title" was not provided from query string.
+         at lambda_method89(Closure, Object, HttpContext)
+         at Microsoft.AspNetCore.Routing.EndpointMiddleware.Invoke(HttpContext httpContext)
+         at Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddlewareImpl.Invoke(HttpContext context)
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 POST http://localhost/notes - 500 - application/json 5.5189ms
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 PUT http://localhost/notes/0 - application/json;+charset=utf-8 39
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: PUT /notes/{id:int} =&gt; UpdateNoteHandler'
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: PUT /notes/{id:int} =&gt; UpdateNoteHandler'
+fail: Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddleware[1]
+      An unhandled exception has occurred while executing the request.
+      Microsoft.AspNetCore.Http.BadHttpRequestException: Required parameter "string title" was not provided from query string.
+         at lambda_method92(Closure, Object, HttpContext)
+         at Microsoft.AspNetCore.Routing.EndpointMiddleware.Invoke(HttpContext httpContext)
+         at Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddlewareImpl.Invoke(HttpContext context)
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 PUT http://localhost/notes/0 - 500 - application/json 0.4884ms
+[xUnit.net 00:00:01.04]       Assert.Equal() Failure: Values differ
+[xUnit.net 00:00:01.04]       Expected: OK
+[xUnit.net 00:00:01.04]       Actual:   InternalServerError
+[xUnit.net 00:00:01.04]       Stack Trace:
+[xUnit.net 00:00:01.04]         /workspace/notes-api/tests/UnitTests/NotesApiTests.cs(247,0): at NotesApi.UnitTests.NotesApiTests.UpdateNote_ReturnsUpdatedNote()
+[xUnit.net 00:00:01.04]         --- End of stack trace from previous location ---
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 POST http://localhost/notes - application/json;+charset=utf-8 40
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: POST /notes =&gt; CreateNoteHandler'
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: POST /notes =&gt; CreateNoteHandler'
+fail: Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddleware[1]
+      An unhandled exception has occurred while executing the request.
+      Microsoft.AspNetCore.Http.BadHttpRequestException: Required parameter "string title" was not provided from query string.
+         at lambda_method101(Closure, Object, HttpContext)
+         at Microsoft.AspNetCore.Routing.EndpointMiddleware.Invoke(HttpContext httpContext)
+         at Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddlewareImpl.Invoke(HttpContext context)
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 POST http://localhost/notes - 500 - application/json 4.1750ms
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 POST http://localhost/notes - application/json;+charset=utf-8 31
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: POST /notes =&gt; CreateNoteHandler'
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: POST /notes =&gt; CreateNoteHandler'
+fail: Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddleware[1]
+      An unhandled exception has occurred while executing the request.
+      Microsoft.AspNetCore.Http.BadHttpRequestException: Required parameter "string title" was not provided from query string.
+         at lambda_method149(Closure, Object, HttpContext)
+         at Microsoft.AspNetCore.Routing.EndpointMiddleware.Invoke(HttpContext httpContext)
+         at Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddlewareImpl.Invoke(HttpContext context)
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 POST http://localhost/notes - 500 - application/json 5.2309ms
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 PUT http://localhost/notes/0 - application/json;+charset=utf-8 26
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: PUT /notes/{id:int} =&gt; UpdateNoteHandler'
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: PUT /notes/{id:int} =&gt; UpdateNoteHandler'
+fail: Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddleware[1]
+      An unhandled exception has occurred while executing the request.
+      Microsoft.AspNetCore.Http.BadHttpRequestException: Required parameter "string title" was not provided from query string.
+         at lambda_method157(Closure, Object, HttpContext)
+         at Microsoft.AspNetCore.Routing.EndpointMiddleware.Invoke(HttpContext httpContext)
+         at Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddlewareImpl.Invoke(HttpContext context)
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 PUT http://localhost/notes/0 - 500 - application/json 0.5176ms
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 POST http://localhost/notes - application/json;+charset=utf-8 33
+[xUnit.net 00:00:01.07]       Assert.Equal() Failure: Values differ
+[xUnit.net 00:00:01.07]       Expected: BadRequest
+[xUnit.net 00:00:01.07]       Actual:   InternalServerError
+[xUnit.net 00:00:01.07]       Stack Trace:
+[xUnit.net 00:00:01.07]         /workspace/notes-api/tests/UnitTests/NotesApiTests.cs(150,0): at NotesApi.UnitTests.NotesApiTests.CreateNote_RejectsWhitespaceTitle()
+[xUnit.net 00:00:01.07]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:01.08]       Assert.Equal() Failure: Values differ
+[xUnit.net 00:00:01.08]       Expected: BadRequest
+[xUnit.net 00:00:01.08]       Actual:   InternalServerError
+[xUnit.net 00:00:01.08]       Stack Trace:
+[xUnit.net 00:00:01.08]         /workspace/notes-api/tests/UnitTests/NotesApiTests.cs(274,0): at NotesApi.UnitTests.NotesApiTests.UpdateNote_InvalidTitle_Returns400()
+[xUnit.net 00:00:01.08]         --- End of stack trace from previous location ---
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: POST /notes =&gt; CreateNoteHandler'
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: POST /notes =&gt; CreateNoteHandler'
+fail: Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddleware[1]
+      An unhandled exception has occurred while executing the request.
+      Microsoft.AspNetCore.Http.BadHttpRequestException: Required parameter "string title" was not provided from query string.
+         at lambda_method163(Closure, Object, HttpContext)
+         at Microsoft.AspNetCore.Routing.EndpointMiddleware.Invoke(HttpContext httpContext)
+         at Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddlewareImpl.Invoke(HttpContext context)
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 POST http://localhost/notes - 500 - application/json 5.0766ms
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 GET http://localhost/notes/0 - - -
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: GET /notes/{id:int} =&gt; GetNoteByIdHandler'
+info: Microsoft.AspNetCore.Http.Result.NotFoundObjectResult[1]
+      Setting HTTP status code 404.
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: GET /notes/{id:int} =&gt; GetNoteByIdHandler'
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 GET http://localhost/notes/0 - 404 - - 0.6459ms
+[xUnit.net 00:00:01.09]       Assert.Equal() Failure: Values differ
+[xUnit.net 00:00:01.09]       Expected: OK
+[xUnit.net 00:00:01.09]       Actual:   NotFound
+[xUnit.net 00:00:01.09]       Stack Trace:
+[xUnit.net 00:00:01.09]         /workspace/notes-api/tests/UnitTests/NotesApiTests.cs(214,0): at NotesApi.UnitTests.NotesApiTests.GetNoteById_ReturnsNote()
+[xUnit.net 00:00:01.09]         --- End of stack trace from previous location ---
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 POST http://localhost/notes - application/json;+charset=utf-8 46
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: POST /notes =&gt; CreateNoteHandler'
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: POST /notes =&gt; CreateNoteHandler'
+fail: Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddleware[1]
+      An unhandled exception has occurred while executing the request.
+      Microsoft.AspNetCore.Http.BadHttpRequestException: Required parameter "string title" was not provided from query string.
+         at lambda_method169(Closure, Object, HttpContext)
+         at Microsoft.AspNetCore.Routing.EndpointMiddleware.Invoke(HttpContext httpContext)
+         at Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddlewareImpl.Invoke(HttpContext context)
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 POST http://localhost/notes - 500 - application/json 4.3649ms
+[xUnit.net 00:00:01.11]       Assert.Equal() Failure: Values differ
+[xUnit.net 00:00:01.11]       Expected: Created
+[xUnit.net 00:00:01.11]       Actual:   InternalServerError
+[xUnit.net 00:00:01.11]       Stack Trace:
+[xUnit.net 00:00:01.11]         /workspace/notes-api/tests/UnitTests/NotesApiTests.cs(329,0): at NotesApi.UnitTests.NotesApiTests.PersistenceAcrossRestart()
+[xUnit.net 00:00:01.11]         --- End of stack trace from previous location ---
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 POST http://localhost/notes - application/json;+charset=utf-8 31
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: POST /notes =&gt; CreateNoteHandler'
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: POST /notes =&gt; CreateNoteHandler'
+fail: Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddleware[1]
+      An unhandled exception has occurred while executing the request.
+      Microsoft.AspNetCore.Http.BadHttpRequestException: Required parameter "string title" was not provided from query string.
+         at lambda_method175(Closure, Object, HttpContext)
+         at Microsoft.AspNetCore.Routing.EndpointMiddleware.Invoke(HttpContext httpContext)
+         at Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddlewareImpl.Invoke(HttpContext context)
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 POST http://localhost/notes - 500 - application/json 4.4286ms
+[xUnit.net 00:00:01.12]       Assert.Equal() Failure: Values differ
+[xUnit.net 00:00:01.12]       Expected: BadRequest
+[xUnit.net 00:00:01.12]       Actual:   InternalServerError
+[xUnit.net 00:00:01.12]       Stack Trace:
+[xUnit.net 00:00:01.12]         /workspace/notes-api/tests/UnitTests/NotesApiTests.cs(139,0): at NotesApi.UnitTests.NotesApiTests.CreateNote_RejectsEmptyTitle()
+[xUnit.net 00:00:01.12]         --- End of stack trace from previous location ---
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 POST http://localhost/notes - application/json;+charset=utf-8 36
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: POST /notes =&gt; CreateNoteHandler'
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: POST /notes =&gt; CreateNoteHandler'
+fail: Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddleware[1]
+      An unhandled exception has occurred while executing the request.
+      Microsoft.AspNetCore.Http.BadHttpRequestException: Required parameter "string title" was not provided from query string.
+         at lambda_method181(Closure, Object, HttpContext)
+         at Microsoft.AspNetCore.Routing.EndpointMiddleware.Invoke(HttpContext httpContext)
+         at Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddlewareImpl.Invoke(HttpContext context)
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 POST http://localhost/notes - 500 - application/json 4.9031ms
+[xUnit.net 00:00:01.13]       Assert.Equal() Failure: Values differ
+[xUnit.net 00:00:01.13]       Expected: Created
+[xUnit.net 00:00:01.13]       Actual:   InternalServerError
+[xUnit.net 00:00:01.13]       Stack Trace:
+[xUnit.net 00:00:01.13]         /workspace/notes-api/tests/UnitTests/NotesApiTests.cs(116,0): at NotesApi.UnitTests.NotesApiTests.NoteHasExactlyThreeKeys()
+[xUnit.net 00:00:01.13]         --- End of stack trace from previous location ---
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 DELETE http://localhost/notes/999999 - - -
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: DELETE /notes/{id:int} =&gt; DeleteNoteHandler'
+info: Microsoft.AspNetCore.Http.Result.NotFoundObjectResult[1]
+      Setting HTTP status code 404.
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: DELETE /notes/{id:int} =&gt; DeleteNoteHandler'
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 DELETE http://localhost/notes/999999 - 404 - - 4.9034ms
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 GET http://localhost/notes/999999 - - -
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: GET /notes/{id:int} =&gt; GetNoteByIdHandler'
+info: Microsoft.AspNetCore.Http.Result.NotFoundObjectResult[1]
+      Setting HTTP status code 404.
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: GET /notes/{id:int} =&gt; GetNoteByIdHandler'
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 GET http://localhost/notes/999999 - 404 - - 4.9344ms
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:5000
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 POST http://localhost/notes - application/json;+charset=utf-8 35
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: POST /notes =&gt; CreateNoteHandler'
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: POST /notes =&gt; CreateNoteHandler'
+fail: Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddleware[1]
+      An unhandled exception has occurred while executing the request.
+      Microsoft.AspNetCore.Http.BadHttpRequestException: Required parameter "string title" was not provided from query string.
+         at lambda_method199(Closure, Object, HttpContext)
+         at Microsoft.AspNetCore.Routing.EndpointMiddleware.Invoke(HttpContext httpContext)
+         at Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddlewareImpl.Invoke(HttpContext context)
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 POST http://localhost/notes - 500 - application/json 5.0726ms
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 DELETE http://localhost/notes/0 - - -
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: DELETE /notes/{id:int} =&gt; DeleteNoteHandler'
+info: Microsoft.AspNetCore.Http.Result.NotFoundObjectResult[1]
+      Setting HTTP status code 404.
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: DELETE /notes/{id:int} =&gt; DeleteNoteHandler'
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 DELETE http://localhost/notes/0 - 404 - - 0.3838ms
+[xUnit.net 00:00:01.20]       Assert.Equal() Failure: Values differ
+[xUnit.net 00:00:01.20]       Expected: NoContent
+[xUnit.net 00:00:01.20]       Actual:   NotFound
+[xUnit.net 00:00:01.20]       Stack Trace:
+[xUnit.net 00:00:01.20]         /workspace/notes-api/tests/UnitTests/NotesApiTests.cs(303,0): at NotesApi.UnitTests.NotesApiTests.DeleteNote_RemovesFromStore()
+[xUnit.net 00:00:01.20]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:01.20]   Finished:    UnitTests
+</system-out>
+    <system-err>Error - [xUnit.net 00:00:00.85]     NotesApi.UnitTests.NotesApiTests.LargeRequestBody_Returns400 [FAIL]
+Error - [xUnit.net 00:00:00.91]     NotesApi.UnitTests.NotesApiTests.ListNotes_ReturnsSortedByAscendingId [FAIL]
+Error - [xUnit.net 00:00:00.93]     NotesApi.UnitTests.NotesApiTests.HealthEndpoint_Returns200 [FAIL]
+Error - [xUnit.net 00:00:00.95]     NotesApi.UnitTests.NotesApiTests.CreateNote_Returns201AndNote [FAIL]
+Error - [xUnit.net 00:00:00.98]     NotesApi.UnitTests.NotesApiTests.CreateNote_RejectsMissingTitle [FAIL]
+Error - [xUnit.net 00:00:00.99]     NotesApi.UnitTests.NotesApiTests.DeleteNote_Returns204 [FAIL]
+Error - [xUnit.net 00:00:01.01]     NotesApi.UnitTests.NotesApiTests.UpdateNote_Returns404 [FAIL]
+Error - [xUnit.net 00:00:01.04]     NotesApi.UnitTests.NotesApiTests.UpdateNote_ReturnsUpdatedNote [FAIL]
+Error - [xUnit.net 00:00:01.07]     NotesApi.UnitTests.NotesApiTests.CreateNote_RejectsWhitespaceTitle [FAIL]
+Error - [xUnit.net 00:00:01.08]     NotesApi.UnitTests.NotesApiTests.UpdateNote_InvalidTitle_Returns400 [FAIL]
+Error - [xUnit.net 00:00:01.09]     NotesApi.UnitTests.NotesApiTests.GetNoteById_ReturnsNote [FAIL]
+Error - [xUnit.net 00:00:01.11]     NotesApi.UnitTests.NotesApiTests.PersistenceAcrossRestart [FAIL]
+Error - [xUnit.net 00:00:01.12]     NotesApi.UnitTests.NotesApiTests.CreateNote_RejectsEmptyTitle [FAIL]
+Error - [xUnit.net 00:00:01.13]     NotesApi.UnitTests.NotesApiTests.NoteHasExactlyThreeKeys [FAIL]
+Error - [xUnit.net 00:00:01.20]     NotesApi.UnitTests.NotesApiTests.DeleteNote_RemovesFromStore [FAIL]
+</system-err>
+  </testsuite>
+</testsuites>

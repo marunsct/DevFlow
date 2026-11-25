@@ -311,8 +311,11 @@ def _what_the_brief_requires_that_this_defers(document_text: str, specification:
 #: open stays open, and the specification goes back for it, whether or not it is listed again (`app.graph.design_gate`).
 EARLIER_FINDINGS_RULE = (
     "For each numbered finding above that is blocking or major, add one entry to `earlier_findings`: its "
-    "number, `resolved` true or false, and in `where` the specification's words that resolve it or what is "
-    "still missing. One still open stays open whether or not you list it again in `findings`."
+    "number, `resolved` true or false, and in `where` the specification's words that resolve it, quoted word "
+    "for word, or what is still missing. One still open stays open whether or not you list it again in "
+    "`findings`. A sentence about how a library, a tool or the way the tests are run behaves resolves nothing by "
+    "being written down: judge whether it is true, and a resolution that rests on one is recorded as a claim the "
+    "builders must verify first."
 )
 
 

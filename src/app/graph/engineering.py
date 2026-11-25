@@ -21,6 +21,7 @@ from __future__ import annotations
 from app.observability.degraded import degraded
 from app.tools.version_control import git_safely  # noqa: E402
 
+import json
 import logging
 import re
 from pathlib import Path
@@ -822,6 +823,71 @@ _LOCK_FILES = frozenset({"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "po
                          "go.sum", "composer.lock", "Gemfile.lock"})
 
 
+#: What a fix's put-back product change broke, by the stage it is charged to, until its attempt is recorded (LF.1447).
+PUT_BACK_RECORD = ".harness/put-back.json"
+
+
+def _read_put_backs(root: str) -> dict[str, Any]:
+    try:
+        held = json.loads((Path(root) / PUT_BACK_RECORD).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return held if isinstance(held, dict) else {}
+
+
+def _write_put_backs(root: str, held: dict[str, Any]) -> None:
+    path = Path(root) / PUT_BACK_RECORD
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(held, indent=1), encoding="utf-8")
+
+
+def _note_the_put_back(root: str, stage_name: str, files: Sequence[str], broken: Sequence[str]) -> None:
+    """Remember that `stage_name`'s product change to `files` was put back because it broke `broken`. Never raises."""
+    try:
+        held = _read_put_backs(root)
+        held[stage_name] = {"files": [str(f) for f in files][:12], "tests": [str(t) for t in broken][:12]}
+        _write_put_backs(root, held)
+    except Exception as error:  # noqa: BLE001 - the split stands; only its record is missing
+        degraded("record.put_back", error)
+
+
+def _charge_the_put_back_to_its_fixers(root: str, stage_name: str, fixers: Sequence[tuple[str, Sequence[str]]]) -> None:
+    """A batch's put-back charged to each fixer whose files were among those put back. Never raises."""
+    try:
+        held = _read_put_backs(root)
+        entry = held.pop(stage_name, None)
+        if not isinstance(entry, dict):
+            return
+        put_back = {str(path) for path in entry.get("files") or []}
+        for name, files in fixers:
+            if put_back & {str(path).lstrip("./") for path in files}:
+                held[name] = entry
+        _write_put_backs(root, held)
+    except Exception as error:  # noqa: BLE001
+        degraded("record.put_back", error)
+
+
+def what_was_put_back(root: str, stage: str) -> str:
+    """How `stage`'s fix was split, once: its product change put back with the tests it broke named; "" when it was not.
+
+    Before (LF.1447) the split was silent: the function returned "nothing broken", no `reverted` event was recorded,
+    and the fixer was settled "its own tests still fail" on the product the harness had just restored. Measured on one
+    run: the same rewrite of the page script was made three times in 54 minutes. Never raises.
+    """
+    try:
+        held = _read_put_backs(root)
+        entry = held.pop(stage, None)
+        if not isinstance(entry, dict):
+            return ""
+        _write_put_backs(root, held)
+        files = ", ".join(f"`{f}`" for f in entry.get("files") or []) or "its product change"
+        tests = "; ".join(entry.get("tests") or []) or "tests that passed before it"
+        return f"its change to {files} was put back and its tests kept, because it broke {tests}"
+    except Exception as error:  # noqa: BLE001 - nothing to add to the attempt
+        degraded("record.put_back", error)
+        return ""
+
+
 def _its_tests_without_its_product_change(
     root: str, base: str, before: ci.Snapshot | None, broken: list[str], stage_name: str,
 ) -> ci.Snapshot | None:
@@ -869,6 +935,7 @@ def _its_tests_without_its_product_change(
             "Kept %s's change to its tests and put back its change to %s, which broke %d acceptance test(s)",
             stage_name, ", ".join(product), len(broken),
         )
+        _note_the_put_back(root, stage_name, product, broken)
         return after
     except Exception:  # noqa: BLE001 - the whole fix is reverted as before
         logger.warning("Could not keep part of %s", stage_name, exc_info=True)
@@ -1108,7 +1175,16 @@ def after_a_fix(
         broken = ["the product no longer starts the way its user starts it after this fix ("
                   + the_start_and_end_of(after.problem) + ")"]
     if broken:
-        kept = _its_tests_without_its_product_change(root, base, before, broken, stage_name)
+        # A fix that gains more than it loses on a product that starts is weighed whole below (kept on its net gain,
+        # repaired forward, or reverted with the lost tests named), never split silently first (LF.1447): measured, a
+        # batch that took a suite from 12 to 19 passing had its product change put back twice for one regression.
+        from app.graph import net_gain
+
+        on_its_gain = net_gain.keeps(
+            [item for item in broken if item.startswith(("unit: ", "acceptance: "))],
+            after.passing() - (before.passing() if before is not None else set()),
+            product_runs=not after.problem and not broke_the_install)
+        kept = None if on_its_gain else _its_tests_without_its_product_change(root, base, before, broken, stage_name)
         if kept is not None:
             # Committed first, and the measurement saved with that commit (see the end of this function).
             kept.commit = ci.commit(root, f"Fix, its tests only: {description[:50]}") or kept.commit
@@ -1239,6 +1315,8 @@ def after_a_batch(
                         on_revert=keep_the_batch if len(fixers) > 1 else None)
     whole = kept.get("commit", "")
     if not broke:
+        # A split's put-back is each fixer's whose files it put back, recorded with its attempt (LF.1447).
+        _charge_the_put_back_to_its_fixers(root, stage_name, fixers)
         return [], []
     if not whole or not all(files for _, files in fixers):
         return broke, every

@@ -1,0 +1,673 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="nextest-run" tests="28" failures="27" errors="0" uuid="1ec7e93a-96d5-433a-9771-494e3fd6803e" timestamp="2026-11-18T04:44:34.287+00:00" time="0.153">
+    <testsuite name="notes_api::handlers" tests="28" disabled="0" errors="0" failures="27">
+        <testcase name="test_create_note_id_is_integer" classname="notes_api::handlers" timestamp="2026-11-18T04:44:34.287+00:00" time="0.012">
+            <failure message="thread &apos;test_create_note_id_is_integer&apos; panicked at tests/handlers.rs:917:65" type="test failure with exit code 101">thread &apos;test_create_note_id_is_integer&apos; panicked at tests/handlers.rs:917:65:
+called `Result::unwrap()` on an `Err` value: Error(&quot;expected value&quot;, line: 1, column: 1)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace</failure>
+            <system-out>
+running 1 test
+test test_create_note_id_is_integer ... FAILED
+
+failures:
+
+failures:
+    test_create_note_id_is_integer
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.01s
+
+</system-out>
+            <system-err>
+thread &apos;test_create_note_id_is_integer&apos; panicked at tests/handlers.rs:917:65:
+called `Result::unwrap()` on an `Err` value: Error(&quot;expected value&quot;, line: 1, column: 1)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+</system-err>
+        </testcase>
+        <testcase name="test_create_note_empty_title_returns_422" classname="notes_api::handlers" timestamp="2026-11-18T04:44:34.287+00:00" time="0.012">
+            <failure message="thread &apos;test_create_note_empty_title_returns_422&apos; panicked at tests/handlers.rs:79:5" type="test failure with exit code 101">thread &apos;test_create_note_empty_title_returns_422&apos; panicked at tests/handlers.rs:79:5:
+assertion `left == right` failed
+  left: 500
+ right: 422
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace</failure>
+            <system-out>
+running 1 test
+test test_create_note_empty_title_returns_422 ... FAILED
+
+failures:
+
+failures:
+    test_create_note_empty_title_returns_422
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.01s
+
+</system-out>
+            <system-err>
+thread &apos;test_create_note_empty_title_returns_422&apos; panicked at tests/handlers.rs:79:5:
+assertion `left == right` failed
+  left: 500
+ right: 422
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+</system-err>
+        </testcase>
+        <testcase name="test_create_note_nothing_stored_on_validation_failure" classname="notes_api::handlers" timestamp="2026-11-18T04:44:34.299+00:00" time="0.012">
+            <failure message="thread &apos;test_create_note_nothing_stored_on_validation_failure&apos; panicked at tests/handlers.rs:199:5" type="test failure with exit code 101">thread &apos;test_create_note_nothing_stored_on_validation_failure&apos; panicked at tests/handlers.rs:199:5:
+assertion `left == right` failed
+  left: 500
+ right: 422
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace</failure>
+            <system-out>
+running 1 test
+test test_create_note_nothing_stored_on_validation_failure ... FAILED
+
+failures:
+
+failures:
+    test_create_note_nothing_stored_on_validation_failure
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.01s
+
+</system-out>
+            <system-err>
+thread &apos;test_create_note_nothing_stored_on_validation_failure&apos; panicked at tests/handlers.rs:199:5:
+assertion `left == right` failed
+  left: 500
+ right: 422
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+</system-err>
+        </testcase>
+        <testcase name="test_create_note_missing_title_returns_400" classname="notes_api::handlers" timestamp="2026-11-18T04:44:34.299+00:00" time="0.013">
+            <failure message="thread &apos;test_create_note_missing_title_returns_400&apos; panicked at tests/handlers.rs:150:5" type="test failure with exit code 101">thread &apos;test_create_note_missing_title_returns_400&apos; panicked at tests/handlers.rs:150:5:
+assertion `left == right` failed
+  left: 500
+ right: 400
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace</failure>
+            <system-out>
+running 1 test
+test test_create_note_missing_title_returns_400 ... FAILED
+
+failures:
+
+failures:
+    test_create_note_missing_title_returns_400
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.01s
+
+</system-out>
+            <system-err>
+thread &apos;test_create_note_missing_title_returns_400&apos; panicked at tests/handlers.rs:150:5:
+assertion `left == right` failed
+  left: 500
+ right: 400
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+</system-err>
+        </testcase>
+        <testcase name="test_create_note_number_title_returns_400" classname="notes_api::handlers" timestamp="2026-11-18T04:44:34.311+00:00" time="0.012">
+            <failure message="thread &apos;test_create_note_number_title_returns_400&apos; panicked at tests/handlers.rs:174:5" type="test failure with exit code 101">thread &apos;test_create_note_number_title_returns_400&apos; panicked at tests/handlers.rs:174:5:
+assertion `left == right` failed
+  left: 500
+ right: 400
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace</failure>
+            <system-out>
+running 1 test
+test test_create_note_number_title_returns_400 ... FAILED
+
+failures:
+
+failures:
+    test_create_note_number_title_returns_400
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.01s
+
+</system-out>
+            <system-err>
+thread &apos;test_create_note_number_title_returns_400&apos; panicked at tests/handlers.rs:174:5:
+assertion `left == right` failed
+  left: 500
+ right: 400
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+</system-err>
+        </testcase>
+        <testcase name="test_create_note_success" classname="notes_api::handlers" timestamp="2026-11-18T04:44:34.312+00:00" time="0.013">
+            <failure message="thread &apos;test_create_note_success&apos; panicked at tests/handlers.rs:46:5" type="test failure with exit code 101">thread &apos;test_create_note_success&apos; panicked at tests/handlers.rs:46:5:
+assertion `left == right` failed
+  left: 500
+ right: 201
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace</failure>
+            <system-out>
+running 1 test
+test test_create_note_success ... FAILED
+
+failures:
+
+failures:
+    test_create_note_success
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.01s
+
+</system-out>
+            <system-err>
+thread &apos;test_create_note_success&apos; panicked at tests/handlers.rs:46:5:
+assertion `left == right` failed
+  left: 500
+ right: 201
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+</system-err>
+        </testcase>
+        <testcase name="test_create_note_tab_title_returns_422" classname="notes_api::handlers" timestamp="2026-11-18T04:44:34.323+00:00" time="0.009">
+            <failure message="thread &apos;test_create_note_tab_title_returns_422&apos; panicked at tests/handlers.rs:127:5" type="test failure with exit code 101">thread &apos;test_create_note_tab_title_returns_422&apos; panicked at tests/handlers.rs:127:5:
+assertion `left == right` failed
+  left: 500
+ right: 422
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace</failure>
+            <system-out>
+running 1 test
+test test_create_note_tab_title_returns_422 ... FAILED
+
+failures:
+
+failures:
+    test_create_note_tab_title_returns_422
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.01s
+
+</system-out>
+            <system-err>
+thread &apos;test_create_note_tab_title_returns_422&apos; panicked at tests/handlers.rs:127:5:
+assertion `left == right` failed
+  left: 500
+ right: 422
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+</system-err>
+        </testcase>
+        <testcase name="test_create_note_trims_whitespace_from_title" classname="notes_api::handlers" timestamp="2026-11-18T04:44:34.325+00:00" time="0.010">
+            <failure message="thread &apos;test_create_note_trims_whitespace_from_title&apos; panicked at tests/handlers.rs:823:5" type="test failure with exit code 101">thread &apos;test_create_note_trims_whitespace_from_title&apos; panicked at tests/handlers.rs:823:5:
+assertion `left == right` failed
+  left: 500
+ right: 201
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace</failure>
+            <system-out>
+running 1 test
+test test_create_note_trims_whitespace_from_title ... FAILED
+
+failures:
+
+failures:
+    test_create_note_trims_whitespace_from_title
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.01s
+
+</system-out>
+            <system-err>
+thread &apos;test_create_note_trims_whitespace_from_title&apos; panicked at tests/handlers.rs:823:5:
+assertion `left == right` failed
+  left: 500
+ right: 201
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+</system-err>
+        </testcase>
+        <testcase name="test_create_note_whitespace_title_returns_422" classname="notes_api::handlers" timestamp="2026-11-18T04:44:34.332+00:00" time="0.010">
+            <failure message="thread &apos;test_create_note_whitespace_title_returns_422&apos; panicked at tests/handlers.rs:103:5" type="test failure with exit code 101">thread &apos;test_create_note_whitespace_title_returns_422&apos; panicked at tests/handlers.rs:103:5:
+assertion `left == right` failed
+  left: 500
+ right: 422
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace</failure>
+            <system-out>
+running 1 test
+test test_create_note_whitespace_title_returns_422 ... FAILED
+
+failures:
+
+failures:
+    test_create_note_whitespace_title_returns_422
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.01s
+
+</system-out>
+            <system-err>
+thread &apos;test_create_note_whitespace_title_returns_422&apos; panicked at tests/handlers.rs:103:5:
+assertion `left == right` failed
+  left: 500
+ right: 422
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+</system-err>
+        </testcase>
+        <testcase name="test_create_note_with_empty_body" classname="notes_api::handlers" timestamp="2026-11-18T04:44:34.335+00:00" time="0.010">
+            <failure message="thread &apos;test_create_note_with_empty_body&apos; panicked at tests/handlers.rs:749:5" type="test failure with exit code 101">thread &apos;test_create_note_with_empty_body&apos; panicked at tests/handlers.rs:749:5:
+assertion `left == right` failed
+  left: 500
+ right: 201
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace</failure>
+            <system-out>
+running 1 test
+test test_create_note_with_empty_body ... FAILED
+
+failures:
+
+failures:
+    test_create_note_with_empty_body
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.01s
+
+</system-out>
+            <system-err>
+thread &apos;test_create_note_with_empty_body&apos; panicked at tests/handlers.rs:749:5:
+assertion `left == right` failed
+  left: 500
+ right: 201
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+</system-err>
+        </testcase>
+        <testcase name="test_delete_nonexistent_returns_404_with_error_field" classname="notes_api::handlers" timestamp="2026-11-18T04:44:34.342+00:00" time="0.011">
+            <failure message="thread &apos;test_delete_nonexistent_returns_404_with_error_field&apos; panicked at tests/handlers.rs:983:5" type="test failure with exit code 101">thread &apos;test_delete_nonexistent_returns_404_with_error_field&apos; panicked at tests/handlers.rs:983:5:
+assertion `left == right` failed
+  left: 500
+ right: 404
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace</failure>
+            <system-out>
+running 1 test
+test test_delete_nonexistent_returns_404_with_error_field ... FAILED
+
+failures:
+
+failures:
+    test_delete_nonexistent_returns_404_with_error_field
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.01s
+
+</system-out>
+            <system-err>
+thread &apos;test_delete_nonexistent_returns_404_with_error_field&apos; panicked at tests/handlers.rs:983:5:
+assertion `left == right` failed
+  left: 500
+ right: 404
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+</system-err>
+        </testcase>
+        <testcase name="test_delete_note_not_found" classname="notes_api::handlers" timestamp="2026-11-18T04:44:34.345+00:00" time="0.011">
+            <failure message="thread &apos;test_delete_note_not_found&apos; panicked at tests/handlers.rs:674:5" type="test failure with exit code 101">thread &apos;test_delete_note_not_found&apos; panicked at tests/handlers.rs:674:5:
+assertion `left == right` failed
+  left: 500
+ right: 404
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace</failure>
+            <system-out>
+running 1 test
+test test_delete_note_not_found ... FAILED
+
+failures:
+
+failures:
+    test_delete_note_not_found
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.01s
+
+</system-out>
+            <system-err>
+thread &apos;test_delete_note_not_found&apos; panicked at tests/handlers.rs:674:5:
+assertion `left == right` failed
+  left: 500
+ right: 404
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+</system-err>
+        </testcase>
+        <testcase name="test_delete_note_success" classname="notes_api::handlers" timestamp="2026-11-18T04:44:34.353+00:00" time="0.010">
+            <failure message="thread &apos;test_delete_note_success&apos; panicked at tests/handlers.rs:632:65" type="test failure with exit code 101">thread &apos;test_delete_note_success&apos; panicked at tests/handlers.rs:632:65:
+called `Result::unwrap()` on an `Err` value: Error(&quot;expected value&quot;, line: 1, column: 1)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace</failure>
+            <system-out>
+running 1 test
+test test_delete_note_success ... FAILED
+
+failures:
+
+failures:
+    test_delete_note_success
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.01s
+
+</system-out>
+            <system-err>
+thread &apos;test_delete_note_success&apos; panicked at tests/handlers.rs:632:65:
+called `Result::unwrap()` on an `Err` value: Error(&quot;expected value&quot;, line: 1, column: 1)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+</system-err>
+        </testcase>
+        <testcase name="test_delete_returns_no_content_body" classname="notes_api::handlers" timestamp="2026-11-18T04:44:34.356+00:00" time="0.010">
+            <failure message="thread &apos;test_delete_returns_no_content_body&apos; panicked at tests/handlers.rs:852:65" type="test failure with exit code 101">thread &apos;test_delete_returns_no_content_body&apos; panicked at tests/handlers.rs:852:65:
+called `Result::unwrap()` on an `Err` value: Error(&quot;expected value&quot;, line: 1, column: 1)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace</failure>
+            <system-out>
+running 1 test
+test test_delete_returns_no_content_body ... FAILED
+
+failures:
+
+failures:
+    test_delete_returns_no_content_body
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.01s
+
+</system-out>
+            <system-err>
+thread &apos;test_delete_returns_no_content_body&apos; panicked at tests/handlers.rs:852:65:
+called `Result::unwrap()` on an `Err` value: Error(&quot;expected value&quot;, line: 1, column: 1)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+</system-err>
+        </testcase>
+        <testcase name="test_error_response_has_error_field" classname="notes_api::handlers" timestamp="2026-11-18T04:44:34.364+00:00" time="0.010">
+            <failure message="thread &apos;test_error_response_has_error_field&apos; panicked at tests/handlers.rs:885:5" type="test failure with exit code 101">thread &apos;test_error_response_has_error_field&apos; panicked at tests/handlers.rs:885:5:
+assertion `left == right` failed
+  left: 500
+ right: 404
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace</failure>
+            <system-out>
+running 1 test
+test test_error_response_has_error_field ... FAILED
+
+failures:
+
+failures:
+    test_error_response_has_error_field
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.01s
+
+</system-out>
+            <system-err>
+thread &apos;test_error_response_has_error_field&apos; panicked at tests/handlers.rs:885:5:
+assertion `left == right` failed
+  left: 500
+ right: 404
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+</system-err>
+        </testcase>
+        <testcase name="test_get_note_not_found" classname="notes_api::handlers" timestamp="2026-11-18T04:44:34.367+00:00" time="0.011">
+            <failure message="thread &apos;test_get_note_not_found&apos; panicked at tests/handlers.rs:346:5" type="test failure with exit code 101">thread &apos;test_get_note_not_found&apos; panicked at tests/handlers.rs:346:5:
+assertion `left == right` failed
+  left: 500
+ right: 404
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace</failure>
+            <system-out>
+running 1 test
+test test_get_note_not_found ... FAILED
+
+failures:
+
+failures:
+    test_get_note_not_found
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.01s
+
+</system-out>
+            <system-err>
+thread &apos;test_get_note_not_found&apos; panicked at tests/handlers.rs:346:5:
+assertion `left == right` failed
+  left: 500
+ right: 404
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+</system-err>
+        </testcase>
+        <testcase name="test_get_note_success" classname="notes_api::handlers" timestamp="2026-11-18T04:44:34.374+00:00" time="0.014">
+            <failure message="thread &apos;test_get_note_success&apos; panicked at tests/handlers.rs:309:5" type="test failure with exit code 101">thread &apos;test_get_note_success&apos; panicked at tests/handlers.rs:309:5:
+assertion `left == right` failed
+  left: 500
+ right: 201
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace</failure>
+            <system-out>
+running 1 test
+test test_get_note_success ... FAILED
+
+failures:
+
+failures:
+    test_get_note_success
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.01s
+
+</system-out>
+            <system-err>
+thread &apos;test_get_note_success&apos; panicked at tests/handlers.rs:309:5:
+assertion `left == right` failed
+  left: 500
+ right: 201
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+</system-err>
+        </testcase>
+        <testcase name="test_health_endpoint" classname="notes_api::handlers" timestamp="2026-11-18T04:44:34.377+00:00" time="0.015">
+        </testcase>
+        <testcase name="test_list_notes_each_has_three_fields" classname="notes_api::handlers" timestamp="2026-11-18T04:44:34.388+00:00" time="0.009">
+            <failure message="thread &apos;test_list_notes_each_has_three_fields&apos; panicked at tests/handlers.rs:943:9" type="test failure with exit code 101">thread &apos;test_list_notes_each_has_three_fields&apos; panicked at tests/handlers.rs:943:9:
+assertion `left == right` failed
+  left: 500
+ right: 201
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace</failure>
+            <system-out>
+running 1 test
+test test_list_notes_each_has_three_fields ... FAILED
+
+failures:
+
+failures:
+    test_list_notes_each_has_three_fields
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.01s
+
+</system-out>
+            <system-err>
+thread &apos;test_list_notes_each_has_three_fields&apos; panicked at tests/handlers.rs:943:9:
+assertion `left == right` failed
+  left: 500
+ right: 201
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+</system-err>
+        </testcase>
+        <testcase name="test_list_notes_empty" classname="notes_api::handlers" timestamp="2026-11-18T04:44:34.392+00:00" time="0.010">
+            <failure message="thread &apos;test_list_notes_empty&apos; panicked at tests/handlers.rs:231:5" type="test failure with exit code 101">thread &apos;test_list_notes_empty&apos; panicked at tests/handlers.rs:231:5:
+assertion `left == right` failed
+  left: 500
+ right: 200
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace</failure>
+            <system-out>
+running 1 test
+test test_list_notes_empty ... FAILED
+
+failures:
+
+failures:
+    test_list_notes_empty
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.01s
+
+</system-out>
+            <system-err>
+thread &apos;test_list_notes_empty&apos; panicked at tests/handlers.rs:231:5:
+assertion `left == right` failed
+  left: 500
+ right: 200
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+</system-err>
+        </testcase>
+        <testcase name="test_list_notes_ordered_by_id" classname="notes_api::handlers" timestamp="2026-11-18T04:44:34.398+00:00" time="0.009">
+            <failure message="thread &apos;test_list_notes_ordered_by_id&apos; panicked at tests/handlers.rs:259:9" type="test failure with exit code 101">thread &apos;test_list_notes_ordered_by_id&apos; panicked at tests/handlers.rs:259:9:
+assertion `left == right` failed
+  left: 500
+ right: 201
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace</failure>
+            <system-out>
+running 1 test
+test test_list_notes_ordered_by_id ... FAILED
+
+failures:
+
+failures:
+    test_list_notes_ordered_by_id
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.01s
+
+</system-out>
+            <system-err>
+thread &apos;test_list_notes_ordered_by_id&apos; panicked at tests/handlers.rs:259:9:
+assertion `left == right` failed
+  left: 500
+ right: 201
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+</system-err>
+        </testcase>
+        <testcase name="test_note_response_has_exactly_three_fields" classname="notes_api::handlers" timestamp="2026-11-18T04:44:34.402+00:00" time="0.007">
+            <failure message="thread &apos;test_note_response_has_exactly_three_fields&apos; panicked at tests/handlers.rs:717:65" type="test failure with exit code 101">thread &apos;test_note_response_has_exactly_three_fields&apos; panicked at tests/handlers.rs:717:65:
+called `Result::unwrap()` on an `Err` value: Error(&quot;expected value&quot;, line: 1, column: 1)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace</failure>
+            <system-out>
+running 1 test
+test test_note_response_has_exactly_three_fields ... FAILED
+
+failures:
+
+failures:
+    test_note_response_has_exactly_three_fields
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.01s
+
+</system-out>
+            <system-err>
+thread &apos;test_note_response_has_exactly_three_fields&apos; panicked at tests/handlers.rs:717:65:
+called `Result::unwrap()` on an `Err` value: Error(&quot;expected value&quot;, line: 1, column: 1)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+</system-err>
+        </testcase>
+        <testcase name="test_update_note_empty_title_returns_422" classname="notes_api::handlers" timestamp="2026-11-18T04:44:34.406+00:00" time="0.011">
+            <failure message="thread &apos;test_update_note_empty_title_returns_422&apos; panicked at tests/handlers.rs:450:65" type="test failure with exit code 101">thread &apos;test_update_note_empty_title_returns_422&apos; panicked at tests/handlers.rs:450:65:
+called `Result::unwrap()` on an `Err` value: Error(&quot;expected value&quot;, line: 1, column: 1)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace</failure>
+            <system-out>
+running 1 test
+test test_update_note_empty_title_returns_422 ... FAILED
+
+failures:
+
+failures:
+    test_update_note_empty_title_returns_422
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.01s
+
+</system-out>
+            <system-err>
+thread &apos;test_update_note_empty_title_returns_422&apos; panicked at tests/handlers.rs:450:65:
+called `Result::unwrap()` on an `Err` value: Error(&quot;expected value&quot;, line: 1, column: 1)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+</system-err>
+        </testcase>
+        <testcase name="test_update_note_missing_title_returns_400" classname="notes_api::handlers" timestamp="2026-11-18T04:44:34.409+00:00" time="0.010">
+            <failure message="thread &apos;test_update_note_missing_title_returns_400&apos; panicked at tests/handlers.rs:572:65" type="test failure with exit code 101">thread &apos;test_update_note_missing_title_returns_400&apos; panicked at tests/handlers.rs:572:65:
+called `Result::unwrap()` on an `Err` value: Error(&quot;expected value&quot;, line: 1, column: 1)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace</failure>
+            <system-out>
+running 1 test
+test test_update_note_missing_title_returns_400 ... FAILED
+
+failures:
+
+failures:
+    test_update_note_missing_title_returns_400
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.01s
+
+</system-out>
+            <system-err>
+thread &apos;test_update_note_missing_title_returns_400&apos; panicked at tests/handlers.rs:572:65:
+called `Result::unwrap()` on an `Err` value: Error(&quot;expected value&quot;, line: 1, column: 1)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+</system-err>
+        </testcase>
+        <testcase name="test_update_note_not_found" classname="notes_api::handlers" timestamp="2026-11-18T04:44:34.418+00:00" time="0.011">
+            <failure message="thread &apos;test_update_note_not_found&apos; panicked at tests/handlers.rs:424:5" type="test failure with exit code 101">thread &apos;test_update_note_not_found&apos; panicked at tests/handlers.rs:424:5:
+assertion `left == right` failed
+  left: 500
+ right: 404
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace</failure>
+            <system-out>
+running 1 test
+test test_update_note_not_found ... FAILED
+
+failures:
+
+failures:
+    test_update_note_not_found
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.01s
+
+</system-out>
+            <system-err>
+thread &apos;test_update_note_not_found&apos; panicked at tests/handlers.rs:424:5:
+assertion `left == right` failed
+  left: 500
+ right: 404
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+</system-err>
+        </testcase>
+        <testcase name="test_update_note_preserves_id" classname="notes_api::handlers" timestamp="2026-11-18T04:44:34.419+00:00" time="0.010">
+            <failure message="thread &apos;test_update_note_preserves_id&apos; panicked at tests/handlers.rs:778:65" type="test failure with exit code 101">thread &apos;test_update_note_preserves_id&apos; panicked at tests/handlers.rs:778:65:
+called `Result::unwrap()` on an `Err` value: Error(&quot;expected value&quot;, line: 1, column: 1)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace</failure>
+            <system-out>
+running 1 test
+test test_update_note_preserves_id ... FAILED
+
+failures:
+
+failures:
+    test_update_note_preserves_id
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.01s
+
+</system-out>
+            <system-err>
+thread &apos;test_update_note_preserves_id&apos; panicked at tests/handlers.rs:778:65:
+called `Result::unwrap()` on an `Err` value: Error(&quot;expected value&quot;, line: 1, column: 1)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+</system-err>
+        </testcase>
+        <testcase name="test_update_note_whitespace_title_returns_422" classname="notes_api::handlers" timestamp="2026-11-18T04:44:34.429+00:00" time="0.010">
+            <failure message="thread &apos;test_update_note_whitespace_title_returns_422&apos; panicked at tests/handlers.rs:511:65" type="test failure with exit code 101">thread &apos;test_update_note_whitespace_title_returns_422&apos; panicked at tests/handlers.rs:511:65:
+called `Result::unwrap()` on an `Err` value: Error(&quot;expected value&quot;, line: 1, column: 1)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace</failure>
+            <system-out>
+running 1 test
+test test_update_note_whitespace_title_returns_422 ... FAILED
+
+failures:
+
+failures:
+    test_update_note_whitespace_title_returns_422
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.01s
+
+</system-out>
+            <system-err>
+thread &apos;test_update_note_whitespace_title_returns_422&apos; panicked at tests/handlers.rs:511:65:
+called `Result::unwrap()` on an `Err` value: Error(&quot;expected value&quot;, line: 1, column: 1)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+</system-err>
+        </testcase>
+        <testcase name="test_update_note_success" classname="notes_api::handlers" timestamp="2026-11-18T04:44:34.428+00:00" time="0.012">
+            <failure message="thread &apos;test_update_note_success&apos; panicked at tests/handlers.rs:375:65" type="test failure with exit code 101">thread &apos;test_update_note_success&apos; panicked at tests/handlers.rs:375:65:
+called `Result::unwrap()` on an `Err` value: Error(&quot;expected value&quot;, line: 1, column: 1)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace</failure>
+            <system-out>
+running 1 test
+test test_update_note_success ... FAILED
+
+failures:
+
+failures:
+    test_update_note_success
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.01s
+
+</system-out>
+            <system-err>
+thread &apos;test_update_note_success&apos; panicked at tests/handlers.rs:375:65:
+called `Result::unwrap()` on an `Err` value: Error(&quot;expected value&quot;, line: 1, column: 1)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+</system-err>
+        </testcase>
+    </testsuite>
+</testsuites>

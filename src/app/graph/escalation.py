@@ -24,6 +24,7 @@ undone and however much already worked.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
@@ -332,7 +333,8 @@ def _the_foundation_first(
             **update,
             stage="technical_lead",
             escalation=None,
-            revision_comments=[foundation.replan_guidance(index + 1, goal, deferring, needed)],
+            revision_comments=[foundation.replan_guidance(index + 1, goal, deferring, needed)
+                               + foundation.the_last_measurement(state, deferring)],
             specialist_outputs={},
             remediation=None,
             test_round=0,
@@ -340,6 +342,7 @@ def _the_foundation_first(
             milestone_revision_count=0,
             sprint_replan_count=replans + 1,
             foundation_replanned_sprints=sorted({*replanned, index}),
+            foundation_replanned_at=datetime.now(timezone.utc).isoformat(),
         )
     why = (f"Not deliverable: sprint {index + 1} ({goal.strip() or 'the current sprint'}) is the foundation later "
            f"sprints build on, and {', '.join(deferring)} still fail after it was planned again: {evidence}.")

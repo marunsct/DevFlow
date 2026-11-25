@@ -93,8 +93,9 @@ def test_every_judge_and_builder_request_in_the_graph_ends_with_the_facts():
         ]
         assert calls, f"no call of build_{name}_request in the graph"
         for file, line in calls:
-            # 100 lines: the fix request is built in parts after the call (LF.1270), each kept or cut by its size.
-            following = "\n".join(sources[file].splitlines()[max(0, line - 3):line + 100])
+            # 140 lines: the fix request is built in parts after the call (LF.1270), each kept or cut by its size, and
+            # the fixer's evidence and localisation sections (FX.1, FX.2, FX.7) come before its facts.
+            following = "\n".join(sources[file].splitlines()[max(0, line - 3):line + 140])
             if "with_the_facts(" not in following:
                 missing.append(f"{file}:{line + 1} build_{name}_request")
     assert not missing, missing

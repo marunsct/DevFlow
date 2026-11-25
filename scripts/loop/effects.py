@@ -127,6 +127,12 @@ def effects(records: list[dict], decisions: str = "") -> list[str]:
     from app.tools.testing_blockers import effects_lines as testing_blocker_lines
 
     lines.extend(testing_blocker_lines(records))
+    # PA.3 and PA.8: the product built before the testing work order, and errors in another's file kept as blockers.
+    from app.graph.built_before_testing import effects_lines as built_before_testing_lines
+    from app.graph.its_own_to_fix import effects_lines as its_own_to_fix_lines
+
+    lines.extend(built_before_testing_lines(records))
+    lines.extend(its_own_to_fix_lines(records))
     # HK.4 and KS.6: whether a lookup note's defect was closed by the next fix, and each lookup source's answer rate.
     from app.observability.lookup_notes import outcome_lines, source_lines
 

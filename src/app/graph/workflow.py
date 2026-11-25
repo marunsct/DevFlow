@@ -1695,6 +1695,10 @@ def _route_from_stage(state: WorkflowGraphState) -> str:
             for index, task in pending
             if _specialist_stage_name(task, index) in _stages_holding_a_pause(state)
         ]
+        # A testing work order waits while a builder is sent back because the product does not build (PA.3).
+        from app.graph.built_before_testing import held_back
+
+        pending = held_back(state, pending)
         going = _that_do_not_share_a_file(
             pending, already_going=must_go, manifests_present=_manifests_the_project_has(state)
         )
@@ -5325,8 +5329,22 @@ def _run_gated_agent(
         )
         structured_response = _claims_dropped_from_the_record(structured_response, never_wrote)
 
+    kept_as_blockers: list[str] = []
     if not never_wrote and not _stopped_by_the_budget(result):
         diagnostics = _diagnostics_in_files_touched(state, result, structured_response, stage_name)
+        # Only what the stage may write is put to it; an error in another's file is its answer's blocker (PA.8).
+        from app.graph import its_own_to_fix
+
+        root_path = str(getattr(state.get("repository"), "root_path", "") or "")
+        diagnostics, not_its_own = its_own_to_fix.split(
+            root_path, stage_name, config["configurable"].get(APP_RUN_ID_KEY), diagnostics)
+        if not_its_own:
+            logger.warning(
+                "Stage %s: errors in files it may not write kept as its blockers, not put to it: %s",
+                stage_name, "; ".join(not_its_own),
+            )
+            kept_as_blockers = its_own_to_fix.blocker_lines(root_path, stage_name, not_its_own)
+            structured_response = its_own_to_fix.with_blockers(structured_response, kept_as_blockers)
         if diagnostics:
             logger.warning(
                 "Stage %s touched files with high-confidence diagnostics: %s; asking once to fix before exit",
@@ -5350,7 +5368,8 @@ def _run_gated_agent(
                 }
             if followed is not None:
                 result = followed
-                structured_response = answer_without_leaked_turns(followed["structured_response"])
+                structured_response = its_own_to_fix.with_blockers(
+                    answer_without_leaked_turns(followed["structured_response"]), kept_as_blockers)
 
     succeeded = dict(state.get("structured_retries") or {})
     succeeded.pop(stage_name, None)

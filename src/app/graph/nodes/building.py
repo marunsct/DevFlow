@@ -652,9 +652,21 @@ def _on_to_the_ci_gate(state: Any, **fields: Any) -> dict[str, Any]:
     return _handing_on(**fields, stage="ci_gate")
 
 
+def _built_before_the_testing_fan_out(state: Any) -> dict[str, Any]:
+    """In parallel mode, when only testing work orders are left: the update that sends the builders of a product that
+    does not build back first, or marks that the testing work orders start on it; {} otherwise (PA.3)."""
+    from app.graph import built_before_testing
+    from app.graph.workflow import _specialist_stage_name, _tasks_without_an_output
+
+    left = [_specialist_stage_name(task, index) for index, task in _tasks_without_an_output(state)]
+    if not left or not all(built_before_testing.is_a_testing_work_order(stage) for stage in left):
+        return {}
+    return built_before_testing.before_the_testing_work_order(state, left[0]) or {}
+
+
 def specialist_dispatch_node(state: WorkflowGraphState, config: RunnableConfig, ctx: GraphContext) -> dict[str, Any]:
     from app.graph.workflow import (
-        _missing_upstream, _record_the_owners, _run_gated_agent, _the_fixes_to_keep,
+        _handing_on, _missing_upstream, _record_the_owners, _run_gated_agent, _the_fixes_to_keep,
         _the_interface_design_for, _the_later_sprints_brief, build_specialist_task_request,
         create_specialist_agent, specification_for_the_work_order, with_the_facts,
     )
@@ -697,7 +709,8 @@ def specialist_dispatch_node(state: WorkflowGraphState, config: RunnableConfig, 
     if settings.execution_mode == "parallel":
         # A stage no node is named after. `_route_from_stage` turns it into
         # one `Send` per unfinished task; `specialist_gather` joins them.
-        return {"stage": "specialist_dispatch_parallel"}
+        # The product builds before a testing work order starts (PA.3).
+        return {**_built_before_the_testing_fan_out(state), "stage": "specialist_dispatch_parallel"}
 
     milestone = state["milestone_plan"]
     tasks = milestone.delegated_tasks
@@ -712,6 +725,16 @@ def specialist_dispatch_node(state: WorkflowGraphState, config: RunnableConfig, 
         index += 1
     if index >= len(tasks) and index != state.get("specialist_task_index", 0):
         return _on_to_the_ci_gate(state, specialist_task_index=index)
+
+    # The product builds before a testing work order starts; a failure goes to its builders first (PA.3).
+    from app.graph import built_before_testing
+
+    went_on: dict[str, Any] = {}
+    if index < len(tasks):
+        before = built_before_testing.before_the_testing_work_order(state, f"specialist_{tasks[index].specialist_role}_{index}")
+        if before and before.get("unfinished_orders"):
+            return _handing_on(**before, specialist_task_index=0, stage="specialist_dispatch")
+        went_on = before or {}
 
     if index < len(tasks):
         task = tasks[index]
@@ -760,7 +783,7 @@ def specialist_dispatch_node(state: WorkflowGraphState, config: RunnableConfig, 
             next_stage="specialist_dispatch",
         )
         if "__specialist_result__" not in update:
-            return update  # paused waiting for approval on this task
+            return {**update, **went_on}  # paused waiting for approval on this task
 
         outputs = dict(state.get("specialist_outputs", {}))
         # The interfaces it changed, read by the harness (plan PH.3, off until measured).
@@ -772,6 +795,7 @@ def specialist_dispatch_node(state: WorkflowGraphState, config: RunnableConfig, 
             interface_changes.with_them(update.pop("__specialist_result__"), state["repository"].root_path),
             state["repository"].root_path, stage_name))
         update.update(built)
+        update.update(went_on)
         update["specialist_outputs"] = outputs
         update["specialist_task_index"] = index + 1
         return update
@@ -966,6 +990,8 @@ def specialist_gather_node(state: WorkflowGraphState, config: RunnableConfig) ->
     # finished, and are cleared rather than carried into a fresh dispatch.
     if _tasks_without_an_output(state):
         return {
+            # The product builds before a testing work order starts (PA.3).
+            **_built_before_the_testing_fan_out(state),
             "stage": "specialist_dispatch_parallel",
             "pending_decision": None,
             "pending_inner_thread_id": None,

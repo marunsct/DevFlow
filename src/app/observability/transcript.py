@@ -37,6 +37,8 @@ transcript. Every entry point swallows and logs.
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import hashlib
 import json
 import logging
@@ -45,7 +47,7 @@ import re
 from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 logger = logging.getLogger(__name__)
 
@@ -750,6 +752,25 @@ def build_transcript_middleware(stage: str) -> Any:
     return TranscriptMiddleware()
 
 
+#: The stage and run a question is asked for outside that stage's own calls (`asked_for`); None inside a run's calls.
+_ASKED_FOR: contextvars.ContextVar[tuple[str, str | None] | None] = contextvars.ContextVar(
+    "transcript_asked_for_a_stage", default=None)
+
+
+@contextlib.contextmanager
+def asked_for(stage: str, run_id: str | None = None) -> Iterator[None]:
+    """Inside it, `_stage_from_config` and `_run_id_from_config` answer `stage` and `run_id`.
+
+    The graph's node asks what a stage may write after the stage's own calls ended, where the config names no
+    stage (PA.8): the file tools' guards read the stage from here, and are asked the same question they answer.
+    """
+    token = _ASKED_FOR.set((str(stage or ""), run_id))
+    try:
+        yield
+    finally:
+        _ASKED_FOR.reset(token)
+
+
 def _stage_from_config(fallback: str) -> str:
     """The stage now running, from the graph's config; `fallback` if absent.
 
@@ -758,6 +779,9 @@ def _stage_from_config(fallback: str) -> str:
     not the stage making the call (`specialist_testing_1`). The invoke knows;
     the constructor could not. See `app.tracing.APP_STAGE_KEY`.
     """
+    asked = _ASKED_FOR.get()
+    if asked is not None:
+        return asked[0] or fallback
     try:
         from langgraph.config import get_config
 
@@ -770,6 +794,9 @@ def _stage_from_config(fallback: str) -> str:
 
 def _run_id_from_config() -> str | None:
     """This run's id, from the running graph's config. None outside a run."""
+    asked = _ASKED_FOR.get()
+    if asked is not None:
+        return asked[1]
     try:
         from langgraph.config import get_config
 

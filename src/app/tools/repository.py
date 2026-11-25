@@ -1872,6 +1872,29 @@ def just_asking():
         _JUST_ASKING.reset(token)
 
 
+def why_the_stage_may_not_write(
+    repo_root: str | Path, stage: str, relative_path: str, run_id: str | None = None,
+) -> str | None:
+    """The refusal the file tools would give `stage` for a write to `relative_path`, or None when it may write it.
+
+    The same guards a write meets for whose file it is - the harness's records and the locked suite, another work
+    order's file, a testing stage or a fix held to tests changing product code - asked for a named stage from
+    outside its calls, counting and recording nothing (PA.8). Never raises: a question that cannot be answered
+    reads as writable, as the guards themselves let a write through they cannot decide on.
+    """
+    try:
+        from app.observability.transcript import asked_for
+
+        root = _normalize_repo_root(repo_root)
+        target = (root / _as_a_planned_path(relative_path)).resolve()
+        with asked_for(stage, run_id), just_asking():
+            return (_the_harness_s_own_or_the_locked_suite(root, target)
+                    or _another_work_order_s_file(root, target)
+                    or _a_tester_changing_the_product(root, target))
+    except Exception:  # noqa: BLE001 - unknown is writable
+        return None
+
+
 def _not_this_stage_s(root: Path, target: Path) -> bool:
     with just_asking():
         return bool(_the_harness_s_own_or_the_locked_suite(root, target) or _a_tester_changing_the_product(root, target))

@@ -773,6 +773,33 @@ def _most_recent_answer(messages: list[Any], schema: Any) -> Any | None:
     return None
 
 
+def _answered_through_the_answer_tool(messages: list[Any], schema: Any) -> bool:
+    """Whether some assistant message called the answer tool with an answer the schema accepts.
+
+    The answer tool is named after the schema (`role_agent.the_answer_tool`), and an answer sent through it is in the
+    call's arguments, not the message's content, which is all `_most_recent_answer` reads. Measured on one run: a
+    testing stage answered through the tool, was then asked to fix an error the check after its answer found, and every
+    budget notice after that told it it had NOT written a structured response (PA.8).
+    """
+    name = getattr(schema, "__name__", "")
+    if not name:
+        return False
+    for message in reversed(messages):
+        if getattr(message, "type", None) != "ai":
+            continue
+        for call in getattr(message, "tool_calls", None) or ():
+            called = call.get("name") if isinstance(call, dict) else getattr(call, "name", "")
+            args = call.get("args") if isinstance(call, dict) else getattr(call, "args", None)
+            if called != name or not isinstance(args, dict):
+                continue
+            try:
+                validated_leniently(schema, args)
+            except Exception:  # noqa: BLE001 - a refused answer is no answer
+                continue
+            return True
+    return False
+
+
 #: Model calls a stage may make before the workflow's own guards would stop it.
 #: Measured across two runs: the median stage costs 3 to 8
 #: calls, the ninetieth percentile 16 to 27, and the worst healthy stage seen is
@@ -888,7 +915,8 @@ def _running_out_of_room(messages: list[Any], limit: int, schema: Any = None) ->
     opening = (
         f"You have made about {used} of the {limit} model calls this stage is allowed. "
     )
-    if schema is not None and _most_recent_answer(messages, schema) is not None:
+    if schema is not None and (_most_recent_answer(messages, schema) is not None
+                               or _answered_through_the_answer_tool(messages, schema)):
         return opening + (
             f"You have already written an answer, so at {limit} this stage ends with "
             "that one and anything you have learned since is lost. Return it now, "

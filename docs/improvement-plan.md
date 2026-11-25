@@ -93,7 +93,6 @@ Merged duplicates: PQ.3 is SP.1; PQ.6 and PQ.9 go into SK.2; PQ.11's text path i
 | B | PQ.1 every brief requirement and constraint becomes a criterion or a recorded exclusion; PQ.8 interface states as criteria | PQ.1 on, PQ.8 switch |
 | B | SK.1 a work order carries its files' domain advice and goes to the role owning the domain; SK.2 short craft checklists by file kind, stack specifics in packs (with PQ.6, PQ.9) | SK.1 on, SK.2 switch |
 | B | PQ.10 a quality score per run from the stored product; PQ.2 mechanical schema conformance | on |
-| B | PA.8 a stage is asked to fix only files it may write; PA.3 the product builds before the testing work order | on |
 | B | PA.2 the summary is the stage's work note; PA.12 later suite writers given the product's interface, not its source (moved up 11-25: one suite-author visit, 118 reads and 3 writes in 30 minutes) | on |
 | B | UX.1-UX.8 full-window preview and workspace, own-window routes, preview toolbar, VS Code-style shell with Monaco, search, diff (app and read routes only) | on |
 | C | TG.2 the acceptance review's findings and the suite's problems get severities, and in thorough delivery a gating one keeps the suite from locking (today it locks "with these still open" after the round cap); TG.3 a design escalation the person sends back does not count toward the shared `MAX_ESCALATIONS` | on |

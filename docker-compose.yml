@@ -88,6 +88,8 @@ x-app-env: &app-env
   INTERFACE_STATES_AS_CRITERIA: ${INTERFACE_STATES_AS_CRITERIA:-off}
   # Plan SK.2: craft checklists by file domain, and the same bars for the advisers (off until measured).
   DOMAIN_CRAFT_CHECKLISTS: ${DOMAIN_CRAFT_CHECKLISTS:-off}
+  # Plan SP.3: each consulted specialist also reviews its own domain in the sprint's changed files (off until measured).
+  SPECIALIST_DOMAIN_REVIEW: ${SPECIALIST_DOMAIN_REVIEW:-off}
   # Plan HK.10: cited suggestions from comparable products for the intake, only with the run owner's consent.
   PRODUCT_RESEARCH: ${PRODUCT_RESEARCH:-off}
   API_CARDS_FOR_NEWER_RELEASES: ${API_CARDS_FOR_NEWER_RELEASES:-off}

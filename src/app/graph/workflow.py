@@ -718,6 +718,9 @@ _CONTEXT_OVERFLOW_MARKERS = (
     "context window",
     "input is too long",
     "exceeds the maximum",
+    # llama.cpp's wording (measured: "request (96754 tokens) exceeds the available context size (93184 tokens)").
+    "exceeds the available context size",
+    "context size has been exceeded",
 )
 
 

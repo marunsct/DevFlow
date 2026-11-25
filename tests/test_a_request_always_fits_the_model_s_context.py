@@ -294,3 +294,13 @@ def test_what_the_model_reads_of_a_cut_holds_to_the_house_rules(monkeypatch, tmp
 
     assert "left out" in said
     assert not BANNED.search(said)
+
+
+def test_the_stage_reads_llama_cpp_s_refusal_as_a_context_overflow():
+    """The stage's own overflow handling knew providers' wordings but not llama.cpp's, so another client's refusal
+    reached it as an unhandled crash."""
+    from app.graph.workflow import _is_context_overflow
+
+    error = ValueError("Error code: 400 - {'error': {'code': 400, 'message': 'request (96754 tokens) exceeds the "
+                       "available context size (93184 tokens), try increasing it', 'type': 'exceed_context_size_error'}}")
+    assert _is_context_overflow(error)

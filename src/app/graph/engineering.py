@@ -551,8 +551,54 @@ def ci_gate(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
             *raised_by("regression", regression_defects(state, lost, after)),
             *raised_by("language service", underlined),
             *raised_by("interface clash", clashed),
+            *raised_by("schema conformance", schema_differences(state, root)),
         ],
     )
+
+
+def _sprint_scope_text(state: Any) -> tuple[str, bool]:
+    """What the current sprint's plan and work orders say it builds, and whether it is the last sprint."""
+    sprints = list(getattr(state.get("sprint_plan"), "sprints", None) or [])
+    index = int(state.get("current_sprint_index") or 0)
+    sprint = sprints[index] if index < len(sprints) else None
+    texts = {c.id: c.text for c in suite.criteria(_root(state))}
+    parts = [str(getattr(sprint, "goal", "") or "")] if sprint else []
+    for name in ("in_scope", "acceptance_criteria"):
+        parts += [str(item) for item in getattr(sprint, name, None) or []]
+    parts += [texts.get(cid, "") for cid in getattr(sprint, "criteria", None) or []]
+    parts += [f"{_title(task)} {getattr(task, 'task_description', '')}" for task in _tasks(state)]
+    return "\n".join(parts), index >= len(sprints) - 1
+
+
+def schema_differences(state: Any, root: str) -> list[Any]:
+    """Defects for the records of the specification's domain model the code does not declare as adopted (PQ.2).
+
+    Measured on the 2026-11-25 product audit: a medium brief's code had integer ids, no created or changed times and
+    a plain-text token where its specification adopted UUIDs, times and a hashed token - about twelve fields - and no
+    check compared the two. Only the records this sprint's scope names are held to it, every record at the last
+    sprint; see `app.analysis.schema_conformance`.
+    """
+    from app.analysis import schema_conformance
+
+    try:
+        from app.tools.repository import pinned_project_directory
+
+        pinned = pinned_project_directory(Path(root))
+        project = Path(root) / pinned if pinned else Path(root)
+        lines = list(getattr(state.get("technical_specification"), "domain_model", None) or [])
+        if not lines:
+            document = Path(root) / "docs" / "technical_specification.md"
+            lines = schema_conformance.domain_model_lines(
+                document.read_text(encoding="utf-8", errors="replace") if document.is_file() else "")
+        scope, last = _sprint_scope_text(state)
+        owner = "database" if any(str(t.specialist_role) == "database" for t in _tasks(state)) else _owner_of(state, "")
+        found = schema_conformance.sprint_defects(project, lines, scope, last, owner)
+    except Exception as error:  # noqa: BLE001 - a check that cannot run finds nothing
+        degraded("check.schema_conformance", error)
+        return []
+    if found:
+        logger.warning("The CI gate found %d record(s) the code declares unlike the specification", len(found))
+    return found
 
 
 def _later_sprints(state: Any) -> str:

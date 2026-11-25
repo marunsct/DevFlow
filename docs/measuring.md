@@ -193,6 +193,14 @@ From `docs/harness-review.md` Phase 2-3. Each gets its own switch, default off, 
 | C2, C3, C4, C6 | constrained answers; masked tools; stable opening; repo map | to build |
 | SF.2b, SF.2c, SF.3 | harness-run generator (stacks that have one; Python has none, so M6 covers the falcon case); setup budget and rollback; patch on replay and promotion | to build |
 
+**The product quality score (PQ.10, LF.1341, from 2026-11-25) is a measure beside the hidden and quality scores.**
+`loop.sh quality <run>` (recorded by `score` in `data/quality/<run>.json`) gives interface, data and service sub-scores
+(0-100, each the share of its applicable checks passed) and their mean, with the evidence line behind every check; no
+model call, no switch, it changes no run. A change aimed at how the product is built (PQ.1-PQ.9, SK.2, SP.4) is judged
+on it as well as on the hidden score: kept when a part rises and no hidden score falls. Baseline on the eight products
+of the 2026-11-25 audit: overall 31 (medium, interface 0 / data 43 / service 50) to 100 (tasks-api, notes-api Rust/JS);
+web-todo plain 89, web-todo React 67, bookmarks 90, notes-api C# 67 (`reports/audits/2026-11-25-product-quality-ui-db-api.md`).
+
 Candidates found by audits (efficiency: a switch and a measured no-loss result before any is kept):
 - M8 (low): a one-file rewrite is shown 60-70k characters of project memory (`rewritten_fixes.MEMORY_CHARACTERS`; 115 requests over 20 runs, median 64,610) - try the failure's files and their imports only (~20k), judged on the rewrites' fix rate; ~2 min of prefill a run.
 

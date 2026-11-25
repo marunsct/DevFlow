@@ -69,8 +69,13 @@ on any subject it lists). Everything below was checked against `scripts/loop/loo
 **Scoring a finished run:** `scripts/loop/loop.sh score <full run id>` (give the benchmark name as a second argument
 when the run did not start from one). Run it in the background and read its log; never wrap it in `timeout` (it
 copies the workspace, starts the product, runs the hidden tests and the mutation probe; `MUTATE=0` skips mutation).
-Results: `data/bench/<run>.json`, `data/bench/mutation/<run>.json`, KPIs `data/kpi/<run>.json`, one row in
+Results: `data/bench/<run>.json`, `data/bench/mutation/<run>.json`, the product quality score
+`data/quality/<run>.json`, KPIs `data/kpi/<run>.json`, one row in
 `data/kpi/ledger.csv` (score runs `kpi`, which also harvests the reader corpus and proposes lessons).
+**Product quality score (PQ.10):** `scripts/loop/loop.sh quality [run] [--json]` scores the stored product - interface,
+data, service, each 0-100 with the file:line evidence behind every check - in the worker, in seconds, with no model
+call (`app.analysis.product_quality`). `score` records it; run it by hand on a live or older run. Locally on a copy:
+`PYTHONPATH=src .venv/bin/python -m app.analysis.product_quality <workspace dir>`. Measurement only: it changes no run.
 Hidden tests are deleted from the worker right after; never show them to the harness.
 After the score, an end-of-run product review goes to `reports/product-reviews/` (section 8).
 

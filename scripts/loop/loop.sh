@@ -29,6 +29,9 @@
 #                                            and any KPI past 1.5x its 5-run mean (kpi.py, kpi_ledger.py); score runs it too
 #   scripts/loop/loop.sh product [run-id]    audit the generated product: files, code lines, the
 #                                            harness's claims, and the product's own tests (product_audit.py)
+#   scripts/loop/loop.sh quality [run-id] [--json]  the product's quality score - interface, data, service - with
+#                                            the lines behind each check; no model call (app.analysis.product_quality,
+#                                            plan PQ.10); score records it in data/quality/<run>.json
 #   scripts/loop/loop.sh deploy              rebuild + restart app and worker, verify the image
 #                                            matches the working tree, list runs orphan recovery revived
 #   scripts/loop/loop.sh suite               the full test suite, logged to data/loop/suite.log
@@ -249,6 +252,13 @@ score)
   # How strong the run's own locked suite is, as a quality measure beside the
   # hidden score (owner, 2026-10-22); MUTATE=0 skips it. A few minutes.
   [ "${MUTATE:-12}" = "0" ] || "$0" mutate "$run" "${MUTATE:-12}" | tail -1 || true
+  # The product's quality score beside its hidden score (plan PQ.10): no model call, a few seconds.
+  mkdir -p data/quality
+  if "$0" quality "$run" --json > "data/quality/$run.json.tmp" 2>/dev/null; then
+    mv "data/quality/$run.json.tmp" "data/quality/$run.json" && echo "quality: data/quality/$run.json"
+  else
+    rm -f "data/quality/$run.json.tmp"
+  fi
   # Every scored run's KPIs, beside the runs before it (Initiative W.4).
   "$0" kpi "$run" || true
   ;;
@@ -469,6 +479,10 @@ effects)
   fi
   ;;
 product) in_worker product_audit.py "${2:-$(current)}" ;;
+quality)
+  # The stored product's quality score (plan PQ.10), read in the worker where the workspace is; measurement only.
+  docker compose exec -T worker python -m app.analysis.product_quality "${2:-$(current)}" ${3:+"$3"}
+  ;;
 corpus)
   # The reader corpus (plan RC): `corpus harvest [run]` keeps a run's reader inputs
   # with today's results and copies the corpus to the host's data/corpus, where the

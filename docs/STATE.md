@@ -5,9 +5,9 @@ the block below is written by `loop.sh state`. The map of all documents is `docs
 `docs/improvement-plan.md`; how the product works is `docs/PRODUCT.md`; how to run and test it is `docs/HANDOVER.md`;
 decisions in force are `docs/owner-decisions.md`; old information is found through `docs/ARCHIVE.md`.
 <!-- state:generated -->
-**As of:** 11-26 01:59 JST (written by `loop.sh state`). Harness 9f60c1d6 committed; 647b21e8 deployed (not the same).
-**Live, and stopped in the last day:** run-32362f3b failed at failed; run-7259e30d failed at ?; run-f4bab632 paused at awaiting_approval:acceptance_author_1; run-bc3cbd00 failed at awaiting_approval:acceptance_author_0
-**Last scored:** run-2f653f55 fullstack-bookmarks 8/8 (completed, handoff 1.0; scored 11-26 01:59 JST); run-1d79334d notes-api-go 9/9 (completed, mixed, 60 active min, handoff 1.0; scored 11-25 09:44 JST); run-2c83118a wordstats-cli 6/8 (completed, FALSE ACCEPTANCE, 34 active min, handoff 1.0; scored 11-25 08:34 JST).
+**As of:** 11-26 06:36 JST (written by `loop.sh state`). Harness f661efd3 committed; 647b21e8 deployed (not the same).
+**Live, and stopped in the last day:** run-17098b4b running at tools_models; run-03668d05 running at ?; run-a2f91f9f failed at awaiting_approval:acceptance_author_1; run-038f60eb failed at ?; run-32362f3b failed at failed; run-7259e30d failed at ?
+**Last scored:** run-f4bab632 notes-api-php 9/9 (completed, handoff 1.0; scored 11-26 06:36 JST); run-2f653f55 fullstack-bookmarks 8/8 (completed, mixed, 326 active min, handoff 1.0; scored 11-26 01:59 JST); run-1d79334d notes-api-go 9/9 (completed, mixed, 60 active min, handoff 1.0; scored 11-25 09:44 JST).
 <!-- /state:generated -->
 
 ## Live now

@@ -285,10 +285,12 @@ def architecture_review_node(state: WorkflowGraphState, config: RunnableConfig, 
         _a_kept_signature_the_specification_calls_otherwise,
         _behaviour_the_specification_gives_kept_files, _contract_lines_nothing_can_read,
         _decided_after_one_revision, _findings_that_block, _format_finding, _hand_back, _missing_upstream,
-        _record_document, _review_enabled, _run_gated_agent, _the_revision_limit,
+        _record_document, _review_enabled, _run_gated_agent, _the_harness_s_findings_now, _the_revision_limit,
         _the_same_command_in_another_order, _the_setup_for_the_review, build_architecture_review_request,
         create_architecture_reviewer_agent, render_architecture_review,
     )
+
+    from app.graph import design_gate
 
     missing = _missing_upstream(state, "technical_specification")
     if missing is not None:
@@ -311,7 +313,9 @@ def architecture_review_node(state: WorkflowGraphState, config: RunnableConfig, 
             (previous_review.get("findings") if isinstance(previous_review, dict) else getattr(previous_review, "findings", None))
             or []
         ),
-        revision=state.get("architecture_revision_count", 0),
+        # After a person asked for changes at the escalation gate the count starts again, and the findings still open
+        # are what the review is asked about first (thorough delivery, `app.graph.design_gate`).
+        revision=max(state.get("architecture_revision_count", 0), 1 if design_gate.holds(state) else 0),
         environment=_the_setup_for_the_review(state),
     )
     update = _run_gated_agent(
@@ -379,9 +383,23 @@ def architecture_review_node(state: WorkflowGraphState, config: RunnableConfig, 
         update["specification_signatures_checked"] = True
         fired.append("signature")
 
+    raised_by_checks = {
+        "coverage": coverage_finding, "deferrals": deferral_finding, "contract": unread_finding,
+        "order": order_finding, "kept": kept_finding, "signature": signature_finding,
+    }
+    if design_gate.applies():
+        # Thorough delivery: each of the workflow's own checks is asked again on every review, so one it raised is open
+        # until it no longer finds it, and one first found on the last revision is not left unasked.
+        for name, found in _the_harness_s_findings_now(state, spec_text, [n for n in raised_by_checks if n not in fired]):
+            review = review.model_copy(update={"findings": [*review.findings, found], "status": "changes_required"})
+            raised_by_checks[name] = found
+            fired.append(name)
     review = _a_pass_over_its_own_findings(
         review, state["repository"].root_path, "approved", "architecture_review"
     )
+    if design_gate.applies():
+        review = design_gate.after_a_review(
+            state, update, review, raised_by_checks, _findings_that_block(review, state["repository"].root_path))
     update["architecture_review"] = review
     # The reviewer approved and only the workflow's checks sent it back: the revision is checked by them alone.
     update["approved_but_for_the_harness"] = fired if reviewer_approved and fired else []

@@ -15,6 +15,17 @@ No findings were recorded.
 No findings were recorded, so this review states no change for the architect to make.
 {% endif %}
 
+## The Previous Review's Findings
+{% if o.earlier_findings %}
+| Number | Resolved | Where |
+|---|---|---|
+{% for a in o.earlier_findings %}
+| {{ a.number }} | {{ "yes" if a.resolved else "no" }} | {{ a.where | cell }} |
+{% endfor %}
+{% else %}
+None answered.
+{% endif %}
+
 ## Approval Conditions
 {{ o.approval_conditions | bullets("None.") }}
 

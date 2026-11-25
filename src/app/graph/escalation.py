@@ -113,13 +113,17 @@ def _design_findings(state: Any) -> list[str]:
     return [str(f) for f in (state.get("escalation") or {}).get("findings") or [] if str(f).strip()]
 
 
-def _design_page(error: str, findings: list[str]) -> str:
+def _design_page(error: str, findings: list[str], *, held: bool = False) -> str:
     lines = [
         "# The specification review did not converge",
         "",
         error.strip() or "The architecture reviewer still asks for changes.",
         "",
     ]
+    if held:
+        lines += ["This run delivers thoroughly: no development starts while a finding of a gating severity "
+                  "(blocking, major, critical or high) is open, so the run waits for your decision. A gate's "
+                  "timeout does not decide it.", ""]
     if findings:
         lines += ["## What the reviewer still asks for", ""]
         lines += [f"- {finding}" for finding in findings]
@@ -152,6 +156,10 @@ def _build_from_the_latest_specification(
     from app.graph.workflow import _handing_on
 
     findings = _design_findings(state)
+    if decided_by == "user":
+        from app.graph import design_gate
+
+        design_gate.approved_by_the_person(state, update)
     record_decision(
         state, update, point="technical_specification",
         question="The architecture review still asks for changes: how does the run go on?",
@@ -194,8 +202,21 @@ def escalation(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
 
     if count <= MAX_ESCALATIONS and _kind(state) == DESIGN:
         update["design_escalation_count"] = int(state.get("design_escalation_count") or 0) + 1
-        if asks_a_person(state):
-            _record_document(state, "docs/reviews/escalation.md", _design_page(error, _design_findings(state)))
+        from app.graph import design_gate
+
+        held = design_gate.holds(state)
+        if held and not asks_a_person(state):
+            # Thorough delivery never builds by itself with a gating design finding open (`app.graph.design_gate`).
+            record_decision(
+                state, update, point="escalation",
+                question="The architecture review still has gating findings open: how does the run go on?",
+                options=[design_gate.WAITS, "build from the latest specification, recording them as known risks"],
+                decision=design_gate.WAITS,
+                rationale=design_gate.why_it_waits(state, int(state.get("architecture_revision_count") or 0)),
+            )
+        if held or asks_a_person(state):
+            _record_document(state, "docs/reviews/escalation.md",
+                             _design_page(error, _design_findings(state), held=held))
             return _handing_on(**update, stage="user_review_escalation")
         return _build_from_the_latest_specification(
             state, update, error, decided_by="auto", next_stage=_after_the_specification(state),
@@ -366,9 +387,40 @@ def _the_failed_attempt_accepted(state: Any, update: dict[str, Any]) -> dict[str
     return {"sprint_attempts": attempts}
 
 
+def _approved_by_the_gate_s_timeout(state: Any) -> bool:
+    """Whether the escalation gate's last answer was its timeout's, not a person's."""
+    answers = [record for record in state.get("decisions") or []
+               if isinstance(record, dict) and record.get("point") == ESCALATION_REVIEW]
+    return bool(answers) and answers[-1].get("decided_by") == "timeout"
+
+
+def _waits_again_for_a_person(state: Any) -> dict[str, Any]:
+    """The escalation gate opened again: its timeout approved gating design findings, which only a person may."""
+    from app.decisions import record_decision
+    from app.graph import design_gate
+    from app.graph.workflow import _handing_on
+
+    update: dict[str, Any] = {}
+    record_decision(
+        state, update, point="escalation",
+        question="The escalation gate's timeout approved building with gating design findings open: does the run build?",
+        options=[design_gate.WAITS, "build from the latest specification"],
+        decision=design_gate.WAITS,
+        rationale="A timeout is nobody's decision, and thorough delivery builds with a gating design finding open "
+                  "only when a person approves it. Open: " + "; ".join(design_gate.the_open_findings_text(state)),
+    )
+    reviews = {point: review for point, review in (state.get("reviews") or {}).items() if point != ESCALATION_REVIEW}
+    return _handing_on(**update, stage="user_review_escalation", reviews=reviews)
+
+
 def accept(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     """The person approved going on: defer what fails, or build from the design, and continue."""
     error = str((state.get("escalation") or {}).get("error") or "")
+    if _kind(state) == DESIGN and _approved_by_the_gate_s_timeout(state):
+        from app.graph import design_gate
+
+        if design_gate.holds(state):
+            return _waits_again_for_a_person(state)
     if _kind(state) == DESIGN:
         # They have just read the specification's open points; asking them to
         # review the same specification again would be the same question twice.

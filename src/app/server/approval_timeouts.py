@@ -75,7 +75,10 @@ async def approve_what_is_due(runner: Any, now: datetime | None = None) -> list[
     records = runner.run_store.list_all(limit=500, offset=0)
     stages = {record.run_id: str(getattr(record, "current_stage", "") or "") for record in records}
     approved = []
+    held = {record.run_id: record for record in records}
     for run_id, kind, minutes in due(records, now or datetime.now(timezone.utc)):
+        if kind == "review" and _held_for_a_person(held.get(run_id)):
+            continue
         why = f"Approved automatically: nobody answered within {minutes} minute(s)."
         try:
             if kind == "approval":
@@ -89,6 +92,22 @@ async def approve_what_is_due(runner: Any, now: datetime | None = None) -> list[
         await _say_it_went_on_by_itself(runner, run_id, stages.get(run_id, ""), kind, minutes, why)
         approved.append(run_id)
     return approved
+
+
+def _held_for_a_person(record: Any) -> bool:
+    """Whether the run's open gate holds what only a person may approve: thorough delivery's gating design findings
+    (`app.graph.design_gate`). Its timeout does not answer it. Never raises."""
+    if record is None or not str(getattr(record, "current_stage", "") or "").endswith(":escalation"):
+        return False
+    try:
+        from app.graph.design_gate import held_for_a_person
+
+        read = getattr(record, "graph_state", None)
+        state = read() if callable(read) else {}
+        return held_for_a_person(state or {}, getattr(record, "delivery_mode", None))
+    except Exception:  # noqa: BLE001 - unknown is not held: the gate behaves as it did
+        logger.debug("Could not read whether %s is held for a person", getattr(record, "run_id", ""), exc_info=True)
+        return False
 
 
 async def _say_it_went_on_by_itself(runner: Any, run_id: str, stage: str, kind: str, minutes: int, why: str) -> None:

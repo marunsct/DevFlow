@@ -519,6 +519,8 @@ class WorkflowGraphState(TypedDict, total=False):
     specification_command_order_checked: bool
     # The workflow's own design checks that sent back a specification the reviewer approved (`HARNESS_FINDINGS_RECHECKED`).
     approved_but_for_the_harness: list[str]
+    # Thorough delivery's ledger of gating design findings and how each ended. See `app.graph.design_gate`.
+    design_gate: dict[str, Any]
     specification_repair_count: int
     layout_repair_count: int
     # Per-stage count of attempts that ended without a structured response.
@@ -5785,6 +5787,25 @@ def _the_harness_findings_still_open(state: Any, spec_text: str, names: Sequence
     return still
 
 
+def _the_harness_s_findings_now(state: Any, spec_text: str, names: Sequence[str]) -> list[tuple[str, Any]]:
+    """(name, finding) for each named check that finds something on the specification as it is now, asked as if for the
+    first time. A check that cannot be asked finds nothing, as it does when asked the first time. Never raises."""
+    fresh = {**state, "architecture_revision_count": 0, **{flag: False for flag in _THE_CHECKS_ONCE_FLAGS}}
+    found = []
+    for name in names:
+        check = _THE_HARNESS_S_DESIGN_CHECKS.get(name)
+        if check is None:
+            continue
+        try:
+            finding = check(fresh, spec_text)
+        except Exception as failure:  # noqa: BLE001 - as the check itself does
+            degraded("design_check.asked_again", failure)
+            continue
+        if finding is not None:
+            found.append((name, finding))
+    return found
+
+
 def _approved_once_the_harness_s_findings_are_settled(state: Any, spec_text: str) -> dict[str, Any] | None:
     """The approving update for a revision that settled the workflow's own findings on an approved specification; else None.
 
@@ -5793,6 +5814,11 @@ def _approved_once_the_harness_s_findings_are_settled(state: Any, spec_text: str
     """
     overturned = list(state.get("approved_but_for_the_harness") or [])
     if not (overturned and harness_findings_rechecked.enabled() and state.get("architecture_revision_count", 0) >= 1):
+        return None
+    from app.graph import design_gate
+
+    # Thorough delivery: a gating finding the reviewer raised is settled only by a review (`app.graph.design_gate`).
+    if design_gate.a_finding_the_reviewer_raised_is_open(state):
         return None
     if _the_harness_findings_still_open(state, spec_text, overturned):
         return None
@@ -5803,6 +5829,7 @@ def _approved_once_the_harness_s_findings_are_settled(state: Any, spec_text: str
                 ", ".join(overturned))
     approved = ArchitectureReviewOutput(status="approved", findings=[])
     update: dict[str, Any] = {"architecture_review": approved, "approved_but_for_the_harness": []}
+    design_gate.settled_by_the_checks(state, update, f"the workflow's checks ({', '.join(overturned)}) no longer find it")
     _record_document(state, "docs/architecture_review.md", render_architecture_review(approved))
     record_decision(
         state, update, point="technical_specification",
@@ -5822,9 +5849,11 @@ def _decided_after_one_revision(state: Any, spec_text: str) -> dict[str, Any] | 
     Approved when the workflow's own design checks and the contradiction check find nothing open; otherwise the design
     escalation, which records each open point as a known risk or settles it.
     """
-    from app.graph import one_design_review
+    from app.graph import design_gate, one_design_review
 
-    if not one_design_review.applies(state.get("architecture_revision_count", 0)):
+    # Thorough delivery reviews every revision again (`app.graph.design_gate`): the gates below would send what they
+    # leave open to an escalation that builds with it.
+    if design_gate.applies() or not one_design_review.applies(state.get("architecture_revision_count", 0)):
         return None
     still = _the_harness_findings_still_open(state, spec_text, list(_THE_HARNESS_S_DESIGN_CHECKS))
     open_points = [

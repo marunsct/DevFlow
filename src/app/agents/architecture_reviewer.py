@@ -51,6 +51,43 @@ class ArchitectureReviewFinding(BaseModel):
     )
 
 
+class EarlierFindingAnswer(BaseModel):
+    """What a re-review says of one numbered finding of the review before it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    number: int = Field(..., description="The finding's number in the list of what the previous review asked for.")
+    resolved: bool = Field(..., description="True when this version of the specification resolves it.")
+    where: str = Field(default="", description="The specification's words that resolve it, or what is still missing.")
+
+
+#: The words a model writes for an answer it gave as text instead of true or false.
+_RESOLVED_WORDS = {"resolved": True, "yes": True, "true": True, "fixed": True, "addressed": True,
+                   "open": False, "still open": False, "unresolved": False, "no": False, "false": False}
+
+
+def _readable_answers(value: Any) -> Any:
+    """The answers a model gave that can be read; one written another way is left out rather than failing the review."""
+    if not isinstance(value, list):
+        return []
+    kept = []
+    for answer in value:
+        if isinstance(answer, BaseModel):
+            answer = answer.model_dump()
+        if not isinstance(answer, dict):
+            continue
+        resolved = answer.get("resolved")
+        if isinstance(resolved, str):
+            resolved = _RESOLVED_WORDS.get(resolved.strip().lower())
+        try:
+            number = int(answer.get("number"))
+        except (TypeError, ValueError):
+            continue
+        if isinstance(resolved, bool):
+            kept.append({"number": number, "resolved": resolved, "where": str(answer.get("where") or "")})
+    return kept
+
+
 class ArchitectureReviewOutput(BaseModel):
     """Structured review decision produced by the Senior Architect Reviewer.
 
@@ -107,6 +144,16 @@ class ArchitectureReviewOutput(BaseModel):
     )
     accepted_risks: list[str] = Field(
         default_factory=list, description="Risks knowingly accepted rather than blocking approval on."
+    )
+    earlier_findings: list[EarlierFindingAnswer] = Field(
+        default_factory=list,
+        description=(
+            "Only when the request lists what your previous review asked for: one entry for each numbered "
+            "blocking or major finding there - its number, whether this version resolves it, and where."
+        ),
+    )
+    _answers_read = field_validator("earlier_findings", mode="before")(
+        classmethod(lambda cls, value: _readable_answers(value))
     )
 
 
@@ -260,6 +307,15 @@ def _what_the_brief_requires_that_this_defers(document_text: str, specification:
     )
 
 
+#: What a re-review answers of each earlier gating finding. In thorough delivery an earlier finding it says is still
+#: open stays open, and the specification goes back for it, whether or not it is listed again (`app.graph.design_gate`).
+EARLIER_FINDINGS_RULE = (
+    "For each numbered finding above that is blocking or major, add one entry to `earlier_findings`: its "
+    "number, `resolved` true or false, and in `where` the specification's words that resolve it or what is "
+    "still missing. One still open stays open whether or not you list it again in `findings`."
+)
+
+
 def _what_you_asked_for_last_time(earlier: list[ArchitectureReviewFinding], revision: int) -> str:
     """The previous review's findings, and the bar a new one has to clear."""
     if not earlier or revision < 1:
@@ -269,15 +325,16 @@ def _what_you_asked_for_last_time(earlier: list[ArchitectureReviewFinding], revi
         return str(value or "").strip()
 
     listed = "\n".join(
-        f"- [{field(f, 'severity')}] {field(f, 'description')} "
+        f"{number}. [{field(f, 'severity')}] {field(f, 'description')} "
         f"Required remediation: {field(f, 'required_remediation')}"
-        for f in earlier
+        for number, f in enumerate(earlier, start=1)
     )
     return (
         f"\n--- What your review of the previous version asked for (revision {revision}) ---\n"
         f"{listed}\n\n"
         "This version is the architect's answer. Check each of these first: resolved, "
-        "or still open - and if still open, quote what the specification now says.\n\n"
+        "or still open - and if still open, quote what the specification now says.\n"
+        + EARLIER_FINDINGS_RULE + "\n\n"
         "A finding you did not raise before is major only if a competent implementer "
         "who followed this specification exactly would build something that fails a "
         "requirement of the brief, or could not build it at all. Something they would "
@@ -414,8 +471,10 @@ def create_architecture_reviewer_agent(
 
 
 __all__ = [
+    "EARLIER_FINDINGS_RULE",
     "ArchitectureReviewFinding",
     "ArchitectureReviewOutput",
+    "EarlierFindingAnswer",
     "build_architecture_review_request",
     "create_architecture_reviewer_agent",
 ]

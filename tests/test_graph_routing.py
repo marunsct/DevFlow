@@ -612,26 +612,52 @@ def _script_rejections(agents: ScriptedAgents) -> None:
     agents.script("architecture_review", [responds_with(_rejected_review())] * MAX_ARCHITECTURE_REVISIONS)
 
 
-def test_repeated_rejection_is_decided_instead_of_looping(agents: ScriptedAgents, tmp_path: Any) -> None:
-    """Auto mode builds from the latest specification and records what is open.
+def test_repeated_rejection_is_decided_instead_of_looping(
+    agents: ScriptedAgents, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Auto mode in fast delivery builds from the latest specification and records what is open.
 
     The run used to fail here. The acceptance suite, written from the brief,
     decides whether the product works, so open design points are a risk to
     record rather than a reason to stop - and the reviewer's words must survive
-    into that record, not just "reached the limit".
+    into that record, not just "reached the limit". Thorough delivery waits for
+    a person instead (the test below).
     """
+    monkeypatch.setenv("DELIVERY_MODE", "fast")
     _script_rejections(agents)
     _script_through_sprint(agents)
 
     state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-loop")
 
     assert state["stage"] == "complete", state.get("error")
-    assert state["architecture_revision_count"] == MAX_ARCHITECTURE_REVISIONS
+    assert state["architecture_revision_count"] == 2
     decision = next(d for d in state["decisions"] if d["point"] == "technical_specification"
                     and "known risks" in d["decision"])
     assert decision["decided_by"] == "auto"
     assert "No authentication described" in decision["rationale"]
     assert any("No authentication described" in issue for issue in state["known_issues"])
+
+
+def test_repeated_rejection_in_thorough_delivery_waits_for_a_person_though_none_was_asked_for(
+    agents: ScriptedAgents, tmp_path: Any
+) -> None:
+    """Thorough delivery starts no development with a gating design finding open (`app.graph.design_gate`)."""
+    graph = _graph()
+    _script_rejections(agents)
+    _script_through_sprint(agents)
+
+    state = start_workflow(graph, _document(), _repository(tmp_path), "run-loop-held")
+
+    assert state["stage"] == "awaiting_user_review:escalation"
+    assert state["architecture_revision_count"] == MAX_ARCHITECTURE_REVISIONS
+    waits = state["decisions"][-1]
+    assert waits["decision"].startswith("wait for a person") and "No authentication described" in waits["rationale"]
+
+    state = resume_pending_review(graph, "run-loop-held", approve_decision("Build it"))
+
+    assert state["stage"] == "complete", state.get("error")
+    assert any(d["decision"] == "approved by the person at the escalation gate" and d["decided_by"] == "user"
+               for d in state["decisions"])
 
 
 def test_repeated_rejection_asks_the_person_who_asked_to_be_asked(agents: ScriptedAgents, tmp_path: Any) -> None:

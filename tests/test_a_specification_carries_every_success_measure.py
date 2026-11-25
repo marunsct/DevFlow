@@ -21,6 +21,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 from app.agents.product_manager import ProductManagerOutput
 from app.agents.success_measures import capabilities_never_named, enumerations, named_in
 from app.graph.workflow import (
@@ -171,8 +173,11 @@ class TestTheWorkflow:
         assert state["stage"] == "complete", state.get("error")
 
     def test_an_architect_that_drops_it_twice_is_not_looped_on(
-        self, agents: ScriptedAgents, tmp_path: Any
+        self, agents: ScriptedAgents, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        # Fast delivery: thorough delivery asks the check again on every review until it no longer finds it
+        # (`app.graph.design_gate`).
+        monkeypatch.setenv("DELIVERY_MODE", "fast")
         _script(agents, _spec(scope="Users add and delete tasks"), _spec(scope="Users add and delete tasks"))
 
         state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-spec-twice")

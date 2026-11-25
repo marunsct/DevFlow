@@ -43,7 +43,9 @@ def test_an_approving_review_is_sent_back_with_it_and_a_revision_is_asked_it_aga
     from workflow_nodes import a_specification, an_architecture_review
 
     monkeypatch.setenv("ONE_DESIGN_REVIEW", "on")
+    # `ONE_DESIGN_REVIEW` decides in fast delivery; thorough delivery reviews every revision (`app.graph.design_gate`).
     the_check = {"app.graph.workflow._the_same_command_in_another_order": workflow._the_same_command_in_another_order,
+                 "app.graph.workflow._fast_delivery": lambda: True,
                  "app.graph.workflow._record_document": lambda *args, **kwargs: None,
                  "app.graph.workflow._review_enabled": lambda state, point: False}
     specification = a_specification(interface_contract=SPEC.strip().split("\n"))

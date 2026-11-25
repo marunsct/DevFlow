@@ -9,9 +9,17 @@ from __future__ import annotations
 import re
 from types import SimpleNamespace
 
+import pytest
+
 from app.graph import one_design_review, workflow
 
 BRIEF = "# Notes\n\n- Notes with tags.\n"
+
+
+@pytest.fixture(autouse=True)
+def _fast_delivery(monkeypatch):
+    """The switch decides in fast delivery; thorough delivery reviews every revision (`app.graph.design_gate`)."""
+    monkeypatch.setattr(workflow, "_fast_delivery", lambda: True)
 
 
 def _specification(**sections):

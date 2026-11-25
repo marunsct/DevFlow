@@ -5912,6 +5912,8 @@ _A_BRIEF_ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
 
 #: An inline code span of Markdown.
 _A_CODE_SPAN = re.compile(r"`[^`\n]*`")
+#: A line that opens a field of a JSON rendering: `"domain_model": [`.
+_A_FIELD_OF_THE_JSON = re.compile(r'"\w+"\s*:')
 
 
 def brief_features_the_text_defers(brief: str, text: str) -> list[tuple[str, str, str]]:
@@ -5960,6 +5962,12 @@ def brief_features_the_text_defers(brief: str, text: str) -> list[tuple[str, str
         if line.startswith("#"):
             under_a_deferral = bool(_A_DEFERRAL.search(line))
             continue
+        if _A_FIELD_OF_THE_JSON.match(line):
+            # A heading's reach ends where its section does. In the JSON rendering the next section is the next field,
+            # with no heading of its own: measured on one run, the scope's "What this release explicitly defers" heading
+            # reached every field after it, and the domain model's priority values (low, medium, high, urgent) were
+            # reported deferred in the line that specified them.
+            under_a_deferral = False
         if not line:
             continue
         deferred_parts = _what_a_line_defers(line)

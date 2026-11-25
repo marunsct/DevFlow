@@ -41,7 +41,7 @@ import sqlite3
 from app.config import load_settings
 from app.server.process_local import PerProcess
 
-from app.agents.architecture_reviewer import ArchitectureReviewFinding, ArchitectureReviewOutput
+from app.agents.architecture_reviewer import ArchitectureReviewFinding, ArchitectureReviewOutput, EarlierFindingAnswer
 from app.agents.milestone_reviewer import MilestoneReviewFinding, MilestoneReviewOutput
 from app.agents.principal_architect import ArchitectureDecisionRecord, TechnicalSpecificationOutput
 from app.agents.product_manager import ProductManagerOutput
@@ -78,6 +78,7 @@ CHECKPOINTED_TYPES = (
     SecurityFinding,
     ArchitectureReviewOutput,
     ArchitectureReviewFinding,
+    EarlierFindingAnswer,
     MilestoneReviewOutput,
     MilestoneReviewFinding,
     SprintPlanOutput,

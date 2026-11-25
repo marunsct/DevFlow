@@ -88,7 +88,8 @@ Earlier runs (11-22 and before): `reports/product-reviews/`, `reports/status-boa
    java-spring-api and @4 scaffold, node-nest-api scaffolds, node-nest-api@12 does not (ESM; a 12 brief falls back to 11 and says so).
    LF.1312 (a unit test's stand-in hides a rule) deployed 04:29 JST; LF.1314 (a leading `NAME=value` answered plainly) and LF.1315 (sprints
    sized by work: at most 6 criteria, an empty or oversized sprint sent back once, then split) deployed 05:32; LF.1316 (unit tests that share
-   one store shown the leaked records; actual values kept in the defect listing) deployed 07:56. Owner: a GitHub token.
+   one store shown the leaked records; actual values kept in the defect listing) deployed 07:56; LF.1317 (a group compared in a normal form
+   is reported in it) deployed 09:05. Owner: a GitHub token.
 0b. **Medium 3 live: run-bc3cbd00 (`tests/brief_medium.md`, thorough, :1234, started 01:53 JST 11-25)** with every fix from its first stage; `READS_SIZED_TO_THE_ROOM` on for it from 05:14 JST (M18); rewound to its scrum master at
    05:33 JST after its plan put all 13 criteria in sprint 1 (LF.1315). Medium 2
    (run-c53e7bd2) failed at sprint 2 on its time budget: `reports/product-reviews/2026-11-25-medium-brief-rerun.md`. Hold deploys into it.

@@ -15,10 +15,10 @@ decisions in force are `docs/owner-decisions.md`; old information is found throu
 |---|---|
 | Phase | **Learning runs, fixes deployed at once** (deep-review plan, owner 11-18: implement all; frozen-version measuring for Measure batches). The release-candidate count starts only when a full audit cycle finds nothing to fix. |
 | Models | :8888 `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` (key); :1234 `qwen3.6-35b-a3b-mtp@iq4_nl` (no key). Both the owner's; both take runs; each run is pinned to its port. |
-| Harness | Deploying 11-25 ~11:25 JST: the 11-25 review bundle (`docs/improvement-plan.md` 3.0, waves A and B: LF.1318-1323, LF.1330-1331, LF.1335-1336, LF.1340-1341, LF.1345-1347, LF.1350-1357, LF.1360-1362). LF.1365 (the suite writer with no answer does not end the run) deploying at a stage boundary of Medium 4. |
+| Harness | Deployed 11-25 17:0x JST: bc9e5df - the 11-25 review bundle, waves A-C (`docs/improvement-plan.md` 3.0; LF.1318-1391); all 13 page packs scaffold after the page-check and stylesheet change. |
 | Switches | 53 fixes built in (always on). 29 optional switches (9 groups, `docs/measuring.md`); `WEB_LOOKUP_WHEN_STUCK` is off and set per run. Measure arms use `SWITCHES_OFF` per run. |
-| Operations | Nightly backups (`loop.sh backup --check`); finished runs older than 60 days cleared. **:8888 PAUSED by the owner 11-25 10:04 JST until the owner resumes it** (run-f4bab632 paused); medium-run audit cron `f1dc472e` at :07 and :37 (7-day expiry). |
-| Suites | `loop.sh suite` and `loop.sh suite-production` both green at 21,010 passed (11-25 11:40 JST). |
+| Operations | Nightly backups (`loop.sh backup --check`). **Both runs PAUSED by the owner 15:54 JST 11-25 while the inference engine changes** (the same model, parallel processing, a new URL to come): resume nothing until the owner gives the URL; Medium 4 then needs its pin moved. Medium-run audit cron `f1dc472e` at :07 and :37. |
+| Suites | `loop.sh suite` and `loop.sh suite-production` both green at 21,236 passed (11-25 16:5x JST). |
 
 ## Off until measured
 BATCH_ACCEPTANCE_AUTHOR (web tools are on since 11-23, measured from there). Hosted-model

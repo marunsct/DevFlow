@@ -101,6 +101,15 @@ def test_an_unreadable_manifest_is_not_a_browser(workspace: Path) -> None:
     assert not _a_browser_runner_is_installed(str(workspace), "app")
 
 
+@pytest.fixture(autouse=True)
+def _the_host_s_free_memory_is_not_this_test_s(monkeypatch):
+    """The sandbox refuses to start a command when the host is short of memory (`resources.enough_headroom`); measured
+    on a host whose model servers held most of its memory, that refusal came before the timeout these tests pin."""
+    from app.tools import resources
+
+    monkeypatch.setattr(resources, "enough_headroom", lambda *args, **kwargs: (True, ""))
+
+
 def _timed_out_in_its_own_container(monkeypatch) -> None:
     import subprocess
 

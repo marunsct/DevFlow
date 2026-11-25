@@ -107,6 +107,9 @@ class LanguageSupport:
     #: How a unit test in this language starts from an empty store of its own, in one sentence for a test's writer or
     #: fixer (LF.1316).
     fresh_store: str | Gap = Gap("no wording for an empty store per test in this language")
+    #: The reader of `app.analysis.development_packages` that tells the packages its manifests declare for development
+    #: only from those the product runs with, and the packages a source file imports (PQ.10).
+    development_only: str | Gap = Gap("no reader tells its development-only packages apart")
 
 
 _NODE_INSTALLED = ("node_modules",)
@@ -248,6 +251,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
         development_server="javascript",
         package_cache=Gap(_INSTALLS_INTO_THE_PROJECT),
         resolved="npm",
+        development_only="npm",
         stand_ins=_JS_STAND_INS,
         refusal_not_given=_JS_REFUSAL,
         test_starts=_JS_TEST_STARTS,
@@ -282,6 +286,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
             development_server="python",
             package_cache=Gap(_INSTALLS_INTO_THE_PROJECT),
             resolved="python",
+            development_only="python",
             stand_ins=(
                 r"\bpatch\(\s*['\"](?P<name>[\w.]+)['\"]",
                 r"\bpatch\.object\(\s*(?P<name>[A-Za-z_][\w.]*)\s*,\s*['\"](?P<attr>\w+)['\"]",

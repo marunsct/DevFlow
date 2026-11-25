@@ -726,6 +726,14 @@ class CompatibleChatOpenAI(ChatOpenAI):
         deadline = getattr(_REPLY_CAP, "deadline", None)
         if deadline:
             payload["timeout"] = deadline
+        # The answer tool by name on a call where only the answer is allowed, where the server honours that (PA.16);
+        # before the downgrades below, which still apply to a server later found to refuse it.
+        try:
+            from app.models.named_answer import with_the_answer_named
+
+            with_the_answer_named(payload, self._served_by())
+        except Exception:  # noqa: BLE001 - the call as it was
+            pass
         # Before the downgrade below: `required` is the form this engine enforces; `auto` made its parser reject the
         # model's output (measured, 0-1 of 3 replies answered) and `required` never did.
         if self._served_by() in _NAMED_CHOICE_BECOMES_REQUIRED:

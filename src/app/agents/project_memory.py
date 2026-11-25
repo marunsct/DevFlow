@@ -84,6 +84,25 @@ _BUILD_NAMES = {"Gemfile", "Rakefile", "artisan", "Dockerfile", "Makefile", "Pro
 _SKIPPED_NAMES = {"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock", "Cargo.lock", "go.sum", "Gemfile.lock",
                   "composer.lock", "packages.lock.json"}
 
+#: A test runner's or coverage tool's report, by its usual name: `test-results.xml`, `test-results-s3.xml`, `junit.xml`,
+#: `junit-api.xml`, `TEST-app.ItemTest.xml` (PA.12). Measured on a medium run: reports written beside the product (not
+#: in `test-results/`, which is skipped) were held whole in a stage's memory, each run's results as if they were code.
+_RUNNER_REPORT_NAME = re.compile(r"^(?:test[-_]?results?|junit|TEST-)[^/]*\.xml$|[-_.]junit\.xml$", re.I)
+#: The same by what it holds, whatever its name: a JUnit-style or coverage document's root element.
+_RUNNER_REPORT_ROOT = re.compile(
+    r"^\s*(?:<\?xml[^>]*\?>\s*)?(?:(?:<!--.*?-->|<!DOCTYPE[^>]*>)\s*)*<(?:testsuites|testsuite|testrun|coverage)\b",
+    re.S)
+
+
+def is_a_runner_report(path: str, text: str = "") -> bool:
+    """Whether `path` (with its `text`, when read) is what a test runner or coverage tool wrote: output of a run, never
+    an input to the work, so no stage's memory holds it."""
+    name = str(path).rsplit("/", 1)[-1]
+    if _RUNNER_REPORT_NAME.search(name):
+        return True
+    return name.lower().endswith(".xml") and bool(_RUNNER_REPORT_ROOT.match(text[:2_000]))
+
+
 _LOCK = threading.Lock()
 #: (root, relative path) -> (modification time, size, content).
 _FILES: dict[tuple[str, str], tuple[int, int, str]] = {}
@@ -111,7 +130,7 @@ def _candidates(root: Path) -> list[str]:
                           if not _ignored((*relative_folder.parts, d)) and not is_generated(d, files)]
         for name in files:
             if (name in _SKIPPED_NAMES or name in _HARNESS_BOOKKEEPING or name.startswith(".project-")
-                    or _A_COMMAND_LINE_S_CODE.match(name)) or not (
+                    or _A_COMMAND_LINE_S_CODE.match(name) or is_a_runner_report(name)) or not (
                 name.endswith(_TEXT_SUFFIXES) or name.endswith(_BUILD_SUFFIXES) or name in _BUILD_NAMES
             ):
                 continue
@@ -142,6 +161,9 @@ def current(repo_root: str | Path) -> dict[str, str]:
         try:
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
+            continue
+        if is_a_runner_report(relative, text):
+            present.discard(relative)
             continue
         with _LOCK:
             _FILES[(key, relative)] = (stat.st_mtime_ns, stat.st_size, text)
@@ -860,22 +882,23 @@ REVIEW_DOCUMENTS_ROOM = 12_000
 
 
 def render_for_a_review(repo_root: str | Path, model: Any, opening: str, stage: str,
-                        review_files: Sequence[str]) -> tuple[str, dict[str, str]]:
+                        review_files: Sequence[str], budget: int | None = None) -> tuple[str, dict[str, str]]:
     """A review's memory with `review_files` held first, numbered, and each long document as its digest (LF.1284);
     another reading stage's the same way (`review_files.READING_STAGES`, LF.1286).
 
     The budget is the model's share whatever the request's size: the files the request names as held are exactly
     those this holds (`review_files.held_for_review` renders it to find them), so it is not cut again to the input
-    budget as other requests are (`_within_its_budget`)."""
+    budget as other requests are (`_within_its_budget`). `budget`: a smaller one, for a memory chosen again after a
+    summary whose opening leaves no room (`_room_the_opening_leaves`)."""
     from app.agents.review_files import numbered_heading
 
-    return render(repo_root, budget_for(model), opening, **_arguments_for(repo_root, stage),
+    return render(repo_root, budget or budget_for(model), opening, **_arguments_for(repo_root, stage),
                   documents_at_most=DOCUMENTS_PAST_THE_BUDGET, review_files=tuple(review_files),
                   numbered_as=numbered_heading(stage))
 
 
 def render_for_a_stage(repo_root: str | Path, model: Any, opening: str, stage: str,
-                       noted: bool = True) -> tuple[str, dict[str, str]]:
+                       noted: bool = True, framing: int = 0) -> tuple[str, dict[str, str]]:
     """The memory a stage's opening request is given, and the files it holds (not a lead's re-plan's).
 
     A fixer whose request was cut to its size target (`fixer_request_shape.reshaped`) is given the memory cut the same
@@ -891,6 +914,9 @@ def render_for_a_stage(repo_root: str | Path, model: Any, opening: str, stage: s
     specification's sections beside the parts of it their requests already quoted. Within the budget it is as before.
     One `request_budget` record a visit says which, and with the switch off what would have been cut (none with
     `noted` False: the size gate of a review asking what today's memory holds, `review_files.fits_as_today`).
+    Whatever the switch says, the memory is cut the same way when `framing` (the call's system prompt and tool
+    descriptions, in characters) with the request and the memory fills `opening_room.OPENING_SHARE` of the stage's
+    summary trigger (PA.1): such a stage is summarised from its first calls.
 
     A review, or another reading stage (`review_files.READING_STAGES`, LF.1286), whose request names the files its
     memory holds (`review_files.held_section`) is given `render_for_a_review` (LF.1284).
@@ -921,7 +947,8 @@ def render_for_a_stage(repo_root: str | Path, model: Any, opening: str, stage: s
         # A builder past its room: the code files it does not hold are outlined with their lines (LF.1287).
         arguments = {**arguments, "outlined": True}
         memory, held = render(repo_root, budget_for(model), opening, **arguments)
-    return _within_its_budget(repo_root, model, opening, stage, memory, held, arguments, noted=noted)
+    return _within_its_budget(repo_root, model, opening, stage, memory, held, arguments, noted=noted,
+                              framing=framing)
 
 
 def as_the_stage_opens(repo_root: str | Path, model: Any, opening: str, stage: str) -> tuple[str, dict[str, str]]:
@@ -951,10 +978,12 @@ DOCUMENTS_PAST_THE_BUDGET = 12_000
 
 
 def _within_its_budget(repo_root: str | Path, model: Any, opening: str, stage: str, memory: str,
-                       held: dict[str, str], arguments: dict[str, Any], noted: bool = True) -> tuple[str, dict[str, str]]:
+                       held: dict[str, str], arguments: dict[str, Any], noted: bool = True,
+                       framing: int = 0) -> tuple[str, dict[str, str]]:
     """`memory` when it and `opening` are within the stage's input budget; past it, with
-    `REQUEST_BUDGET_FOR_EVERY_STAGE` on, the memory rendered again within what the budget leaves, long documents as
-    digests - off, `memory` as it is and the record says what would have been cut. Never raises: `memory` as it is."""
+    `REQUEST_BUDGET_FOR_EVERY_STAGE` on or an opening that with its `framing` leaves no room before its first summary
+    (`opening_room`, PA.1), the memory rendered again within what the budget leaves, long documents as digests -
+    otherwise `memory` as it is and the record says what would have been cut. Never raises: `memory` as it is."""
     try:
         from app.agents import request_budget
 
@@ -981,9 +1010,16 @@ def _within_its_budget(repo_root: str | Path, model: Any, opening: str, stage: s
             cut=[f"{path} as its outline and the sections this request points at (read others by line)"
                  for path in documents],
             left_out=[path for path in held if not path.startswith("docs/") and path not in smaller_held])
-        applied = request_budget.for_every_stage_switch.enabled()
+        switched = request_budget.for_every_stage_switch.enabled()
+        from app.agents import opening_room
+
+        # Past its budget and filling its summary trigger with its framing: cut whatever the switch says (PA.1).
+        share = None if switched else opening_room.leaves_no_room(framing + built, model)
+        applied = switched or share is not None
+        said = (request_budget.SAID_FOR_EVERY_STAGE if switched
+                else opening_room.SAID.format(share=share) if share is not None else "")
         note(stage, built=built, sent=len(opening) + len(smaller) + 2, target=target, fitted=fitted,
-                             applied=applied, message=request_budget.SAID_FOR_EVERY_STAGE if applied else "")
+             applied=applied, message=said)
         if not applied:
             return memory, held  # what would have been cut is in the record (`REQUEST_BUDGET_FOR_EVERY_STAGE` off)
         logger.info("The memory of %s is past its input budget (%d characters with its request, target %d); held "
@@ -1236,6 +1272,10 @@ def _chosen_again_at_a_summary(repo_root: str | Path, visit: dict[str, Any], mar
             return
         chosen = review_files.chosen_again(named, written, reads, repo_root)
         memory, now_held = render_for_a_review(repo_root, model, opening, stage, chosen)
+        room = _room_the_opening_leaves(model, opening, memory, int(visit.get("framing") or 0))
+        if room is not None and memory and len(memory) > room:
+            # Held to the room its opening was given: rendered whole, the stage opened past its trigger again (PA.1).
+            memory, now_held = render_for_a_review(repo_root, model, opening, stage, chosen, budget=room)
         if not memory or not now_held:
             return
         visit["snapshot"], visit["held"] = memory, now_held
@@ -1246,6 +1286,25 @@ def _chosen_again_at_a_summary(repo_root: str | Path, visit: dict[str, Any], mar
                     len(visit["held_line"]), ", ".join(visit["held_line"][:10]))
     except Exception:  # noqa: BLE001 - the memory as it was
         logger.debug("Could not choose a stage's held files again", exc_info=True)
+
+
+def _room_the_opening_leaves(model: Any, opening: str, memory: str, framing: int) -> int | None:
+    """The memory's room beside `opening` when the two are past the input budget and the memory is held to it -
+    `REQUEST_BUDGET_FOR_EVERY_STAGE` on, or with `framing` they fill the summary trigger (`opening_room`, PA.1); None
+    otherwise. Never raises."""
+    try:
+        from app.agents import opening_room, request_budget
+
+        target = request_budget.opening_target(model)
+        built = len(opening) + len(memory) + 2
+        if built <= target:
+            return None
+        if not (request_budget.for_every_stage_switch.enabled()
+                or opening_room.leaves_no_room(framing + built, model) is not None):
+            return None
+        return min(budget_for(model), max(int(target * request_budget.MEMORY_LEAST_SHARE), target - len(opening) - 2))
+    except Exception:  # noqa: BLE001 - the memory as rendered
+        return None
 
 
 def _every_code_file_fits(repo_root: str | Path, model: Any, opening: str, stage: str, now: dict[str, str]) -> bool:
@@ -1342,8 +1401,12 @@ def build_project_memory_middleware(repo_root: str) -> Any:
                             kept_out=_kept_out_for(stage, repo_root))
                         visit["opening"] = opening
                     else:
+                        from app.agents.opening_room import framing_of
+
+                        # The call's system prompt and tool descriptions, for the room its opening leaves (PA.1).
+                        visit["framing"] = framing_of(request)
                         visit["snapshot"], visit["held"] = render_for_a_stage(
-                            repo_root, getattr(request, "model", None), opening, stage)
+                            repo_root, getattr(request, "model", None), opening, stage, framing=visit["framing"])
                     visit["files"] = dict(current(repo_root))
                     visit["stage"], visit["opened_on"] = stage, opening
                 mark = visit.pop(_SUMMARISED, None)

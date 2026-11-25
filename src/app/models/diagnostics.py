@@ -474,6 +474,13 @@ def apply(model: Any, diagnosis: Diagnosis | None) -> None:
         # switched per call here, so a forced call would still reason.
         if diagnosis.settings.structured_answers == "offered" or diagnosis.settings.force_only_without_thinking:
             _NO_FORCED_TOOL_WHILE_THINKING.add(server)
+        # A named choice answered with that tool: asked for on the calls where only the answer is allowed (PA.16).
+        from app.models.named_answer import HONOURED
+
+        if diagnosis.settings.structured_answers == "forced" and not diagnosis.settings.force_only_without_thinking:
+            HONOURED.add(server)
+        else:
+            HONOURED.discard(server)
         # The reply ceiling the deep diagnosis chose for a model seen looping
         # (`app.models.deep_diagnosis`, used behind `MODEL_GUIDANCE`).
         from app.models import deep_diagnosis, model_guidance

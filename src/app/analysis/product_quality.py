@@ -19,7 +19,12 @@ each check printed with the lines that decided it:
   (`app.analysis.schema_conformance`), ids of the stated kind, fields called unique declared unique, an index when
   the specification asks for one, migrations when it asks for them.
 - service (code that answers with error statuses): one error shape, the specification's when it states one; no 500
-  for a client's fault; a refusal the code raises answered 403 somewhere.
+  for a client's fault; a refusal the code raises answered 403 somewhere. And, wherever a manifest declares packages
+  for development only, no product file imports one (`app.analysis.development_packages`): an install for running
+  leaves them out, so the product fails at start.
+
+Counted, not scored: comment lines in product code that are the model's deliberation left behind ("Let's assume...",
+"Looking at the spec...", `deliberation_lines`).
 
 Stack-agnostic: what each language spells differently is a small table here or in `schema_conformance`.
 
@@ -752,6 +757,33 @@ def service_part(project: Path, sources: dict[Path, str], specification: str) ->
 # --------------------------------------------------------------------------------------------------------------
 
 _COMMENT_LINE = re.compile(r"^\s*(?://|#|/\*|\*|\*/|<!--|-->)")
+#: Words of a model thinking aloud, not of a comment written for a reader of the code. Measured in a stored product: a
+#: route handler carried 14 comment lines of "Spec says...", "Looking at spec examples, it seems...", "Let's assume
+#: we return the first error for simplicity unless the test expects all".
+_DELIBERATION = re.compile(
+    r"(?i)(?<!\w)(?:let's|let me|let us|i think|i'll|i will|i need to|i'm not sure|we'll|we will|it seems|seems like|"
+    r"looking at|wait,|hmm+|spec says|the spec(?:ification)? (?:says|expects|wants|lists)|unless the tests? expects?|"
+    r"as per (?:the )?spec)(?!\w)")
+#: Lines of a comment block that think aloud before the whole block counts as deliberation.
+DELIBERATION_LINES_IN_A_BLOCK = 2
+
+
+def deliberation_lines(sources: dict[Path, str]) -> tuple[int, list[str]]:
+    """The comment lines of product code in blocks that read as deliberation (at least `DELIBERATION_LINES_IN_A_BLOCK`
+    of a block's lines think aloud), and where each such block is."""
+    total, where = 0, []
+    for path, text in sources.items():
+        lines = text.splitlines()
+        block: list[int] = []
+        for number in range(len(lines) + 1):
+            if number < len(lines) and _COMMENT_LINE.match(lines[number]):
+                block.append(number)
+                continue
+            if sum(1 for n in block if _DELIBERATION.search(lines[n])) >= DELIBERATION_LINES_IN_A_BLOCK:
+                total += len(block)
+                where.append(f"{path.name}:{block[0] + 1}-{block[-1] + 1}")
+            block = []
+    return total, where
 
 
 def _documents(workspace: Path) -> str:
@@ -763,18 +795,30 @@ def _documents(workspace: Path) -> str:
     return "\n".join(texts)
 
 
-def score(project: Path, specification: str = "", documents: str = "") -> QualityScore:
-    """The quality score of the product in `project`, held to `specification` (the document's text)."""
+def score(project: Path, specification: str = "", documents: str = "",
+          harness_files: Iterable[str] = ()) -> QualityScore:
+    """The quality score of the product in `project`, held to `specification` (the document's text); `harness_files`
+    (paths under `project`) are the setup a stack pack keeps, not the product's own imports."""
     files = conformance.product_source_files(project)
     sources = {path: path.read_text(encoding="utf-8", errors="replace") for path in files}
     records = conformance.records_in(conformance.domain_model_lines(specification))
     interface, interface_counts = interface_part(project, sources)
     data, data_counts = data_part(project, sources, f"{specification}\n{documents}", records)
     service, service_counts = service_part(project, sources, specification)
+    from app.analysis import development_packages
+
+    kept = set(harness_files)
+    imported, declaring = development_packages.imported_in(
+        project, {path: text for path, text in sources.items() if project_relative(project, path) not in kept})
+    service.checks.append(_binary("no development-only package imported by product code", [str(i) for i in imported],
+                                  applies=bool(declaring), what="import(s)"))
+    deliberation, _ = deliberation_lines(sources)
     code_lines = sum(1 for text in sources.values() for line in text.splitlines()
                      if line.strip() and not _COMMENT_LINE.match(line))
     counts: dict[str, int | str] = {"source files": len(sources), "code lines": code_lines,
-                                    **interface_counts, **data_counts, **service_counts}
+                                    **interface_counts, **data_counts, **service_counts,
+                                    "development-only imports": len(imported),
+                                    "deliberation comment lines": deliberation}
     return QualityScore(project.name, [interface, data, service], counts)
 
 
@@ -784,7 +828,19 @@ def score_workspace(workspace: Path) -> QualityScore:
     project = workspace / pin.read_text().strip() if pin.is_file() and pin.read_text().strip() else workspace
     document = workspace / "docs" / "technical_specification.md"
     specification = document.read_text(encoding="utf-8", errors="replace") if document.is_file() else ""
-    return score(project, specification, _documents(workspace))
+    return score(project, specification, _documents(workspace), _the_pack_s_files(workspace, project))
+
+
+def _the_pack_s_files(workspace: Path, project: Path) -> set[str]:
+    """The files the run's stack pack keeps as it set them up, relative to `project`; none when no pack is recorded."""
+    try:
+        from app.stacks.contract import kept_paths
+
+        within = project.relative_to(workspace).as_posix()
+        return {path[len(within) + 1:] if within != "." and path.startswith(within + "/") else path
+                for path in kept_paths(workspace)}
+    except Exception:  # noqa: BLE001 - every file read as the product's
+        return set()
 
 
 def _workspace_of(argument: str) -> Path:

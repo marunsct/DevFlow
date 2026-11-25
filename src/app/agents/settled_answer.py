@@ -2224,6 +2224,8 @@ def build_settled_answer_middleware(
             # that refuses the request because of it. Set only when thinking is
             # switched off below.
             refused_fallback = None
+            # The answer tool, named to the server on a call where only the answer is allowed (PA.16).
+            answer_named = ""
             # For `_decide`, which runs after this call and sees no model.
             self._model = getattr(request, "model", None)
             # Tools this call withholds, refused if called anyway (`wrap_tool_call`).
@@ -2537,6 +2539,9 @@ def build_settled_answer_middleware(
                 stable = stable_tools.enabled()
                 withheld_here: set[str] | None = None
                 if answer_only:
+                    from app.models.named_answer import the_answer_tool
+
+                    answer_named = the_answer_tool(schema)
                     # Empty here, not empty at the model. `_get_bound_model`
                     # appends the structured-output tools to whatever this
                     # list holds, so the model is left bound to exactly one
@@ -2627,6 +2632,13 @@ def build_settled_answer_middleware(
                 request = request.override(messages=corrected, **overrides)
             except Exception:  # noqa: BLE001 - never fail the call over a hint
                 return handler(request)
+            from app.models.named_answer import naming
+
+            with naming(answer_named):
+                return self._sent(handler, request, refused_fallback)
+
+        def _sent(self, handler: Any, request: Any, refused_fallback: Any) -> Any:
+            """`request` answered; again as `refused_fallback` when the server refused its reasoning field."""
             if refused_fallback is None:
                 return handler(request)
             try:

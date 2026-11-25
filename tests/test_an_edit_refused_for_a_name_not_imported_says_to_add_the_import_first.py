@@ -29,10 +29,12 @@ def _refusal(tmp_path, monkeypatch, message, *, editing=True):
 
 
 @pytest.mark.parametrize("message", ['"JSONB" is not defined', "Cannot find name 'JSONB'.", "undefined: JSONB"])
-def test_an_edit_using_a_name_never_imported_is_told_to_add_the_import_in_its_own_edit_first(tmp_path, monkeypatch, message):
+def test_an_edit_using_a_name_never_imported_is_told_to_send_the_import_with_it_in_one_call(tmp_path, monkeypatch, message):
+    """One call may carry both changes (LF.1423): told to send the import alone, a fixer with two calls left sent the
+    refused change again instead."""
     said = _refusal(tmp_path, monkeypatch, message)
     assert "Nothing was written" in said
-    assert "first add its import" in said and "in an edit of its own" in said
+    assert "its import" in said and "`changes`" in said
 
 
 def test_any_other_error_is_refused_as_before(tmp_path, monkeypatch):
@@ -42,7 +44,7 @@ def test_any_other_error_is_refused_as_before(tmp_path, monkeypatch):
 
 def test_a_whole_file_write_is_not_told_to_edit_in_two_steps(tmp_path, monkeypatch):
     said = _refusal(tmp_path, monkeypatch, '"JSONB" is not defined', editing=False)
-    assert "first add its import" not in said
+    assert "`changes`" not in said
 
 
 def test_the_new_rule_names_no_banned_words():

@@ -1719,8 +1719,29 @@ def _salvaged_from_its_reasoning(message: Any) -> bool:
         (getattr(message, "response_metadata", None) or {}).get(SALVAGED) or "") in ("reasoning", "failed")
 
 
+def _thinking_stays_off_for_the_stage(
+    messages: list[Any], stage_name: str, request: Any, lost_before: int = 0, salvaged_before: int = 0
+) -> bool:
+    """Whether thinking is off for the rest of this stage, not for one reply, and the model can be asked without it
+    (LF.1421): the visit lost `LOST_REPLIES_BEFORE_THINKING_STAYS_OFF` replies to reasoning, or a fix stage's salvaged
+    replies keep it off, or `deliberated_reads` keeps it off. Never raises."""
+    try:
+        from app.agents.deliberated_reads import stays_off_in
+        from app.agents.thinking import answering_without_reasoning
+
+        if not answering_without_reasoning(getattr(request, "model", None)):
+            return False
+        return (max(lost_before, _replies_that_were_all_reasoning(messages)) >= LOST_REPLIES_BEFORE_THINKING_STAYS_OFF
+                or stays_off_in(_the_transcript_stage() or stage_name)
+                or _a_fix_stage_s_salvaged_replies_turn_thinking_off(messages, lost_before, salvaged_before,
+                                                                     for_the_stage=True))
+    except Exception:  # noqa: BLE001 - the tools as they were
+        return False
+
+
 def _a_fix_stage_s_salvaged_replies_turn_thinking_off(
-    messages: list[Any], lost_before: int = 0, salvaged_before: int = 0, last_salvaged: bool = False
+    messages: list[Any], lost_before: int = 0, salvaged_before: int = 0, last_salvaged: bool = False,
+    for_the_stage: bool = False,
 ) -> bool:
     """In a defect-fix stage, a reply salvaged from reasoning counts as one lost to it (behind the switch; owner 2026-10-29).
 
@@ -1742,8 +1763,8 @@ def _a_fix_stage_s_salvaged_replies_turn_thinking_off(
                 or (stage.startswith(PLANNING_STAGES) and salvaged_planning_switch.enabled())):
             return False
         replies = [message for message in messages if getattr(message, "type", None) == "ai"]
-        if last_salvaged or (replies and _salvaged_from_its_reasoning(replies[-1])):
-            return True
+        if not for_the_stage and (last_salvaged or (replies and _salvaged_from_its_reasoning(replies[-1]))):
+            return True  # the reply after one salvaged: off for that reply alone
         if not replies and not salvaged_before:
             return False
         salvaged = max(salvaged_before, sum(1 for message in replies if _salvaged_from_its_reasoning(message)))
@@ -2271,7 +2292,10 @@ def build_settled_answer_middleware(
             answered = handler
 
             def handler(request: Any, _answered: Any = answered, _key: str = salvaged_key) -> Any:  # noqa: F811
-                response = _answered(request)
+                # What the stage worked out in a capped reply, pinned last, past every summary (LF.1421).
+                from app.agents.worked_out import with_it_pinned
+
+                response = _answered(with_it_pinned(request))
                 try:
                     came_back = _salvaged_in(response)
                     before, _ = counts.get(_key, (0, False))
@@ -2510,10 +2534,21 @@ def build_settled_answer_middleware(
                 # stage sent one identical `read_command_output` eight times
                 # running under that warning and was never stopped.
                 repeated = None
+                # Thinking off for the rest of the stage: only what acts is offered (LF.1421, `worked_out`).
+                acting_only = None
+                if not answer_only and _thinking_stays_off_for_the_stage(
+                        messages, stage_name, request, lost, salvaged_now[0]):
+                    from app.agents import worked_out
+
+                    acting_only = worked_out.acting_tools_only(list(getattr(request, "tools", None) or []))
                 if not answer_only:
                     notices = []
                     if read_tool_due:
                         notices.append(_READ_TOOL_WITHHELD_NOTICE)
+                    if acting_only is not None:
+                        from app.agents.worked_out import ACTING_ONLY_NOTICE
+
+                        notices.append(ACTING_ONLY_NOTICE)
                     repeated = _a_tool_refused_identically(messages)
                     notice = _a_tool_withheld_notice(*repeated) if repeated is not None else ""
                     if repeated is None:
@@ -2614,6 +2649,12 @@ def build_settled_answer_middleware(
                             )
                     if ignored or (stalled and writers):
                         kept, narrowed = _without_the_looking_tools_in(kept), True
+                    if acting_only is not None:
+                        from app.agents.worked_out import ACTING_TOOLS
+
+                        kept, narrowed = [tool for tool in kept if _named(tool) in ACTING_TOOLS], True
+                        logger.warning("Stage %s: thinking is off for the rest of it; only the tools that change a "
+                                       "file or run a command are offered", stage_name or "?")
                     if last_writes:
                         # Only the tools that change a file: a command run on these calls is one write fewer.
                         kept, narrowed = [tool for tool in kept if _named(tool) in _THE_WRITING_TOOLS], True

@@ -289,14 +289,51 @@ def _merged_ranges(*groups: dict[str, list[list[int]]]) -> dict[str, list[list[i
     return merged
 
 
-def files_read_line(files_read: dict[str, list[list[int]]]) -> str:
-    """The summary's line naming what the stage had read before it; "" when it read nothing."""
+#: How the summary names the files it read that the project memory holds whole (LF.1424).
+HELD_READS = ("Of the files this stage has read, the project memory at the start of this conversation holds these "
+              "whole and current, so work from there and do not read them again: ")
+
+
+def files_read_line(files_read: dict[str, list[list[int]]], held: Any = ()) -> str:
+    """The summary's line naming what the stage had read before it; "" when it read nothing.
+
+    A file the project memory holds whole (`held`) is named as held, not as gone (LF.1424). Measured on one medium
+    run: the line called a fixer's database module "no longer in this conversation" while the memory held it whole,
+    the note's next step read "Read database.py", and the fixer asked for it six times running, each answered with a
+    pointer to the memory."""
     if not files_read:
         return ""
+    kept = {str(path) for path in held or ()}
     named = list(files_read.items())[-MOST_FILES_READ_NAMED:]
-    shown = ", ".join(f"`{path}` (lines " + ", ".join(f"{a}-{b}" if a != b else str(a) for a, b in ranges) + ")"
-                      for path, ranges in named)
-    return ("Files this stage has read so far, whose text is no longer in this conversation: " + shown + ".")
+    gone = [(path, ranges) for path, ranges in named if path not in kept]
+    parts = []
+    if gone:
+        shown = ", ".join(f"`{path}` (lines " + ", ".join(f"{a}-{b}" if a != b else str(a) for a, b in ranges) + ")"
+                          for path, ranges in gone)
+        parts.append("Files this stage has read so far, whose text is no longer in this conversation: " + shown + ".")
+    whole = [path for path, _ in named if path in kept]
+    if whole:
+        parts.append(HELD_READS + ", ".join(f"`{path}`" for path in whole) + ".")
+    return " ".join(parts)
+
+
+def with_held_reads_named(messages: list[Any], held: Any) -> list[Any]:
+    """`messages` with a summary's line of the files it read naming those the project memory holds whole (`held`) as
+    held (LF.1424); `messages` itself when there is no such line or nothing changes. Called by the project memory,
+    which knows what it holds on this call."""
+    changed = False
+    out: list[Any] = []
+    for message in messages:
+        kwargs = getattr(message, "additional_kwargs", None) or {}
+        read = kwargs.get(FILES_READ)
+        content = getattr(message, "content", None)
+        if getattr(message, "type", None) == "human" and read and isinstance(content, str):
+            before, after = files_read_line(read), files_read_line(read, held)
+            if before and after != before and before in content:
+                message = message.model_copy(update={"content": content.replace(before, after, 1)})
+                changed = True
+        out.append(message)
+    return out if changed else messages
 
 
 class RequestKeepingSummarization(SummarizationMiddleware):
@@ -310,7 +347,8 @@ class RequestKeepingSummarization(SummarizationMiddleware):
         return "SummarizationMiddleware"
 
     def __init__(self, *args: Any, most_kept_tokens: int | None = None, usual_trigger_tokens: int | None = None,
-                 reply_room: tuple[str, int, int] | None = None, role: str = "", **kwargs: Any) -> None:
+                 reply_room: tuple[str, int, int] | None = None, role: str = "", repo_root: str | None = None,
+                 fix_stage_trigger_tokens: int | None = None, **kwargs: Any) -> None:
         # The summary is the stage's work note (PA.2): asked for what was found, decided, changed and is left.
         kwargs.setdefault("summary_prompt", WORK_NOTE_PROMPT)
         super().__init__(*args, **kwargs)
@@ -323,6 +361,10 @@ class RequestKeepingSummarization(SummarizationMiddleware):
         # The most of the conversation a compaction leaves whole (see
         # `_determine_cutoff_index`); None keeps the message count alone.
         self._most_kept_tokens = most_kept_tokens
+        # The workspace, for whether a read's lines are still the file's, and a fix stage's own trigger, both for
+        # `FIX_STAGES_STUB_OLD_READS` (`old_reads_stubbed`, LF.1420).
+        self._repo_root = repo_root
+        self._fix_stage_trigger = fix_stage_trigger_tokens
         # Set while one summary is made, read when its message is built: the
         # two run in turn within one model call.
         self._kept: tuple[str, list[str], int, int, dict[str, list[list[int]]], int, list[list[Any]]] | None = None
@@ -429,13 +471,18 @@ class RequestKeepingSummarization(SummarizationMiddleware):
         messages at a time (`observation_folding.boundary`), so what is
         shortened stays the same, and cached, between steps.
         """
-        from app.agents import observation_folding
+        from app.agents import observation_folding, old_reads_stubbed
 
+        stubbing = old_reads_stubbed.applies_here()
+        stubbed = False
+        if stubbing:
+            # A fix stage's old reads as one-line notes, in place of folding every long result (LF.1420).
+            messages, stubbed = self._with_old_reads_stubbed(messages, total_tokens)
         if not self._should_truncate_args(messages, total_tokens):
-            return messages, False
+            return messages, stubbed
         cutoff = observation_folding.boundary(min(self._determine_truncate_cutoff_index(messages), len(messages)))
         if cutoff <= 0:
-            return messages, False
+            return messages, stubbed
         shortened: list[AnyMessage] = []
         modified = False
         for index, message in enumerate(messages):
@@ -447,7 +494,8 @@ class RequestKeepingSummarization(SummarizationMiddleware):
                     message.tool_calls = calls
                     modified = True
             shortened.append(message)
-        if observation_folding.enabled():
+        modified = modified or stubbed
+        if observation_folding.enabled() and not stubbing:
             shortened, folded = observation_folding.fold(shortened, cutoff)
             if folded:
                 modified = True
@@ -456,13 +504,41 @@ class RequestKeepingSummarization(SummarizationMiddleware):
                 ))
         return (shortened, True) if modified else (messages, False)
 
+    def _the_trigger(self) -> int | None:
+        """The token trigger for this call: a fix stage's own under `FIX_STAGES_STUB_OLD_READS`, else the configured."""
+        from app.agents import old_reads_stubbed
+
+        trigger = getattr(self._lc_helper, "trigger", None)
+        usual = int(trigger[1]) if isinstance(trigger, tuple) and len(trigger) == 2 and trigger[0] == "tokens" else None
+        return old_reads_stubbed.trigger_here(usual, self._fix_stage_trigger)
+
+    def _with_old_reads_stubbed(self, messages: list[AnyMessage], total_tokens: int) -> tuple[list[AnyMessage], bool]:
+        """A fix stage's reads shown again later made one-line notes, and at its trigger every read before the kept
+        tail too (`old_reads_stubbed`, LF.1420)."""
+        from app.agents import observation_folding, old_reads_stubbed
+
+        trigger = self._the_trigger()
+        before = 0
+        if trigger and total_tokens >= trigger:
+            before = observation_folding.boundary(min(self._determine_cutoff_index(messages), len(messages)))
+        out, repeated, masked = old_reads_stubbed.stubbed(messages, self._repo_root, before)
+        old_reads_stubbed.note(repeated, masked)
+        return (out, True) if repeated or masked else (messages, False)
+
     def _should_summarize(self, messages: list[AnyMessage], total_tokens: int) -> bool:
         if self._reply_room:
             from app.agents import reply_room
             from app.observability.transcript import _stage_from_config
 
             reply_room.note(_stage_from_config(""), *self._reply_room)
-        if not super()._should_summarize(messages, total_tokens):
+        trigger = getattr(self._lc_helper, "trigger", None)
+        configured = int(trigger[1]) if isinstance(trigger, tuple) and len(trigger) == 2 else None
+        own = self._the_trigger()
+        if own is not None and own != configured:
+            # A fix stage's own trigger (LF.1420): past it only when its old reads, already notes, left it there.
+            if total_tokens < own:
+                return False
+        elif not super()._should_summarize(messages, total_tokens):
             usual = self._usual_trigger
             trigger = getattr(self._lc_helper, "trigger", None)
             if usual and isinstance(trigger, tuple) and len(trigger) == 2 and trigger[1] > usual <= total_tokens:
@@ -540,5 +616,6 @@ class RequestKeepingSummarization(SummarizationMiddleware):
 
 
 __all__ = ["CALLS_BEFORE", "FILES_READ", "READS", "LOST_BEFORE", "SUMMARIES", "files_read_line", "KEPT_TAIL_SHARE",
+           "HELD_READS", "with_held_reads_named",
            "RequestKeepingSummarization", "KEPT_REQUEST", "FILES_WRITTEN", "WORK_NOTE", "WORK_NOTE_PROMPT", "aim_of",
            "role_of"]

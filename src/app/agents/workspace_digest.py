@@ -503,6 +503,26 @@ def _files_a_command_changed(content: str) -> list[str]:
     return [str(p).lstrip("/") for p in named if isinstance(p, str) and not p.startswith("... and ")]
 
 
+def _no_text_here(content: str) -> bool:
+    """Whether a read's result holds no text of the file: the project memory's pointer, or a read taken out."""
+    from app.agents.old_reads_stubbed import TAKEN_OUT
+    from app.agents.project_memory import HELD_POINTER
+
+    return HELD_POINTER in content or TAKEN_OUT in content
+
+
+def _opens_on_a_summary(messages: list[Any]) -> bool:
+    """Whether the conversation opens on a summary of the calls before it (`compaction`)."""
+    from app.agents.compaction import KEPT_REQUEST
+
+    for message in messages:
+        if (_get(message, "type") or _get(message, "role")) == "system":
+            continue
+        kwargs = _get(message, "additional_kwargs") or {}
+        return isinstance(kwargs, dict) and (KEPT_REQUEST in kwargs or kwargs.get("lc_source") == "summarization")
+    return False
+
+
 def already_known(messages: list[Any]) -> str:
     """What this conversation already holds, from its own calls: a line for the end of each call; "" if nothing.
 
@@ -536,12 +556,15 @@ def already_known(messages: list[Any]) -> str:
         path = str(args.get("file_path") or args.get("relative_path") or args.get("path") or "").strip().lstrip("/")
         failed = content.lstrip().startswith(("Error", '{"error"', "Refusing"))
         if name in ("read_file", "read_repository_file") and path and not failed:
-            read_at[path] = n
             # What the read covered, so "already read" does not mean the whole
             # file when it was lines 1-200 of 640 (Initiative AO.9).
             shown = _lines_a_read_showed(content)
-            if shown:
-                read_lines.setdefault(path, []).append(shown)
+            # A read answered with a pointer to the project memory, or taken out to keep the conversation small, put
+            # no text here to scroll up to (LF.1424): measured on one run, "database.py (call 2)" named a pointer.
+            if not _no_text_here(content):
+                read_at[path] = n
+                if shown:
+                    read_lines.setdefault(path, []).append(shown)
         elif name in _WRITERS and path and not failed:
             written_at[path] = n
             by_a_command.discard(path)
@@ -563,17 +586,20 @@ def already_known(messages: list[Any]) -> str:
                 read_lines.pop(changed, None)
     if not read_at and not ran:
         return ""
+    # After a summary the calls before it are gone, and the count starts again from it (LF.1424): measured on one
+    # run, "(call 2)" named a read the summary had deleted, and the fixer read the file again.
+    since = ", calls counted from its summary" if _opens_on_a_summary(messages) else ""
     lines = []
     if read_at:
         shown = sorted(read_at.items(), key=lambda kv: -kv[1])[:MOST_KNOWN]
-        lines.append("Files already in this conversation (scroll up rather than read again): " + ", ".join(
+        lines.append(f"Files already in this conversation{since} (scroll up rather than read again): " + ", ".join(
             f"{p} (call {n}{'; lines ' + _joined(read_lines[p]) if read_lines.get(p) else ''}"
             f"{'; changed by your ' + ('command' if p in by_a_command else 'write') + ' at call ' + str(written_at[p]) if written_at.get(p, 0) > n else ''})"
             for p, n in shown
         ))
     if ran:
         shown = sorted(ran.items(), key=lambda kv: -kv[1][0])[:MOST_KNOWN // 2]
-        lines.append("Commands already run here: " + "; ".join(f"`{c}` -> {how} (call {n})" for c, (n, how) in shown))
+        lines.append(f"Commands already run here{since}: " + "; ".join(f"`{c}` -> {how} (call {n})" for c, (n, how) in shown))
     return "\n".join(lines)
 
 

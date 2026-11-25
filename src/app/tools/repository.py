@@ -3676,6 +3676,14 @@ def _typography_insensitive_span(original: str, find: str) -> tuple[int, int] | 
     return start, start + len(plain_find)
 
 
+def _at_the_file_s_margin(region: str, find: str, replace: str) -> str:
+    """`replace` moved by the columns the matched `region` sits off `find` (gutter taken off first); see
+    `app.tools.edit_indentation`."""
+    from app.tools.edit_indentation import reindented
+
+    return reindented(region, _without_read_line_numbers(find) or find, replace)
+
+
 def _a_repaired_span(original: str, find: str) -> tuple[tuple[int, int], str] | None:
     """Where a `find` that matches nowhere as given matches once repaired, and what was forgiven; else None.
 
@@ -3789,7 +3797,8 @@ def content_with_passage_replaced(relative_path: str, original: str, find: str, 
     repaired = _a_repaired_span(original, find)
     if repaired is not None:
         (start, end), _ = repaired
-        written = _the_replacement_without_its_find_s_gutter(find, replace)
+        written = _at_the_file_s_margin(original[start:end], find,
+                                        _the_replacement_without_its_find_s_gutter(find, replace))
         return original[:start] + written + original[end:]
     raise RepositoryToolError(
         f"Could not find that SEARCH text in '{relative_path}'. It must match the file exactly, "
@@ -3856,6 +3865,11 @@ def edit_approved_artifact(
                 written = _the_replacement_without_its_find_s_gutter(find, replace)
                 if written != replace:
                     explanation += " The same line numbers were removed from your `replace`."
+                # At the file's margin, not the `find`'s (LF.1422, `app.tools.edit_indentation`).
+                at_the_margin = _at_the_file_s_margin(original[start:end], find, written)
+                if at_the_margin != written:
+                    explanation += " Your `replace` was moved to the file's indentation by the same amount."
+                    written = at_the_margin
                 _write_unless_it_changes_nothing(
                     target,
                     original,
@@ -3969,6 +3983,69 @@ def edit_approved_artifact(
             target, original, original.replace(find, replace, 1), relative_path
         )
     return _edited(target, root, relative_path, replace, find=find)
+
+
+#: The most changes one edit call may carry.
+MOST_CHANGES_IN_ONE_EDIT = 12
+
+
+def edit_approved_artifact_in_several_places(
+    repo_root: str | Path, relative_path: str, changes: list[tuple[str, str]]
+) -> dict[str, Any]:
+    """Several passages of one file replaced together, in order, and the result checked once (LF.1423, plan FX.6).
+
+    Each edit is checked on its own: whether the file still parses, whether the language service is sure of a new
+    error. A change that needs a second change elsewhere in the file - a name used here and imported at the top, a
+    function renamed and its callers - is refused for what the other change would have put right. Measured on one
+    medium run's fixer: its edit used a name the file did not import, the language service refused it twice
+    (correctly), and the stage had two calls left. So one call may carry several `find`/`replace` pairs: each is
+    matched in the text the earlier ones left, with the same forgiveness of a transcribed passage as a single edit
+    and still exactly once, and the file is written and checked once, as a whole. A pair that matches nowhere refuses
+    the call, naming it, and nothing is written.
+    """
+    pairs = [(str(find or ""), str(replace or "")) for find, replace in changes]
+    if not pairs:
+        raise RepositoryToolError("`changes` is empty. Give each passage to replace as `find` and its new text as "
+                                  "`replace`.")
+    if len(pairs) > MOST_CHANGES_IN_ONE_EDIT:
+        raise RepositoryToolError(
+            f"{len(pairs)} changes in one call is more than {MOST_CHANGES_IN_ONE_EDIT}. Nothing was written. "
+            "Send the changes that belong together in one call, or write the whole file with `write_artifact`.")
+    root, target = _guard_a_targeted_change(
+        repo_root, relative_path, "\n".join(replace for _, replace in pairs),
+        change=f"{len(pairs)} changes: " + "; ".join(f"{find[:80]!r} replaced with {replace[:80]!r}"
+                                                    for find, replace in pairs),
+    )
+    with _MUTATION_LOCK:
+        original = target.read_text(encoding="utf-8")
+        for _, replace in pairs:
+            a_diff = _a_diff_that_parses(relative_path, replace, original, editing=True)
+            if a_diff is not None:
+                raise RepositoryToolError(a_diff)
+        text = original
+        for number, (find, replace) in enumerate(pairs, 1):
+            try:
+                text = content_with_passage_replaced(relative_path, text, find, replace)
+            except RepositoryToolError as exc:
+                said = str(exc).replace("SEARCH text", "`find`").replace("SEARCH part", "`find`")
+                raise RepositoryToolError(
+                    f"Change {number} of {len(pairs)} could not be placed, so none was made and nothing was "
+                    f"written: {said}") from None
+        _write_unless_it_changes_nothing(target, original, text, relative_path)
+    result = _edited(target, root, relative_path, pairs[-1][1], f"{len(pairs)} changes made together and "
+                     "checked as one.", find=pairs[-1][0])
+    try:
+        from app.tools.seen_content import record_replacement
+
+        for find, replace in pairs[:-1]:
+            record_replacement(relative_path, find, replace)
+    except Exception:  # noqa: BLE001 - bookkeeping must not fail an edit
+        logger.debug("Could not record the replacements in %s", relative_path, exc_info=True)
+    written = target.read_text(encoding="utf-8")
+    landed = [where for _, replace in pairs if (where := _where_it_landed(written, replace))]
+    if landed:
+        result["context"] = "\n".join(landed)
+    return result
 
 
 #: Lines of context to quote either side of an edit, so the result answers
@@ -4657,10 +4734,12 @@ def _how_to_name_what_is_not_defined(new: list[dict[str, Any]]) -> str:
     """
     if not any(_A_NAME_NOT_DEFINED.search(str(f.get("message") or "")) for f in new):
         return ""
+    # One call may carry both now (LF.1423): told to send the import in an edit of its own, one run's fixer, with
+    # two calls left, sent the same refused change again instead.
     return (
-        " A name this change uses is not imported or defined in the file. An edit changes one place, so first add "
-        "its import (or definition) beside the file's other imports in an edit of its own, then send this change "
-        "again unchanged."
+        " A name this change uses is not imported or defined in the file. Send its import (or definition) and this "
+        "change together in one `edit_artifact` call, as two entries of its `changes` list - the import beside the "
+        "file's other imports - so the file is checked with both in place."
     )
 
 
@@ -8351,6 +8430,7 @@ __all__ = [
     "read_dependency_metadata",
     "write_approved_artifact",
     "edit_approved_artifact",
+    "edit_approved_artifact_in_several_places",
     "delete_approved_artifact",
     "looks_like_a_test",
     "move_approved_artifact",

@@ -30,6 +30,7 @@ from app.tools.repository import (
     run_approved_validation,
     search_text,
     edit_approved_artifact,
+    edit_approved_artifact_in_several_places,
     read_text_lines,
     replace_approved_lines,
     write_approved_artifact,
@@ -358,7 +359,9 @@ def build_artifact_edit_tool(repo_root: str) -> BaseTool:
     """
 
     @tool
-    def edit_artifact(relative_path: str, find: str, replace: str) -> dict[str, str]:
+    def edit_artifact(
+        relative_path: str, find: str = "", replace: str = "", changes: list[dict[str, str]] | None = None
+    ) -> dict[str, str]:
         """Replace one exact passage inside a file that already exists.
 
         Prefer this over `write_artifact` whenever the file is already there:
@@ -371,12 +374,22 @@ def build_artifact_edit_tool(repo_root: str) -> BaseTool:
                 appear exactly once - include surrounding lines to make it unique.
             replace: the text to put in its place. Pass an empty string to delete
                 the passage.
+            changes: several passages of this one file to change together, as a
+                list of `{"find": ..., "replace": ...}`, applied in order and
+                checked once as a whole - an import and the line that uses it, a
+                name and every place it is called. Leave `find` and `replace`
+                empty when you send this.
 
         Returns `{"error": "..."}` instead of raising when the file is missing or
         the passage is absent or ambiguous, so the model can read the section and
         try again rather than crashing the run.
         """
         try:
+            if changes:
+                pairs = [(find, replace)] if find else []
+                pairs += [(str((c or {}).get("find") or ""), str((c or {}).get("replace") or ""))
+                          for c in changes if isinstance(c, dict)]
+                return edit_approved_artifact_in_several_places(repo_root, relative_path, pairs)
             return edit_approved_artifact(repo_root, relative_path, find, replace)
         except RepositoryToolError as exc:
             return {"error": str(exc)}

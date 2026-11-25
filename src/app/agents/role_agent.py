@@ -381,7 +381,7 @@ def _verify_after_write_middleware() -> Any:
     return build_middleware()
 
 
-def _compaction_middleware(agent_name: str, model: Any = None, role: str = "") -> list:
+def _compaction_middleware(agent_name: str, model: Any = None, role: str = "", repo_root: str | None = None) -> list:
     """Summarise this agent's history before it outgrows the model's window.
 
     Returns an empty list when compaction is disabled or cannot be built, so a
@@ -424,7 +424,12 @@ def _compaction_middleware(agent_name: str, model: Any = None, role: str = "") -
         reserved = budget.max_output_tokens
         from app.agents.context_budget import _read_int, _the_deployment_s
 
-        if _read_int(dict(own) if own is not None else _the_deployment_s(), "CTX_MAX_TOKENS") is None:
+        ceiling_is_set = _read_int(dict(own) if own is not None else _the_deployment_s(), "CTX_MAX_TOKENS") is not None
+        # A fix stage's own trigger, from its own reply cap (`FIX_STAGES_STUB_OLD_READS`, LF.1420).
+        from app.agents.old_reads_stubbed import fix_stage_trigger
+
+        fix_trigger = fix_stage_trigger(ceiling, budget.max_output_tokens, policy.soft_trigger_ratio, ceiling_is_set)
+        if not ceiling_is_set:
             # Only a ceiling derived from the window moves with the reply's room; a set one stays as set.
             reserved = reply_room.reservation(agent_name, budget.max_output_tokens)
             ceiling += budget.max_output_tokens - reserved
@@ -442,6 +447,8 @@ def _compaction_middleware(agent_name: str, model: Any = None, role: str = "") -
                 most_kept_tokens=int(trigger * KEPT_TAIL_SHARE),
                 # Whose work note a summary is (PA.2): the stage's role as its system prompt opens.
                 role=role,
+                repo_root=repo_root,
+                fix_stage_trigger_tokens=fix_trigger,
                 trim_tokens_to_summarize=policy.trim_tokens_to_summarize,
                 # Shorten large tool-call arguments in older messages before
                 # resorting to summarisation. Left unset - which it was - the
@@ -808,7 +815,7 @@ def create_role_agent(
     # role; see `_compaction_middleware` for why that is deliberate.
     from app.agents.compaction import role_of
 
-    middleware = _compaction_middleware(name, model, role=role_of(system_prompt))
+    middleware = _compaction_middleware(name, model, role=role_of(system_prompt), repo_root=resolved_repo_root)
     middleware = [
         *middleware,
         # Ahead of the filesystem middleware so the path is already

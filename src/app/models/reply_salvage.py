@@ -395,7 +395,12 @@ def salvaged(model: Any, messages: list[Any], result: Any, stop: Any = None, **k
     try:
         generation = result.generations[0]
         message = generation.message
-        if (getattr(generation, "generation_info", None) or {}).get("finish_reason") != "length" or not enabled():
+        if (getattr(generation, "generation_info", None) or {}).get("finish_reason") != "length":
+            return result
+        # Its end is kept for the stage and pinned in every later request, salvaged or not (LF.1421, plan FX.5):
+        # measured on one run, a fixer's 12,000-token analysis was gone after the next summary.
+        _keep_what_it_worked_out(message, reasoning)
+        if not enabled():
             return result
         lost, cut = _lost(message), _cut_text(message)
         if not (lost or cut):
@@ -447,6 +452,23 @@ def salvaged(model: Any, messages: list[Any], result: Any, stop: Any = None, **k
         logger.info("A cut-off reply could not be salvaged: %s: %s", type(error).__name__, str(error)[:200])
         logger.debug("Could not salvage a cut-off reply", exc_info=True)
         return result
+
+
+def _keep_what_it_worked_out(message: Any, reasoning: str) -> None:
+    """Keep the end of a capped reply's reasoning for its stage (`app.agents.worked_out`): the reasoning field of a
+    reply with no text and no call, or the text of one that reasoned in its text (an unclosed tag, prose reasoning)."""
+    try:
+        from app.agents import worked_out
+
+        if _lost(message):
+            worked_out.keep(reasoning)
+        elif _cut_text(message):
+            text = str(message.content or "")
+            reasoned = reasoning_left_open(text) or reasoning_in_prose(text)
+            if reasoned:
+                worked_out.keep(reasoned)
+    except Exception:  # noqa: BLE001 - the reply stands either way
+        logger.debug("Could not keep what a capped reply worked out", exc_info=True)
 
 
 #: Less kept reasoning than this is not worth an answer from it.

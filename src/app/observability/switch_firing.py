@@ -79,6 +79,9 @@ SIGNALS: dict[str, str] = {
     # Recorded by the harness each time a fixer's memory is chosen again at a summary
     # (`app.agents.fixers_hold_what_they_read`).
     "FIXERS_HOLD_WHAT_THEY_READ": "A fixer's memory holds the files it was reading after a summary",
+    # Recorded by the harness once per fix-stage visit whose old reads it kept as one-line notes
+    # (`app.agents.old_reads_stubbed`).
+    "FIX_STAGES_STUB_OLD_READS": "A fix stage's earlier reads kept as one-line notes",
 }
 #: Transcript records the harness writes of what it did itself, with no model reading it: kind -> the field whose
 #: text a switch's signal is looked for in.

@@ -1422,6 +1422,11 @@ def build_project_memory_middleware(repo_root: str) -> Any:
                     messages = _without_the_list(messages, visit["opening"], visit["request"])
                 memory = visit["snapshot"]
                 held = visit.get("held") or {}
+                if held:
+                    # A summary's line of what the stage read names the files held here as held (LF.1424).
+                    from app.agents.compaction import with_held_reads_named
+
+                    messages = with_held_reads_named(messages, list(held))
                 # Each file as this visit first held it, so a read of one that
                 # changed since - by this stage's own edit - is answered with
                 # the file, not "it has not changed since the start".

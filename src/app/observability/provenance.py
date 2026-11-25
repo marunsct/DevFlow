@@ -95,6 +95,7 @@ SWITCHES: dict[str, str] = {
     "ADVICE_SIZED_TO_THE_BRIEF": "app.agents.advice_sized",
     "MEASURED_ROUND_WHEN_RED": "app.graph.measured_round",
     "FIXERS_HOLD_WHAT_THEY_READ": "app.agents.fixers_hold_what_they_read",
+    "FIX_STAGES_STUB_OLD_READS": "app.agents.old_reads_stubbed",
     "SPECIALIST_DOMAIN_REVIEW": "app.agents.specialist_domain_review",
     "WEB_TOOLS_OFFERED": "app.tools.web_search:web_tools_offered_switch",
     "PRODUCT_PREVIEW": "app.server.preview:preview_switch",

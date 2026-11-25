@@ -277,6 +277,9 @@ PAGE_FACTS = r"""() => {
       const placeholder = clip(el.getAttribute('placeholder'), 40);
       return placeholder ? `${field(el)} has only its placeholder "${placeholder}"` : `${field(el)} has no label`;
     });
+  // The custom properties the loaded stylesheets declare: whether the pack's tokens reached the page (plan PQ.5).
+  const declared = [...new Set(rules.flatMap((rule) => [...rule.style].filter((name) => name.startsWith('--'))))]
+    .slice(0, 80);
   return {
     width,
     pageWider: Math.max(0, document.documentElement.scrollWidth - width),
@@ -287,6 +290,7 @@ PAGE_FACTS = r"""() => {
     unmatchedExamples: unmatched.slice(0, 8).map((rule) => clip(rule.selectorText, 80)),
     outlineRemoved,
     unlabelled,
+    declared,
   };
 }"""
 
@@ -316,6 +320,39 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 
 const NOT_THE_PRODUCT = /favicon\\.ico/;
+
+// The page as it is while the requests its scripts make are held back, and as it is when they fail: each on a page
+// of its own, so nothing here is reported as the page's own problem. `requests` counts what was held back; with
+// none, the page asks for nothing as it loads and neither state can be shown this way.
+async function statesOf(browser, address) {
+  const states = { requests: 0 };
+  const scripted = (request) => ['fetch', 'xhr'].includes(request.resourceType());
+  const held = await browser.newPage();
+  try {
+    await held.route('**/*', async (route) => {
+      if (!scripted(route.request())) return route.continue();
+      states.requests += 1;
+      await new Promise((resolve) => setTimeout(resolve, 2_500));
+      return route.continue().catch(() => {});
+    });
+    await held.goto(address, { waitUntil: 'domcontentloaded', timeout: 10_000 });
+    await held.waitForTimeout(600);
+    states.busy = (await held.locator('body').ariaSnapshot({ timeout: 2_000 })).slice(0, 1_000);
+  } finally {
+    await held.close().catch(() => {});
+  }
+  if (!states.requests) return states;
+  const failing = await browser.newPage();
+  try {
+    await failing.route('**/*', (route) => (scripted(route.request()) ? route.abort('failed') : route.continue()));
+    await failing.goto(address, { waitUntil: 'load', timeout: 10_000 });
+    await failing.waitForTimeout(600);
+    states.failed = (await failing.locator('body').ariaSnapshot({ timeout: 2_000 })).slice(0, 1_000);
+  } finally {
+    await failing.close().catch(() => {});
+  }
+  return states;
+}
 
 export default async function pageCheck(config) {
   const baseURL = config.projects?.[0]?.use?.baseURL;
@@ -400,6 +437,16 @@ export default async function pageCheck(config) {
       } catch (error) {
         // A fact that cannot be measured says nothing.
       }
+      try {
+        // The same facts in the dark colour scheme, which the pack's tokens declare (plan PQ.5).
+        await page.emulateMedia({ colorScheme: 'dark' });
+        await page.waitForTimeout(100);
+        facts.dark = await page.evaluate(%(facts)s);
+      } catch (error) {
+        // A fact that cannot be measured says nothing.
+      } finally {
+        await page.emulateMedia({ colorScheme: 'light' }).catch(() => {});
+      }
       await page.setViewportSize({ width: 375, height: 740 });
       await page.waitForTimeout(200);
       layout.phoneOverflow = await page.evaluate(
@@ -456,6 +503,12 @@ export default async function pageCheck(config) {
       }
     } catch (error) {
       // A measurement that cannot be taken says nothing; the tests still run.
+    }
+    try {
+      // What the page shows while its requests are on their way and when they fail (plan PQ.8).
+      facts.states = await statesOf(browser, new URL('%(page)s', baseURL).href);
+    } catch (error) {
+      // A state that cannot be shown says nothing.
     }
   } catch (error) {
     note(`the page did not load: ${String(error.message).split('\\n')[0]}`);

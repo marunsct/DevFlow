@@ -264,9 +264,83 @@ def layered_setup(project_root: Path, stack: Any, kind: str, project: str, title
             for path, what in layer.framework_files.items()}
 
 
+def draft_declaration(stack: Any, kind: str, project: str) -> dict[str, Any] | None:
+    """The harness's own first `stack-setup.json` for a stack no pack covers, or None when no pack is of its kind
+    (plan PA.11).
+
+    Measured on one medium run: the custom setup stage spent 96 minutes and 193 calls and its declaration was never
+    written, though the request asked for it first. Most of it the harness already knows: the packs of the stack's
+    language say how its unit tests are installed, run and reported, and the packs of its kind how an acceptance test
+    meets such a product. A pack of both is taken whole; else the unit side from the language's and the acceptance
+    side from the kind's; with no pack of its language, the unit side is left empty. Left for the stage: the files to
+    keep, the guides, and whatever this framework does differently.
+    """
+    import fnmatch
+
+    from app.stacks import python_package_name
+    from app.stacks.packs import ALL_PACKS
+
+    language = _the_language(stack)
+    same_language = [pack for pack in ALL_PACKS if language and pack.language == language]
+    same_kind = [pack for pack in ALL_PACKS if kind and pack.kind == kind]
+    both = [pack for pack in same_language if pack.kind == kind]
+    unit = (both or same_language or [None])[0]
+    acceptance = (both or same_kind or [None])[0]
+    if acceptance is None:
+        return None
+    package = python_package_name(project)
+    install: list[list[str]] = []
+    for pack in [unit, acceptance] if unit is not None and unit is not acceptance else [acceptance]:
+        for argv in pack.commands(project, package)["install"]:
+            if argv not in install:
+                install.append(argv)
+
+    def smoke(pack: StackPack, folder: str, pattern: str) -> str:
+        filled = [pack.filled(path, project, project, package) for path in pack.smoke_files]
+        return next((path for path in filled if fnmatch.fnmatch(PurePosixPath(path).name, pattern)
+                     and (folder in (".", "") or path.startswith(folder.rstrip("/") + "/"))), "")
+
+    # No pack of its language: the unit side is the stage's to write, the rest stands.
+    return {
+        "kind": kind or acceptance.kind,
+        "install": install,
+        "unit_test": unit.commands(project, package)["unit_test"] if unit else [],
+        "unit_report": unit.unit_report if unit else "",
+        "unit_dir": unit.unit_dir if unit else "",
+        "unit_pattern": unit.unit_pattern if unit else "",
+        "acceptance_test": acceptance.commands(project, package)["acceptance_test"],
+        "acceptance_report": acceptance.acceptance_report,
+        "acceptance_dir": acceptance.acceptance_dir,
+        "acceptance_pattern": acceptance.acceptance_pattern,
+        "kept_files": [],
+        "smoke_files": [name for name in (smoke(unit, unit.unit_dir, unit.unit_pattern) if unit else "",
+                                          smoke(acceptance, acceptance.acceptance_dir, acceptance.acceptance_pattern))
+                        if name],
+        "guide": "",
+        "acceptance_guide": "",
+    }
+
+
+def write_draft_declaration(project_root: Path, stack: Any, kind: str, project: str) -> bool:
+    """Write `draft_declaration` as the project's `stack-setup.json` when none is there; whether it was written."""
+    target = Path(project_root) / DECLARATION_FILE
+    if target.exists():
+        return False
+    draft = draft_declaration(stack, kind, project)
+    if draft is None:
+        return False
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(draft, indent=2) + "\n", encoding="utf-8")
+    except OSError:
+        logger.debug("Could not write the draft declaration", exc_info=True)
+        return False
+    return True
+
+
 def build_setup_request(
     project: str, stack: Any, kind: str, problem: str = "", specification: Any = None,
-    layer_files: dict[str, str] | None = None,
+    layer_files: dict[str, str] | None = None, drafted: bool = False, repo_root: Any = None,
 ) -> dict[str, Any]:
     """What the setup stage is asked to do.
 
@@ -290,6 +364,9 @@ def build_setup_request(
         "run both smoke tests again through the declared commands, and update the declaration.\n"
         if problem else ""
     )
+    from app.agents.environment_contract import the_setup_facts
+
+    facts = "\n" + the_setup_facts(repo_root)
     if layer_files:
         wanted = "\n".join(f"- `{project}/{path}`: {what}" for path, what in layer_files.items())
         text = f"""--- Set up the project's framework: its runners are already set up ---
@@ -304,15 +381,23 @@ Write only these files, for this stack's own framework, so both smoke tests pass
 Ask `look_up_package` for the framework's current version, and `read_docs` for how it serves a route. You may run the
 declared install and both smoke tests through the declared commands to check your files; then answer. Build nothing of
 the product beyond what the smoke tests need: the sprints build the rest.
-{planned}{again}"""
+{facts}{planned}{again}"""
         return {"messages": [{"role": "user", "content": text}]}
+    first = (
+        f"The harness has already written `{project}/{DECLARATION_FILE}`: a draft from the stack chosen and the\n"
+        "ready-made setups of its language and its kind. Read it first. Keep what fits this stack, correct what\n"
+        "does not, and fill in what it leaves empty (`kept_files`, the guides) as you go. The harness proves the\n"
+        "setup from that file alone."
+        if drafted else
+        f"First, before anything else, write `{project}/{DECLARATION_FILE}` (its shape is in step 4) with\n"
+        "the commands you intend to use, and keep it current as you go. The harness proves the setup from\n"
+        "that file alone: a setup that runs out of calls before writing it is started again from nothing."
+    )
     text = f"""--- Set up the project so its tests already run ---
 No ready-made setup exists for this stack ({_stack_line(stack)}). Before anything of the
 product is built, set up `{project}/` so that a unit test and an acceptance test both run.
 
-First, before anything else, write `{project}/{DECLARATION_FILE}` (its shape is in step 4) with
-the commands you intend to use, and keep it current as you go. The harness proves the setup from
-that file alone: a setup that runs out of calls before writing it is started again from nothing.
+{first}
 
 1. Create the project in `{project}/` with the framework's own project generator where it has
    one, answering its questions with flags so it never waits for input. Before choosing a
@@ -353,7 +438,7 @@ smallest app the two smoke tests need, because the sprints build the rest, where
 reviewed. The harness then
 runs the install, the build and both smoke tests through exactly these commands; a setup whose smoke tests pass is kept as the project's
 test setup for the rest of the run, and the smoke tests are removed.
-{planned}{again}"""
+{facts}{planned}{again}"""
     return {"messages": [{"role": "user", "content": text}]}
 
 
@@ -1386,6 +1471,7 @@ def leave_to_the_agents(project_root: Path) -> None:
 
 __all__ = [
     "ATTEMPTS", "DECLARATION_FILE", "PROVEN_SETUP", "already_set_up", "leave_to_the_agents",
-    "build_setup_request", "enabled", "library_key", "pack_from", "problems_with", "prove", "read_declaration",
+    "build_setup_request", "draft_declaration", "enabled", "library_key", "pack_from", "problems_with", "prove", "read_declaration",
     "noted", "remember", "replay", "canonical_key", "canonical_key_of", "set_aside_what_did_not_prove",
+    "write_draft_declaration",
 ]

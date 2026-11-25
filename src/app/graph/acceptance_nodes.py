@@ -473,6 +473,9 @@ def _set_up_a_stack_no_pack_covers(state: Any, config: RunnableConfig, ctx: Cont
         write=attempt == 0 and not resuming,
     )
     custom_setup.record_the_setup_s_scope(Path(ctx.repo_root), project, layer_files)
+    # With no layer, the stage starts from the harness's own draft of the declaration (PA.11).
+    drafted = layer_files is None and custom_setup.write_draft_declaration(
+        project_root, stack, product_kind(stack, brief), project)
     # What others found for the error the last setup failed on (plan WL.4 T2, behind `WEB_LOOKUP_WHEN_STUCK`).
     from app.graph import stuck_lookup
 
@@ -489,6 +492,7 @@ def _set_up_a_stack_no_pack_covers(state: Any, config: RunnableConfig, ctx: Cont
         initial_request=custom_setup.build_setup_request(
             project, stack, product_kind(stack, brief), problem,
             specification=state.get("technical_specification"), layer_files=layer_files,
+            drafted=drafted, repo_root=ctx.repo_root,
         ),
         output_key="__stack_setup__",
         next_stage="acceptance_author",
@@ -2180,6 +2184,12 @@ def interface_defects(state: Any) -> list[Any]:
             # The check itself is the test: it runs on every round.
             regression_test_required=False,
         ))
+    # The token stylesheet loaded, contrast in both schemes, styles that match the markup (PQ.5); the states the
+    # specification names, shown (PQ.8, behind `INTERFACE_STATES_AS_CRITERIA`).
+    from app.analysis import interface_style_checks
+
+    defects += interface_style_checks.defects(root, saved.get("accessibility") or [])
+    defects += interface_style_checks.states_defect(state, root)
     return defects
 
 

@@ -33,7 +33,11 @@ def _flat(text: Any) -> str:
     return " ".join(str(text or "").split())
 
 
-def _the_report(repo_root: str | Path) -> dict[str, Any]:
+def the_report(repo_root: str | Path) -> dict[str, Any]:
+    """What the page check of the suite's last run wrote: its problems, the accessibility tree, layout and facts.
+
+    Raises when there is none to read; every caller here and in `app.analysis.interface_style_checks` says nothing
+    then."""
     from app.stacks import contract
     from app.stacks.packs._javascript import PAGE_LOAD_REPORT
 
@@ -113,7 +117,7 @@ def _for_the_whole_page(report: dict[str, Any]) -> list[str]:
 def section(repo_root: str | Path, interface_design: Sequence[str] = ()) -> str:
     """The page's measured facts as a section of a request, or "" when the page check measured no page. Never raises."""
     try:
-        report = _the_report(repo_root)
+        report = the_report(repo_root)
         facts = report.get("facts") or {}
         if not isinstance(facts, dict) or not (isinstance(facts.get("desktop"), dict) or isinstance(facts.get("phone"), dict)):
             return ""
@@ -124,6 +128,7 @@ def section(repo_root: str | Path, interface_design: Sequence[str] = ()) -> str:
             "loaded with nothing done on it:",
             *_at_a_width("a desktop's width", facts.get("desktop")),
             *_at_a_width("a phone's width", facts.get("phone")),
+            *_at_a_width("a desktop's width in the dark colour scheme", facts.get("dark")),
             *_for_the_whole_page(report),
         ]
         closing = (
@@ -171,4 +176,4 @@ def with_the_page_facts(
         return request
 
 
-__all__ = ["HEADING", "MOST_CHARACTERS", "section", "with_the_page_facts"]
+__all__ = ["HEADING", "MOST_CHARACTERS", "section", "the_report", "with_the_page_facts"]

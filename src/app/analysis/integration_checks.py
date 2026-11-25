@@ -3462,6 +3462,10 @@ def _measure_sizes(
             text = _read(path)
         except Exception:  # noqa: BLE001 - a size report must never fail the checks
             continue
+        # The pack's design tokens and base styles are the harness's, not the team's code (PQ.6).
+        from app.agents.brief_constraints import without_the_pack_s_own_styles
+
+        text = without_the_pack_s_own_styles(root, relative.replace("\\", "/"), text)
         lines = text.count("\n") + 1
         code = _code_lines(text)
         if relative in orphans:

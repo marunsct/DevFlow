@@ -78,6 +78,7 @@ where = ["src"]
 "app.doc_templates" = ["templates/*.md.j2"]
 "app.acceptance" = ["*.cjs"]
 "app.server" = ["*.js"]
+"app.stacks.packs" = ["*.css"]
 
 [tool.coverage.run]
 branch = true

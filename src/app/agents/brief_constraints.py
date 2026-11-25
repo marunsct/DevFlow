@@ -576,6 +576,48 @@ def what_the_brief_asked_for_that_is_missing(
     return missing
 
 
+def without_the_pack_s_own_styles(repo_root: str | Path, relative_path: str, text: str) -> str:
+    """`text` less the lines the pack's design-token stylesheet arrived with, when the file is that stylesheet.
+
+    A brief that caps the product's lines of code caps what the team writes: the pack's tokens and base element styles
+    (`app.stacks.packs._design`) are the harness's starting point, a hundred and more lines the product did not choose.
+    Measured on one stored product: a milestone review asked to delete the token file as dead code to get under a
+    500-line limit, and the page lost its dark scheme and focus ring. Only the lines as the scaffold wrote them are left
+    out, each once; a value the product changed and every rule it added still count. Any other file is returned as it
+    is, as is every file of a workspace no pack scaffolded. Never raises.
+    """
+    try:
+        from collections import Counter
+
+        from app.stacks import contract
+
+        found = contract.the_pack(repo_root)
+        if found is None:
+            return text
+        pack, record = found
+        project = str(record.get("project") or "").strip("/")
+        path = str(relative_path or "").replace("\\", "/").lstrip("./")
+        inside = path[len(project) + 1:] if project and path.startswith(project + "/") else path
+        from app.stacks import python_package_name
+
+        package = python_package_name(project)
+        scaffolded = next((content for where, content in (getattr(pack, "files", None) or {}).items()
+                           if pack.filled(where, project, project, package) == inside), None)
+        if not inside.endswith(".css") or not scaffolded or "--" not in scaffolded:
+            return text
+        own = Counter(line.strip() for line in str(scaffolded).splitlines() if line.strip())
+        kept = []
+        for line in str(text or "").splitlines():
+            key = line.strip()
+            if key and own[key] > 0:
+                own[key] -= 1
+                continue
+            kept.append(line)
+        return "\n".join(kept)
+    except Exception:  # noqa: BLE001 - counted as it is
+        return text
+
+
 __all__ = [
     "MAX_CONSTRAINT_LINES",
     "acceptance_lines",
@@ -583,4 +625,5 @@ __all__ = [
     "constraints_note",
     "what_the_brief_asked_for_that_is_missing",
     "what_the_brief_forbids_that_is_there",
+    "without_the_pack_s_own_styles",
 ]

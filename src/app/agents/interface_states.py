@@ -92,6 +92,76 @@ def repair(states: list[str]) -> str:
     )
 
 
+#: A state's line, by its opening: `Empty: ...`.
+_A_STATE_LINE = re.compile(r"^\W*(Empty|Busy|Failed)\s*:", re.I)
+#: The ARIA role a line names: `role "status"`, `role="alert"`, `the status role`.
+_ROLES = ("status", "alert", "log", "progressbar", "alertdialog")
+_ROLE_NAMED = re.compile(r"\b(" + "|".join(_ROLES) + r")\b", re.I)
+_QUOTED = re.compile(r"[\"“]([^\"”\n]{2,})[\"”]")
+
+
+def _plain(text: str) -> str:
+    return " ".join(re.sub(r"[^\w\s]", " ", str(text or "").lower()).split())
+
+
+def state_lines(interface_design: Any) -> list[tuple[str, str, str]]:
+    """(state, role, words shown) for each `Empty:`, `Busy:` and `Failed:` line of `interface_design` that quotes its
+    words; the role is "" when the line names none. The longest quoted text that is not the role is the words."""
+    found = []
+    for line in interface_design or []:
+        text = " ".join(str(line).split())
+        opening = _A_STATE_LINE.match(text)
+        if not opening:
+            continue
+        quoted = [q.strip() for q in _QUOTED.findall(text) if q.strip().lower() not in _ROLES]
+        if not quoted:
+            continue
+        role = _ROLE_NAMED.search(text)
+        found.append((opening.group(1).capitalize(), role.group(1).lower() if role else "", max(quoted, key=len)))
+    return found
+
+
+def not_shown(interface_design: Any, report: dict[str, Any], page_code: str) -> list[str]:
+    """One line for each state the specification names that the built page does not show; [] when all are there.
+
+    Read from the page check's report (`app.stacks.packs._javascript.page_check`): the page as it loads (`shows`), and
+    as it is while its requests are held back and when they fail (`facts.states`). A state the page could not be put
+    in that way - no request at load, or records already listed - is looked for in the page's own code (`page_code`),
+    so a state reached only later is not called missing. Words count when the page or its code holds them, whatever
+    their case and punctuation; a state shown under a role other than the one named is a line too.
+    """
+    facts = report.get("facts") if isinstance(report.get("facts"), dict) else {}
+    states = facts.get("states") if isinstance(facts.get("states"), dict) else {}
+    loaded = str(report.get("shows") or "")
+    held = int(states.get("requests") or 0) > 0
+    seen = {
+        "Empty": loaded if "- listitem" not in loaded else "",
+        "Busy": str(states.get("busy") or "") if held else "",
+        "Failed": str(states.get("failed") or "") if held else "",
+    }
+    code = _plain(page_code)
+    missing = []
+    for state, role, words in state_lines(interface_design):
+        wanted = _plain(words)
+        if not wanted:
+            continue
+        tree = seen.get(state, "")
+        shown = [line for line in tree.splitlines() if wanted in _plain(line)]
+        if shown:
+            if role and not any(re.match(rf"\s*-\s+{role}\b", line) for line in tree.splitlines()):
+                missing.append(f"{state}: \"{words}\" is shown, but no element has the role `{role}` the "
+                               f"specification names")
+            continue
+        if wanted in code:
+            continue
+        where = ("as the page loads with nothing listed" if state == "Empty"
+                 else "while the requests it makes as it loads are held back" if state == "Busy"
+                 else "when the requests it makes as it loads fail")
+        tried = f"{where}, or anywhere in its code" if tree else "anywhere in the page's code"
+        missing.append(f"{state}: \"{words}\"" + (f" (role `{role}`)" if role else "") + f" is not shown {tried}")
+    return missing
+
+
 class _InterfaceStates:
     """`INTERFACE_STATES_AS_CRITERIA` as the switch registry reads one: off in code until measured."""
 
@@ -109,4 +179,4 @@ class _InterfaceStates:
 interface_states_switch = _InterfaceStates()
 
 __all__ = ["ON_BY_DEFAULT", "RULE", "STATES", "applies", "enabled", "has_a_page", "interface_states_switch", "missing",
-           "repair", "rule_for"]
+           "not_shown", "repair", "rule_for", "state_lines"]

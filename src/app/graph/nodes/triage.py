@@ -526,6 +526,10 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
     cycle = superseded_by_one_cause(cycle, new_defects)
     new_defects = [item for item in new_defects if not any(item is again for again in repeated)]
     measured = [*new_defects, *repeated]
+    # A page's styling faults raised again after their one fix are a recorded risk, not a reason to hold the sprint.
+    from app.analysis.interface_style_checks import set_aside_after_one_try
+
+    cycle, measured = set_aside_after_one_try(cycle, measured)
     for again in repeated:
         defect_ledger.note("raised again", f"test_round_{test_round}", defect=again, round_=test_round,
                             index=-1, sprint=state.get("current_sprint_index", 0),

@@ -262,6 +262,43 @@ def the_environment_contract(repo_root: str | Path | None = None) -> str:
     )
 
 
+def _a_browser_is_installed() -> bool:
+    """Whether the browser build Playwright drives is already in this image's cache (`sandbox` points commands at it)."""
+    return os.path.isdir(os.path.expanduser("~/.cache/ms-playwright"))
+
+
+def the_setup_facts(repo_root: str | Path | None = None) -> str:
+    """What the stage setting up a stack no pack covers must know of the sandbox before its first command (plan PA.11).
+
+    Measured on one medium run: the custom setup took 96 minutes and 193 calls and proved nothing - three of its
+    commands installed a browser, which needs root, and twenty were `python3 -c` probes. The facts the harness already
+    has, derived like the rest of this contract: whether the browser is installed, that nothing runs as root, and that
+    a command is one program with its arguments.
+    """
+    from app.stacks.packs._javascript import PLAYWRIGHT
+    from app.tools.sandbox import allowed_executables
+
+    browser = ""
+    if "playwright" in allowed_executables("testing_specialist", repo_root):
+        browser = (
+            f"- The headless browser Playwright drives is already installed in this sandbox, for Playwright "
+            f"{PLAYWRIGHT}: pin `@playwright/test` to {PLAYWRIGHT} and never install a browser or its system "
+            "libraries (`playwright install`, `--with-deps`).\n"
+            if _a_browser_is_installed() else
+            "- No browser build is installed yet: `npx playwright install chromium` installs one into the "
+            "workspace; never add `--with-deps`, which installs system libraries as root.\n"
+        )
+    return (
+        "--- What this sandbox already is ---\n"
+        + browser
+        + "- Nothing runs as root: no `sudo`, no system package manager, no install into the system's own\n"
+        "  interpreter. Every install lands inside the project (its `node_modules`, its `.venv`).\n"
+        "- A command is one program and its arguments, run without a shell: no `&&`, `|`, `;`, `>` or `cd`.\n"
+        "  Two steps are two commands; a command for a folder of the project passes that folder as\n"
+        "  `working_directory`.\n"
+    )
+
+
 #: The contract by workspace and pinned stack, computed on first use. Not at
 #: import: `app.tools.sandbox` resolves its output budget through `app.agents`,
 #: so a module-level call back into the sandbox allowlist would import a
@@ -351,4 +388,5 @@ __all__ = [
     "environment_contracts_made",
     "the_commands_a_run_is_told",
     "the_environment_contract",
+    "the_setup_facts",
 ]

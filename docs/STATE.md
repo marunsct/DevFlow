@@ -17,8 +17,8 @@ decisions in force are `docs/owner-decisions.md`; old information is found throu
 | Models | :8888 `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` (key); :1234 `qwen3.6-35b-a3b-mtp@iq4_nl` (no key). Both the owner's; both take runs; each run is pinned to its port. |
 | Harness | Deployed 11-25 17:0x JST: bc9e5df - the 11-25 review bundle, waves A-C (`docs/improvement-plan.md` 3.0; LF.1318-1391); all 13 page packs scaffold after the page-check and stylesheet change. |
 | Switches | 53 fixes built in (always on). 29 optional switches (9 groups, `docs/measuring.md`); `WEB_LOOKUP_WHEN_STUCK` is off and set per run. Measure arms use `SWITCHES_OFF` per run. |
-| Operations | Nightly backups (`loop.sh backup --check`). **Both runs PAUSED by the owner 15:54 JST 11-25 while the inference engine changes** (the same model, parallel processing, a new URL to come): resume nothing until the owner gives the URL; Medium 4 then needs its pin moved. Medium-run audit cron `f1dc472e` at :07 and :37. |
-| Suites | `loop.sh suite` and `loop.sh suite-production` both green at 21,236 passed (11-25 16:5x JST). |
+| Operations | Nightly backups (`loop.sh backup --check`). **One model endpoint since 11-25 ~17:45 JST** (owner): olla `host.docker.internal:4001/olla/openai/v1` over two llama.cpp instances, model `qwen3.6-35b-a3b`, 4 requests at once; **at most 2 runs, each in parallel execution mode** (owner 17:54: test the parallel mode; `.env` `MAX_CONCURRENT_RUNS=2`). :8888 and :1234 are gone. Audit cron `0a7ebf80` every 15 minutes. |
+| Suites | `loop.sh suite` and `loop.sh suite-production` both green at 21,238 passed (11-25 18:1x JST). |
 
 ## Off until measured
 BATCH_ACCEPTANCE_AUTHOR (web tools are on since 11-23, measured from there). Hosted-model

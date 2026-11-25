@@ -181,7 +181,7 @@ _COUNT_TENANT_SQL = "SELECT COUNT(*) FROM runs WHERE tenant_id = %s"
 #: Runs holding a worker slot right now. `running` is the only status that
 #: occupies one: every pause - approval, review, budget - has released the
 #: worker and is waiting on a human.
-_COUNT_IN_FLIGHT_SQL = "SELECT COUNT(*) FROM runs WHERE status = 'running'"
+_COUNT_IN_FLIGHT_SQL = "SELECT COUNT(*) FROM runs WHERE status = 'running' AND run_id <> %s"
 
 
 def database_url() -> str:
@@ -715,8 +715,12 @@ class RunStore:
                     cur.execute(_COUNT_ALL_SQL)
                 return int(cur.fetchone()[0])
 
-    def count_in_flight(self) -> int:
-        """How many runs are executing right now, across every tenant.
+    def count_in_flight(self, excluding: str = "") -> int:
+        """How many runs are executing right now, across every tenant; `excluding` is not counted.
+
+        The run being dispatched is `running` already (its status is set before the dispatch), so the dispatch
+        asks with its own id left out: measured at the first deployment to set a limit (4, for a model serving
+        four requests at once), a run counted itself, so only three ran, and the refused one stayed `running`.
 
         Counted in the database rather than from Celery, because the question
         is asked at dispatch by whichever API worker took the request and
@@ -726,7 +730,7 @@ class RunStore:
         """
         with self.get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(_COUNT_IN_FLIGHT_SQL)
+                cur.execute(_COUNT_IN_FLIGHT_SQL, (excluding or "",))
                 return int(cur.fetchone()[0])
 
     @staticmethod

@@ -42,6 +42,9 @@ os.environ.setdefault("STACK_FACTS", "off")
 # a test wanting an address sets its own.
 os.environ["OPENAI_BASE_URL"] = "http://127.0.0.1:9/v1"
 os.environ["JUDGEMENT_BASE_URL"] = ""
+# The deployment's run cap (`.env`, read by `load_dotenv` in `app.config`) is not the tests': set empty here, so the
+# dotenv load (override=False) cannot fill it in and the API tests are refused at dispatch (`_max_concurrent_runs`).
+os.environ["MAX_CONCURRENT_RUNS"] = ""
 
 
 @pytest.fixture(autouse=True)

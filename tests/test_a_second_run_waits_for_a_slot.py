@@ -52,7 +52,7 @@ class _Store:
         self._in_flight = in_flight
         self.task_ids = []
 
-    def count_in_flight(self):
+    def count_in_flight(self, excluding=""):
         if isinstance(self._in_flight, Exception):
             raise self._in_flight
         return self._in_flight
@@ -142,6 +142,25 @@ def test_only_running_occupies_a_slot():
     from app.server.run_store import _COUNT_IN_FLIGHT_SQL
 
     assert "status = 'running'" in _COUNT_IN_FLIGHT_SQL
+
+
+def test_the_run_being_dispatched_does_not_take_a_slot_from_itself(run_store, monkeypatch, dispatched):
+    """Its status is `running` before the dispatch: counted, a limit of four let only three runs execute."""
+    from app.server.events import EventBus
+    from app.server.runner import WorkflowRunner
+
+    monkeypatch.setenv("MAX_CONCURRENT_RUNS", "4")
+    runner = WorkflowRunner(EventBus(), run_store=run_store)
+    for name in ("run-a", "run-b", "run-c", "run-d"):
+        record = runner.register_run(run_id=name, thread_id=f"thread-{name}", document_names=["brief.md"],
+                                     document_paths=["brief.md"], owner="alice", tenant_id="acme")
+        record.status = "running"
+        run_store.save(record)
+
+    runner._dispatch("run-d", resume=False, decision_payload=None)
+
+    assert len(dispatched) == 1
+    assert run_store.count_in_flight(excluding="run-d") == 3
 
 
 def test_readiness_reports_the_count_and_a_full_pool_is_still_ready(client, run_store, monkeypatch):

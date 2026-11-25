@@ -69,3 +69,24 @@ async def test_a_paused_run_goes_back_to_paused(runner, monkeypatch):
         await runner.resume_run("run-one")
 
     assert runner.run_store.load("run-one").status == "paused"
+
+
+async def test_a_start_that_was_not_dispatched_goes_back_to_created_and_holds_no_slot(runner, monkeypatch):
+    """Measured: a start refused because every run slot was taken stayed `running` with no task, holding a slot."""
+    from types import SimpleNamespace
+
+    _register(runner)
+    _a_broker_that_does_not_answer(monkeypatch, RunQueueFull("4 of 4 run slots are in use"))
+
+    async def ready(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(runner, "_require_command_execution", ready)
+    monkeypatch.setattr(runner, "_require_a_ceiling_that_can_hold", lambda *a, **k: None)
+    monkeypatch.setattr(runner, "_require_a_reachable_model", lambda *a, **k: None)
+
+    with pytest.raises(RunQueueFull):
+        await runner.start_run("run-one", SimpleNamespace(), SimpleNamespace(root_path="/w"))
+
+    assert runner.run_store.load("run-one").status == "created"
+    assert runner.run_store.count_in_flight() == 0

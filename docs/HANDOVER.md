@@ -170,14 +170,12 @@ pinned target). Every Measure run is pinned to its port. Ready check for a port,
 
 ```sh
 eval "$(scripts/loop/operator_login.sh)"; export LOOP_USER LOOP_PASSWORD
-# port :8888, needs the harness key (resolved server-side; never send or print it)
-scripts/loop/loop.sh ready http://host.docker.internal:8888/v1 pin_model=unsloth/Qwen3.6-35B-A3B-MTP-GGUF
-FRONTIER=false PIN_MODEL=1 PIN_URL=http://host.docker.internal:8888/v1 \
-  PIN_MODEL_NAME=unsloth/Qwen3.6-35B-A3B-MTP-GGUF RUN_NAME="<family> <n>" scripts/loop/loop.sh bench <name>
-# port :1234, no key
-scripts/loop/loop.sh ready http://host.docker.internal:1234/v1 pin_model=qwen3.6-35b-a3b-mtp@iq4_nl
-FRONTIER=false PIN_MODEL=1 PIN_URL=http://host.docker.internal:1234/v1 \
-  PIN_MODEL_NAME=qwen3.6-35b-a3b-mtp@iq4_nl RUN_NAME="<family> <n>" scripts/loop/loop.sh bench <name>
+# one endpoint (owner 2026-11-25): olla on :4001 over two llama.cpp instances, 4 requests at once; at most 2 runs,
+# each in parallel execution mode (.env MAX_CONCURRENT_RUNS=2; owner: test parallel mode). :8888 and :1234 are gone.
+P=http://host.docker.internal:4001/olla/openai/v1; M=qwen3.6-35b-a3b
+scripts/loop/loop.sh ready $P pin_model=$M
+FRONTIER=false PIN_MODEL=1 PIN_URL=$P PIN_MODEL_NAME=$M RUN_NAME="<family> <n>" scripts/loop/loop.sh bench <name>
+# move a paused run to it: PIN_URL=$P PIN_MODEL_NAME=$M scripts/loop/loop.sh pin on <run>
 ```
 
 Env on `start`/`bench`: `FRONTIER=false` (all local, no paid model; always for local tests), `PIN_MODEL=1` (pin at

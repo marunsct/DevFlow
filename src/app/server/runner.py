@@ -1144,7 +1144,13 @@ class WorkflowRunner:
 
         MetricsTracker.record_run()
 
-        self._dispatch(run_id, resume=False, decision_payload=None)
+        try:
+            self._dispatch(run_id, resume=False, decision_payload=None)
+        except Exception:
+            # As a resume that was not dispatched is put back: a start refused at dispatch (every run slot taken,
+            # a broker that did not answer) left its row `running` with no task, holding a slot it never used.
+            self._put_back_a_start_that_was_not_dispatched(run_id)
+            raise
 
     UNRESUMABLE_ERROR_MARKER = "Interrupted:"
     """Prefix on the error of a run whose checkpoint history cannot be trusted.
@@ -1200,6 +1206,15 @@ class WorkflowRunner:
         except Exception:
             self._put_back_a_resume_that_was_not_dispatched(run_id, resumable, record)
             raise
+
+    def _put_back_a_start_that_was_not_dispatched(self, run_id: str) -> None:
+        """Return a run whose start was not dispatched to `created`, so it can be started again. Never raises."""
+        try:
+            self.run_store.compare_and_set_status(
+                run_id, "running", "created", updated_at=datetime.now(timezone.utc).isoformat(),
+            )
+        except Exception:  # noqa: BLE001 - the dispatch's own error is the one the caller needs
+            logger.warning("Could not put run %s back after its start was not dispatched", run_id, exc_info=True)
 
     def _put_back_a_resume_that_was_not_dispatched(
         self, run_id: str, came_from: str, record: RunRecord | None
@@ -1472,7 +1487,7 @@ class WorkflowRunner:
         limit = _max_concurrent_runs()
         if limit > 0:
             try:
-                in_flight = self.run_store.count_in_flight()
+                in_flight = self.run_store.count_in_flight(excluding=run_id)
             except Exception:  # noqa: BLE001 - a limit must never be the reason a run cannot start
                 logger.warning("Could not count in-flight runs; dispatching", exc_info=True)
             else:

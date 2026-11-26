@@ -8,6 +8,12 @@ This puts it in one index, `.harness/project-graph.json`,
 computed from the files as they are - never model-written - and gives a request
 the one-hop neighbourhood of its files at most `MOST_CHARACTERS`.
 
+KG.2: every file a grammar reads also gets its definitions from its syntax tree
+(`analysis.parsed_definitions`), and in the languages `reachability.FAMILIES`
+has no row for, its imports too, through its language's resolver
+(`analysis.import_resolvers`). Python and JavaScript/TypeScript keep their
+family's imports and definitions as they were.
+
 Two switches, because they are two measurements: `PROJECT_GRAPH_FIXES` (a fix
 request gets its defect's files' neighbourhood, CG.2) and
 `PROJECT_GRAPH_BUILDERS` (a work order gets its files' slice, CG.3).
@@ -23,6 +29,7 @@ import threading
 from pathlib import Path
 from typing import Any, Iterable
 
+from app.analysis.parsed_definitions import Parsed, loads, read, read_cached, row_for
 from app.stacks.languages import BUILT_BY_NAME, NOT_THE_PRODUCT, is_generated
 from app.switches import is_on
 
@@ -47,10 +54,10 @@ def builders_enabled() -> bool:
 
 
 #: A line that defines something in a language `reachability.FAMILIES` has no
-#: row for, and the name it defines. Those files get no import edges here -
-#: following imports takes a resolver per language - but their definitions
-#: alone answer `where_is`, which in a Go, Java, Rust, Ruby, PHP, C# or Swift
-#: project found nothing at all and sent the agent to search instead.
+#: row for, and the name it defines: the fallback where no grammar reads the
+#: file (KG.2). Its definitions alone answer `where_is`, which in a Go, Java,
+#: Rust, Ruby, PHP, C# or Swift project found nothing at all and sent the agent
+#: to search instead.
 _DEFINES_ELSEWHERE = re.compile(
     r"^[ \t]*(?:(?:public|private|protected|internal|static|final|abstract|sealed|open|override|async|export|"
     r"default|data|partial|pub(?:\([a-z]+\))?)[ \t]+)*"
@@ -67,7 +74,7 @@ _LOCK = threading.Lock()
 #: and each `code_graph` call - the graph read every source file of the project
 #: each time: nothing on a ten-file product, a full read of a large codebase
 #: per call.
-_BUILT: dict[str, tuple[tuple[tuple[str, int, int], ...], dict[str, dict[str, list[str]]]]] = {}
+_BUILT: dict[str, tuple[tuple[tuple[str, int, int], ...], dict[str, dict[str, list[Any]]]]] = {}
 
 
 def _sources(project: Path) -> list[tuple[Path, str]]:
@@ -97,16 +104,18 @@ def _as_they_are(paths: Iterable[Path]) -> tuple[tuple[str, int, int], ...]:
     return tuple(seen)
 
 
-def build(root: str | Path) -> dict[str, dict[str, list[str]]]:
-    """{file: {imports, imported_by, defines, criteria}} for the project's source files, workspace-relative. Never raises.
+def build(root: str | Path) -> dict[str, dict[str, list[Any]]]:
+    """{file: {imports, imported_by, defines, criteria, definitions}} for the project's source files, workspace-relative.
+    Never raises.
 
-    The graph built last, while no source file and no acceptance test file has
-    changed since.
+    `definitions` holds `[kind, name, first line, last line, enclosing]` for each definition the file's syntax tree
+    shows (KG.2; empty where no grammar reads it). The graph built last, while no source file and no acceptance test
+    file has changed since; a file unchanged since it was last parsed is not parsed again.
     """
     from app.analysis.reachability import FAMILIES, _defined
 
     root = Path(root).resolve()
-    graph: dict[str, dict[str, list[str]]] = {}
+    graph: dict[str, dict[str, list[Any]]] = {}
     try:
         from app.acceptance import suite
         from app.tools.repository import pinned_project_directory
@@ -120,17 +129,28 @@ def build(root: str | Path) -> dict[str, dict[str, list[str]]]:
             held = _BUILT.get(str(root))
         if held and held[0] == signature:
             return held[1]
+        seen = {path: (mtime, size) for path, mtime, size in signature}
+        readings: dict[Path, Parsed] = {}
+        texts: dict[Path, str] = {}
         for path, family_name in sources:
-            text = path.read_text(encoding="utf-8", errors="replace")
+            text = texts[path] = path.read_text(encoding="utf-8", errors="replace")
             relative = path.relative_to(root).as_posix()
+            mtime, size = seen.get(path.as_posix(), (0, -1))
+            parsed = read_cached(path, text, mtime, size) if size >= 0 else read(path, text)
+            if parsed is not None:
+                readings[path] = parsed
             if family_name:
                 family = FAMILIES[family_name]
                 imports = sorted(p.resolve().relative_to(root).as_posix() for p in family.imports(path, text, project, {})
                                  if p.resolve().is_relative_to(root))
                 defines = sorted(_defined(text, family))
+            elif parsed is not None:
+                imports, defines = [], sorted({d.name for d in parsed.definitions})
             else:
                 imports, defines = [], sorted({m.group(1) for m in _DEFINES_ELSEWHERE.finditer(text)})
-            graph[relative] = {"imports": imports, "imported_by": [], "defines": defines, "criteria": []}
+            graph[relative] = {"imports": imports, "imported_by": [], "defines": defines, "criteria": [],
+                               "definitions": [d.as_row() for d in parsed.definitions] if parsed else []}
+        _imports_from_the_trees(root, sources, readings, texts, graph)
         for relative, node in graph.items():
             for target in node["imports"]:
                 if target in graph:
@@ -150,7 +170,23 @@ def build(root: str | Path) -> dict[str, dict[str, list[str]]]:
     return graph
 
 
-def _criteria_of_the_tests(root: Path, graph: dict[str, dict[str, list[str]]]) -> None:
+def _imports_from_the_trees(root: Path, sources: list[tuple[Path, str]], readings: dict[Path, Parsed],
+                            texts: dict[Path, str], graph: dict[str, dict[str, list[Any]]]) -> None:
+    """KG.2: the imports of each file no `FAMILIES` row follows, from its syntax tree through its language's resolver
+    (`app.analysis.import_resolvers`)."""
+    from app.analysis.import_resolvers import Project, resolved
+
+    known = Project(root, readings, texts)
+    for path, family_name in sources:
+        found = None if family_name or path not in readings else row_for(path)
+        if found is None or not found[1].resolver:
+            continue
+        graph[path.relative_to(root).as_posix()]["imports"] = sorted(
+            target.relative_to(root).as_posix() for target in resolved(path, found[1].resolver, known)
+            if target.is_relative_to(root))
+
+
+def _criteria_of_the_tests(root: Path, graph: dict[str, dict[str, list[Any]]]) -> None:
     """Each acceptance test file's criteria, from the ids its tests' names carry; and the files it imports."""
     try:
         from app.acceptance import suite
@@ -358,7 +394,8 @@ def who_uses(root: str | Path, path: str) -> dict[str, Any]:
                               "defines": node["defines"][:20]}
     from app.analysis.reachability import FAMILIES, family_of
 
-    if family_of(relative) not in FAMILIES:
+    found = row_for(relative)
+    if family_of(relative) not in FAMILIES and not (found and found[1].resolver and loads(relative)):
         # Its definitions are read, its imports are not: an empty
         # `imported_by` here is not "nothing uses it".
         answer["note"] = (f"The code graph does not follow imports in `{relative}`'s language, so what uses it is "

@@ -35,6 +35,30 @@ class Gap:
 
 
 @dataclass(frozen=True)
+class TreeReading:
+    """How the code graph reads a file of this language from its syntax tree (KG.2, `app.analysis.parsed_definitions`).
+
+    Each pattern is a tree-sitter query over the bundled grammar. A definition pattern captures the definition with the
+    kind it is (`@function`, `@class`, `@method`, ...) and its name with `@name`, and may capture `@owner`, the type a
+    method belongs to when the method is written outside it. An import pattern captures the text its resolver reads
+    with a name starting `@import` (`@import.relative`, `@import.module`, ...); a namespace pattern captures the
+    package or namespace the file declares with `@namespace`. Captures starting with `_` only constrain a match.
+    """
+
+    #: The grammar of `tree_sitter_language_pack` each suffix is read with.
+    grammars: Mapping[str, str]
+    #: Patterns of what the file defines, most specific first: a node two patterns match takes the first one's kind.
+    definitions: tuple[str, ...]
+    #: Patterns of its import statements; () when `import_graph` names the family that follows its imports.
+    imports: tuple[str, ...] = ()
+    #: Patterns of the package or namespace it declares, which its resolver looks imports up by.
+    namespaces: tuple[str, ...] = ()
+    #: The resolver of `app.analysis.import_resolvers` that turns its imports into project files; "" when
+    #: `import_graph` names the family that follows them.
+    resolver: str = ""
+
+
+@dataclass(frozen=True)
 class LanguageSupport:
     #: The name a pack's `language` uses.
     name: str
@@ -110,6 +134,10 @@ class LanguageSupport:
     #: The reader of `app.analysis.development_packages` that tells the packages its manifests declare for development
     #: only from those the product runs with, and the packages a source file imports (PQ.10).
     development_only: str | Gap = Gap("no reader tells its development-only packages apart")
+    #: How the code graph reads its definitions and imports from the file's syntax tree (KG.2). Before it the graph
+    #: followed imports in Python and JavaScript/TypeScript only, so a Go, Java, Kotlin, C#, Rust, Ruby or PHP fixer
+    #: was told no file its handler imports, and a sliced memory held none of them.
+    tree: TreeReading | Gap = Gap("no grammar reading is set for this language")
 
 
 _NODE_INSTALLED = ("node_modules",)
@@ -130,7 +158,8 @@ _JVM_MANIFESTS = ("pom.xml", "build.gradle", "build.gradle.kts", "settings.gradl
 _JVM_TESTS = (r"(^|/)src/test/", r"Test\.(java|kt|scala)$")
 _NO_DOCS_REGISTRY = "the docs tool reads READMEs from npm, PyPI, crates.io and GitHub-hosted Go modules only"
 _NO_RUNTIME_PIN = "runtimes pins node, go, java and python; the pack's sandbox image carries this toolchain's version"
-_NO_IMPORT_GRAPH = "imports are followed for Python and JavaScript/TypeScript only; definitions alone are read"
+_NO_IMPORT_GRAPH = ("unreached modules are found for Python and JavaScript/TypeScript only; the code graph follows its "
+                    "imports through its `tree` resolver")
 _NO_RESOLVED_SET = Gap("Maven and Gradle resolve while they build and keep no lock file read here, and Maven Central "
                        "states no runtime a release needs")
 _INSTALLS_INTO_THE_PROJECT = "its packages are installed into the project, which the delivered copy carries"
@@ -230,6 +259,147 @@ _JVM_FRESH_STORE = (
 )
 
 
+#: KG.2: the syntax-tree readings. Definitions only for the languages whose imports `app.analysis.reachability`
+#: already follows; definitions, imports and the declared namespace for the rest.
+_SCRIPT_DEFINITIONS = (
+    "(function_declaration name: (_) @name) @function",
+    "(generator_function_declaration name: (_) @name) @function",
+    "(class_declaration name: (_) @name) @class",
+    "(method_definition name: (_) @name) @method",
+    "(variable_declarator name: (identifier) @name value: [(arrow_function) (function_expression)]) @function",
+)
+_JAVASCRIPT_TREE = TreeReading(
+    grammars={".js": "javascript", ".mjs": "javascript", ".cjs": "javascript", ".jsx": "javascript"},
+    definitions=_SCRIPT_DEFINITIONS,
+)
+_TYPESCRIPT_TREE = TreeReading(
+    grammars={".ts": "typescript", ".mts": "typescript", ".cts": "typescript", ".tsx": "tsx"},
+    definitions=(
+        *_SCRIPT_DEFINITIONS,
+        "(abstract_class_declaration name: (_) @name) @class",
+        "(interface_declaration name: (_) @name) @interface",
+        "(type_alias_declaration name: (_) @name) @type",
+        "(enum_declaration name: (_) @name) @enum",
+    ),
+)
+_PYTHON_TREE = TreeReading(
+    grammars={".py": "python"},
+    definitions=("(function_definition name: (_) @name) @function", "(class_definition name: (_) @name) @class"),
+)
+_GO_TREE = TreeReading(
+    grammars={".go": "go"},
+    definitions=(
+        "(function_declaration name: (_) @name) @function",
+        "(method_declaration receiver: (parameter_list (parameter_declaration type: [(type_identifier) @owner "
+        "(pointer_type (type_identifier) @owner) (generic_type type: (type_identifier) @owner) "
+        "(pointer_type (generic_type type: (type_identifier) @owner))])) name: (_) @name) @method",
+        "(method_declaration name: (_) @name) @method",
+        "(type_spec name: (_) @name type: (struct_type)) @struct",
+        "(type_spec name: (_) @name type: (interface_type)) @interface",
+        "(type_spec name: (_) @name) @type",
+    ),
+    imports=("(import_spec path: (_) @import)",),
+    resolver="module_path",
+)
+_RUST_TREE = TreeReading(
+    grammars={".rs": "rust"},
+    definitions=(
+        "(function_item name: (_) @name) @function",
+        "(function_signature_item name: (_) @name) @function",
+        "(struct_item name: (_) @name) @struct",
+        "(enum_item name: (_) @name) @enum",
+        "(trait_item name: (_) @name) @trait",
+        "(impl_item type: (_) @name) @impl",
+        "(mod_item name: (_) @name) @module",
+        "(type_item name: (_) @name) @type",
+        "(macro_definition name: (_) @name) @macro",
+    ),
+    imports=(
+        "(use_declaration argument: (_) @import)",
+        "(mod_item !body name: (_) @import.module)",
+        "(scoped_identifier) @import.path",
+        "(scoped_type_identifier) @import.path",
+    ),
+    resolver="crate_modules",
+)
+_JAVA_TREE = TreeReading(
+    grammars={".java": "java"},
+    definitions=(
+        "(class_declaration name: (_) @name) @class",
+        "(interface_declaration name: (_) @name) @interface",
+        "(enum_declaration name: (_) @name) @enum",
+        "(record_declaration name: (_) @name) @record",
+        "(annotation_type_declaration name: (_) @name) @interface",
+        "(method_declaration name: (_) @name) @method",
+        "(constructor_declaration name: (_) @name) @constructor",
+    ),
+    imports=("(import_declaration) @import",),
+    namespaces=("(package_declaration [(scoped_identifier) (identifier)] @namespace)",),
+    resolver="declared_package",
+)
+_KOTLIN_TREE = TreeReading(
+    grammars={".kt": "kotlin", ".kts": "kotlin"},
+    definitions=(
+        "(class_declaration (type_identifier) @name) @class",
+        "(object_declaration (type_identifier) @name) @object",
+        "(function_declaration (simple_identifier) @name) @function",
+        "(type_alias (type_identifier) @name) @type",
+    ),
+    imports=("(import_header) @import",),
+    namespaces=("(package_header (identifier) @namespace)",),
+    resolver="declared_package",
+)
+_CSHARP_TREE = TreeReading(
+    grammars={".cs": "csharp"},
+    definitions=(
+        "(class_declaration name: (_) @name) @class",
+        "(interface_declaration name: (_) @name) @interface",
+        "(struct_declaration name: (_) @name) @struct",
+        "(record_declaration name: (_) @name) @record",
+        "(enum_declaration name: (_) @name) @enum",
+        "(method_declaration name: (_) @name) @method",
+        "(constructor_declaration name: (_) @name) @constructor",
+        "(local_function_statement name: (_) @name) @function",
+    ),
+    imports=("(using_directive) @import",),
+    namespaces=(
+        "(namespace_declaration name: (_) @namespace)",
+        "(file_scoped_namespace_declaration name: (_) @namespace)",
+    ),
+    resolver="declared_package",
+)
+_RUBY_TREE = TreeReading(
+    grammars={".rb": "ruby"},
+    definitions=(
+        "(method name: (_) @name) @method",
+        "(singleton_method name: (_) @name) @method",
+        "(class name: (_) @name) @class",
+        "(module name: (_) @name) @module",
+    ),
+    imports=(
+        '(call method: (identifier) @_how (#eq? @_how "require_relative") '
+        "arguments: (argument_list . (string (string_content) @import.relative)))",
+        '(call method: (identifier) @_how (#eq? @_how "require") '
+        "arguments: (argument_list . (string (string_content) @import)))",
+    ),
+    resolver="relative_require",
+)
+_PHP_TREE = TreeReading(
+    grammars={".php": "php"},
+    definitions=(
+        "(class_declaration name: (_) @name) @class",
+        "(interface_declaration name: (_) @name) @interface",
+        "(trait_declaration name: (_) @name) @trait",
+        "(enum_declaration name: (_) @name) @enum",
+        "(function_definition name: (_) @name) @function",
+        "(method_declaration name: (_) @name) @method",
+    ),
+    imports=("(namespace_use_declaration) @import", "(qualified_name) @import.name"),
+    namespaces=("(namespace_definition name: (_) @namespace)",),
+    resolver="autoload_namespace",
+)
+
+
 def _rows() -> tuple[LanguageSupport, ...]:
     javascript = LanguageSupport(
         name="javascript",
@@ -248,6 +418,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
         sandbox_toolchain="node",
         executables=("npm", "npx", "node", "yarn", "pnpm"),
         import_graph="script",
+        tree=_JAVASCRIPT_TREE,
         development_server="javascript",
         package_cache=Gap(_INSTALLS_INTO_THE_PROJECT),
         resolved="npm",
@@ -262,6 +433,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
         javascript, name="typescript", suffixes=(".ts", ".tsx", ".mts", ".cts"),
         manifests=("package.json", "tsconfig.json"), executables=("tsc", "tsx"),
         development_server=Gap("its development servers are JavaScript's, read in the compiled .js"),
+        tree=_TYPESCRIPT_TREE,
     )
     return (
         javascript,
@@ -283,6 +455,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
             sandbox_toolchain="python",
             executables=("python", "python3", "pip", "pip3", "pytest", "uv", "django-admin", "alembic"),
             import_graph="python",
+            tree=_PYTHON_TREE,
             development_server="python",
             package_cache=Gap(_INSTALLS_INTO_THE_PROJECT),
             resolved="python",
@@ -335,6 +508,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
             sandbox_toolchain="go",
             executables=("go", "gotestsum", "gofmt"),
             import_graph=Gap(_NO_IMPORT_GRAPH),
+            tree=_GO_TREE,
             development_server=Gap("Go's standard server is a production server; `go run` is read in no source"),
             package_cache=("GOMODCACHE", "go/pkg/mod"),
             resolved="go",
@@ -376,6 +550,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
             sandbox_toolchain="rust",
             executables=("cargo", "rustc", "cargo-nextest"),
             import_graph=Gap(_NO_IMPORT_GRAPH),
+            tree=_RUST_TREE,
             development_server=Gap("Rust's servers are production servers; `cargo run` is read in no source"),
             package_cache=("CARGO_HOME", ".cargo"),
             resolved="cargo",
@@ -414,6 +589,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
             sandbox_toolchain="java",
             executables=("java", "javac", "mvn", "gradle"),
             import_graph=Gap(_NO_IMPORT_GRAPH),
+            tree=_JAVA_TREE,
             development_server=Gap("`spring-boot:run` is a build command, read in no source"),
             package_cache=Gap("the Java pack fetches while it builds and tests, with a network (`fetches_while_building`)"),
             resolved=_NO_RESOLVED_SET,
@@ -440,6 +616,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
             sandbox_toolchain="java",
             executables=("kotlinc", "kotlin"),
             import_graph=Gap(_NO_IMPORT_GRAPH),
+            tree=_KOTLIN_TREE,
             development_server=Gap("no pack is in Kotlin; its servers are production servers"),
             resolved=_NO_RESOLVED_SET,
             stand_ins=_JVM_STAND_INS,
@@ -466,6 +643,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
             sandbox_toolchain="dotnet",
             executables=("dotnet",),
             import_graph=Gap(_NO_IMPORT_GRAPH),
+            tree=_CSHARP_TREE,
             development_server=Gap("Kestrel is a production server; `dotnet watch` is read in no source"),
             package_cache=("NUGET_PACKAGES", ".nuget/packages"),
             resolved="nuget",
@@ -518,6 +696,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
             sandbox_toolchain="ruby",
             executables=("ruby", "bundle", "gem", "rake", "rails", "rspec"),
             import_graph=Gap(_NO_IMPORT_GRAPH),
+            tree=_RUBY_TREE,
             development_server="ruby",
             package_cache=Gap("not measured: where bundler keeps its gems is set by the pack's install"),
             resolved="bundler",
@@ -569,6 +748,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
             sandbox_toolchain="php",
             executables=("php", "composer"),
             import_graph=Gap(_NO_IMPORT_GRAPH),
+            tree=_PHP_TREE,
             development_server="php",
             package_cache=Gap("Composer installs into `vendor/` in the project, which the delivered copy carries"),
             resolved="composer",
@@ -679,6 +859,7 @@ LOCKFILE_PATTERN = "|".join(re.escape(name) for name in LOCKFILES)
 
 __all__ = [
     "BUILT_BY_NAME", "GENERATED_BESIDE", "Gap", "INSTALLED", "LANGUAGES", "LOCKFILES", "LOCKFILE_PATTERN",
-    "LanguageSupport", "MANIFESTS", "NOT_THE_PRODUCT", "TEST_FILE_PATTERNS", "TOOL_FOLDERS", "image_for_executable",
+    "LanguageSupport", "MANIFESTS", "NOT_THE_PRODUCT", "TEST_FILE_PATTERNS", "TOOL_FOLDERS", "TreeReading",
+    "image_for_executable",
     "image_of", "is_generated", "is_manifest", "language",
 ]

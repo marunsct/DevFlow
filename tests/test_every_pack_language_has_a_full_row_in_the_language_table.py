@@ -12,7 +12,9 @@ from dataclasses import fields
 
 import pytest
 
+from app.analysis import parsed_definitions
 from app.analysis.compiler_check import CHECKERS
+from app.analysis.import_resolvers import RESOLVERS
 from app.analysis.reachability import FAMILIES
 from app.analysis.resolved_packages import READERS as RESOLVED_READERS
 from app.plugins.seed import DEVELOPMENT_SERVERS
@@ -55,6 +57,10 @@ def test_what_a_row_names_is_a_mechanism_that_exists(name):
         assert row.development_server in DEVELOPMENT_SERVERS
     if not isinstance(row.resolved, Gap):
         assert row.resolved in RESOLVED_READERS
+    if not isinstance(row.tree, Gap):
+        assert row.tree.resolver in RESOLVERS or (not row.tree.resolver and not isinstance(row.import_graph, Gap))
+        # Every pattern fits its grammar: one that does not leaves the language to the line patterns, unseen.
+        assert all(parsed_definitions.loads(f"a{suffix}") for suffix in row.tree.grammars), f"{name}'s tree reading"
 
 
 @pytest.mark.parametrize("name", PACK_LANGUAGES)

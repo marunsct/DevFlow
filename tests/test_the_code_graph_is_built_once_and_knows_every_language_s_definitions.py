@@ -40,12 +40,22 @@ def test_where_is_finds_a_definition_in_a_language_without_an_import_reader(tmp_
 
 def test_who_uses_says_it_does_not_follow_imports_in_that_language(tmp_path):
     root = _go_and_java(tmp_path)
+    (root / "shop" / "Cart.swift").write_text("struct Cart {\n    var items: [String] = []\n}\n")
+
+    used = project_graph.who_uses(root, "shop/Cart.swift")
+
+    assert used["imported_by"] == [] and "Cart" in used["defines"]
+    assert "does not follow imports" in used["note"]
+    assert not BANNED.search(used["note"])
+
+
+def test_who_uses_says_no_such_thing_where_a_grammar_follows_the_imports(tmp_path):
+    """KG.2: Go's imports are followed, so an empty `imported_by` there is the answer, not a gap."""
+    root = _go_and_java(tmp_path)
 
     used = project_graph.who_uses(root, "shop/internal/store.go")
 
-    assert used["imported_by"] == [] and "Store" in used["defines"]
-    assert "does not follow imports" in used["note"]
-    assert not BANNED.search(used["note"])
+    assert "Store" in used["defines"] and "note" not in used
 
 
 def test_an_unchanged_project_is_not_read_again(tmp_path, monkeypatch):

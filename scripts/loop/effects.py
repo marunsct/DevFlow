@@ -72,6 +72,25 @@ def _lost(record: dict, usage: dict) -> bool:
     return int(usage.get("output_tokens") or 0) >= 32_000
 
 
+def _item_lines(item: str, module: str, lines_of) -> list[str]:
+    """One item's report lines from its module, never fatal to the rest of the report (LF.1575).
+
+    `loop.sh effects` pipes this script into the worker, whose deployed code may be older than the repository: a
+    module it does not have is one line naming the item as not in the deployed code, and any other error in the item
+    is one line naming it and the error.
+    """
+    import importlib
+
+    try:
+        return list(lines_of(importlib.import_module(module)))
+    except ModuleNotFoundError as error:
+        if error.name and (module == error.name or module.startswith(error.name + ".")):
+            return [f"     -  {item}: not in the deployed code ({module})"]
+        return [f"     !  {item}: its lines failed ({type(error).__name__}: {error})"]
+    except Exception as error:  # noqa: BLE001 - one item's error is named, the report goes on
+        return [f"     !  {item}: its lines failed ({type(error).__name__}: {error})"]
+
+
 def effects(records: list[dict], decisions: str = "") -> list[str]:
     """The report's lines for these transcript records and this decision log."""
     counts: Counter = Counter()
@@ -123,81 +142,61 @@ def effects(records: list[dict], decisions: str = "") -> list[str]:
         lines.append("  defects: " + ", ".join(f"{event} {n}" for event, n in sorted(defects.items())))
     lines.extend(budget_lines(records))
     lines.extend(outbound_lines(records))
-    # LF.1310: a testing stage's refused product change kept as its blocker, and the refusals each testing stage had.
-    from app.tools.testing_blockers import effects_lines as testing_blocker_lines
-
-    lines.extend(testing_blocker_lines(records))
-    # LF.1548: writes refused in another work order's file, and the hand-offs to its owner.
-    from app.tools.foreign_file_handoffs import effects_lines as foreign_file_lines
-
-    lines.extend(foreign_file_lines(records))
-    # PA.3 and PA.8: the product built before the testing work order, and errors in another's file kept as blockers.
-    from app.graph.built_before_testing import effects_lines as built_before_testing_lines
-    from app.graph.its_own_to_fix import effects_lines as its_own_to_fix_lines
-
-    lines.extend(built_before_testing_lines(records))
-    lines.extend(its_own_to_fix_lines(records))
-    # HK.4 and KS.6: whether a lookup note's defect was closed by the next fix, and each lookup source's answer rate.
-    from app.observability.lookup_notes import gate_lines, outcome_lines, source_lines
-
-    lines.extend(outcome_lines(records))
-    lines.extend(source_lines(records))
-    # FX.11: for every fixer shown, whether its error was looked up or which gate stopped it.
-    lines.extend(gate_lines(records))
+    # Each item's lines come from its own module, imported here and guarded on its own (LF.1575): the script runs in
+    # the worker, whose deployed code may lack a module the repository already has.
+    items = (
+        # LF.1310: a testing stage's refused product change kept as its blocker, and the refusals each testing stage had.
+        ("LF.1310", "app.tools.testing_blockers", lambda m: m.effects_lines(records)),
+        # LF.1548: writes refused in another work order's file, and the hand-offs to its owner.
+        ("LF.1548", "app.tools.foreign_file_handoffs", lambda m: m.effects_lines(records)),
+        # PA.3 and PA.8: the product built before the testing work order, and errors in another's file kept as blockers.
+        ("PA.3", "app.graph.built_before_testing", lambda m: m.effects_lines(records)),
+        ("PA.8", "app.graph.its_own_to_fix", lambda m: m.effects_lines(records)),
+        # HK.4, KS.6 and FX.11: whether a lookup note's defect was closed by the next fix, each lookup source's answer
+        # rate, and for every fixer shown, whether its error was looked up or which gate stopped it.
+        ("HK.4/KS.6/FX.11", "app.observability.lookup_notes",
+         lambda m: [*m.outcome_lines(records), *m.source_lines(records), *m.gate_lines(records)]),
+    )
+    for item, module, lines_of in items:
+        lines.extend(_item_lines(item, module, lines_of))
     lines.extend(review_reading_lines(records))
-    # KG.1: what the code graph named for each request that asked it, empty shares by language, and how fixers were
-    # localised.
-    from app.analysis.project_graph import effects_lines as code_graph_lines
-
-    lines.extend(code_graph_lines(records))
-    # KG.5-KG.8: what the code graph's answers changed where they were given - reads, repeat reads, opening tokens,
-    # calls from a search to a write, notes at a write followed by an edit of a file named.
-    from app.agents.definitions_before_files import effects_lines as definitions_lines
-    from app.agents.graph_in_search_answers import effects_lines as search_answer_lines
-    from app.agents.reviews_hold_the_change import effects_lines as review_change_lines
-    from app.tools.uses_named_at_the_write import effects_lines as write_uses_lines
-
-    for lines_of in (definitions_lines, search_answer_lines, write_uses_lines, review_change_lines):
-        lines.extend(lines_of(records))
-    # PF.2-PF.4: stuck defects' candidates held to the regression set, writes checked with the tests reaching their
-    # files first, and reading stages opened on the lines chosen for them.
-    from app.agents.ranges_chosen_first import effects_lines as chosen_ranges_lines
-    from app.graph.candidate_fixes_when_stuck import effects_lines as stuck_candidate_lines
-    from app.graph.tests_reached_first import effects_lines as reached_first_lines
-
-    for lines_of in (stuck_candidate_lines, reached_first_lines, chosen_ranges_lines):
-        lines.extend(lines_of(records))
-    # TR.2 and TR.6: reads while reading was withheld, refused by class against run; writes at the call budget.
-    from app.agents.withheld_records import effects_lines as withheld_lines
-
-    lines.extend(withheld_lines(records))
-    # LF.1543: the broken batches of fixes, by how each was settled; the fixers that wrote nothing kept out of blame.
-    from app.graph.batch_attribution import effects_lines as batch_attribution_lines
-
-    lines.extend(batch_attribution_lines(records))
-
-    # TR.7 and TR.8: a writer's request's tool schema and the seldom-used tools it carried; lookups offered and called.
-    from app.agents.role_tool_lists import effects_lines as role_tool_list_lines
-
-    lines.extend(role_tool_list_lines(records))
-    # LF.1570: narrow reads widened to the room, and reads and input tokens per review and per fixer visit.
-    from app.agents.read_windows import effects_lines as read_window_lines
-
-    lines.extend(read_window_lines(records))
-    # LF.1524: fast delivery's design findings held as product-breaking, those not held, and the revisions they took.
-    from app.graph.fast_design_gate import effects_lines as fast_design_gate_lines
-
-    lines.extend(fast_design_gate_lines(decisions))
-    # LF.1547: rewrites after a revert told what broke, repeats stopped, doubtful schema findings set aside.
-    from app.graph.what_a_revert_broke import effects_lines as revert_lines
-
-    lines.extend(revert_lines(records))
-    # Beside what fired: a switch that was on, had its chance and did nothing (`CHANCES`).
-    from app.observability.switch_firing import chance_lines, no_signal_line
-
-    lines.extend(chance_lines(records, decisions))
-    # The switches whose acting the records cannot show at all: each needs a signal of its own before it can be judged.
-    lines.extend(line for line in [no_signal_line(records)] if line)
+    items = (
+        # KG.1: what the code graph named for each request that asked it, empty shares by language, and how fixers
+        # were localised.
+        ("KG.1", "app.analysis.project_graph", lambda m: m.effects_lines(records)),
+        # KG.5-KG.8: what the code graph's answers changed where they were given - reads, repeat reads, opening
+        # tokens, calls from a search to a write, notes at a write followed by an edit of a file named.
+        ("KG.5", "app.agents.definitions_before_files", lambda m: m.effects_lines(records)),
+        ("KG.6", "app.agents.graph_in_search_answers", lambda m: m.effects_lines(records)),
+        ("KG.7", "app.tools.uses_named_at_the_write", lambda m: m.effects_lines(records)),
+        ("KG.8", "app.agents.reviews_hold_the_change", lambda m: m.effects_lines(records)),
+        # PF.2-PF.4: stuck defects' candidates held to the regression set, writes checked with the tests reaching
+        # their files first, and reading stages opened on the lines chosen for them.
+        ("PF.2", "app.graph.candidate_fixes_when_stuck", lambda m: m.effects_lines(records)),
+        ("PF.3", "app.graph.tests_reached_first", lambda m: m.effects_lines(records)),
+        ("PF.4", "app.agents.ranges_chosen_first", lambda m: m.effects_lines(records)),
+        # TR.2 and TR.6: reads while reading was withheld, refused by class against run; writes at the call budget.
+        ("TR.2/TR.6", "app.agents.withheld_records", lambda m: m.effects_lines(records)),
+        # LF.1543: the broken batches of fixes, by how each was settled; the fixers that wrote nothing kept out of
+        # blame.
+        ("LF.1543", "app.graph.batch_attribution", lambda m: m.effects_lines(records)),
+        # TR.7 and TR.8: a writer's request's tool schema and the seldom-used tools it carried; lookups offered and
+        # called.
+        ("TR.7/TR.8", "app.agents.role_tool_lists", lambda m: m.effects_lines(records)),
+        # LF.1570: narrow reads widened to the room, and reads and input tokens per review and per fixer visit.
+        ("LF.1570", "app.agents.read_windows", lambda m: m.effects_lines(records)),
+        # LF.1524: fast delivery's design findings held as product-breaking, those not held, and the revisions they
+        # took.
+        ("LF.1524", "app.graph.fast_design_gate", lambda m: m.effects_lines(decisions)),
+        # LF.1547: rewrites after a revert told what broke, repeats stopped, doubtful schema findings set aside.
+        ("LF.1547", "app.graph.what_a_revert_broke", lambda m: m.effects_lines(records)),
+        # Beside what fired: a switch that was on, had its chance and did nothing (`CHANCES`); and the switches whose
+        # acting the records cannot show at all: each needs a signal of its own before it can be judged.
+        ("switch chances", "app.observability.switch_firing",
+         lambda m: [*m.chance_lines(records, decisions), *[line for line in [m.no_signal_line(records)] if line]]),
+    )
+    for item, module, lines_of in items:
+        lines.extend(_item_lines(item, module, lines_of))
     return lines
 
 

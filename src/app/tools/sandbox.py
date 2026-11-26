@@ -3066,13 +3066,18 @@ _TIMEOUT_ADVICE = (
 #: on its contents from a test" is a description of the hand-built DOM that
 #: `a_dom_built_by_hand` refuses, so the harness was telling a stage to do the
 #: thing another part of the harness would stop it doing.
+#:
+#: It named `--reporter=line` as a smaller part, and one suite writer took it: the whole suite again with
+#: `--reporter=line --workers=4`, to the limit a third time (LF.1589). A reporter runs every test.
 _TIMEOUT_ADVICE_WITH_A_BROWSER = (
     " A command that does not finish is usually one that was not meant to: a "
     "server, a watcher, or something waiting on input that will never come. "
     "This project has a browser runner installed and browsers do run here, so "
     "the likely causes are different: the whole suite run at once against this "
-    "limit, or a `webServer` that never came up. Run a smaller part of it - one "
-    "project (`--project=...`), one spec file, or `--reporter=line` - and check "
+    "limit, or a `webServer` that never came up. Run fewer of its tests - one "
+    "project (`--project=...`), one spec file, or the tests whose names carry one "
+    "criterion id (`--grep AC-1`); a reporter or a number of workers changes how "
+    "they run, not how many - and check "
     "the server command separately. Do not replace the browser test with a "
     "hand-written `global.document`: that is refused elsewhere, and for good "
     "reason."
@@ -5690,6 +5695,17 @@ class SandboxExecutor:
         # unlike every other repeated failure this one is paid for in wall
         # clock as well as a model call. See `timed_out_this_way_before`.
         harness = running_for_the_harness()
+        # A run of the suite in the stage writing it, before anything is built, is held to a short limit per test
+        # (`app.tools.suite_timeouts`, LF.1589): every test fails at its first wait, and the run finishes.
+        from app.tools import suite_timeouts
+
+        held_per_test = ""
+        if not harness:
+            command, held_per_test = suite_timeouts.before_a_run(
+                command, repo_root=repo_root,
+                project_dir=_resolve_a_working_directory(repo_root, working_directory),
+                stage=_the_stage_running_now(), category=category,
+            )
         ruled_out = None if harness else _refuse_an_install_the_brief_rules_out(command, repo_root)
         # Where the network an install is given may reach (plan SF.1). The
         # harness's own installs too: they read the manifests the agents wrote.
@@ -5736,6 +5752,14 @@ class SandboxExecutor:
             return outcome
 
         already_timed_out = 0 if harness else timed_out_this_way_before(repo_root, command, working_directory, category)
+        # The same tests as a run that ran out of the whole limit in this stage, under another spelling (LF.1589).
+        same_tests = "" if harness or already_timed_out else suite_timeouts.refusal(
+            command, repo_root=repo_root,
+            project_dir=_resolve_a_working_directory(repo_root, working_directory),
+            where=_where_it_ran(working_directory), stage=_the_stage_running_now(), category=category,
+            limit=timeout_for(category, repo_root),
+            entries=read_execution_ledger(repo_root, limit=400, by_the_agents=True),
+        )
         later_sprints = ""
         toolchain_misfit = ""
         # A test command run again with nothing changed since its last result is answered from that result rather
@@ -5743,7 +5767,7 @@ class SandboxExecutor:
         from app.tools import unchanged_rerun
 
         kept_as = None
-        if not harness and category == "test" and not extra_env and not already_timed_out:
+        if not harness and category == "test" and not extra_env and not already_timed_out and not same_tests:
             kept_as = (_where_it_ran(working_directory), _the_stage_running_now(), role_name)
         earlier = None
         if kept_as:
@@ -5760,6 +5784,8 @@ class SandboxExecutor:
                     + _timeout_advice(repo_root, working_directory)
                 )
             }
+        elif same_tests:
+            outcome = {"error": same_tests}
         elif earlier:
             _MEMORY_PEAK_OF_THE_COMMAND.set(None)
             outcome = unchanged_rerun.answered_from(earlier)
@@ -5780,7 +5806,7 @@ class SandboxExecutor:
             if not harness and _as_exit_code(outcome.get("returncode")) not in (None, 0):
                 later_sprints = _failures_a_later_sprint_owns(repo_root, began)
         ran = outcome
-        notes = [n for n in (redundant_cd, doubled, redirected, _a_missing_path_that_is_here(outcome),
+        notes = [n for n in (redundant_cd, doubled, redirected, held_per_test, _a_missing_path_that_is_here(outcome),
                              _a_relative_path_missing_from_where_it_ran(outcome, repo_root, working_directory),
                              later_sprints, toolchain_misfit) if n]
         if notes:
@@ -5827,7 +5853,7 @@ class SandboxExecutor:
         entry = _record_execution(
             repo_root, role_name, command, outcome, working_directory, category,
             duration_seconds=time.monotonic() - started,
-            memory_peak_bytes=None if already_timed_out else _MEMORY_PEAK_OF_THE_COMMAND.get(),
+            memory_peak_bytes=None if already_timed_out or same_tests else _MEMORY_PEAK_OF_THE_COMMAND.get(),
             earlier=earlier,
         )
         if kept_as and not earlier:

@@ -1,0 +1,51 @@
+{
+ "_about": "Captured from one run's suite-writing stage (a page product set up by a custom setup). The project directory is renamed `list-app`; every other string is as captured.",
+ "package_json_scripts": {
+  "pretest": "mkdir -p test-results",
+  "test": "node --test --test-reporter=junit --test-reporter-destination=test-results/unit.xml \"tests/**/*.test.js\"",
+  "pretest:e2e": "mkdir -p test-results",
+  "test:e2e": "playwright test",
+  "start": "node server.mjs"
+ },
+ "dev_dependencies": {
+  "@playwright/test": "1.64.0"
+ },
+ "acceptance_dir": "e2e",
+ "spec_head": "import { test, expect } from '@playwright/test';\n\ntest.describe('Add form (AC-6, AC-7)', () => {\n  test('AC-6, AC-7: the form exposes the brief\\'s controls and an empty Title is refused on add', async ({ page }) => {\n    await page.goto('/');\n\n    // The form exposes exactly the controls the brief names.\n    await expect(page.getByRole('textbox', { name: 'Title', exact: true })).toBeVisible();\n    await expect(page.getByLabel('Description')).toBeVisible();\n    await expect(page.getByRole('button', { name: 'Add task', exact: true })).toBeVisible();\n\n    // Leaving Title empty and clicking 'Add task' creates nothing.\n    await page.getByRole('button', { name: 'Add task', exact: true }).click();\n    await expect(page.getByRole('listitem')).toHaveCount(0);\n    await expect(page.getByLabel('Title')).toBeFocused();\n  });\n});\n",
+ "whole_suite_runs": [
+  [
+   "npm",
+   "run",
+   "test:e2e"
+  ],
+  [
+   "npx",
+   "playwright",
+   "test"
+  ],
+  [
+   "npx",
+   "playwright",
+   "test",
+   "--reporter=line",
+   "--workers=4"
+  ]
+ ],
+ "narrow_runs": [
+  [
+   "npx",
+   "playwright",
+   "test",
+   "-g",
+   "AC-6"
+  ],
+  [
+   "npx",
+   "playwright",
+   "test",
+   "-g",
+   "AC-14"
+  ]
+ ],
+ "timeout_error": "Command timed out after 300 seconds. A command that does not finish is usually one that was not meant to: a server, a watcher, or something waiting on input that will never come. This project has a browser runner installed and browsers do run here, so the likely causes are different: the whole suite run at once against this limit, or a `webServer` that never came up. Run a smaller part of it - one project (`--project=...`), one spec file, or `--reporter=line` - and check the server command separately. Do not replace the browser test with a hand-written `global.document`: that is refused elsewhere, and for good reason."
+}

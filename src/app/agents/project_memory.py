@@ -1674,6 +1674,9 @@ def build_project_memory_middleware(repo_root: str) -> Any:
                         return ToolMessage(content=quoted_whole_pointer(path), tool_call_id=call.get("id") or "",
                                            name="read_file")
                     if reads_decided_per_file():
+                        from app.agents import withheld_records
+
+                        withheld_records.noted_read(withheld_records.QUOTED_WHOLE, path)
                         return ToolMessage(content=held_read_refused(path, quoted=True),
                                            tool_call_id=call.get("id") or "", name="read_file", status="error")
             if call.get("name") == "read_file" and visit.get("held"):
@@ -1693,6 +1696,9 @@ def build_project_memory_middleware(repo_root: str) -> Any:
                         # name; a file the memory does not hold goes on to be decided against the conversation.
                         from langchain_core.messages import ToolMessage
 
+                        from app.agents import withheld_records
+
+                        withheld_records.noted_read(withheld_records.HELD_WHOLE, path)
                         return ToolMessage(content=held_read_refused(path), tool_call_id=call.get("id") or "",
                                            name="read_file", status="error")
                     return handler(request)

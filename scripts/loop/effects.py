@@ -146,6 +146,10 @@ def effects(records: list[dict], decisions: str = "") -> list[str]:
     from app.analysis.project_graph import effects_lines as code_graph_lines
 
     lines.extend(code_graph_lines(records))
+    # TR.2 and TR.6: reads while reading was withheld, refused by class against run; writes at the call budget.
+    from app.agents.withheld_records import effects_lines as withheld_lines
+
+    lines.extend(withheld_lines(records))
     # Beside what fired: a switch that was on, had its chance and did nothing (`CHANCES`).
     from app.observability.switch_firing import chance_lines, no_signal_line
 

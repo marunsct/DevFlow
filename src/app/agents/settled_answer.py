@@ -2325,6 +2325,14 @@ def _reads_in_the_conversation(messages: list[Any]) -> set[tuple[str, int, int]]
     return held
 
 
+def _written_path(call: Any) -> str:
+    """The path a writing call names, as `_reads_in_the_conversation` reads it."""
+    args = (call or {}).get("args") or {}
+    if not isinstance(args, dict):
+        return ""
+    return str(args.get("relative_path") or args.get("file_path") or args.get("path") or "").strip().lstrip("/")
+
+
 def _already_in_the_conversation(path: str) -> str:
     """The refusal of a read whose text the conversation holds: the file, and where its text is."""
     from app.agents.workspace_backend import READ_REFUSED_MARKER
@@ -2707,7 +2715,7 @@ def build_settled_answer_middleware(
                         **spiral_quiet,
                     }
                     spiral_plainer = without_the_effort_field(overrides["model_settings"])
-                from app.agents import stable_tools
+                from app.agents import stable_tools, withheld_records
 
                 stable = stable_tools.enabled()
                 withheld_here: set[str] | None = None
@@ -2828,6 +2836,8 @@ def build_settled_answer_middleware(
                         next_usable=_usable_on_the_next_call(
                             messages, _the_step_limit(step_limit), schema, every,
                             {repeated[0]} if repeated is not None else set()),
+                        budget=(withheld_records.LAST_CALLS if last_writes
+                                else withheld_records.ANSWER_ONLY if answer_due and answer_only else ""),
                     )
                 request = request.override(messages=corrected, **overrides)
             except Exception:  # noqa: BLE001 - never fail the call over a hint
@@ -2859,7 +2869,7 @@ def build_settled_answer_middleware(
                 return handler(refused_fallback)
 
         def _set_withheld(self, names: Any, every: Any = None, per_file: Any = (), in_conversation: Any = (),
-                          next_usable: Any = None) -> None:
+                          next_usable: Any = None, budget: str = "") -> None:
             """The tools this call withholds, on the instance and in the stage's memory.
 
             A call that needs approval pauses the graph, and the node builds the
@@ -2868,11 +2878,14 @@ def build_settled_answer_middleware(
             withheld, and a withheld write or command ran after its pause.
 
             `per_file` are the read tools withheld file by file, with the reads the conversation holds in
-            `in_conversation` (TR.2); `next_usable`, the tools the next call will allow when that is known (TR.3).
+            `in_conversation` (TR.2); `next_usable`, the tools the next call will allow when that is known (TR.3);
+            `budget`, what the call budget left this call (`withheld_records.LAST_CALLS` or `ANSWER_ONLY`), for the
+            record of its writes.
             """
             from app.agents.stage_memory import store
 
             self._withheld = set(names)
+            self._budget = budget
             self._per_file = set(per_file)
             self._in_conversation = {tuple(read) for read in in_conversation}
             self._next_usable = None if next_usable is None else sorted(next_usable)
@@ -2881,6 +2894,7 @@ def build_settled_answer_middleware(
             kept["per_file"] = sorted(self._per_file)
             kept["in_conversation"] = sorted(self._in_conversation)
             kept["next_usable"] = self._next_usable
+            kept["budget"] = budget
             if every is not None:
                 self._usable = sorted(set(every) - (self._withheld - self._per_file))
                 kept["usable"] = self._usable
@@ -2901,6 +2915,14 @@ def build_settled_answer_middleware(
                 return list(self._usable)
             usable = kept.get("usable")
             return list(usable) if usable is not None else None
+
+        def _budget_now(self) -> str:
+            """What the call budget left the latest call: last calls, answer only, or "" (`withheld_records`)."""
+            if "_budget" in self.__dict__:
+                return str(self._budget)
+            from app.agents.stage_memory import store
+
+            return str(store("withheld tools", {}).get("budget") or "")
 
         def _read_per_file(self) -> tuple[set[str], set[tuple]]:
             """The read tools withheld file by file on this call, and the reads its conversation holds."""
@@ -2931,19 +2953,30 @@ def build_settled_answer_middleware(
             scratch = a_harness_scratch_delete(call)
             if scratch is not None:
                 return scratch
+            from app.agents import withheld_records
+
             per_file, in_conversation = self._read_per_file()
             if name in per_file:
                 # Decided for this file (TR.2): refused only when the conversation holds what it asks for. A read of a
                 # file the project memory holds is refused before it reaches here (`project_memory`).
                 read = _the_read_asked(call.get("args") or {})
                 if read not in in_conversation:
+                    withheld_records.noted_read(withheld_records.RAN, read[0], name)
                     return handler(request)
                 from langchain_core.messages import ToolMessage
 
+                withheld_records.noted_read(withheld_records.IN_THE_CONVERSATION, read[0], name)
                 return ToolMessage(content=_already_in_the_conversation(read[0]), tool_call_id=str(call.get("id") or ""),
                                    name=name, status="error")
+            budget = self._budget_now() if name in _THE_WRITING_TOOLS else ""
             if name and name in self._withheld_now() and not _writes_the_stage_s_deliverable(call):
                 from langchain_core.messages import ToolMessage
+
+                if name in _READ_TOOLS:
+                    withheld_records.noted_read(withheld_records.WITHHELD_WHOLE, _the_read_asked(call.get("args"))[0],
+                                                name)
+                elif budget:
+                    withheld_records.noted_write(withheld_records.REFUSED, name, _written_path(call))
 
                 # Opens as a refusal, so the guards that count refused and
                 # nothing-new results count it: unopened, a stalled stage's
@@ -2963,6 +2996,8 @@ def build_settled_answer_middleware(
                     name=name,
                     status="error",
                 )
+            if budget == withheld_records.LAST_CALLS:
+                withheld_records.noted_write(withheld_records.RAN, name, _written_path(call))
             return handler(request)
 
         @hook_config(can_jump_to=["end", "model"])

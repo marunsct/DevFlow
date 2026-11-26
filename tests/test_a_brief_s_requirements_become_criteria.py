@@ -150,3 +150,44 @@ def test_a_brief_that_lists_what_it_asks_for_records_no_such_decision(tmp_path, 
     update = _author(tmp_path, brief)
 
     assert not update.get("decisions")
+
+
+# --- a behaviour a constraint line states (plan PQ.1, the rest) ------------------------------------------------------
+
+#: The medium brief as it was uploaded: its constraint "Authentication: JWT tokens with refresh mechanism" became no
+#: criterion, because "User registration and authentication (JWT-based)" carried the line's kind.
+DASHBOARD = (ROOT / "tests" / "captured" / "brief-a-task-management-dashboard.md").read_text(encoding="utf-8")
+
+
+def test_a_behaviour_stated_under_the_constraints_is_a_criterion() -> None:
+    texts = _texts(DASHBOARD)
+
+    assert texts[-1] == "Authentication: JWT tokens with refresh mechanism"
+    assert texts.count("Authentication: JWT tokens with refresh mechanism") == 1
+
+
+def test_the_behaviour_added_is_named_in_the_decision(tmp_path, gated) -> None:
+    update = _author(tmp_path, DASHBOARD)
+
+    [record] = update["decisions"]
+    assert '"Authentication: JWT tokens with refresh mechanism": added as AC-17' in record["rationale"]
+    assert 'the behaviour "refresh mechanism"' in record["rationale"]
+
+
+@pytest.mark.parametrize("line", [
+    "- Java, with Spring Boot",
+    "- React with TypeScript, built with Vite",
+    "- Data Storage: PostgreSQL database with proper schema",
+    "- Authentication: JWT tokens without refresh",
+])
+def test_a_technology_or_a_quality_after_with_stays_a_constraint(line: str) -> None:
+    brief = "# B\n## Features\n- Add a note\n- Delete a note\n## Technical Constraints\n" + line + "\n"
+
+    assert _texts(brief) == ["Add a note", "Delete a note"]
+
+
+def test_a_behaviour_a_criterion_already_names_is_not_added_again() -> None:
+    brief = ("# B\n## Features\n- Sign in\n- A signed-in person's session is refreshed before it expires\n"
+             "## Technical Constraints\n- Authentication: JWT tokens with refresh mechanism\n")
+
+    assert _texts(brief) == ["Sign in", "A signed-in person's session is refreshed before it expires"]

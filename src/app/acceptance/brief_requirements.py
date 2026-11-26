@@ -16,6 +16,15 @@ existing criterion carries adds nothing, so a brief that already numbers what it
 Docker", "migrations not required") asks for nothing. A line naming none of the kinds is a choice of how the
 product is built and stays a constraint. Deterministic: no model reads the brief here.
 
+A constraint line can also state a behaviour beside its choice of how: "Authentication: JWT tokens with refresh
+mechanism". Measured on the same brief: its features said "authentication (JWT-based)", so the line's kind was
+carried, and the refresh - something a person or a client does with the product - became no criterion; the product
+was built and reviewed against criteria that never asked for it. So the words a line adds after "with" (or
+"including", "supporting") are read for a behaviour (`BEHAVIOURS`: refreshing, rotating, expiring or revoking,
+pagination, a limit on requests, retries, caching, an undo, a history or audit trail, notifications or reminders, a
+"mechanism"); one that no criterion names becomes a criterion in the line's own words, after the kinds. A technology
+named there ("Java, with Spring Boot", "built with Vite") states no behaviour and stays a constraint.
+
 What was added, and what already carried each line, is recorded as a decision (`decision`); an added criterion the
 release cannot prove ships named as a scope cut, like any other (`app.graph.delivery`).
 """
@@ -72,6 +81,36 @@ KINDS: tuple[Kind, ...] = (
 #: A line that rules out what it names: "No Docker", "Database migrations not required", "without a container".
 _RULED_OUT = re.compile(r"\b(?:no|not|without|never|none)\b|n't\b", re.I)
 
+#: What a line adds after its choice of how: "JWT tokens with refresh mechanism" -> "refresh mechanism".
+_ADDED = re.compile(r"\b(?:with|including|supporting)\s+(?:an?\s+|the\s+)?(?P<what>[^,;:.()]+)", re.I)
+#: Words that name a behaviour rather than a technology, in what a line adds.
+BEHAVIOURS = re.compile(
+    r"\b(?:refresh\w*|rotat\w+|expir\w+|revo(?:c|k)\w+|paginat\w+|paging|rate[- ]limit\w*|throttl\w+|"
+    r"retr(?:y|ies)|caching|undo\w*|versioning|history|audit\w*|notifications?|reminders?|mechanism)\b", re.I)
+#: A behaviour word that says only that there is one: the word before it names which.
+_ONLY_THAT_THERE_IS_ONE = frozenset({"mechanism"})
+#: Letters of a behaviour word a criterion must share to carry it: "refresh" carries "refreshes", "refreshed".
+_STEM = 5
+
+
+def _behaviour(line: str) -> Kind | None:
+    """The behaviour a requirement or constraint line states after its choice of how, as a kind carried by a criterion
+    naming it; None when the line adds none (a technology, a quality) or rules it out."""
+    text = str(line or "")
+    if _RULED_OUT.search(text):
+        return None
+    for added in _ADDED.finditer(text):
+        what = " ".join(added.group("what").split())
+        words = [match.group(0).lower() for match in BEHAVIOURS.finditer(what)]
+        named = next((word for word in words if word not in _ONLY_THAT_THERE_IS_ONE), "")
+        if not named and words:
+            before = re.findall(r"[a-z][a-z-]+", what.lower().split("mechanism")[0])
+            named = before[-1] if before else ""
+        if named:
+            stem = re.escape(named.split()[0][:_STEM])
+            return Kind(f'the behaviour "{what}"', re.compile(rf"\b{stem}", re.I))
+    return None
+
 
 @dataclass(frozen=True)
 class Requirement:
@@ -85,7 +124,8 @@ class Requirement:
 
 
 def _asked(line: str) -> tuple[Kind, ...]:
-    return tuple(kind for kind in KINDS if kind.asked_by(line))
+    behaviour = _behaviour(line)
+    return tuple(kind for kind in KINDS if kind.asked_by(line)) + ((behaviour,) if behaviour else ())
 
 
 def to_add(brief: str, criteria: list[str]) -> list[str]:
@@ -100,6 +140,13 @@ def to_add(brief: str, criteria: list[str]) -> list[str]:
             continue
         line = next((line for line in lines if kind.asked_by(line)), None)
         if line is None or line in added:
+            continue
+        added.append(line)
+        held.append(line)
+    # A behaviour a line states beside its choice of how, that no criterion names yet.
+    for line in lines:
+        behaviour = _behaviour(line)
+        if behaviour is None or line in added or any(behaviour.carried_by(text) for text in held):
             continue
         added.append(line)
         held.append(line)
@@ -118,8 +165,9 @@ def accounted_for(brief: str, criteria: Any) -> list[Requirement]:
             out.append(Requirement(line, ()))
             continue
         exact = next((ident for ident, text in numbered if text == line), "")
-        carrier = exact or next(
-            (ident for ident, text in numbered if any(kind.carried_by(text) for kind in kinds)), "")
+        # Every kind the line asks for is carried, by one criterion or another.
+        carriers = [next((ident for ident, text in numbered if kind.carried_by(text)), "") for kind in kinds]
+        carrier = exact or (carriers[0] if all(carriers) else "")
         out.append(Requirement(line, tuple(kind.name for kind in kinds), carrier))
     return out
 
@@ -158,4 +206,4 @@ def decision(brief: str, criteria: Any) -> dict[str, Any] | None:
     }
 
 
-__all__ = ["KINDS", "Kind", "Requirement", "accounted_for", "decision", "to_add"]
+__all__ = ["BEHAVIOURS", "KINDS", "Kind", "Requirement", "accounted_for", "decision", "to_add"]

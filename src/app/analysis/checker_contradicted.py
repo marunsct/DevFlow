@@ -53,11 +53,21 @@ def _its_tests(relative: str, names: Any) -> list[str]:
     return found
 
 
-def contradicted(relative: str, message: str, measured: Any) -> str:
+def contradicted(relative: str, message: str, measured: Any, root: Any = None) -> str:
     """What in the measurement `measured` (a `ci.Snapshot`) contradicts a finding about an import in `relative`; ""
-    when nothing does, the finding is about something else, or there is no measurement."""
+    when nothing does, the finding is about something else, or there is no measurement.
+
+    With the workspace `root`, also a fixer's own run that loaded the import while the file is as it was then
+    (`imports_a_fixer_ran`, LF.1401)."""
     try:
-        if measured is None or not is_about_an_import(message):
+        if not is_about_an_import(message):
+            return ""
+        from app.analysis.imports_a_fixer_ran import still_shown_false
+
+        ran = still_shown_false(root, relative, message)
+        if ran:
+            return ran
+        if measured is None:
             return ""
         passing = [name.split(": ", 1)[1] for name in measured.passing() if ": " in name]
         own = _its_tests(relative, passing)

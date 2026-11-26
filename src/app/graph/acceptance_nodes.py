@@ -2575,12 +2575,23 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
             reproduction_steps=f"Run `{command}` in the project directory and read the {entry.get('id')} tests.",
             expected_behavior=str(entry.get("text") or ""),
             actual_behavior=detail + seen,
-            affected_files=sorted({f for f, _ in where_errors_become_5xx(_root(state))}) if hid else [],
+            affected_files=sorted({f for f, _ in where_errors_become_5xx(_root(state))}) if hid
+            else _the_files_its_5xx_logged(_root(state), failed, logged),
             owner=_owner_for(state, detail),
             kind="failing_test",
             evidence=_the_failing_tests_of([{**entry, "tests": failed}] if stopped else [entry]),
         ))
     return [*installs, *defects]
+
+
+def _the_files_its_5xx_logged(root: Any, failed: list[dict], logged: str) -> list[str]:
+    """The product files the server's logged trace names, for a criterion whose failed tests received a 5xx; [] for
+    any other (LF.1401: such a defect named no file, and the rewrite after a surrender found none)."""
+    if not any(_A_5XX_RECEIVED.search(str(t.get("message") or "")) for t in failed):
+        return []
+    from app.acceptance.logged_files import files_the_log_names
+
+    return files_the_log_names(root, logged)
 
 
 def _the_failing_tests_of(entries: list[dict]) -> list[dict[str, Any]]:

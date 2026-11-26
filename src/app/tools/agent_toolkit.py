@@ -623,7 +623,9 @@ def build_terminal_command_tool(repo_root: str, role_name: str = "general") -> B
 
         Pass the command as a list of arguments, not as a single string:
         `["npm", "install"]`, not `"npm install"`. There is no shell, so `;`,
-        `&&`, `|` and `$(...)` will not work - run separate commands instead.
+        `&&` and `$(...)` will not work - run separate commands instead. A `|`
+        into `head`, `tail`, `grep`, `wc`, `sort`, `uniq` or `cat` is applied
+        by the harness to the output of the command before it.
 
         To run inside a subdirectory, pass `working_directory` - do not try to
         `cd`, which is not a program and cannot be run. For example, to run the
@@ -654,6 +656,15 @@ def build_terminal_command_tool(repo_root: str, role_name: str = "general") -> B
         from app.tools.sandbox import SandboxExecutor
 
         command, working_directory, moved = _a_cd_taken_as_the_working_directory(command, working_directory, repo_root)
+        # `a | b`: `a` runs, and the harness applies the filter `b` to what it printed (plan PA.6).
+        from app.tools import piped_commands
+
+        piped = piped_commands.split(command)
+        if piped is not None:
+            refused = piped_commands.refusal(piped[1], role_name, repo_root)
+            if refused:
+                return {"error": refused}
+            command = piped[0]
         command, saved = _code_on_the_command_line_as_a_file(command, repo_root, working_directory, role_name)
         moved = " ".join(part for part in (moved, saved) if part)
         held_back = _a_look_with_the_looking_tools_withheld(command, repo_root, working_directory)
@@ -676,6 +687,8 @@ def build_terminal_command_tool(repo_root: str, role_name: str = "general") -> B
         stage_scratch.record_what_a_command_created(repo_root, before, result, stage)
         if moved and isinstance(result, dict):
             result = {**result, "note": moved}
+        if piped is not None:
+            result = piped_commands.filtered(result, command, piped[1], piped[2])
         starred = a_star_taken_as_written(command, result)
         if starred:
             earlier = str(result.get("note") or "")

@@ -7,6 +7,9 @@ shown it: five fixers in a row changed nothing or chased the tests.
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from app.graph import acceptance_nodes
 
 OUTPUT = """Running 15 tests using 1 worker
@@ -95,3 +98,44 @@ def test_the_server_s_errors_are_kept_from_the_whole_output_not_its_tail(tmp_pat
 
     assert "app.ts:41" in result.server_log and "app.ts:41" not in result.output
     assert result.as_dict()["server_log"] == result.server_log
+
+
+#: A medium run's measurement as it saved it: every sign-up answered 500 and the server logged the trace (LF.1401:
+#: seven rewrites after a surrender found no file, because such a criterion's defect named none).
+SIGN_UP = json.loads((Path(__file__).parent / "captured"
+                      / "acceptance-result-a-sign-up-answers-500-with-a-logged-trace.json").read_text())
+
+
+def _a_criterion_failing_with(tmp_path, message):
+    from app.acceptance import junit, suite
+    from tests.test_acceptance_stages import ALL_THREE, _authored, _plan, _state
+
+    for name in ("main.py", "routes.py"):
+        path = tmp_path / "task-management-dashboard" / "task_management_dashboard" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("app = None\n")
+    _authored(tmp_path, ALL_THREE)
+    suite.lock(tmp_path)
+    measured = suite.AcceptanceResult(
+        ran=True, exit_code=1, command="npm run test:acceptance", output="", server_log=SIGN_UP["server_log"],
+        report=junit.Report(found=True, tests=[
+            junit.TestResult(name=SIGN_UP["AC-1"]["name"], outcome="failed", message=message),
+            junit.TestResult(name="[AC-2] deletes")]))
+    suite._judged(tmp_path, measured, True)
+    state = _state(tmp_path, sprint_plan=_plan(["AC-1", "AC-2"], ["AC-3"]), current_sprint_index=0)
+    [defect] = acceptance_nodes.failing_due_defects(state, [])
+    return defect
+
+
+def test_a_criterion_answered_5xx_names_the_product_files_its_logged_trace_names(tmp_path):
+    defect = _a_criterion_failing_with(tmp_path, SIGN_UP["AC-1"]["message"])
+
+    assert defect.affected_files == ["task-management-dashboard/task_management_dashboard/routes.py",
+                                     "task-management-dashboard/task_management_dashboard/main.py"]
+    assert "no such column: users.username" in defect.actual_behavior
+
+
+def test_a_criterion_that_failed_without_a_5xx_is_given_no_file_from_the_log(tmp_path):
+    defect = _a_criterion_failing_with(tmp_path, SIGN_UP["AC-1"]["message"].replace("Received: 500", "Received: 400"))
+
+    assert defect.affected_files == []

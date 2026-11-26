@@ -108,7 +108,7 @@ def security_review_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
         # A resume after a review in the fan-out paused or retried.
         return {"stage": "review_parallel"}
     if _in_parallel_mode() and max_parallel() > 1 and not state.get("pending_inner_thread_id"):
-        due = ["security", *_advice_reviews_due(state)]
+        due = ["security", *_advice_review_items(state)]
         if len(due) > 1:
             # Each review reads the finished sprint and none reads another's
             # verdict, so they run side by side; the milestone review, which
@@ -143,6 +143,89 @@ def _advice_reviews_due(state: Any) -> list[str]:
         role for role in roles_to_review(advice, specification)
         if role not in found and _the_items_due(state, role)[0]
     ]
+
+
+def _together(state: Any, pending: list[str]) -> list[str]:
+    """The roles of `pending` whose advice reviews are one call (`advice_reviews_together.roles_together`); []."""
+    from app.agents import specialist_domain_review
+    from app.agents.advice_reviews_together import roles_together
+    from app.models.vision import the_reviewer_reads_images
+
+    if len(pending) < 2:
+        return []
+    return roles_together(
+        {role: _the_items_due(state, role)[0] for role in pending},
+        sees_images="ui_ux" in pending and the_reviewer_reads_images(),
+        domain_review=specialist_domain_review.enabled(),
+    )
+
+
+def _advice_review_items(state: Any) -> list[str]:
+    """The advice reviews this sprint still needs, as reviews to run: one call for the roles reviewed together, then
+    each other role on its own."""
+    from app.agents.advice_reviews_together import TOGETHER
+
+    pending = _advice_reviews_due(state)
+    together = _together(state, pending)
+    return ([TOGETHER] if together else []) + [role for role in pending if role not in together]
+
+
+def _advice_reviews_together(
+    state: Any, config: RunnableConfig, roles: list[str], ctx: GraphContext,
+) -> tuple[dict[str, Any] | None, dict[str, list[str]]]:
+    """(an update to hand back, {}) or (None, each role's findings) from one call for `roles` (plan PA.9)."""
+    from app.graph.workflow import (
+        _changes_any_code, _fixes_a_review_must_not_undo, _hand_back, _run_gated_agent,
+        _the_files_this_milestone_changed, _this_sprint_s_scope_for_review, with_the_facts,
+    )
+
+    from app.agents import advice_reviews_together as together
+    from app.agents import review_files
+
+    changed_files = _the_files_this_milestone_changed(state, state.get("specialist_outputs", {}))
+    if "database" in roles and not state.get("pending_inner_thread_id") and not _changes_any_code(changed_files):
+        roles = [role for role in roles if role != "database"]
+    if not roles:
+        return None, {}
+    due = {role: _the_items_due(state, role) for role in roles}
+    milestone = state.get("milestone_plan")
+    root = state["repository"].root_path
+    specification = state.get("technical_specification")
+
+    def built(held: list[str]) -> dict[str, Any]:
+        request = together.build_request(
+            due, str(getattr(milestone, "selected_sprint_goal", "") or ""), _this_sprint_s_scope_for_review(state),
+            changed_files, held=held,
+        )
+        request = with_the_facts(request, root)
+        request["messages"][-1]["content"] += _fixes_a_review_must_not_undo(state)
+        return request
+
+    request = built([])
+    held = review_files.held_for_review(review_files.under_review(root, changed_files), root, ctx.judgement_model,
+                                        f"advice_review_{together.TOGETHER}", review_files.opening_of(request))
+    if held:
+        request = built(held)
+    if "ui_ux" in roles:
+        # Its model does not read images (`_together`): the page as measured facts (plan SP.4).
+        from app.agents.page_facts import with_the_page_facts
+
+        request = with_the_page_facts(request, root, getattr(specification, "interface_design", None) or [])
+    agent = together.create_agent(
+        model=ctx.judgement_model, checkpointer=ctx.checkpointer,
+        repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories,
+    )
+    update = _run_gated_agent(
+        state, config, stage_name=f"advice_review_{together.TOGETHER}", agent=agent, initial_request=request,
+        output_key="__advice_review__", next_stage="advice_review",
+    )
+    if _hand_back(update, "__advice_review__"):
+        return update, {}
+    found = together.split(roles, update.pop("__advice_review__"),
+                           {role: [line.split(":", 1)[0] for line in due[role][0]] for role in roles})
+    logger.info("One advice review for %s found %d adopted item(s) not built", ", ".join(roles),
+                sum(len(lines) for lines in found.values()))
+    return None, found
 
 
 def _the_items_due(state: Any, role: str) -> tuple[list[str], str]:
@@ -250,13 +333,26 @@ def advice_review_node(state: WorkflowGraphState, config: RunnableConfig, ctx: G
     pending = _advice_reviews_due(state)
     if not pending:
         return _handing_on(stage="milestone_review", advice_findings=found, advice_review_cycle=cycle)
+    from app.agents.specialist_domain_review import sprint_findings
+
+    together = _together(state, pending)
+    if together:
+        handed_back, by_role = _advice_reviews_together(state, config, together, ctx)
+        if handed_back is not None:
+            return handed_back
+        records = list(state.get("sprint_findings") or [])
+        for role in together:
+            found[role] = list(by_role.get(role) or [])
+            records += sprint_findings(found[role], state.get("milestone_revision_count", 0) + 1)
+        return _handing_on(
+            advice_findings=found, advice_review_cycle=cycle, sprint_findings=records,
+            stage="advice_review" if [role for role in pending if role not in together] else "milestone_review",
+        )
     role = pending[0]
     handed_back, findings = _one_advice_review(state, config, role, ctx)
     if handed_back is not None:
         return handed_back
     found[role] = findings
-    from app.agents.specialist_domain_review import sprint_findings
-
     return _handing_on(**{
         "advice_findings": found,
         "advice_review_cycle": cycle,
@@ -270,6 +366,8 @@ def review_worker_node(state: dict, config: RunnableConfig, ctx: GraphContext) -
     """One review of the finished sprint, beside the others. See `security_review_node`."""
     from app.graph.workflow import _as_a_queued_pause, _only_this_worker_s_pause
 
+    from app.agents.advice_reviews_together import TOGETHER
+
     item = state["__review_item"]
     stage_name = "security_review" if item == "security" else f"advice_review_{item}"
     temp_state: Any = dict(state)
@@ -278,6 +376,10 @@ def review_worker_node(state: dict, config: RunnableConfig, ctx: GraphContext) -
     if item == "security":
         handed_back, review = _the_security_review(temp_state, config, ctx)
         result: dict[str, Any] = {"security_review": review}
+    elif item == TOGETHER:
+        handed_back, by_role = _advice_reviews_together(
+            temp_state, config, _together(temp_state, _advice_reviews_due(temp_state)), ctx)
+        result = {"advice_by_role": by_role}
     else:
         handed_back, findings = _one_advice_review(temp_state, config, item, ctx)
         result = {"advice": findings}
@@ -323,9 +425,14 @@ def review_gather_node(state: WorkflowGraphState, config: RunnableConfig) -> dic
     cycle = f"{state.get('current_sprint_index', 0)}:{state.get('milestone_revision_count', 0)}"
     found = dict(state.get("advice_findings") or {}) if state.get("advice_review_cycle") == cycle else {}
     for item in state.get("reviews_in_flight") or []:
-        if item != "security":
-            found[item] = list((results.get(item) or {}).get("advice") or [])
-            findings += sprint_findings(found[item], revision)
+        if item == "security":
+            continue
+        by_role = (results.get(item) or {}).get("advice_by_role")
+        if by_role is None:
+            by_role = {item: (results.get(item) or {}).get("advice") or []}
+        for role, lines in by_role.items():
+            found[role] = list(lines or [])
+            findings += sprint_findings(found[role], revision)
     return _handing_on(
         stage="milestone_review",
         security_review=review if review is not None else state.get("security_review"),

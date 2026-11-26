@@ -1,0 +1,9 @@
+{
+ "command": "npm run test:acceptance -- --grep /(?<![A-Za-z0-9])(?:AC[-_\u2010-\u2015\u2212\ufe58\ufe63\uff0d]?0*(?:12|1|8|5|2|4))(?![0-9])/i",
+ "server_log": "ERROR: Exception in ASGI application\nsqlite3.OperationalError: no such column: users.username\nsqlalchemy.exc.OperationalError: (sqlite3.OperationalError) no such column: users.username\n  File \"/workspace/task-management-dashboard/task_management_dashboard/main.py\", line 68, in the_page\n  File \"/workspace/task-management-dashboard/task_management_dashboard/routes.py\", line 276, in register_user",
+ "AC-1": {
+  "name": "[AC-1] registering a new user returns 201 with id, email, username",
+  "outcome": "failed",
+  "message": "auth.spec.js:22:1 \u203a [AC-1] registering a new user returns 201 with id, email, username \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n    Error: expect(received).toBe(expected) // Object.is equality\n\n    Expected: 201\n    Received: 500\n\n      22 | test('[AC-1] registering a new user returns 201 with id, email, username', async ({ request }) => {\n      23 |   const res = await register(request);\n    > 24 |   expect(res.status()).toBe(201);\n         |                        ^\n      25 |   const body = await res.json();\n      26 |   expect(body).toHaveProperty('id');\n      27 |   expect(body).toHaveProperty('email');\n        at /workspace/task-management-dashboard/acceptance/auth.spec.js:24:24\n\n    Error Context: ../test-results/evidence/auth--AC-1-registering-a-n-24bdc--201-with-id-email-username/error-context.md"
+ }
+}

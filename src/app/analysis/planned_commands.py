@@ -115,6 +115,23 @@ def _runs_its_code_from_a_file(argv: list[str]) -> bool:
         return False
 
 
+def _a_pipe_into_a_filter(span: str, role_name: str, repo_root: str | Path | None) -> list[str] | None:
+    """The command before the `|` of a span that pipes one command into filters the command tool applies, each one
+    the role may run (`tools.piped_commands`); None for any other span."""
+    try:
+        from app.tools import piped_commands
+
+        words = shlex.split(span)
+        if any(word in ("&&", "||", ";", "&") for word in words):
+            return None
+        piped = piped_commands.split(words)
+        if piped is None or piped_commands.refusal(piped[1], role_name, str(repo_root) if repo_root else None):
+            return None
+        return piped[0]
+    except Exception:  # noqa: BLE001 - checked as any other span
+        return None
+
+
 def commands_the_sandbox_would_refuse(
     text: str, role_name: str, repo_root: str | Path | None = None
 ) -> list[str]:
@@ -130,6 +147,10 @@ def commands_the_sandbox_would_refuse(
     seen: set[str] = set()
     for span in _spans(text):
         commands, shell = _commands_in(span)
+        piped = _a_pipe_into_a_filter(span, role_name, repo_root)
+        if piped is not None:
+            # `a | b` into a filter the command tool applies itself (plan PA.6): only `a` runs, as any command.
+            commands, shell = [piped], False
         # A variable set in front of a program is the shell's; with none here the
         # program is never reached and the word is refused for not being one.
         assigned = [

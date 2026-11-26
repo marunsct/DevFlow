@@ -357,7 +357,7 @@ def underlined_in_the_batch(state: Any, root: str, since: str) -> list[Any]:
             grouped.setdefault(finding["message"], []).append(finding)
         for message, where in grouped.items():
             lines = ", ".join(str(f["line"]) for f in where[:6])
-            against = checker_contradicted.contradicted(relative, message, measured)
+            against = checker_contradicted.contradicted(relative, message, measured, root)
             if against:
                 checker_contradicted.recorded(root, relative, message, against)
             module, defined, importers = missing.get((relative, message), ("", [], []))
@@ -1036,7 +1036,8 @@ def what_the_fix_made_certain_to_fail(root: str, base: str, measured: Any = None
             added = _lines_added(root, base, relative)
             for finding in findings.get(relative) or []:
                 if added is None or int(finding.get("line") or 0) in added:
-                    against = checker_contradicted.contradicted(relative, str(finding.get("message") or ""), measured)
+                    against = checker_contradicted.contradicted(relative, str(finding.get("message") or ""), measured,
+                                                                root)
                     if against:
                         checker_contradicted.recorded(root, relative, str(finding.get("message") or ""), against)
                         continue

@@ -55,8 +55,13 @@ def _a_sprint_with_advice_reviews(agents, monkeypatch) -> None:
         specialist_advice_decisions=["UX-1: adopted - interface_design", "DB-1: adopted - data_model"],
     ))])
     agents.script("architecture_review", [responds_with(_approved_review())])
-    agents.script("advice_reviewer_ui_ux", [responds_with(AdviceReview(not_built=["no rule below 600px"]))])
-    agents.script("advice_reviewer_database", [responds_with(AdviceReview(not_built=["notes have no id"]))])
+    # Their advice fits one request, so the two specialists' reviews are one call (plan PA.9).
+    from app.agents import advice_reviews_together
+
+    monkeypatch.setattr(advice_reviews_together, "create_agent",
+                        lambda *args, **kwargs: agents.agent("advice_reviewer_together"))
+    agents.script("advice_reviewer_together", [responds_with(AdviceReview(
+        not_built=["no rule below 600px", "notes have no id"]))])
     _script_through_sprint(agents, advice=["UX-1", "DB-1"])
 
 
@@ -68,7 +73,7 @@ def test_the_reviews_run_side_by_side_and_all_reach_the_milestone_review(agents,
     state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-reviews-side-by-side")
 
     assert state["stage"] == "complete", state.get("error")
-    assert any(r.getMessage().startswith("Running 3 reviews side by side") for r in caplog.records)
+    assert any(r.getMessage().startswith("Running 2 reviews side by side") for r in caplog.records)
     asked = agents.last_request_text("milestone_reviewer")
     assert "[UI/UX specialist] not built: no rule below 600px" in asked
     assert "not built: notes have no id" in asked

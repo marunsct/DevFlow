@@ -505,6 +505,19 @@ def _fixed_by_rewriting(
     # fast delivery's.
     if not _fast_delivery() and not after_a_surrender:
         return None
+    if after_a_surrender:
+        # An import finding the fixer's own run loaded is the language service's word, not a rewrite (LF.1401).
+        from app.analysis import imports_a_fixer_ran
+
+        description = str(getattr(defect, "description", "") or "")
+        ran = imports_a_fixer_ran.shown_false(config["configurable"].get(APP_RUN_ID_KEY), stage, since, description)
+        if ran:
+            from app.observability import defect_ledger
+
+            imports_a_fixer_ran.recorded(root, description, ran)
+            defect_ledger.note("suspected false finding", stage or "defect_fix", defect=defect, detail=ran)
+            declined(f"a suspected false finding of the language service: {ran}")
+            return None
     if after_a_surrender and located is None:
         # The files the fixer that gave up was aiming at are the rewrite's too, after the defect's own (LF.1401).
         from app.graph import surrender_evidence

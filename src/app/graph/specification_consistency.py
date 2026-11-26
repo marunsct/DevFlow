@@ -13,6 +13,9 @@ The values sections repeat are compared mechanically (`disagreements`):
 - each limit - a number of characters, items, bytes, requests - given for one subject;
 - each advice item's decision: decided twice differently, or declined and then cited by another section.
 
+Statements that contradict each other in different words, which no comparison of values finds, are named by one
+call first (`specification_meaning`, a draft long enough that its reviewer would not read it whole).
+
 Only when some disagree, one call is shown just those lines and rewrites the ones that must change
 (`settled`); every other line is kept as it was, and a call that fails leaves the draft as it was. Always on: it
 is a quality fix, and costs no call on a draft with nothing to settle.
@@ -424,7 +427,7 @@ def settle_request(found: list[Disagreement], context: str = "") -> str:
         listed.extend(f"   - `{section}`: {line[:LINE_LIMIT]}" for section, line in entry.lines)
     return "\n\n".join(part for part in (
         "These lines of a software product's technical specification were written in separate parts and say "
-        "different things about the same value. For each numbered disagreement, decide which value the "
+        "different things about the same value or behaviour. For each numbered disagreement, decide which the "
         "specification means - the brief and the API contracts first - and rewrite only the lines that must change "
         "to agree with it. A line that is already right is left out of your reply. An advice item that was "
         "declined is not specified anywhere else; one that is needed is recorded as adopted instead.",
@@ -456,11 +459,20 @@ def settled(
     disagrees, there is no model, or the call fails or answers nothing usable. Never raises.
     """
     found = disagreements(specification, advice, kept)
-    if not found or not hasattr(specification, "model_dump"):
+    if not hasattr(specification, "model_dump"):
+        return specification
+    from app.graph.specification_meaning import FEWEST_CHARACTERS, contradictions, statements
+
+    long_enough = sum(len(line) for _, line in statements(specification)) >= FEWEST_CHARACTERS
+    if not found and not long_enough:
         return specification
     if callable(model) and not hasattr(model, "invoke"):
-        model = model()  # built only when there is something to settle
+        model = model()  # built only when there is something to settle or to read
     if model is None:
+        return specification
+    # Statements that disagree in different words, which no value comparison finds (PA.7, the rest).
+    found = [*found, *contradictions(specification, model, context, known=found)]
+    if not found:
         return specification
     shown = {(section, _normal(line)) for entry in found for section, line in entry.lines}
     logger.info("%s: %d disagreement(s) between sections: %s", SAID, len(found),

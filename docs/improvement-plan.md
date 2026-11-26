@@ -114,6 +114,9 @@ Built 11-25: HK.1-HK.10 (LF.1291-LF.1305; HK.7, HK.9, HK.10 and the stuck lookup
 ### 3.1b Search without paid keys, as open-source harnesses do (KS, research 2026-11-25; owner: implement)
 Plan: `reports/research/2026-11-25-open-source-web-search.md`. Building with HK.3/HK.4: KS.1 official channels per site (Stack Exchange API by id, GitHub REST/raw, registry documents), KS.2 code kept as fenced blocks, KS.3 "refused" told from "nothing found" with stated waits and a breaker per source, KS.4 blocked and duplicate SearXNG engines dropped (LF.1294-1295); KS.6 a probe per engine and source in `loop.sh ready`, KS.7 robots.txt with wildcards (LF.1296-1297). Next: KS.5 shared cache, single-flight, atomic counters (the first slice of HK.12). After numbers: KS.8 browser fallback (switch), KS.9 local documentation tier (switch).
 
+### 3.1c A code graph in every language, and other performance features (KG, PF; research 2026-11-26; owner asked for a plan)
+Report: `reports/research/2026-11-26-graphify-and-performance-features.md`. graphify itself is not installed (no measured whole-session saving; an always-on install adds hooks and a `CLAUDE.md` edit to every session); the idea is built in the harness's own graph. Order: KG.1 (records what the graph says today) and KG.2 (parser definitions and imports in every language) first; then KG.3 (references by name) and KG.4 (routes, tests, criteria in the graph) in parallel; then KG.9 (map in every language, on), KG.10 (retire `CODE_GRAPH_TOOL`); KG.5-KG.8 each behind its own switch, measured in pairs after the context fixes. PF.2 candidate fixes when stuck (switch), PF.3 tests the change reaches first (switch, after KG.4), PF.4 a scout choosing ranges for the reading stages (switch); PF.1 slot size (owner's server decision, section 4); PF.5 parked until KG.4 is measured; PF.6 a language-server plugin for the owner's own Claude Code (owner's choice).
+
 ### 3.2 Watch, try and steer a run (Appendix 11, WS). Nothing below is built except the pieces named.
 | Item | Value | Size | Needs | Proof | Verified |
 |---|---|---|---|---|---|
@@ -162,6 +165,8 @@ Checked: none of these has a module in src. Each is a candidate only if a measur
 | Decision or action | What starts it |
 |---|---|
 | KS.10: a free Stack Exchange key and a no-scope GitHub token on /admin (300 a day to 10,000; 10 searches a minute to 30) | the owner |
+| PF.1: measure two 182K slots against four 93K slots (server settings; the harness changes nothing). Deep review: 0 summaries on 182K, one every 3-16 calls on 93K | the owner |
+| PF.6 / graphify trial: a Pyright language-server plugin, or the bounded one-hour graphify trial (report 1.5), for the owner's own Claude Code | the owner |
 | HK research decisions: a stale-knowledge trap benchmark family; whether "Always" stops offering web tool schemas to a model measured never to call them (HK.11); product research for the product manager (HK.10) at all; a paid search key for production's general-web fallback (HK.12) | the owner |
 | Set `NEAR_GREEN_REPLANNED_ONCE` off by default (it is on through `EXPERIMENTS_ON`; every measuring run is started with it off per run) | the owner's go-ahead |
 | Hosted-model test (owner approved Claude Haiku 5.5, $30, $8 per-run ceiling): enter the Anthropic key and judgement model on the admin Settings page | owner enters the key; then hybrid runs (judgement on Haiku, build local), then full-Haiku, until about $25 is spent. Also decides Rust routing and the strong-model arm of LEAN_PROMPTS_FOR_STRONG_MODELS |

@@ -2058,8 +2058,12 @@ _INSTEAD_OF: dict[str, str] = {
 }
 
 
-def _what_to_do_instead(executable: str) -> str:
+def _what_to_do_instead(executable: str, argv: Sequence[str] = ()) -> str:
     """The tool that does what this refused command was trying to do, or "".
+
+    An editor used only to print a file's lines (`sed -n 200,400p routes.py`) is a read, not a change: it is told the
+    read that gives those lines (`shell_reads.read_instead`). Measured on one medium run: told "To change a file, use
+    `edit_artifact`", a builder sent `sed -n` again for other lines (LF.1525).
 
     A script invoked by path - `./build.sh`, `scripts/setup.sh` - is refused by
     the allowlist like any other unknown program, and the refusal used to name
@@ -2076,6 +2080,12 @@ def _what_to_do_instead(executable: str) -> str:
         return f" {_INSTEAD_OF['sh']}"
     if AN_ASSIGNMENT.match(executable):
         return f" {ASSIGNMENT_ADVICE}"
+    if argv:
+        from app.agents.shell_reads import read_instead
+
+        reading = read_instead(argv)
+        if reading:
+            return f" {reading}"
     suggestion = _INSTEAD_OF.get(executable)
     return f" {suggestion}" if suggestion else ""
 
@@ -2344,7 +2354,8 @@ def _a_command_line_in_one_string(argv: list[str], permitted: Sequence[str], rol
         message += " To run a command in a folder, give the folder as `working_directory`; `cd` is not a program."
     elif first_word not in permitted:
         message += (f" '{first_word}' is not permitted for role '{role_name}' either."
-                    f"{_what_to_do_instead(first_word)} {_what_can_actually_run(permitted, repo_root)}")
+                    f"{_what_to_do_instead(first_word, [*line.split(), *argv[1:]])} "
+                    f"{_what_can_actually_run(permitted, repo_root)}")
     elif not joined:
         message += f" '{first_word}' is permitted - send {[first_word, *line.split()[1:], *argv[1:]]!r}."
     return message
@@ -2440,7 +2451,7 @@ def validate_command(
             )
         raise CommandNotAllowed(
             f"'{executable}' is not permitted for role '{role_name}'."
-            f"{_what_to_do_instead(executable)} "
+            f"{_what_to_do_instead(executable, argv)} "
             f"{_what_can_actually_run(permitted, repo_root)}"
         )
 

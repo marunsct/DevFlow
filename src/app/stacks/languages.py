@@ -152,6 +152,13 @@ class LanguageSupport:
     #: sandbox runs them as it runs its test runners (TR.9, LF.1522). Measured over 26 runs: `-m py_compile` was
     #: refused three times as able to "execute arbitrary code".
     checking_modules: tuple[str, ...] | Gap = Gap("its interpreter runs no checking module by name")
+    #: Patterns (regular expressions matched against the whole of the code its interpreter is handed on the command
+    #: line, `python -c CODE`, `node -e CODE`) of code that only opens one file and prints it, or a slice of its lines:
+    #: a group `path`, and optional groups `start` and `end`, the slice's bounds counted from 0 as the language counts
+    #: them (`app.agents.shell_reads`, LF.1525). Such a command is a read, decided as `read_file` is. Measured on one
+    #: medium run: with its reader withheld, a builder read a 593-line file five times by such code, once failing on
+    #: the path, twice for the same lines.
+    file_prints: tuple[str, ...] | Gap = Gap("no inline code is read as a file read in this language")
 
 
 _NODE_INSTALLED = ("node_modules",)
@@ -480,6 +487,37 @@ _PHP_TREE = TreeReading(
 )
 
 
+#: A quoted path, and an `open` call's other arguments (a mode, an encoding).
+_QUOTED_PATH = r"""(?P<q>['"])(?P<path>[^'"\n]+)(?P=q)"""
+_OPEN = rf"open\(\s*{_QUOTED_PATH}(?:\s*,[^()]*)?\)"
+#: `[100:250]`, `[:50]`, `[400:]`.
+_PY_SLICE = r"\[\s*(?P<start>\d*)\s*:\s*(?P<end>\d*)\s*\]"
+#: Python code that only prints a file or a slice of its lines. Captured on a medium run:
+#: `with open('task_management_dashboard/routes.py') as f: lines=f.readlines(); print(''.join(lines[100:250]))`.
+_PYTHON_FILE_PRINTS = (
+    rf"""\s*with\s+{_OPEN}\s+as\s+(?P<f>\w+)\s*:\s*(?P<l>\w+)\s*=\s*(?P=f)\.readlines\(\)\s*;\s*"""
+    rf"""print\(\s*(?P<j>['"])(?P=j)\.join\(\s*(?P=l){_PY_SLICE}\s*\)\s*(?:,\s*end\s*=\s*['"]['"]\s*)?\)\s*;?\s*""",
+    rf"""\s*with\s+{_OPEN}\s+as\s+(?P<f>\w+)\s*:\s*print\(\s*(?P=f)\.read\(\)\s*(?:,\s*end\s*=\s*['"]['"]\s*)?\)\s*;?\s*""",
+    rf"""\s*print\(\s*{_OPEN}\.read\(\)\s*(?:,\s*end\s*=\s*['"]['"]\s*)?\)\s*;?\s*""",
+    rf"""\s*print\(\s*(?P<j>['"])(?P=j)\.join\(\s*{_OPEN}\.readlines\(\){_PY_SLICE}\s*\)\s*(?:,\s*end\s*=\s*['"]['"]\s*)?\)\s*;?\s*""",
+)
+#: `require('fs').readFileSync('app.js', 'utf8')`, or `fs.` after a `require` of it.
+_JS_READ = rf"""(?:require\(\s*['"](?:node:)?fs['"]\s*\)|fs)\.readFileSync\(\s*{_QUOTED_PATH}\s*(?:,\s*['"]utf-?8['"]\s*)?\)(?:\.toString\(\))?"""
+_JS_REQUIRE = r"""(?:(?:const|let|var)\s+fs\s*=\s*require\(\s*['"](?:node:)?fs['"]\s*\)\s*;\s*)?"""
+#: JavaScript code that only prints a file or a slice of its lines.
+_JS_FILE_PRINTS = (
+    rf"""\s*{_JS_REQUIRE}console\.log\(\s*{_JS_READ}\s*\)\s*;?\s*""",
+    rf"""\s*{_JS_REQUIRE}console\.log\(\s*{_JS_READ}\.split\(\s*['"]\\n['"]\s*\)\.slice\(\s*(?P<start>\d+)\s*(?:,\s*(?P<end>\d+)\s*)?\)"""
+    rf"""\.join\(\s*['"]\\n['"]\s*\)\s*\)\s*;?\s*""",
+)
+
+
+def file_prints(executable: str) -> tuple[str, ...]:
+    """The patterns of inline code that only prints a file, of each language whose interpreter is `executable`."""
+    return tuple(pattern for row in LANGUAGES if executable in row.executables
+                 and not isinstance(row.file_prints, Gap) for pattern in row.file_prints)
+
+
 def _rows() -> tuple[LanguageSupport, ...]:
     javascript = LanguageSupport(
         name="javascript",
@@ -508,6 +546,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
         test_starts=_JS_TEST_STARTS,
         more_than_expected=_JS_MORE_THAN_EXPECTED,
         fresh_store=_JS_FRESH_STORE,
+        file_prints=_JS_FILE_PRINTS,
     )
     typescript = replace(
         javascript, name="typescript", suffixes=(".ts", ".tsx", ".mts", ".cts"),
@@ -537,6 +576,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
             import_graph="python",
             tree=_PYTHON_TREE,
             checking_modules=("py_compile",),
+            file_prints=_PYTHON_FILE_PRINTS,
             development_server="python",
             package_cache=Gap(_INSTALLS_INTO_THE_PROJECT),
             resolved="python",

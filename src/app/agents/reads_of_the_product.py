@@ -7,7 +7,7 @@ returns 405 (Method Not Allowed)" for routes the sprint was about to build, and 
 Column(Integer, default=0)" read from the code. A run waited for a person after five rounds.
 
 So a read of a file `file_kinds.classify_file` calls the product's own code ("application") is refused by name for
-such a stage; its tests, documents, configuration and the suite's own files still read as before.
+such a stage - by `read_file` or by a command that only reads it (`shell_reads`, LF.1525); its tests, documents, configuration and the suite's own files still read as before.
 """
 from __future__ import annotations
 
@@ -31,9 +31,16 @@ def _the_path(args: Any) -> str:
 
 def refused(tool: str, args: Any) -> str:
     """The refusal of this call, or "" when it reads no product code."""
-    if tool not in READERS:
+    if tool == "run_terminal_command" and isinstance(args, dict):
+        # A command that only reads a file is a read, whatever tool sends it (LF.1525).
+        from app.agents.shell_reads import a_shell_read
+
+        read = a_shell_read(args.get("command"), args.get("working_directory") or "")
+        path = read.path if read is not None else ""
+    elif tool not in READERS:
         return ""
-    path = _the_path(args)
+    else:
+        path = _the_path(args)
     if not path:
         return ""
     from app.analysis.file_kinds import classify_file

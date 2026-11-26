@@ -567,6 +567,8 @@ POINTED_READS_BEFORE_WITHHOLDING_THE_TOOL = 8
 #: The tools withheld at that point - the two that return a file's contents,
 #: and nothing else.
 _READ_TOOLS = frozenset({"read_file", "read_repository_file"})
+#: The tools that read a file, for a command that reads one as they do (`shell_reads`, LF.1525).
+READ_TOOLS = _READ_TOOLS
 
 #: Identical refusals of one tool before it is taken away, rather than described
 #: again. The repeat note starts at `REPEATS_BEFORE_SAYING_SO` (2), so a stage is
@@ -2295,34 +2297,60 @@ def _the_read_asked(args: Any) -> tuple[str, int, int]:
 _NUMBERED_LINE = re.compile(r"(?m)^ *\d+(?:\t| {2})")
 
 
-def _reads_in_the_conversation(messages: list[Any]) -> set[tuple[str, int, int]]:
+#: A command's own output, run clean and whole: the file's text as the command printed it (LF.1525). Output cut short
+#: points at `read_command_output` for the rest, so it does not hold the lines.
+_RAN_CLEAN = re.compile(r"""['"]returncode['"]\s*:\s*['"]?0['"]?[,}\s]""")
+_PRINTED_SOMETHING = re.compile(r"""['"]stdout['"]\s*:\s*(?P<q>['"])(?!(?P=q))""")
+
+
+def reads_in_the_conversation(messages: list[Any], shell_only: bool = False) -> set[tuple[str, int, int]]:
     """The reads whose text the conversation still holds: a result of numbered lines, not folded or stubbed, of a file
-    not written since. Counted from the conversation the call sends, so a read a summary took out is not held."""
+    not written since. Counted from the conversation the call sends, so a read a summary took out is not held.
+
+    A command that only reads a file (`shell_reads.a_shell_read`) is a read too, keyed as the read tool's (LF.1525):
+    its result holds the lines when it is the numbered answer a read gets, or the command's own output run clean and
+    not cut. `shell_only`: the commands' reads alone, for a command sent again for the same lines.
+    """
     from app.agents.observation_folding import FOLDED as FOLDED_OBSERVATION
     from app.agents.old_reads_stubbed import TAKEN_OUT
     from app.agents.refusal_folding import FOLDED as FOLDED_REFUSAL
+    from app.agents.shell_reads import COMMAND_TOOL, read_key
 
     asked: dict[str, tuple[str, int, int]] = {}
+    by_command: set[str] = set()
     held: set[tuple[str, int, int]] = set()
     for message in messages:
         for call in getattr(message, "tool_calls", None) or ():
             name = str((call or {}).get("name") or "")
             args = (call or {}).get("args") or {}
-            if name in _READ_TOOLS:
-                asked[str((call or {}).get("id") or "")] = _the_read_asked(args)
+            call_id = str((call or {}).get("id") or "")
+            if name in _READ_TOOLS and not shell_only:
+                asked[call_id] = _the_read_asked(args)
+            elif name == COMMAND_TOOL:
+                key = read_key(args)
+                if key is not None:
+                    asked[call_id] = key
+                    by_command.add(call_id)
             elif name in _THE_WRITING_TOOLS and isinstance(args, dict):
                 written = str(args.get("relative_path") or args.get("file_path") or args.get("path") or "")
                 written = written.strip().lstrip("/")
                 held = {read for read in held if read[0] != written}
         if getattr(message, "type", None) != "tool":
             continue
-        read = asked.get(str(getattr(message, "tool_call_id", "") or ""))
+        call_id = str(getattr(message, "tool_call_id", "") or "")
+        read = asked.get(call_id)
         content = str(getattr(message, "content", "") or "")
-        if (read is None or getattr(message, "status", "") == "error" or not _NUMBERED_LINE.search(content)
+        if (read is None or getattr(message, "status", "") == "error"
                 or any(mark in content for mark in (FOLDED_OBSERVATION, FOLDED_REFUSAL, TAKEN_OUT))):
             continue
-        held.add(read)
+        printed = (call_id in by_command and "read_command_output" not in content
+                   and bool(_RAN_CLEAN.search(content)) and bool(_PRINTED_SOMETHING.search(content)))
+        if printed or _NUMBERED_LINE.search(content):
+            held.add(read)
     return held
+
+
+_reads_in_the_conversation = reads_in_the_conversation
 
 
 def _written_path(call: Any) -> str:
@@ -2333,7 +2361,7 @@ def _written_path(call: Any) -> str:
     return str(args.get("relative_path") or args.get("file_path") or args.get("path") or "").strip().lstrip("/")
 
 
-def _already_in_the_conversation(path: str) -> str:
+def already_in_the_conversation(path: str) -> str:
     """The refusal of a read whose text the conversation holds: the file, and where its text is."""
     from app.agents.workspace_backend import READ_REFUSED_MARKER
 
@@ -2974,7 +3002,7 @@ def build_settled_answer_middleware(
                 from langchain_core.messages import ToolMessage
 
                 withheld_records.noted_read(withheld_records.IN_THE_CONVERSATION, read[0], name)
-                return ToolMessage(content=_already_in_the_conversation(read[0]), tool_call_id=str(call.get("id") or ""),
+                return ToolMessage(content=already_in_the_conversation(read[0]), tool_call_id=str(call.get("id") or ""),
                                    name=name, status="error")
             budget = self._budget_now() if name in _THE_WRITING_TOOLS else ""
             if name and name in self._withheld_now() and not _writes_the_stage_s_deliverable(call):
@@ -3267,6 +3295,10 @@ def build_settled_answer_middleware(
 
 __all__ = [
     "withheld_now",
+    "READ_TOOLS",
+    "already_in_the_conversation",
+    "reads_decided_per_file",
+    "reads_in_the_conversation",
     "ANSWER_LOOKBACK_MESSAGES",
     "BUDGET_WARNING_FRACTION",
     "CALLS_RESERVED_FOR_THE_ANSWER",

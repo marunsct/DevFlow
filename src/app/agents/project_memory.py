@@ -525,6 +525,25 @@ def held_read_refused(path: str, quoted: bool = False) -> str:
             "from there. A file this conversation does not hold can still be read.")
 
 
+def held_read_refusal(repo_root: str | Path, path: str, args: dict) -> tuple[str, str] | None:
+    """(refusal, how it was decided) for a read of `path` sent with `args` (`offset`, `limit`) while reads are decided
+    file by file, when this visit's request quotes the file whole or its memory holds it whole and unchanged; None
+    when the read is to be decided against the conversation. For a command that only reads a file (LF.1525), decided
+    as `read_file` is here."""
+    from app.agents import withheld_records
+    from app.agents.stage_memory import store
+
+    visit = store(_VISIT, {})
+    if path in (visit.get("quoted_whole") or ()) and not _a_narrow_window(args, current(repo_root).get(path, "")):
+        return held_read_refused(path, quoted=True), withheld_records.QUOTED_WHOLE
+    held = (visit.get("held") or {}).get(path)
+    unchanged = (held is not None and (visit.get("first_held") or {}).get(path, held) == held
+                 and current(repo_root).get(path) == held)
+    if unchanged and not _a_narrow_window(args, held):
+        return held_read_refused(path), withheld_records.HELD_WHOLE
+    return None
+
+
 def quoted_whole_pointer(path: str) -> str:
     """The answer to a read of a document the request quotes whole."""
     return (f"`{path}` is quoted whole in your request, under the heading that names it; it has not changed since. "

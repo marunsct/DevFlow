@@ -387,6 +387,12 @@ def _tool_result_bound_middleware(repo_root: str | None = None) -> Any:
     return build_middleware(repo_root)
 
 
+def _shell_read_middleware(repo_root: str) -> Any:
+    from app.agents.shell_reads import build_shell_read_middleware
+
+    return build_shell_read_middleware(repo_root)
+
+
 def _reads_of_the_product_middleware() -> Any:
     from app.agents.reads_of_the_product import build_middleware
 
@@ -915,6 +921,9 @@ def create_role_agent(
         # After the path rewrite, so it sees the path the tool will resolve.
         # See `app.agents.project_memory`.
         build_project_memory_middleware(resolved_repo_root),
+        # A command that only reads a file is decided as `read_file` is (LF.1525). Inside the memory, which it asks
+        # what is held, and the path rewrite, so it sees the arguments the command runs with. See `app.agents.shell_reads`.
+        _shell_read_middleware(resolved_repo_root),
         build_plugin_instructions_middleware(resolved_repo_root, name,
                                              writing_the_suite=suite_folder is not None and can_write),
         _workspace_filesystem_middleware(resolved_repo_root, readers),

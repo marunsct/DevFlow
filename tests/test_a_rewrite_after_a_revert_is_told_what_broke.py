@@ -150,9 +150,11 @@ def test_two_rewrites_that_broke_different_tests_do_not_stop_the_third(tmp_path)
 
 
 def _the_tasks_api_workspace(root: Path) -> Path:
+    """The measured run's product, held to a stored specification whose records it does not declare: the gate raises
+    real schema findings on it. (The measured finding itself is no longer raised: LF.1549 reads no field from prose.)"""
     shutil.copytree(CAPTURED / "projects" / "python-tasks-api", root, dirs_exist_ok=True)
     (root / "docs").mkdir()
-    shutil.copy(CAPTURED / "technical-specification-a-token-generated-on-signin.md",
+    shutil.copy(CAPTURED / "technical-specification-domain-model-a-shop.md",
                 root / "docs" / "technical_specification.md")
     _git(root, "init", "-q")
     _git(root, "add", "-A")
@@ -167,11 +169,10 @@ def test_a_schema_finding_whose_fix_broke_a_passing_test_is_set_aside_as_doubtfu
 
     root = _the_tasks_api_workspace(tmp_path)
     gate = {"repository": SimpleNamespace(root_path=str(root))}
-    raised = engineering.schema_differences(gate, str(root))
-    assert [d.description for d in raised] == [
-        "Schema conformance: Token lacks field(s) signin that the specification's domain model gives it"]
-    finding = a_defect(raised[0].description, source="schema conformance", owner="database",
-                       actual_behavior=raised[0].actual_behavior, affected_files=["tasks-api/tasks_api/database.py"])
+    raised = [d.description for d in engineering.schema_differences(gate, str(root))]
+    assert len(raised) >= 2 and raised[0].startswith("Schema conformance: ")
+    finding = a_defect(raised[0], source="schema conformance", owner="database",
+                       affected_files=["tasks-api/tasks_api/database.py"])
 
     update, _ = _a_round(root, a_state(root, finding), 2,
                          ["unit: pytest › tests.test_database › test_init_db_creates_tables"],
@@ -182,7 +183,7 @@ def test_a_schema_finding_whose_fix_broke_a_passing_test_is_set_aside_as_doubtfu
     assert "test_init_db_creates_tables" in after.accepted_risk_reason
     assert any(row["check"] == "schema conformance, contradicted by a passing test"
                for row in check_findings.read(root))
-    assert engineering.schema_differences(gate, str(root)) == [], "not raised again"
+    assert [d.description for d in engineering.schema_differences(gate, str(root))] == raised[1:], "not raised again"
 
 
 def test_what_a_fixer_is_told_after_a_revert_holds_no_product_word(tmp_path):

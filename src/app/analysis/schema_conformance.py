@@ -98,8 +98,29 @@ def _clean(text: str) -> str:
 _NOT_A_TYPE = frozenset({"A", "An", "The", "This", "That", "Each", "Every", "One", "Its", "It"})
 
 
+#: What stands before a field where a specification lists it: the start of the line, a list's separator or bracket,
+#: a dash, a sentence's end, a label's colon (`Fields:`, `Attributes:`), the `and` / `or` of a list's last item, or
+#: a word that opens a list ("fields are", "a record with", "containing", "a single field"), or the field's own type
+#: written before it ("an integer ID (auto-incrementing)", "a string Title (required)").
+_A_LIST_GOES_ON = re.compile(
+    r"(?:^|[,;:({\[.—–-]|\b(?i:and|or|with|containing|contains?|including|includes?|are|has|have|holds?|carries|"
+    r"carry|of|plus|fields?|keys?|columns?|properties|property|attributes?|members?|str|string|text|int|integer|"
+    r"number|bool|boolean|uuid|date|datetime|timestamp|float|decimal))$")
+
+
+def _in_a_list(text: str, start: int) -> bool:
+    """Whether the field form at `start` stands where a list names a field, not as a word inside a sentence.
+
+    Measured on one run: "Token: Opaque string identifier ... Generated on successful signin (POST /signin)." was read
+    as the field `signin` of type `POST`, and a fix that added it to the tokens table broke a unit test, three times.
+    """
+    before = re.sub(r"[\s`*]+$", "", text[:start])
+    return bool(_A_LIST_GOES_ON.search(before))
+
+
 def _fields_in(text: str, braced: bool = False) -> list[SpecField]:
-    """The fields a record's line lists: `name: Type` pairs inside braces, else `name (type, ...)`, else pairs."""
+    """The fields a record's line lists: `name: Type` pairs inside braces, else `name (type, ...)`, else pairs - each
+    where a list names it (`_in_a_list`), never a word of a sentence about the record."""
     if braced:
         text = text.split("}", 1)[0]
     found: dict[str, SpecField] = {}
@@ -108,6 +129,8 @@ def _fields_in(text: str, braced: bool = False) -> list[SpecField]:
             break
         for match in pattern.finditer(text):
             name, said = match.group(1), match.group(2)
+            if not _in_a_list(text, match.start()):
+                continue
             if (name.isupper() and len(name) > 1) or said.split()[0].strip(",.;") in _NOT_A_TYPE:
                 # An environment setting (`PORT`, `DATA_DIR`) or a sentence, not a field.
                 continue

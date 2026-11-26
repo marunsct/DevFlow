@@ -171,7 +171,7 @@ def _the_fix_request(
     from app.graph import cause_journal
 
     add(KEPT, cause_journal.tried_before(root, defect, shown=(defect.attempts if _ledger.enabled() else ())))
-    add(KEPT, _what_others_found(state, defect, defect_index, cycle, model))  # WL.4, its switch
+    add(KEPT, _what_others_found(state, defect, defect_index, cycle, model, first_visit=first_visit))  # WL.4
     # The toolchain here and the versions the project resolved, mismatches first, in two lines (HK.1, HK.2).
     from app.stacks import stack_facts
 
@@ -342,10 +342,12 @@ def _the_bundled_section(co_defects: list[tuple[int, Any]], root: Any = None, de
     return ("\n".join(lines) + "\n" if lines else "") + mutation_gaps_bundled.section(co_defects)
 
 
-def _what_others_found(state: Any, defect: Any, defect_index: int, cycle: Any = None, model: Any = None) -> str:
+def _what_others_found(state: Any, defect: Any, defect_index: int, cycle: Any = None, model: Any = None, *,
+                       first_visit: bool = True) -> str:
     """What others found for a fixer's error (plan WL.4, behind its switch): an install's error the registry does not
     explain (T2), a build error the round before had too (T3), or the error of a defect an attempt left open (T1).
-    `model`, the fixer's, makes the one condensing call when `STUCK_LOOKUP_CONDENSED` is on (plan HK.3)."""
+    `model`, the fixer's, makes the one condensing call when `STUCK_LOOKUP_CONDENSED` is on (plan HK.3).
+    `first_visit` false on a resume of the stage: the same block, its ledger records not written again (LF.1506)."""
     from app.analysis import installed_usage
     from app.graph import stuck_lookup
 
@@ -354,7 +356,7 @@ def _what_others_found(state: Any, defect: Any, defect_index: int, cycle: Any = 
         state["repository"].root_path, defect, list(getattr(cycle, "defects", None) or [defect]),
         getattr(state.get("stack_selection"), "technology_stack", None), round_=round_,
         sprint=int(state.get("current_sprint_index", 0) or 0), stage_name=f"defect_fix_{round_}_{defect_index}",
-        model=model) + installed_usage.for_a_fixer(state["repository"].root_path, defect)  # FX.10, its switch
+        model=model, first_visit=first_visit) + installed_usage.for_a_fixer(state["repository"].root_path, defect)  # FX.10, its switch
 
 
 def _diagnosed_if_it_keeps_failing(state: Any, defect: Any, ctx: GraphContext) -> None:

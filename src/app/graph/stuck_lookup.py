@@ -253,12 +253,14 @@ def _the_installer_words(repo_root: str | Path, stack: Any) -> str:
 
 
 def _looked_up(repo_root: str | Path, error: str, stack_words: str, *, trigger: str, stage_name: str,
-               defect: Any = None, stack: Any = None, model: Any = None, library: tuple[str, str] = ("", "")) -> _Tried:
+               defect: Any = None, stack: Any = None, model: Any = None, library: tuple[str, str] = ("", ""),
+               noted: bool = True) -> _Tried:
     """`error` looked up once per run - the same cleaned error met by any trigger is asked once - as the section a
     request carries (`stuck_research.researched`, plan HK.3), with the gate that ended it: looked up, the product's
     own name (nothing of the error may leave), nothing found or refused. Each note shown is a ledger record with its
     id and the defect it was for, the first as a lookup, each later one as shown again
-    (`app.observability.lookup_notes`, HK.4). `library`: the installed package a trace named (T4)."""
+    (`app.observability.lookup_notes`, HK.4). `library`: the installed package a trace named (T4). `noted` false: a
+    resume of the stage that was shown it already - the note is shown, not recorded again."""
     from app.graph import stuck_research
     from app.observability import lookup_notes
     from app.tools import lookups
@@ -280,7 +282,7 @@ def _looked_up(repo_root: str | Path, error: str, stack_words: str, *, trigger: 
     # run, where a module dictionary was lost with its process and never emptied.
     kept, again = lookup_service.once_per_run("stuck lookup", repo_root, cleaned, research)
     shown, query, verdict = [*(kept if isinstance(kept, (list, tuple)) else []), "", "", ""][:3]
-    if again and shown:
+    if again and shown and noted:
         lookup_notes.record(stage_name, {"query": query}, trigger=trigger, defect=defect, again=True)
     if shown:
         return _Tried(shown, LOOKED_UP, trigger)
@@ -288,7 +290,7 @@ def _looked_up(repo_root: str | Path, error: str, stack_words: str, *, trigger: 
 
 
 def _the_stuck_or_first_sight(repo_root: str | Path, defect: Any, stack: Any, stage_name: str,
-                              model: Any = None) -> _Tried:
+                              model: Any = None, noted: bool = True) -> _Tried:
     """T1 for a stuck defect; T4, behind its switch, for one not stuck whose error line or trace names an installed
     third-party package; else the gate that stopped both."""
     if not enabled():
@@ -312,7 +314,7 @@ def _the_stuck_or_first_sight(repo_root: str | Path, defect: Any, stack: Any, st
         if not library[0]:
             return _Tried("", NOT_STUCK, TRIGGER_STUCK)
     tried = _looked_up(repo_root, error, _the_stack_s_words(stack), trigger=trigger, stage_name=stage_name,
-                       defect=defect, stack=stack, model=model, library=library)
+                       defect=defect, stack=stack, model=model, library=library, noted=noted)
     if tried.shown and not stuck:
         tried.shown = f"\n{FIRST_SIGHT_SAYS.format(library=library[0])}{tried.shown}"
     return tried
@@ -360,7 +362,7 @@ def for_an_install_that_failed(repo_root: str | Path, defect: Any, stack: Any, s
 
 
 def _the_install_s_error_looked_up(repo_root: str | Path, defect: Any, stack: Any, stage_name: str,
-                                   model: Any = None) -> _Tried | None:
+                                   model: Any = None, noted: bool = True) -> _Tried | None:
     """T2's try, or None when it does not apply (off, not an install that failed, or one the registry explains)."""
     try:
         if not enabled():
@@ -374,7 +376,7 @@ def _the_install_s_error_looked_up(repo_root: str | Path, defect: Any, stack: An
         if not error:
             return _Tried("", NO_ERROR_LINE, TRIGGER_INSTALL)
         return _looked_up(repo_root, error, _the_installer_words(repo_root, stack), trigger=TRIGGER_INSTALL,
-                          stage_name=stage_name, defect=defect, stack=stack, model=model)
+                          stage_name=stage_name, defect=defect, stack=stack, model=model, noted=noted)
     except Exception:  # noqa: BLE001 - the fix goes on without it
         logger.debug("Could not look up an install's error", exc_info=True)
         return None
@@ -480,7 +482,7 @@ def for_a_recurring_build_error(repo_root: str | Path, defect: Any, defects: lis
 
 def _a_recurring_build_error_looked_up(repo_root: str | Path, defect: Any, defects: list[Any], stack: Any, *,
                                        round_: int, sprint: int, stage_name: str, look_up: bool,
-                                       model: Any = None) -> _Tried | None:
+                                       model: Any = None, noted: bool = True) -> _Tried | None:
     """T3's try, or None when it does not apply (off, no build error the round before had too, `look_up` false)."""
     try:
         if not enabled():
@@ -497,7 +499,7 @@ def _a_recurring_build_error_looked_up(repo_root: str | Path, defect: Any, defec
         for signature, line in build_errors_in(_the_text_of(defect)):
             if signature in before:
                 return _looked_up(repo_root, line, _the_toolchain_words(repo_root, stack), trigger=TRIGGER_RECURRING,
-                                  stage_name=stage_name, defect=defect, stack=stack, model=model)
+                                  stage_name=stage_name, defect=defect, stack=stack, model=model, noted=noted)
         return None
     except Exception:  # noqa: BLE001 - the fix goes on without it
         logger.debug("Could not look up a recurring build error", exc_info=True)
@@ -505,27 +507,30 @@ def _a_recurring_build_error_looked_up(repo_root: str | Path, defect: Any, defec
 
 
 def for_a_fixer(repo_root: str | Path, defect: Any, defects: list[Any], stack: Any, *, round_: int, sprint: int = 0,
-                stage_name: str = "defect_fix", model: Any = None) -> str:
+                stage_name: str = "defect_fix", model: Any = None, first_visit: bool = True) -> str:
     """What others found for one fixer's defect, from the first trigger that applies: an install's error (T2), a build
     error the round before had too (T3), then the error of a defect an attempt left open (T1) - or, behind
     `LOOKUP_AT_FIRST_SIGHT`, of one not yet stuck whose error is an installed package's (T4). One block, so a request
     carries one; "" when none applies or nothing was found. `model` is the fixer's, for the one condensing call
     (`STUCK_LOOKUP_CONDENSED`). One ledger record says what became of it: looked up, or the gate that stopped it
-    (FX.11). Never raises."""
-    installing = _the_install_s_error_looked_up(repo_root, defect, stack, stage_name, model)
+    (FX.11). `first_visit` false: a resume of the fixer's stage after a gated tool call, which builds its request
+    again - the same block is given (each lookup is the run's once, `lookup_service.once_per_run`) and nothing is
+    recorded again. Measured on a live run: one fixer's stage resumed ten times in eleven minutes and the ledger had
+    ten `lookup gate` records for it (LF.1506). Never raises."""
+    installing = _the_install_s_error_looked_up(repo_root, defect, stack, stage_name, model, noted=first_visit)
     # Called whatever T2 found: it keeps this round's build errors for the next round.
     recurring = _a_recurring_build_error_looked_up(
         repo_root, defect, defects, stack, round_=round_, sprint=sprint, stage_name=stage_name,
-        look_up=not (installing is not None and installing.shown), model=model)
+        look_up=not (installing is not None and installing.shown), model=model, noted=first_visit)
     tried = [one for one in (installing, recurring) if one is not None]
     if not any(one.shown for one in tried):
         try:
-            tried.append(_the_stuck_or_first_sight(repo_root, defect, stack, stage_name, model))
+            tried.append(_the_stuck_or_first_sight(repo_root, defect, stack, stage_name, model, noted=first_visit))
         except Exception:  # noqa: BLE001 - the fix goes on without it
             logger.debug("Could not look up a stuck defect's error", exc_info=True)
     chosen = next((one for one in tried if one.shown), None) or (tried[0] if tried else None)
-    if chosen is None:
-        return ""
+    if chosen is None or not first_visit:
+        return chosen.shown if chosen is not None else ""
     from app.observability import lookup_notes
 
     lookup_notes.gate_seen(stage_name, defect, chosen.gate, trigger=chosen.trigger)

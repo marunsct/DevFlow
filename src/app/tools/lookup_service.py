@@ -275,10 +275,19 @@ def _the_run(repo_root: str | Path | None) -> str:
 
 def once_per_run(kind: str, repo_root: str | Path | None, key: str, ask: Callable[[], Any]) -> tuple[Any, bool]:
     """(what `ask` gave for `key` in this run, whether it was given before): asked once per run whatever process,
-    worker or restart of the run asks again, the record the run's own (`RUN_DAYS`), never shared or frozen."""
-    from app.tools import lookup_store
+    worker or restart of the run asks again, the record the run's own (`RUN_DAYS`), never shared or frozen. Read from
+    the run's workspace first and kept there too (`lookups_this_run`, LF.1505): the shared store's record is lost to
+    a store too full to take it, and was then asked again on every resume of the stage."""
+    from app.tools import lookup_store, lookups_this_run
 
-    return lookup_store.kept(kind, key, ask, days=RUN_DAYS, scope=f"run-{_hash(_the_run(repo_root))}", frozen=False)
+    run = _the_run(repo_root)
+    own = lookup_store.shares()
+    if own and (found := lookups_this_run.kept(repo_root, run, kind, key)) is not None:
+        return found, True
+    value, before = lookup_store.kept(kind, key, ask, days=RUN_DAYS, scope=f"run-{_hash(run)}", frozen=False)
+    if own:
+        lookups_this_run.keep(repo_root, run, kind, key, value)
+    return value, before
 
 
 # --- paid sources ---------------------------------------------------------------------------------------------------
@@ -339,13 +348,15 @@ def probe_lines() -> list[str]:
         if not memory:
             lines.append("LOOKUPS store: none answers - this machine's files serve; not a block")
         else:
-            share, keys = lookup_store.memory_share(), lookup_store.kept_keys()
+            share, keys, held = lookup_store.memory_share(), lookup_store.kept_keys(), lookup_store.kept_bytes()
             most = memory["most"]
             full = bool(most) and memory["used"] >= share * most
             lines.append(f"LOOKUPS store memory: {_mb(memory['used'])} used of "
                          f"{_mb(most) if most else 'no limit'} ({memory['policy'] or 'no policy'}); lookups write "
-                         f"below {share:.0%}; {keys} lookup keys"
-                         + (" - FULL for lookups: values go to this machine's files; not a block" if full else ""))
+                         f"below {share:.0%}; {keys} lookup keys holding {max(0, held) / 1024:.0f} KB, each expiring"
+                         + (f" - FULL for lookups: {_mb(max(0, memory['used'] - max(0, held)))} of it is not "
+                            "theirs; their values go to this machine's files and are read back from there, a run's "
+                            "once-only lookups to its workspace; not a block" if full else ""))
     except Exception as exc:  # noqa: BLE001 - a probe line never stops the probe
         lines.append(f"LOOKUPS allowances: could not be read ({type(exc).__name__})")
     return lines

@@ -277,12 +277,17 @@ def _fresh(entry: Any) -> Any:
 
 
 def _get(where: str, scope: str, kind: str, query: str) -> Any:
+    """The fresh value kept: the store's, else this machine's files' - where `_put` writes while the store is too full
+    (`_room`) or does not answer. Measured before the files were read on a miss (LF.1505): with the store past its
+    share, every value was written to the files and looked for in the store alone, so nothing kept was ever found."""
     done, raw = _shared(lambda client: client.get(_key(where, scope, kind, query)))
-    if done:
+    if done and raw:
         try:
-            return _fresh(json.loads(raw)) if raw else None
+            found = _fresh(json.loads(raw))
         except ValueError:
-            return None
+            found = None
+        if found is not None:
+            return found
     return _fresh(_read_json(_path(where, scope, kind, query)))
 
 
@@ -600,6 +605,23 @@ def kept_keys(most: int = 100_000) -> int:
 
     done, n = _shared(counted)
     return int(n) if done else -1
+
+
+def kept_bytes(most: int = 100_000) -> int:
+    """The bytes the deployment's lookup keys take in the store, over at most `most` keys; -1 with no store. Measured
+    (LF.1505): a store reported full for lookups held a few kilobytes of them - the rest was the queue's and the
+    events'."""
+    def summed(client: Any) -> int:
+        total = n = 0
+        for key in client.scan_iter(match=f"{_prefix()}:*", count=1000):
+            total += int(client.memory_usage(key) or 0)
+            n += 1
+            if n >= most:
+                break
+        return total
+
+    done, total = _shared(summed)
+    return int(total) if done else -1
 
 
 # --- holds ----------------------------------------------------------------------------------------------------------

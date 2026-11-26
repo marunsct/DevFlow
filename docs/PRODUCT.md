@@ -567,7 +567,11 @@ each declared text/background pair in every colour scheme the stylesheet declare
 exist, every field labelled, words for an empty list, a request in flight and a failure, no focus outline removed
 without a replacement), data (the domain model's fields declared per record, the stated id kind, unique fields declared
 unique, an index and migrations when the specification asks) and service (one error shape and the specification's,
-no 500 near a client's fault, a refusal the code raises answered 403, and no product file importing a package its
+read only where a response is written - never from a declaration of a type (the language table's `type_declarations`:
+a TypeScript `type`/`interface`, a Go or Rust struct or enum, a Java, Kotlin, C# or PHP record, interface or enum, a
+Python `TypedDict`), nor from a literal that holds the very status its line names and is no call's argument (a
+validation result such as `return { ok: false, status: 400, error }`), and a call's options holding only the status
+(`NextResponse.json(body, { status: 401 })`) read the body beside them, LF.1591 - no 500 near a client's fault, a refusal the code raises answered 403, and no product file importing a package its
 nearest manifest declares for development only - per language through the language table's `development_only` reader,
 `analysis/development_packages.py`: npm's `devDependencies` not also run-time, Python's development groups and
 `requirements-dev.txt`; in a package bundled for a page only the files its scripts start; files the stack pack keeps

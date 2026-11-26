@@ -163,6 +163,12 @@ class LanguageSupport:
     #: check, a stand-in's expectation, or a test's own failure report - as opposed to an error raised before any
     #: assertion (`app.analysis.unit_failure_side`, PA.15). Each row also matches `_ANY_ASSERTION`.
     assertion_failed: tuple[str, ...] | Gap = Gap("no runner message is read for an assertion in this language")
+    #: Patterns (regular expressions over one line) of where a declaration of a type begins - a type alias, an
+    #: interface, a struct, a record, an enum - whose lines to its end (its braces closed, or its indented block) say
+    #: what a value may hold and never write a response (`app.analysis.product_quality`, LF.1591). Measured: a
+    #: TypeScript union `| { ok: false; status: 400 | 422; error: string }` was read as an error response in a shape
+    #: of its own, and a service answering every error as `{error}` lost "one error shape".
+    type_declarations: tuple[str, ...] | Gap = Gap("no type declaration is read in this language")
 
 
 _NODE_INSTALLED = ("node_modules",)
@@ -356,6 +362,19 @@ _PHP_ASSERTION = (
 
 #: KG.2: the syntax-tree readings. Definitions only for the languages whose imports `app.analysis.reachability`
 #: already follows; definitions, imports and the declared namespace for the rest.
+#: Where a declaration of a type begins, per language (`LanguageSupport.type_declarations`, LF.1591).
+_MODIFIERS = (r"(?:(?:public|private|protected|internal|static|final|abstract|sealed|non-sealed|readonly|partial|"
+              r"export|declare|default)\s+)*")
+_TYPESCRIPT_TYPES = (rf"^\s*{_MODIFIERS}(?:type\s+[A-Za-z_$][\w$]*\s*(?:<[^=]*>)?\s*=|interface\s+[A-Za-z_$][\w$]*)",)
+_PYTHON_TYPES = (r"^\s*class\s+\w+\s*\([^)]*\b(?:TypedDict|Protocol|NamedTuple)\b[^)]*\)\s*:",)
+_GO_TYPES = (r"^\s*type\s+\w+(?:\[[^\]]*\])?\s+(?:struct|interface)\s*\{", r"^\s*type\s*\($")
+_RUST_TYPES = (r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:struct|enum|union|type)\s+\w+",)
+_JVM_TYPES = (rf"^\s*{_MODIFIERS}(?:record|interface|@interface|enum)\s+\w+",)
+_KOTLIN_TYPES = (rf"^\s*{_MODIFIERS}(?:data\s+class|enum\s+class|(?:sealed\s+|fun\s+)?interface|typealias)\s+\w+",)
+_CSHARP_TYPES = (rf"^\s*{_MODIFIERS}(?:record(?:\s+struct|\s+class)?|interface|struct|enum)\s+\w+",)
+_PHP_TYPES = (rf"^\s*{_MODIFIERS}(?:interface|enum)\s+\w+",)
+
+
 _SCRIPT_DEFINITIONS = (
     "(function_declaration name: (_) @name) @function",
     "(generator_function_declaration name: (_) @name) @function",
@@ -622,12 +641,13 @@ def _rows() -> tuple[LanguageSupport, ...]:
         assertion_failed=_JS_ASSERTION,
         fresh_store=_JS_FRESH_STORE,
         file_prints=_JS_FILE_PRINTS,
+        type_declarations=Gap("its source declares no types"),
     )
     typescript = replace(
         javascript, name="typescript", suffixes=(".ts", ".tsx", ".mts", ".cts"),
         manifests=("package.json", "tsconfig.json"), executables=("tsc", "tsx"),
         development_server=Gap("its development servers are JavaScript's, read in the compiled .js"),
-        tree=_TYPESCRIPT_TREE,
+        tree=_TYPESCRIPT_TREE, type_declarations=_TYPESCRIPT_TYPES,
     )
     return (
         javascript,
@@ -682,6 +702,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
                 *_COUNT_EXPECTED_GOT,
             ),
             assertion_failed=_PYTHON_ASSERTION,
+            type_declarations=_PYTHON_TYPES,
             fresh_store=(
                 "With pytest, a fixture gives each test its own folder (`tmp_path`), sets the setting the store reads "
                 "to it (`monkeypatch.setenv(\"DATA_DIR\", str(tmp_path))`, or the store's own path argument) and only "
@@ -726,6 +747,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
                 *_COUNT_EXPECTED_GOT,
             ),
             assertion_failed=_GO_ASSERTION,
+            type_declarations=_GO_TYPES,
             fresh_store=(
                 "In Go, each test makes its own folder with `t.TempDir()` and builds its store on it (or sets the "
                 "setting the store reads with `t.Setenv(\"DATA_DIR\", dir)` before building it)."
@@ -766,6 +788,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
                 *_COUNT_EXPECTED_GOT,
             ),
             assertion_failed=_RUST_ASSERTION,
+            type_declarations=_RUST_TYPES,
             fresh_store=(
                 "In Rust, each test builds its store on its own folder from `tempfile::tempdir()` (a dev-dependency), "
                 "never on a fixed path that tests running side by side share."
@@ -797,6 +820,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
             test_starts=_JVM_TEST_STARTS,
             more_than_expected=_JVM_MORE_THAN_EXPECTED,
             assertion_failed=_JVM_ASSERTION,
+            type_declarations=_JVM_TYPES,
             fresh_store=_JVM_FRESH_STORE,
         ),
         LanguageSupport(
@@ -824,6 +848,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
             test_starts=_JVM_TEST_STARTS,
             more_than_expected=_JVM_MORE_THAN_EXPECTED,
             assertion_failed=_JVM_ASSERTION,
+            type_declarations=_KOTLIN_TYPES,
             fresh_store=_JVM_FRESH_STORE,
         ),
         LanguageSupport(
@@ -875,6 +900,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
                 *_COUNT_EXPECTED_GOT,
             ),
             assertion_failed=_CSHARP_ASSERTION,
+            type_declarations=_CSHARP_TYPES,
             fresh_store=(
                 "With xUnit, the test class's constructor (run before each test) builds the store on a fresh folder "
                 "under `Path.GetTempPath()` and `Dispose` deletes it; NUnit's `[SetUp]` and MSTest's "
@@ -928,6 +954,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
                 *_COUNT_EXPECTED_GOT,
             ),
             assertion_failed=_RUBY_ASSERTION,
+            type_declarations=Gap("its source declares no types"),
             fresh_store=(
                 "With RSpec or Minitest, `before` (or `setup`) makes a fresh folder with `Dir.mktmpdir` and points the "
                 "store at it (`ENV[\"DATA_DIR\"]` set before the store is built), and `after` (or `teardown`) "
@@ -978,6 +1005,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
                 *_COUNT_EXPECTED_GOT,
             ),
             assertion_failed=_PHP_ASSERTION,
+            type_declarations=_PHP_TYPES,
             fresh_store=(
                 "With PHPUnit, `setUp()` builds the store on a fresh folder under `sys_get_temp_dir()` "
                 "(`putenv(\"DATA_DIR=...\")` before it is built) and `tearDown()` removes it; with Laravel, the "

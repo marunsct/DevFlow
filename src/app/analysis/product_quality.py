@@ -37,6 +37,7 @@ import json
 import re
 import sys
 from dataclasses import asdict, dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Iterable
 
@@ -646,32 +647,128 @@ _REFUSAL_RAISED = re.compile(
 _SERVICE_SKIP = _STYLE_SUFFIXES | _MARKUP_SUFFIXES
 
 
+def _spelled_statuses(text: str) -> list[int]:
+    found = [int(n) for n in _STATUS_NUMBER.findall(text)]
+    found += [STATUS_NAMES[re.sub(r"_", "", m.lower()).removesuffix("result")] for m in _STATUS_NAME.findall(text)
+              if re.sub(r"_", "", m.lower()) in STATUS_NAMES]
+    return found
+
+
 def _statuses(line: str) -> list[int]:
     if _COMMENT.match(line) or not _STATUS_CONTEXT.search(line):
         return []
-    found = [int(n) for n in _STATUS_NUMBER.findall(line)]
-    found += [STATUS_NAMES[re.sub(r"_", "", m.lower()).removesuffix("result")] for m in _STATUS_NAME.findall(line)
-              if re.sub(r"_", "", m.lower()) in STATUS_NAMES]
-    return found
+    return _spelled_statuses(line)
+
+
+def _literal(window: str) -> tuple[int, int] | None:
+    """Where the first keyed literal of `window` opens and closes (its end the window's when it does not close)."""
+    first = _BODY_KEYS.search(window)
+    if not first:
+        return None
+    start = first.start()
+    depth, end = 0, len(window)
+    for index in range(start, len(window)):
+        depth += {"{": 1, "}": -1}.get(window[index], 0)
+        if depth == 0:
+            end = index
+            break
+    return start, end
 
 
 def _shape(window: str) -> tuple[str, ...] | None:
     if _PROBLEM.search(window):
         return ("problem details",)
-    first = _BODY_KEYS.search(window)
-    if first:
-        start = first.start()
-        depth, end = 0, len(window)
-        for index in range(start, len(window)):
-            depth += {"{": 1, "}": -1}.get(window[index], 0)
-            if depth == 0:
-                end = index
-                break
-        body = window[start:end + 1]
+    span = _literal(window)
+    if span:
+        body = window[span[0]:span[1] + 1]
         top = re.sub(r"\{[^{}]*\}", "", body[1:])  # nested objects' keys are not the shape
         return tuple(sorted(set(_MORE_KEYS.findall("{" + top))))
     keyword = _KEYWORD_BODY.findall(window)
     return tuple(sorted(set(keyword))) if keyword else None
+
+
+#: The keys of a response's options, beside its body: `NextResponse.json(body, { status: 401 })`.
+_OPTION_KEYS = {"status", "statusCode", "status_code", "statusText", "headers"}
+_CLOSES = {")": "(", "]": "[", "}": "{"}
+
+
+def _innermost_open(text: str) -> str:
+    """The bracket `text` leaves open innermost ("" when it leaves none open)."""
+    stack: list[str] = []
+    for character in text:
+        if character in "([{":
+            stack.append(character)
+        elif character in _CLOSES and stack and stack[-1] == _CLOSES[character]:
+            stack.pop()
+    return stack[-1] if stack else ""
+
+
+def written_shape(window: str, before: str = "") -> tuple[str, ...] | None:
+    """The error shape the response at `window`'s first line (its status line) sends, `before` the lines just above.
+
+    A response is written by a call (`c.json({ error }, 400)`, `res.status(400).json({...})`) or beside its status
+    (`return {"error": ...}, 400`). A literal that opens on the status line, holds every status the line names and is
+    no call's argument is a value that only holds a status - a validation result (`return { ok: false, status: 400,
+    error }`), a struct built for later - and sends no shape (LF.1591). A call's argument holding nothing but the
+    status is the response's options, and the body is the argument before it, on the line above."""
+    span = _literal(window)
+    line_end = window.find("\n") if "\n" in window else len(window)
+    if not span or span[0] >= line_end:
+        return _shape(window)
+    line, (start, end) = window[:line_end], span
+    literal = line[start:end + 1]
+    if not _spelled_statuses(literal) or _spelled_statuses(line[:start] + line[end + 1:]):
+        return _shape(window)
+    if _innermost_open(f"{before}\n{line[:start]}") != "(":
+        return None
+    top = re.sub(r"\{[^{}]*\}", "", literal[1:])
+    if not set(_MORE_KEYS.findall("{" + top)) <= _OPTION_KEYS:
+        return _shape(window)
+    above = before.rsplit("\n", 1)[-1]
+    return _shape(above) if _BODY_KEYS.search(above) else None
+
+
+@lru_cache(maxsize=None)
+def _type_starts(suffix: str) -> tuple[re.Pattern, ...]:
+    from app.stacks.languages import LANGUAGES, Gap
+
+    row = next((r for r in LANGUAGES if suffix in r.suffixes), None)
+    if row is None or isinstance(row.type_declarations, Gap):
+        return ()
+    return tuple(re.compile(pattern) for pattern in row.type_declarations)
+
+
+_CONTINUES = ("=", "=>", "|", "&", "{", "(", "[", ",", "<")
+
+
+def type_declaration_lines(path: Path, lines: list[str]) -> set[int]:
+    """The lines of `lines` (a file at `path`) inside a declaration of a type, as its language's row of the language
+    table finds them (`type_declarations`): from where one begins to where its braces close and its statement ends,
+    or to the end of its indented block. They say what a value may hold; no response is written there (LF.1591)."""
+    starts, inside = _type_starts(path.suffix.lower()), set()
+    number = 0
+    while starts and number < len(lines):
+        if not any(pattern.match(lines[number]) for pattern in starts):
+            number += 1
+            continue
+        end = number
+        if lines[number].rstrip().endswith(":"):  # an indented block
+            indent = len(lines[number]) - len(lines[number].lstrip())
+            for later in range(number + 1, len(lines)):
+                if lines[later].strip() and len(lines[later]) - len(lines[later].lstrip()) <= indent:
+                    break
+                end = later
+        else:
+            depth = 0
+            for end in range(number, len(lines)):
+                depth += sum(map(lines[end].count, "{([")) - sum(map(lines[end].count, "})]"))
+                following = lines[end + 1].lstrip() if end + 1 < len(lines) else ""
+                if depth <= 0 and not lines[end].rstrip().endswith(_CONTINUES) and not following.startswith(
+                        ("|", "&", "{")):
+                    break
+        inside.update(range(number, end + 1))
+        number = end + 1
+    return inside
 
 
 _DEFINITION = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+|export\s+|async\s+|static\s+|private\s+|public\s+)*"
@@ -723,13 +820,16 @@ def service_part(project: Path, sources: dict[Path, str], specification: str) ->
     for path, text in code.items():
         lines = text.splitlines()
         relative = project_relative(project, path)
+        types = type_declaration_lines(path, lines)
         for number, line in enumerate(lines):
-            statuses = [s for s in _statuses(line) if s >= 400]
+            statuses = [s for s in _statuses(line) if s >= 400] if number not in types else []
             if not statuses:
                 continue
             errors += 1
             codes.update(statuses)
-            shape = _shape("\n".join(lines[number: number + 4])) or next(
+            window = "\n".join(lines[k] for k in range(number, min(number + 4, len(lines))) if k not in types)
+            before = "\n".join(lines[k] for k in range(max(0, number - 3), number) if k not in types)
+            shape = written_shape(window, before) or next(
                 (helpers[name] for name in re.findall(r"\b([A-Za-z_]\w*)\s*\(", line) if name in helpers), None)
             if shape:
                 shapes.setdefault(shape, []).append(f"{relative}:{number + 1} {' '.join(line.split())[:100]}")

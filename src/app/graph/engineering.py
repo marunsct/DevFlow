@@ -680,6 +680,10 @@ def code_review(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         request = with_the_facts(build_code_review_request(
             ci.diff_since(root, since, leaving_out=[path for path in held if path in new]), orders, criteria,
             str(state.get("ci_report") or ""), later, held=held, standards=standards), state["repository"].root_path)
+    # And what the design review approved the specification on, as the builders were told (LF.1512).
+    from app.agents.design_review_conditions import with_the_conditions
+
+    request = with_the_conditions(request, state)
     update = _run_gated_agent(
         state, config,
         stage_name=stage_name,

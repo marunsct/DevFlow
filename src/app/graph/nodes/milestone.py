@@ -122,6 +122,10 @@ def _review_the_milestone(state: WorkflowGraphState, config: RunnableConfig, ctx
     )
     # The facts the work is built and judged under (plan CM.1).
     request = with_the_facts(request, state["repository"].root_path)
+    # And what the design review approved the specification on, as the builders were told (LF.1512).
+    from app.agents.design_review_conditions import with_the_conditions
+
+    request = with_the_conditions(request, state)
     request["messages"][-1]["content"] += _fixes_a_review_must_not_undo(state)
     request["messages"][-1]["content"] += _the_code_review_s_advice(state)
     # The contract the code is held to, whole: a service that drifted from

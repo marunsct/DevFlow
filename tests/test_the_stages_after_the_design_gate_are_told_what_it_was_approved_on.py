@@ -108,3 +108,75 @@ def test_the_new_request_text_avoids_the_banned_words():
     review = _a_review(conditions=["A plain line."], risks=["A plain risk."])
     state = {"architecture_review": review}
     assert not BANNED.findall(conditions_section(state) + risks_section(state) + what_is_carried(review))
+
+
+def _the_milestone_review_s_request(monkeypatch, tmp_path, review) -> str:
+    from app.agents.milestone_reviewer import MilestoneReviewOutput
+    from app.agents.specialists import SpecialistOutput
+    from workflow_node_stubs import run_node as run_stubbed, two_work_orders
+
+    seen = run_stubbed(monkeypatch, tmp_path, "milestone_review",
+                       answer=MilestoneReviewOutput(status="accepted", findings=[], acceptance_evidence="ok",
+                                                    documentation_reviewed=True, tests_reviewed=True),
+                       milestone_plan=two_work_orders(), architecture_review=review,
+                       specialist_outputs={"specialist_backend_0": SpecialistOutput(changed_files=["app/server.js"])})
+    return seen.requests[0][1]["messages"][-1]["content"]
+
+
+def _the_security_review_s_request(monkeypatch, tmp_path, review) -> str:
+    from app.agents.security_reviewer import SecurityReviewOutput
+    from app.agents.specialists import SpecialistOutput
+    from workflow_node_stubs import run_node as run_stubbed, two_work_orders
+
+    (tmp_path / "app").mkdir(exist_ok=True)
+    (tmp_path / "app" / "server.js").write_text("export const port = 3000;\n")
+    seen = run_stubbed(monkeypatch, tmp_path, "security_review", answer=SecurityReviewOutput(status="passed"),
+                       milestone_plan=two_work_orders(), architecture_review=review,
+                       specialist_outputs={"specialist_backend_0": SpecialistOutput(changed_files=["app/server.js"])},
+                       overrides={"app.graph.workflow._in_parallel_mode": lambda: False})
+    return seen.requests[0][1]["messages"][-1]["content"]
+
+
+def _the_code_review_s_request(monkeypatch, tmp_path, review) -> str:
+    from app import ci
+    from app.agents.code_reviewer import CodeReviewOutput
+    from app.graph import engineering
+    from app.tools.version_control import initialise_repository
+
+    initialise_repository(tmp_path)
+    ci.save(tmp_path, ci.Snapshot(label="accepted", commit=ci.head(tmp_path)), accepted=True)
+    (tmp_path / "app").mkdir(exist_ok=True)
+    (tmp_path / "app" / "server.js").write_text("export const port = 3000;\n")
+    ci.commit(tmp_path, "the sprint's server")
+    asked = []
+
+    def gated(state, config, **kwargs):
+        asked.append(kwargs["initial_request"]["messages"][-1]["content"])
+        return {kwargs["output_key"]: CodeReviewOutput(approved=True), "stage": "code_review"}
+
+    monkeypatch.setattr("app.graph.workflow._run_gated_agent", gated)
+    monkeypatch.setattr("app.agents.code_reviewer.create_code_reviewer_agent", lambda *a, **k: object())
+    state = {"repository": SimpleNamespace(root_path=str(tmp_path)), "review_defects": [], "architecture_review": review,
+             "milestone_plan": SimpleNamespace(delegated_tasks=[
+                 SimpleNamespace(title="Server", task_description="Write the server", specialist_role="backend")])}
+    engineering.code_review(state, {"configurable": {"thread_id": "t"}},
+                            SimpleNamespace(judgement_model=None, checkpointer=None, repo_root=None,
+                                            allow_subdirectories=True))
+    return asked[0]
+
+
+JUDGES = {
+    "the milestone review": _the_milestone_review_s_request,
+    "the security review": _the_security_review_s_request,
+    "the code review": _the_code_review_s_request,
+}
+
+
+@pytest.mark.parametrize("stage", sorted(JUDGES))
+def test_the_judges_read_the_conditions_the_builders_were_given_and_not_the_risks(monkeypatch, tmp_path, stage):
+    """A judge reads the facts the builders were given (plan CM.1): the conditions too, so a review neither passes
+    work that breaks one nor asks for what one rules out."""
+    asked = JUDGES[stage](monkeypatch, tmp_path, _a_review())
+    assert "Conditions the design review approved the specification on" in asked
+    assert all(f"- {condition}" in asked for condition in CONDITIONS)
+    assert RISK not in asked

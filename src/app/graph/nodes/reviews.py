@@ -64,6 +64,10 @@ def _the_security_review(state: Any, config: RunnableConfig, ctx: GraphContext) 
 
     request = framework_guidance.for_the_security_review(
         request, getattr(state.get("stack_selection"), "technology_stack", None), root)
+    # And what the design review approved the specification on, as the builders were told (LF.1512).
+    from app.agents.design_review_conditions import with_the_conditions
+
+    request = with_the_conditions(request, state)
     update = _run_gated_agent(
         state,
         config,

@@ -3,7 +3,9 @@ at the request (LF.1469).
 
 Measured on one medium run: the architecture review's request held the specification whole while its memory held it
 again as an outline headed "read others by line"; the reviewer read `/docs/technical_specification.md` 46 times in
-51 calls. The request and the documents here are that review's opening, captured from the transcript.
+51 calls. The request and the documents here are an architecture review's opening that quotes the specification
+whole, captured from the transcript. (The fixture this test first used quoted 40,332 of 121,353 characters: a
+document quoted cut short stays in the memory, LF.1573.)
 """
 from __future__ import annotations
 
@@ -17,7 +19,8 @@ from langchain_core.messages import HumanMessage, ToolMessage
 from app.agents import project_memory, stage_memory
 
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
-CAPTURED = json.loads((Path(__file__).parent / "captured" / "architecture_review_opening.json").read_text("utf-8"))
+CAPTURED = json.loads((Path(__file__).parent / "captured" / "architecture_review_opening_specification_whole.json")
+                      .read_text("utf-8"))
 SPECIFICATION = "docs/technical_specification.md"
 
 
@@ -30,7 +33,7 @@ def _workspace(tmp_path) -> Path:
     for path, text in CAPTURED["files"].items():
         (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / path).write_text(text, encoding="utf-8")
-    (tmp_path / "task-management-dashboard").mkdir()
+    (tmp_path / "tasks-api").mkdir()
     return tmp_path
 
 

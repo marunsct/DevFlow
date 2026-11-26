@@ -506,12 +506,30 @@ QUOTED_WHOLE_SAID = ("Not included because your request quotes it whole, under i
                      "cite a line number read just those lines by range (`offset` and `limit`): ")
 
 
+#: A request's next section heading, which ends the quoted document before it; a cut marker is not one.
+_NEXT_SECTION = re.compile(r"^--- (?!TRUNCATED \()[^\n]* ---[ \t]*$", re.M)
+
+
 def quoted_whole_in(request: str) -> tuple[str, ...]:
-    """The workflow documents `request` quotes whole, by workspace path (LF.1469).
+    """The workflow documents `request` quotes whole, by workspace path (LF.1469); one quoted cut short - its section
+    carries an excerpt's note or a cut marker (`text_budget.EXCERPT_MARK`, `TRUNCATED_MARK`) - is not (LF.1573).
 
     Measured on one medium run: the architecture review's request held the specification whole while its memory held
-    it again as an outline headed "read others by line"; the reviewer read the file 46 times in 51 calls."""
-    return tuple(dict.fromkeys(m.group(1).lstrip("/") for m in _QUOTED_WHOLE.finditer(str(request or ""))))
+    it again as an outline headed "read others by line"; the reviewer read the file 46 times in 51 calls. And on the
+    latest: the review's request held 41,388 of the specification's 89,083 characters, said "Use your repository read
+    tools to open the full document", and the memory left the specification out and pointed every read of it back
+    at the request."""
+    from app.agents.text_budget import EXCERPT_MARK, TRUNCATED_MARK
+
+    text = str(request or "")
+    found: list[str] = []
+    for heading in _QUOTED_WHOLE.finditer(text):
+        after = _NEXT_SECTION.search(text, heading.end())
+        body = text[heading.end():after.start() if after else len(text)]
+        if EXCERPT_MARK in body or TRUNCATED_MARK in body:
+            continue
+        found.append(heading.group(1).lstrip("/"))
+    return tuple(dict.fromkeys(found))
 
 
 def held_read_refused(path: str, quoted: bool = False) -> str:
@@ -1368,14 +1386,35 @@ def files_held_line(held: Any) -> str:
             f"reading one it does not name returns nothing new, so work from the memory.]")
 
 
+def _the_request_first(messages: list[Any]) -> list[int]:
+    """The indexes of `messages`, the stage's request first: the first user message before the model's first reply
+    that is not one of the harness's notes (`_NOTE_LEADS`); the order as it is when there is none."""
+    order = list(range(len(messages)))
+    for index, message in enumerate(messages):
+        if getattr(message, "type", None) == "ai" or (isinstance(message, dict) and message.get("role") == "assistant"):
+            break
+        human = getattr(message, "type", None) == "human" or (isinstance(message, dict)
+                                                                and message.get("role") in ("user", "human"))
+        text = getattr(message, "content", None) if not isinstance(message, dict) else message.get("content")
+        if human and isinstance(text, str) and not text.lstrip().startswith(_NOTE_LEADS):
+            return [index, *(i for i in order if i != index)]
+    return order
+
+
 def _with_memory(messages: list[Any], memory: str, held: Any = ()) -> list[Any] | None:
-    """`messages` with `memory` at the start of the opening request and the files it holds named at its end, or None if there is none to put it in."""
+    """`messages` with `memory` at the start of the opening request and the files it holds named at its end, or None
+    if there is none to put it in.
+
+    The request, not a note the harness put before it (LF.1574): measured on a restarted code review, the memory and
+    its line of held files were put on the carry-over note, and the line meant to sit where the model is about to act
+    came between the note and the request."""
     from langchain_core.messages import HumanMessage
 
     from app.observability.transcript import MEMORY_CHARS
 
     closing = files_held_line(held)
-    for index, message in enumerate(messages):
+    for index in _the_request_first(messages):
+        message = messages[index]
         if getattr(message, "type", None) == "human" and isinstance(getattr(message, "content", None), str):
             # How much of the message is memory, for the transcript's record of
             # what a request carried; the provider never sends it.

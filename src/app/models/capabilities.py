@@ -302,13 +302,13 @@ def from_the_server() -> dict[str, dict]:
         profile = current() or record()
         if profile is not None:
             if profile.slot_context:
-                out["context_window"] = _found(profile.slot_context, "server", "tokens a request gets (/props)")
+                out["context_window"] = _found(profile.slot_context, "server", "tokens a request gets (the server's own report)")
             if profile.quantisation:
                 out["quantisation"] = _found(profile.quantisation, "server", f"from the file {profile.model}")
             if profile.reads_images is not None:
                 out["reads_images"] = _found(profile.reads_images, "server",
                                              "the server holds a vision part for it" if profile.reads_images
-                                             else "the server holds no vision part for it (/props)")
+                                             else "the server holds no vision part for it (its own report)")
     except Exception:  # noqa: BLE001
         logger.debug("Could not read the server's profile", exc_info=True)
     try:

@@ -1,0 +1,268 @@
+The workspace is rooted at '/'; every path you use is relative to it.
+
+--- Technical constraints, quoted from the brief ---
+- Backend: Python/FastAPI or Node.js/Express
+- Frontend: React or Vue.js
+- Authentication: JWT tokens with refresh mechanism
+- Database migrations required
+- Docker containerization
+
+These are the author's words, not a summary of them. A decision that contradicts one of these is the wrong decision however good it would otherwise be: every later stage builds what it allows, and none of them reads the brief again. A specification that contradicts one of these is a blocking finding, however well argued it is - say which constraint and require the change. You are the last gate before anything is built.
+
+--- The setup the product is built and tested in (the harness's; the specification cannot change it) ---
+- The project lives in `task-management-dashboard/`.
+- What the product serves, and the acceptance suite runs through: `task-management-dashboard/src/App.tsx`, `task-management-dashboard/task_management_dashboard/main.py`. Plan the product in these files, or in modules they import.
+- The service is imported as `task_management_dashboard.main`, from inside `task-management-dashboard/`: the project directory is where it runs from, not part of the name - `task_management_dashboard.task_management_dashboard.main` resolves to nothing.
+- Unit tests: `*.test.tsx`, `test_*.py`, `*_test.py` in `task-management-dashboard/tests/`; acceptance tests: `*.spec.js` in `task-management-dashboard/acceptance/`.
+- Where the data lives: Data the service keeps lives under the directory in `DATA_DIR` (default `data/`). A product meant for a database server reads its address from `DATABASE_URL`; when that is unset it keeps a file database under `DATA_DIR`, which is what every test runs on. Its schema, types, queries and migrations must work on that file database too: no test reaches a server, so anything only the server has stops the product before any test runs. The page reaches the service with `fetch('/api/...')`. Never start a server yourself: the acceptance suite's configuration builds the page and starts the service.
+- `task-management-dashboard/start.sh` is already set up and starts the service as the brief asks (`cd "$(dirname "$0")" || exit 1`): the file plan keeps it as it is, and changes it only for something the brief asks that it does not do.
+- Kept by the harness, not the product's to write: `task-management-dashboard/playwright.config.js`, `task-management-dashboard/playwright.setup.mjs`, `task-management-dashboard/vite.config.ts`, `task-management-dashboard/scripts/serve-acceptance.mjs`, `task-management-dashboard/start.sh`, `task-management-dashboard/pytest.ini`, `task-management-dashboard/scripts/unit-tests.mjs`.
+- The acceptance suite starts the product and waits until `GET /api/health` answers before any test runs: keep that route answering 200 - the setup's own code has it - whatever else is rewritten.
+- What `task-management-dashboard/scripts/serve-acceptance.mjs` does now, in full (comments left out):
+```
+import { spawn } from 'node:child_process';
+import { build } from 'vite';
+await build({ logLevel: 'warn' });
+const service = spawn(['.venv/bin/python', '-m', 'uvicorn', 'task_management_dashboard.main:app', '--host', process.env.HOST || '127.0.0.1', '--port', process.env.PORT][0], ['.venv/bin/python', '-m', 'uvicorn', 'task_management_dashboard.main:app', '--host', process.env.HOST || '127.0.0.1', '--port', process.env.PORT].slice(1), { stdio: 'inherit', env: process.env });
+service.on('exit', (code) => process.exit(code ?? 1));
+for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => service.kill(signal));
+```
+- The manifest's `start`, `test`, `test:acceptance` scripts are the harness's too, kept as they are: a change to them is put back, so a fix goes in the code or the tests, never there.
+- Those files do what they do now and nothing more: put whatever else the product must do - at start, at shutdown, with its settings or its data directory - in the product's own files.
+- Every control the brief names stays usable from the moment the page loads: an action that cannot go ahead - a required field left empty - is refused when it is tried, with a message saying what is missing, never by disabling the control. Unit tests check the refusal and its message, not a disabled control.
+- The tests' runners are the setup's: Vitest for unit tests of the page, pytest for unit tests of the service, Playwright for acceptance tests. `npm test` runs the unit tests and `npm run test:acceptance` the acceptance tests. Every section that mentions testing names these, and no other runner.
+- The product is started by `node scripts/serve-acceptance.mjs` and in no other way: no other way of running it, and no dependency or tool for one.
+- The specification names the files the harness writes and keeps as given. It may say what they provide, and gives no step, signature or behaviour inside them.
+- `task-management-dashboard/package.json` is the setup's and already declares `"type": "module"`: its `.js` files are ES modules (`import` / `export`). The specification needs no other module setting.
+- The setup writes `task-management-dashboard/package.json`, `task-management-dashboard/index.html`, `task-management-dashboard/tsconfig.json`, `task-management-dashboard/src/main.tsx`, `task-management-dashboard/src/App.tsx`, `task-management-dashboard/src/styles.css` and 4 more when the build starts: none of them is missing, and the product may fill or change them. Before the build they are not on disk, so no call reads them.
+- The setup declares the runtime dependencies `react`, `react-dom`, `fastapi>=0.115`, `uvicorn>=0.30`: no step adds them.
+What this setup requires is not a departure from the brief: a specification that does what it says here meets the brief's constraints in this environment. Do not raise a finding against it, and do not ask for a change that would undo it. Where the specification disagrees with it about a file the harness keeps, the runners, the start or the entry, the setup decides, and every later stage is told so: that is at most a minor finding whose remediation gives the setup's value, never a choice between the two.
+
+--- Technical specification and ADRs under review (/docs/technical_specification.md) ---
+{
+  "product_scope": "In scope: User registration with email, username, and password; login returning JWT access_token and refresh_token; logout revoking session.\nIn scope: Task CRUD operations (create, read, update, delete) with priorities (low, medium, high, urgent), due dates, categories, tags, status (todo, in_progress, done), and assignment to other users.\nIn scope: Task search by title/description keyword (q parameter); filtering by priority, status, category_id, assignee_id; pagination with page/page_size parameters.\nIn scope: Category management (create, list, delete) scoped per user with unique name constraint.\nIn scope: Analytics dashboard showing total tasks, tasks by priority, tasks by status, and overdue count via GET /api/v1/analytics/tasks.\nIn scope: Responsive web interface with desktop sidebar navigation and mobile bottom tab bar; task cards with color-coded priorities; analytics summary cards and charts.\nIn scope: Swagger/OpenAPI documentation available at /docs (HTML) and /openapi.json (JSON).\nIn scope: RESTful API with consistent error responses, Pydantic validation, and proper HTTP status codes.\nDeferred: Reminder trigger mechanism and notification channels.\nDeferred: Advanced search beyond basic title/description keyword matching.\nDeferred: Complex analytics visualizations beyond summary counts and simple charts.\nDeferred: Standalone tag management features separate from task records.\nDeferred: Team creation/joining/management beyond direct task assignment to users.\nDeferred: WebSocket real-time updates.\nDeferred: File attachments on tasks.\nDeferred: Time tracking on tasks.",
+  "component_boundaries": [
+    "Backend (task_management_dashboard/ package): FastAPI application providing RESTful API endpoints for authentication, tasks, categories, and analytics. Handles all business logic, database access via SQLAlchemy ORM, request validation via Pydantic v2, and error handling. Runs as a standalone Python process served by uvicorn on configurable PORT.",
+    "Frontend (src/ directory): React application built with Vite, providing the user interface. Communicates with the backend via fetch() calls to /api/v1/ endpoints. All routing handled client-side using React Router. Token storage in memory (not localStorage) for security.",
+    "Database: PostgreSQL when DATABASE_URL is set; file-based SQLite (under DATA_DIR) when DATABASE_URL is unset. Schema managed via Alembic migrations. No database server required in development/testing mode.",
+    "Authentication flow: Client sends credentials to POST /api/v1/auth/register or POST /api/v1/auth/login; backend returns access_token (15-min expiry) and refresh_token (7-day expiry); all subsequent API requests include access_token in Authorization header as Bearer token; refresh mechanism via POST /api/v1/auth/refresh exchanges refresh_token for new access_token; logout via POST /api/v1/auth/logout revokes the refresh token.",
+    "Configuration: All settings read from environment variables at startup (PORT, DATA_DIR, DATABASE_URL, JWT_SECRET_KEY, JWT_ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS, CORS_ORIGINS). No configuration files shipped with the product."
+  ],
+  "domain_model": [
+    "User: id (UUID PK), email (VARCHAR(255) UNIQUE NOT NULL), username (VARCHAR(100) NOT NULL), password_hash (VARCHAR(255) NOT NULL), is_active (BOOLEAN NOT NULL DEFAULT true), created_at (TIMESTAMPTZ NOT NULL DEFAULT NOW()), updated_at (TIMESTAMPTZ NOT NULL DEFAULT NOW()). A user can own tasks, be assigned to tasks, and own categories.",
+    "RefreshToken: id (UUID PK), user_id (UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE), token_hash (VARCHAR(255) UNIQUE NOT NULL), expires_at (TIMESTAMPTZ NOT NULL), created_at (TIMESTAMPTZ NOT NULL DEFAULT NOW()), revoked (BOOLEAN NOT NULL DEFAULT false). A refresh token is tied to exactly one user and can be revoked independently. Index on (user_id, expires_at).",
+    "Task: id (UUID PK), title (VARCHAR(255) NOT NULL), description (TEXT), priority (VARCHAR(10) NOT NULL CHECK IN ('low', 'medium', 'high', 'urgent')), due_date (TIMESTAMPTZ), status (VARCHAR(20) NOT NULL DEFAULT 'todo' CHECK IN ('todo', 'in_progress', 'done')), category_id (UUID REFERENCES categories(id)), assignee_id (UUID REFERENCES users(id)), creator_id (UUID NOT NULL REFERENCES users(id)), version (INTEGER NOT NULL DEFAULT 0), created_at (TIMESTAMPTZ NOT NULL DEFAULT NOW()), updated_at (TIMESTAMPTZ NOT NULL DEFAULT NOW()), tags (JSONB NOT NULL DEFAULT '[]'::jsonb). Index on (assignee_id, status), (creator_id, status), priority, and GIN index on tags.",
+    "Category: id (UUID PK), name (VARCHAR(100) NOT NULL), user_id (UUID NOT NULL REFERENCES users(id)), created_at (TIMESTAMPTZ NOT NULL DEFAULT NOW()). CONSTRAINT unique_category_per_user UNIQUE (name, user_id). Each user owns their categories; name must be unique within a single user's category list. A category can have many tasks; a task belongs to at most one category."
+  ],
+  "api_and_event_contracts": [
+    "POST /api/v1/auth/register: Request body {email: string (RFC 5321, max 255 chars), username: string (min 3 chars, max 100 chars), password: string (min 8 chars)} → 201 with {id: uuid, email: string, username: string} or 409 on duplicate email or 422 on validation failure. Rate limited to 5 req/min by IP.",
+    "POST /api/v1/auth/login: Request body {email: string, password: string} → 200 with {access_token: string, refresh_token: string, token_type: 'bearer'} or 401 on invalid credentials or 422 on validation failure. Rate limited to 10 req/min by IP.",
+    "POST /api/v1/auth/refresh: Request body {refresh_token: string (32-512 chars)} → 200 with {access_token: string, token_type: 'bearer'} or 404 if token not found/expired/revoked or 422 on validation failure.",
+    "POST /api/v1/auth/logout: Authenticated request with refresh_token in body → 200 with {message: 'logged out'} or 401 if unauthenticated. Revokes all active refresh tokens for the user.",
+    "GET /api/v1/tasks: Authenticated request with optional query params (q: string for title/description search, priority: string single value, status: string single value, category_id: uuid, assignee_id: uuid, page: int default 1, page_size: int default 20 max 100) → 200 with {items: [TaskResponse], total: int, page: int, page_size: int} or 401 on unauthenticated.",
+    "GET /api/v1/tasks/{task_id}: Authenticated request → 200 with TaskResponse or 404 if task not found or user has no permission (creator_id or assignee_id match).",
+    "POST /api/v1/tasks: Authenticated request body {title: string (min 1 char, max 255 chars), description?: string (max 10000 chars), priority: 'low'|'medium'|'high'|'urgent', due_date?: string (ISO 8601, not in past), category_id?: uuid, tags?: string[]} → 201 with TaskResponse or 422 on validation failure. Note: max char limit for title is 255.",
+    "PUT /api/v1/tasks/{task_id}: Authenticated request body {title?: string, description?: string, priority?: 'low'|'medium'|'high'|'urgent', due_date?: string (ISO 8601, not in past), status?: 'todo'|'in_progress'|'done', category_id?: uuid|null, assignee_id?: uuid|null, tags?: string[]} with If-Match header (integer version) → 200 with TaskResponse or 403 if user lacks permission, 409 on version mismatch, 422 on validation failure.",
+    "DELETE /api/v1/tasks/{task_id}: Authenticated request → 200 with {message: 'deleted'} or 403 if user lacks permission, 404 if not found.",
+    "GET /api/v1/categories: Authenticated request → 200 with [CategoryResponse] or 401 on unauthenticated.",
+    "POST /api/v1/categories: Authenticated request body {name: string (min 1 char, max 100 chars)} → 201 with CategoryResponse or 409 on duplicate name per user or 422 on validation failure. Note: max char limit for name is 100.",
+    "DELETE /api/v1/categories/{category_id}: Authenticated request → 200 with {message: 'deleted'} or 403 if not owned, 404 if not found.",
+    "GET /api/v1/analytics/tasks: Authenticated request → 200 with {total_tasks: int, tasks_by_priority: {low: int, medium: int, high: int, urgent: int}, tasks_by_status: {todo: int, in_progress: int, done: int}, overdue_count: int} or 401 on unauthenticated.",
+    "GET /api/health: Unauthenticated request → 200 with {status: 'ok'}. Used by acceptance suite to detect readiness.",
+    "GET /docs: Unauthenticated request → 200 with HTML containing 'Swagger UI'. Auto-generated by FastAPI.",
+    "GET /openapi.json: Unauthenticated request → 200 with JSON containing 'paths' key with all registered routes."
+  ],
+  "data_flows": [
+    "Registration: Client sends POST /api/v1/auth/register → Backend validates email format and uniqueness, password length >= 8, hashes password with bcrypt(cost=12), inserts User record in transaction committing before response, returns 201.",
+    "Login: Client sends POST /api/v1/auth/login → Backend validates credentials via bcrypt.checkpw, generates JWT access token (sub=str(user_id), exp=now+15min) and refresh token (64-char hex), hashes refresh token with SHA-256, inserts RefreshToken record, commits before returning 200 with tokens.",
+    "Task creation: Authenticated client sends POST /api/v1/tasks → Backend validates priority against literal set, validates due_date not in past, creates Task with creator_id=current_user.id, version=0, tags=request.tags or [], commits before returning 201.",
+    "Task listing: Authenticated client sends GET /api/v1/tasks with filters → Backend applies user scoping (WHERE creator_id=user_id OR assignee_id=user_id), applies optional filters (q ILIKE title/description, priority/status/category_id/assignee_id exact match), orders by created_at DESC, paginates, returns 200 with envelope.",
+    "Task update: Authenticated client sends PUT /api/v1/tasks/{id} with If-Match version → Backend verifies user owns or is assigned to task (403 if not), checks version matches (409 if mismatch), updates provided fields only, increments version, commits before returning 200.",
+    "Task deletion: Authenticated client sends DELETE /api/v1/tasks/{id} → Backend verifies permission, deletes record, commits before returning 200.",
+    "Analytics: Authenticated client sends GET /api/v1/analytics/tasks → Backend queries counts grouped by priority and status (with zero defaults), calculates overdue_count (due_date < now AND status != 'done'), returns 200 with statistics object.",
+    "Category creation: Authenticated client sends POST /api/v1/categories → Backend validates name not empty/whitespace, checks unique constraint on (name, user_id), creates record, commits before returning 201.",
+    "Token refresh: Client sends POST /api/v1/auth/refresh → Backend hashes token with SHA-256, queries for matching non-revoked RefreshToken with expires_at > now, creates new access token, marks old token revoked, commits before returning 200."
+  ],
+  "security_and_privacy": [
+    "Passwords hashed with bcrypt.hashpw(password.encode(), bcrypt.gensalt(rounds=12)) at API layer before any database write; plaintext passwords never stored, echoed in responses, or logged.",
+    "JWT access tokens use HS256 algorithm with 15-minute expiry; user ID stored as string in sub claim (str(user_id)) to satisfy PyJWT 2.10+ requirement; refresh tokens are 7-day expiry, hashed with SHA-256, stored server-side in refresh_tokens table for revocation tracking.",
+    "All API endpoints except /api/health, /docs, /openapi.json, and /api/v1/auth/register/login require valid access_token in Authorization header (Bearer scheme).",
+    "Task queries scoped by creator_id or assignee_id; users can only read, update, or delete tasks they own or have been assigned to. Access denied returns 403 Forbidden.",
+    "CORS configured with explicit allowlist from CORS_ORIGINS environment variable (comma-separated origins); wildcard '*' origins rejected in all modes.",
+    "Rate limiting: 5 requests per minute on POST /api/v1/auth/register; 10 requests per minute on POST /api/v1/auth/login and POST /api/v1/auth/logout, keyed by client IP address using in-memory counter.",
+    "All secrets (JWT_SECRET_KEY, DATABASE_URL) read from environment variables at startup; never hard-coded in source files or written to logs, metrics, or error responses.",
+    "Email validated against RFC 5321 format via Pydantic; password minimum 8 characters enforced by schema validator.",
+    "Refresh token hash length validated at API layer: tokens must be 32-512 characters before hashing and database insertion.",
+    "All database queries use parameterized statements through SQLAlchemy ORM; no string concatenation or f-string SQL construction, eliminating SQL injection risk."
+  ],
+  "reliability_and_observability": [
+    "Every database mutation (create, update, delete of tasks, users, categories) wrapped in a transaction that calls rollback on any exception; commit occurs only after response body is fully formed.",
+    "Consistent error responses: every error includes HTTP status code, error_code string (e.g., 'DUPLICATE_EMAIL', 'TASK_NOT_FOUND'), and detail message string. Stack traces, SQL queries, internal paths, and database connection details never included in error bodies.",
+    "Health check endpoint GET /api/health returns 200 with {status: 'ok'} when application is running; used by acceptance suite to detect readiness before test execution.",
+    "Pydantic models validate all request bodies at API layer, rejecting invalid input with 422 Unprocessable Entity and field-specific error messages from validation errors.",
+    "Optimistic locking via version column on tasks table: clients must send current version in If-Match header; server returns 409 Conflict with detail 'Version conflict: record has been modified' if mismatch detected.",
+    "FastAPI exception handlers map internal exceptions to appropriate HTTP status codes with consistent JSON error response format.",
+    "Alembic migrations applied at startup when DATABASE_URL is set to PostgreSQL; file-based SQLite auto-creates tables on engine creation."
+  ],
+  "testing": [
+    "Backend unit tests use pytest in task-management-dashboard/tests/ with test_*.py naming convention; test database uses in-memory SQLite instance isolated from product's DATA_DIR.",
+    "Frontend unit tests use Vitest for components and hooks; test files named *.test.tsx alongside source files or in tests/ directory.",
+    "Acceptance tests use Playwright in task-management-dashboard/acceptance/ with *.spec.js naming convention; tests run against live application started by scripts/serve-acceptance.mjs which builds frontend and starts uvicorn.",
+    "Tests never share data: each test creates unique resources (unique email addresses for registration) to ensure isolation. No test endpoint added for reset, seed, or inspection purposes.",
+    "Acceptance suite waits until GET /api/health returns 200 before running any tests; configuration in playwright.config.js manages webServer startup.",
+    "npm test runs Vitest unit tests; npm run test:acceptance runs Playwright acceptance tests; pytest -x tests/ runs backend unit tests."
+  ],
+  "deployment": [
+    "Application runs as two processes orchestrated by scripts/serve-acceptance.mjs in development/acceptance mode: Vite builds frontend, uvicorn starts FastAPI backend on PORT. Note: scripts/serve-acceptance.mjs is not in the file plan.",
+    "Docker containerization planned but not required for this sprint; Dockerfile and docker-compose.yml can be written but deferred to future work per scope discipline.",
+    "Application reads configuration from environment variables only (PORT, DATA_DIR, DATABASE_URL, JWT_SECRET_KEY, JWT_ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS, CORS_ORIGINS); no configuration files needed at runtime.",
+    "Default port: 8000 (configurable via PORT environment variable). Default data directory: data/ (configurable via DATA_DIR environment variable).",
+    "start.sh script already configured to start the service; kept as-is with changes only for functionality the brief requires it not to do."
+  ],
+  "open_questions": [
+    "None. All items from the original product intake open questions have been resolved: backend framework (FastAPI per tools_and_models), frontend framework (React per technology_stack), team structure (direct task assignment to users per DB-3 assignee_id), analytics statistics (total_tasks, tasks_by_priority, tasks_by_status, overdue_count per BE-9), and proper error handling (consistent JSON with error_code and detail per BE-5/SR-7)."
+  ],
+  "acceptance_criteria": [
+    "AC-1: POST /api/v1/auth/register with {email: 'test@example.com', username: 'testuser', password: 'password123'} returns 201; POST /api/v1/auth/login with same credentials returns 200 containing access_token and refresh_token fields.",
+    "AC-2: POST /api/v1/tasks with {title: 'Test Task', priority: 'high'} returns 201; GET /api/v1/tasks/{id} returns matching title; PUT /api/v1/tasks/{id} with {title: 'Updated'} returns 200 with updated title; DELETE /api/v1/tasks/{id} returns 200; subsequent GET returns 404.",
+    "AC-3 and AC-10: Register second user; first user creates task; PUT /api/v1/tasks/{task_id} with {assignee_id: 'user2_id'} returns 200; GET /api/v1/tasks/{task_id} with second user's auth header returns task with matching assignee_id.",
+    "AC-4: Create four tasks via POST /api/v1/tasks each with priority='low', 'medium', 'high', 'urgent' respectively; each returns 201 with correct priority field; POST /api/v1/tasks with priority='invalid' returns 422.",
+    "AC-5: POST /api/v1/categories {name: 'Work'} returns 201; GET /api/v1/categories returns 200 showing category in list; duplicate name returns 409; DELETE /api/v1/categories/{id} returns 200.",
+    "AC-6: Create multiple tasks with different attributes; GET /api/v1/tasks?q=test returns only matching tasks; GET /api/v1/tasks?priority=high returns only high priority; GET /api/v1/tasks?status=done returns only done tasks.",
+    "AC-7: Create 25 tasks; GET /api/v1/tasks?page=1&page_size=10 returns items.length=10 and total=25; GET /api/v1/tasks?page=3&page_size=10 returns correct page of items.",
+    "AC-8: Register and login to get access_token; use token to GET /api/v1/tasks returns 200; POST /api/v1/auth/logout with refresh_token returns 200; re-use same access_token returns 401 or 403 if forbidden.",
+    "AC-9: Create tasks with known distribution (e.g., 2 low, 3 medium, 1 high, 1 urgent; 5 todo, 3 in_progress, 2 done); GET /api/v1/analytics/tasks returns total_tasks=7, matching tasks_by_priority and tasks_by_status, correct overdue_count.",
+    "AC-11: Log in, navigate to /analytics page; elements with data-testid='total-tasks', 'completed-tasks', 'overdue-tasks' are visible and display correct counts from analytics endpoint.",
+    "AC-12: GET /docs returns 200 with response body containing text 'Swagger UI'; GET /openapi.json returns 200 with 'paths' key containing '/api/v1/auth/register', '/api/v1/tasks', '/docs'.",
+    "AC-13: POST /api/v1/auth/register with missing email returns 422; GET /api/v1/tasks without Authorization header returns 401; GET /api/v1/tasks/99999999-9999-9999-9999-999999999999 returns 404; PUT /api/v1/tasks/{id} with priority='invalid' returns 422 or 403.",
+    "AC-14: Load task list page at viewport 375x667 (mobile) via Playwright; elements with data-testid='task-list', 'search-input', 'new-task-button' are visible; repeat at 1440x900 (desktop); all elements remain visible and correctly positioned.",
+    "AC-15: Start application with fresh database containing no tables; run alembic upgrade head; connect to database and assert tables 'users', 'refresh_tokens', 'tasks', 'categories' exist; restart app and assert no migration errors on startup."
+  ],
+  "interface_design": [
+    "Desktop layout (>=768px): Persistent left sidebar 240px wide with navigation links (Tasks, Analytics, Categories) with icons and labels. Main content area scrollable with maximum width 1200px centered. Task list uses card layout with full detail visible. Analytics charts display side by side.",
+    "Mobile layout (<768px): Bottom tab bar with 5 icon+label tabs (Tasks, Dashboard, Categories, Profile, Settings). Create Task button is floating action button (FAB) centered above tab bar. Sidebar collapses to icons-only 64px at >=768px before fully collapsing. Task list switches from table to card layout. Analytics charts stack vertically single column.",
+    "Visual hierarchy: Task title displayed largest and boldest on task cards. Priority badge color-coded: low=#E5E7EB (gray), medium=#DBEAFE (blue), high=#FEF3C7 (amber), urgent=#FEE2E2 (red). Due date in ISO format with red text + warning icon when overdue. Assignee shown as avatar circle. Completed tasks get strikethrough title and 50% opacity background.",
+    "Empty states: No tasks - centered illustration with heading 'No tasks yet', descriptive text 'Create your first task to get started', prominent blue 'Create Task' button. No filter results - 'No matching tasks' with 'Clear filters' link resetting all active filters.",
+    "Analytics dashboard: 4 summary cards in 2x2 grid on desktop (single column on mobile) showing Total Tasks, Completed, Overdue, and High Priority counts with large numbers and small labels. Below: horizontal bar chart of tasks by priority and donut chart of tasks by status, both with interactive tooltips on hover showing exact values and percentages.",
+    "Color system: Primary blue #3B82F6 for interactive elements and primary actions. Success green #10B981 for completed states and success feedback. Danger red #EF4444 for errors, urgent priority text, destructive actions. Neutral grays: #111827 (text), #6B7280 (secondary text), #F3F4F6 (backgrounds). All color pairs meet WCAG AA 4.5:1 contrast for text and 3:1 for UI components.",
+    "Spacing scale: 4px base unit throughout (4, 8, 12, 16, 24, 32, 48, 64, 96px). Form controls: 12px internal padding, 1px solid #D1D5DB border changing to #3B82F6 with 0 0 0 3px rgba(59,130,246,0.2) ring on focus. Buttons: 12px vertical and 16px horizontal padding, 6px border radius.",
+    "Keyboard accessibility: All interactive elements reachable via Tab/Shift+Tab in logical reading order. Visible focus indicator: 2px solid #3B82F6 outline with 2px gap from element edge. Enter or Space activates buttons and form controls. Escape closes modals and dropdowns. Form validation errors announced to screen readers via aria-live='polite' on error message containers. Every icon-only button has aria-label describing its action."
+  ],
+  "interface_contract": [],
+  "specialist_advice_decisions": [
+    "UX-1: adopted - interface_design (desktop sidebar 240px, mobile bottom tab bar with 5 tabs)",
+    "UX-2: adopted - interface_design (visual hierarchy: title largest/boldest, color-coded priority badge, due date, assignee avatar)",
+    "UX-3: adopted - interface_design (task cards with priority background colors low=#E5E7EB medium=#DBEAFE high=#FEF3C7 urgent=#FEE2E2, completed strikethrough + 50% opacity)",
+    "UX-4: adopted - interface_design ('No tasks yet' empty state with illustration and Create Task button; 'No matching tasks' with Clear filters link)",
+    "UX-5: adopted - interface_design (analytics 4 summary cards 2x2 grid, bar chart by priority, donut chart by status with tooltips)",
+    "UX-6: adopted - interface_design (768px breakpoint: sidebar collapse to icons-only, task list card layout, charts stack vertically, max-width 1200px)",
+    "UX-7: adopted - interface_design (primary #3B82F6, success #10B981, danger #EF4444, neutral grays #111827/#6B7280/#F3F4F6, WCAG AA compliant)",
+    "UX-8: adopted - interface_design (4px spacing scale, form controls 12px padding with #D1D5DB border and focus ring, buttons 12x16px padding 6px radius)",
+    "UX-9: adopted - interface_design (Tab/Shift+Tab navigation, 2px #3B82F6 focus outline, Enter/Space activation, Escape closes modals, aria-live='polite' for errors)",
+    "DB-1: adopted - domain_model (users table: id UUID PK, email VARCHAR(255) UNIQUE NOT NULL, username VARCHAR(100) NOT NULL, password_hash VARCHAR(255) NOT NULL, created_at TIMESTAMPTZ, updated_at TIMESTAMPTZ, is_active BOOLEAN DEFAULT true)",
+    "DB-2: adopted - domain_model (refresh_tokens table: id UUID PK, user_id UUID NOT NULL REFERENCES users ON DELETE CASCADE, token_hash VARCHAR(255) UNIQUE NOT NULL, expires_at TIMESTAMPTZ NOT NULL, created_at TIMESTAMPTZ, revoked BOOLEAN DEFAULT false, index on user_id+expires_at)",
+    "DB-3: adopted - domain_model (tasks table: id UUID PK, title VARCHAR(255) NOT NULL, description TEXT, priority VARCHAR(10) CHECK IN ('low','medium','high','urgent'), due_date TIMESTAMPTZ, status VARCHAR(20) DEFAULT 'todo' CHECK IN ('todo','in_progress','done'), category_id UUID, assignee_id UUID, creator_id UUID NOT NULL, version INTEGER DEFAULT 0, created_at TIMESTAMPTZ, updated_at TIMESTAMPTZ, tags JSONB DEFAULT '[]', index on assignee_id+status, creator_id+status, priority, GIN on tags)",
+    "DB-4: adopted - domain_model (categories table: id UUID PK, name VARCHAR(100) NOT NULL, user_id UUID NOT NULL REFERENCES users, created_at TIMESTAMPTZ, CONSTRAINT unique_category_per_user UNIQUE (name, user_id))",
+    "DB-5: adopted - domain_model (tags stored as JSONB array in tasks.tags column with GIN index for @> containment queries; tag management deferred per intake)",
+    "BE-1: adopted - security_and_privacy (JWT sub=str(user_id), access_token 15 min expiry, refresh_token 7 days, stored server-side for revocation)",
+    "BE-2: adopted - security_and_privacy (bcrypt.hashpw(password.encode(), bcrypt.gensalt()) directly to avoid passlib 1.7.4/bcrypt 5 incompatibility)",
+    "BE-3: partially adopted - domain_model (adopted all columns except status: using DB-3 CHECK values ('todo','in_progress','done') instead of BE-3's 'pending' value which would violate the constraint)",
+    "BE-4: adopted - error_catalogue (priority validated against literal ['low','medium','high','urgent'] in Pydantic schema and database CHECK; rejects other values with 422)",
+    "BE-5: adopted - error_catalogue (all errors return JSON with at least detail string field; 400 client validation, 401 unauthenticated, 403 forbidden, 404 not found, 409 conflict)",
+    "BE-6: adopted - reliability_and_observability (version INTEGER column default 0 on tasks table; If-Match header required on updates; 409 Conflict on mismatch)",
+    "BE-7: adopted - api_and_event_contracts (pagination envelope {items:[...], total:int, page:int, page_size:int} with page default 1, page_size default 20 max 100)",
+    "BE-8: adopted - api_and_event_contracts (GET /tasks query params: q for title/description search, priority/status/category_id/assignee_id single value filters)",
+    "BE-9: adopted - api_and_event_contracts (GET /analytics/tasks returns {total_tasks, tasks_by_priority:{low:0,medium:0,high:0,urgent:0}, tasks_by_status:{todo:0,in_progress:0,done:0}, overdue_count})",
+    "BE-10: adopted - configuration (environment variables: DATABASE_URL, JWT_SECRET_KEY, JWT_ALGORITHM default HS256, ACCESS_TOKEN_EXPIRE_MINUTES default 15, REFRESH_TOKEN_EXPIRE_DAYS default 7, CORS_ORIGINS comma-separated)",
+    "SR-1: adopted - security_and_privacy (secrets exclusively in environment variables read at startup; never hard-coded or logged)",
+    "SR-2: adopted - security_and_privacy (short-lived access tokens paired with server-side refresh tokens; logout revokes refresh token permanently)",
+    "SR-3: adopted - error_catalogue (Pydantic models restrict priority to enum values, validate email format, reject past due dates; return 422 with field-specific messages)",
+    "SR-4: adopted - security_and_privacy (all task queries scoped by creator_id OR assignee_id; 403 returned when access denied in service layer)",
+    "SR-5: adopted - security_and_privacy (bcrypt.hashpw/checkpw for all password operations; never store plaintext, echo in responses, or include in logs)",
+    "SR-6: adopted - reliability_and_observability (every database mutation wrapped in transaction with rollback on exception; commit after response fully formed per FastAPI 0.118 teardown behavior)",
+    "SR-7: adopted - error_catalogue (consistent errors with HTTP status, error_code string, detail message; never include stack traces, SQL queries, internal paths, or database details in error bodies)",
+    "SR-8: adopted - security_and_privacy (rate limiting: 5 req/min on /api/v1/auth/register, 10 req/min on login/logout endpoints, keyed by client IP, in-memory implementation)",
+    "SR-9: adopted - reliability_and_observability (parameterized queries via SQLAlchemy ORM only; no string concatenation or f-string SQL construction)",
+    "SR-10: adopted - security_and_privacy (CORS with explicit CORS_ORIGINS allowlist from environment variable; wildcard '*' origins rejected)",
+    "TS-1: adopted - test_cases (AC-1: register with email/username/password → 201; login → 200 with access_token and refresh_token)",
+    "TS-2: adopted - test_cases (AC-2: create task → 201; GET by ID matches; PUT updates → 200; DELETE → 200)",
+    "TS-3: adopted - test_cases (AC-3/AC-10: register second user; first creates task; assign via PUT with assignee_id → 200; second user GET shows assigned task)",
+    "TS-4: adopted - test_cases (AC-4: create tasks with each priority value → 201 matching; submit invalid priority → 422)",
+    "TS-5: adopted - test_cases (AC-8: register, login capturing tokens, use access_token for GET /tasks → 200, logout → 200, re-use access_token → 401)",
+    "TS-6: adopted - test_cases (AC-11: create five tasks with known distribution; navigate to /analytics; assert data-testid elements show correct counts using DB-3 status values 'todo'/'in_progress'/'done')",
+    "TS-7: adopted - test_cases (AC-12: GET /docs → 200 with 'Swagger UI'; GET /openapi.json → 200 with paths containing required endpoints)",
+    "TS-8: adopted - test_cases (AC-13: missing email → 422; no auth header → 401; nonexistent task → 404; invalid priority on update → 422)",
+    "TS-9: adopted - test_cases (AC-14: Playwright at 375x667 viewport asserts data-testid='task-list','search-input','new-task-button' visible; repeat at 1440x900 asserting correct positioning)",
+    "TS-10: adopted - test_cases (AC-15: fresh database, run alembic upgrade head, assert tables users/refresh_tokens/tasks/categories exist, restart app without migration errors)"
+  ],
+  "file_plan": [
+    "task-management-dashboard/task_management_dashboard/main.py: FastAPI application entry point. Creates app instance with FastAPI(title='Task Management Dashboard'), configures CORS middleware from CORS_ORIGINS env var, mounts auth_router, tasks_router, categories_router, analytics_router under /api/v1 prefix, defines GET /api/health returning 200 {status: 'ok'}, defines startup event (log configuration), shutdown event (close database connections). Exports `app` for uvicorn to serve.",
+    "task-management-dashboard/task_management_dashboard/database.py: SQLAlchemy engine and session factory. Reads DATABASE_URL from environment; defaults to SQLite file under DATA_DIR when unset. Provides get_db() FastAPI dependency yielding Session with session.close() in teardown. Defines Base = declarative_base() for table creation. Exports engine, SessionLocal, Base.",
+    "task-management-dashboard/task_management_dashboard/models.py: SQLAlchemy ORM models mapping to database tables. Defines User class (id UUID, email str unique, username str, password_hash str, is_active bool, created_at/updated_at DateTime, relationship to tasks as creator and assignee), Task class (id UUID, title str, description str|None, priority str, due_date DateTime|None, status str, category_id UUID|None, assignee_id UUID|None, creator_id UUID, version int, tags list, created_at/updated_at DateTime, CHECK constraints on priority and status), Category class (id UUID, name str, user_id UUID FK, created_at DateTime, unique constraint on name+user_id), RefreshToken class (id UUID, user_id UUID FK ON DELETE CASCADE, token_hash str unique, expires_at DateTime, created_at DateTime, revoked bool). Includes relationship definitions between models.",
+    "task-management-dashboard/task_management_dashboard/schemas.py: Pydantic v2 request/response schemas. RegisterRequest(email: str, username: str, password: str) with field validators for email format and password min_length=8. LoginRequest(email: str, password: str). TokenRefreshRequest(refresh_token: str, min_length=32, max_length=512). TaskCreate(title: str (min_length=1, max_length=255), description: str|None (max_length=10000), priority: PriorityEnum, due_date: datetime|None, category_id: UUID|None, tags: list[str]|None). TaskUpdate(title: str|None, description: str|None, priority: PriorityEnum|None, due_date: datetime|None, status: StatusEnum|None, category_id: UUID|None, assignee_id: UUID|None, tags: list[str]|None). TaskResponse(id: UUID, title: str, description: str|None, priority: str, due_date: datetime|None, status: str, category_id: UUID|None, assignee_id: UUID|None, creator_id: UUID, version: int, tags: list[str], created_at: datetime, updated_at: datetime). PaginatedTaskResponse(items: list[TaskResponse], total: int, page: int, page_size: int). CategoryCreate(name: str (min_length=1, max_length=100)). CategoryResponse(id: UUID, name: str, user_id: UUID, created_at: datetime). AnalyticsResponse(total_tasks: int, tasks_by_priority: dict, tasks_by_status: dict, overdue_count: int). ErrorResponse(error_code: str, detail: str). TokenResponse(access_token: str, refresh_token: str, token_type: str). UserResponse(id: UUID, email: str, username: str).",
+    "task-management-dashboard/task_management_dashboard/auth.py: Authentication utilities. create_access_token(user_id: int) -> str: jwt.encode({sub: str(user_id), exp: datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)}, JWT_SECRET_KEY, algorithm='HS256'). create_refresh_token() -> str: secrets.token_hex(32) generating 64-char hex string. verify_password(plaintext: str, hashed: str) -> bool: bcrypt.checkpw(plaintext.encode(), hashed.encode()). hash_password(plaintext: str) -> bytes: bcrypt.hashpw(plaintext.encode(), bcrypt.gensalt(rounds=12)). decode_token(token: str) -> dict: jwt.decode(token, JWT_SECRET_KEY, algorithms=['HS256']) returning payload; raises InvalidTokenError on failure.",
+    "task-management-dashboard/task_management_dashboard/routers/auth_router.py: FastAPI router for authentication. register(): POST /api/v1/auth/register with rate limiting (5/min IP), validates RegisterRequest, checks email uniqueness in database, hashes password, creates User, commits, returns 201. login(): POST /api/v1/auth/login with rate limiting (10/min IP), validates LoginRequest, verifies password, creates access+refresh tokens, stores refresh_token hash, commits, returns 200. refresh(): POST /api/v1/auth/refresh, validates refresh_token length, hashes with SHA-256, queries non-revoked RefreshToken, creates new access token, marks old revoked, commits, returns 200. logout(): POST /api/v1/auth/logout, receives refresh_token, hashes with SHA-256, updates matching RefreshToken records setting revoked=True, commits, returns 200.",
+    "task-management-dashboard/task_management_dashboard/routers/tasks_router.py: FastAPI router for task CRUD. list_tasks(): GET /api/v1/tasks with query params q/priority/status/category_id/assignee_id/page/page_size, applies user scoping (creator_id=current_user.id OR assignee_id=current_user.id), applies filters (q ILIKE title/description, exact match on priority/status/category_id/assignee_id), orders by created_at DESC, paginates, returns PaginatedTaskResponse. get_task(): GET /api/v1/tasks/{task_id}, queries with user scoping, returns TaskResponse or 404. create_task(): POST /api/v1/tasks with TaskCreate body, validates priority enum and due_date not in past, creates task with creator_id=current_user.id, version=0, tags=request.tags or [], commits, returns 201. update_task(): PUT /api/v1/tasks/{task_id} with TaskUpdate body and If-Match header (int), verifies user permission (403 if not owner/assignee), checks version match (409 if mismatch), updates provided fields only, increments version, commits, returns 200. delete_task(): DELETE /api/v1/tasks/{task_id}, verifies user permission (403 if not owner/assignee), deletes record, commits, returns 200.",
+    "task-management-dashboard/task_management_dashboard/routers/categories_router.py: FastAPI router for category management. list_categories(): GET /api/v1/categories, queries categories WHERE user_id=current_user.id ordered by created_at DESC, returns list[CategoryResponse]. create_category(): POST /api/v1/categories with CategoryCreate body, validates name not empty/whitespace, checks unique constraint on (name, user_id), creates record, commits, returns 201. delete_category(): DELETE /api/v1/categories/{category_id}, verifies ownership (user_id=current_user.id), deletes record, commits, returns 200.",
+    "task-management-dashboard/task_management_dashboard/routers/analytics_router.py: FastAPI router for analytics. get_analytics_tasks(): GET /api/v1/analytics/tasks, queries tasks WHERE (creator_id=current_user.id OR assignee_id=current_user.id), aggregates counts by priority (low/medium/high/urgent with 0 defaults), aggregates counts by status (todo/in_progress/done with 0 defaults), calculates overdue_count (due_date < now() AND status != 'done'), returns AnalyticsResponse.",
+    "task-management-dashboard/src/App.tsx: Main React component. Sets up BrowserRouter wrapping Routes with path '/' redirecting to '/tasks', path '/tasks' rendering TaskList, path '/analytics' rendering AnalyticsDashboard, path '/categories' rendering CategoriesList, path '/login' rendering LoginForm, path '/register' rendering RegisterForm. Provides AuthContext.Provider wrapping all routes with authentication state (user, accessToken, login/logout functions). Imports components and services.",
+    "task-management-dashboard/src/main.tsx: Entry point. Renders <App /> within <BrowserRouter> and <React.StrictMode>, imports styles.css for global styles.",
+    "task-management-dashboard/src/types/index.ts: TypeScript type definitions matching API response shapes. Interfaces: User(id: string, email: string, username: string), Task(id: string, title: string, description: string|null, priority: 'low'|'medium'|'high'|'urgent', due_date: string|null, status: 'todo'|'in_progress'|'done', category_id: string|null, assignee_id: string|null, creator_id: string, version: number, tags: string[], created_at: string, updated_at: string), Category(id: string, name: string, user_id: string, created_at: string), TokenResponse(access_token: string, refresh_token: string, token_type: string), PaginatedTaskResponse(items: Task[], total: number, page: number, page_size: number), AnalyticsResponse(total_tasks: number, tasks_by_priority: Record<string, number>, tasks_by_status: Record<string, number>, overdue_count: number).",
+    "task-management-dashboard/src/services/api.ts: API client module. request(config): sends fetch() to /api/v1/... with Authorization header containing access_token from memory; on 401 attempts automatic refresh via POST /api/v1/auth/refresh; if refresh succeeds retries original request; if fails redirects to login. register(data), login(data) storing tokens in memory, getTasks(params), createTask(data), updateTask(id, data, version), deleteTask(id), getCategories(), createCategory(name), deleteCategory(id), getAnalytics(). Handles token expiration and automatic re-authentication.",
+    "task-management-dashboard/src/components/LoginForm.tsx: Login form with email input (type='email'), password input (type='password'), submit button. Validates required fields client-side, shows validation errors via aria-live='polite' containers. On successful login stores tokens in memory and navigates to /tasks.",
+    "task-management-dashboard/src/components/RegisterForm.tsx: Registration form with email input, username input, password input (type='password'), submit button. Validates email format, username min 3 chars, password min 8 chars client-side. Shows validation errors via aria-live='polite' containers. On success navigates to /login.",
+    "task-management-dashboard/src/components/Sidebar.tsx: Desktop sidebar navigation with links for Tasks (/tasks), Analytics (/analytics), Categories (/categories). Each link has icon + label text. Collapses to 64px width showing only icons at >=768px breakpoint before fully collapsing on mobile. Uses data-testid attributes for testing.",
+    "task-management-dashboard/src/components/TaskList.tsx: Task list component with search input (data-testid='search-input'), filter dropdowns for priority/status/category/assignee, pagination controls. Fetches tasks from API via getTasks(params) on mount and when filters change. Shows empty state 'No matching tasks' with 'Clear filters' link when no results. Renders TaskCard components. data-testid='task-list'.",
+    "task-management-dashboard/src/components/TaskCard.tsx: Individual task card showing title (bold), description preview truncated to 2 lines, priority badge (background color by priority), due date in ISO format with red text + warning icon when overdue, assignee avatar. Co
+
+[Excerpt: 89,083 characters of technical specification were trimmed to 41,388 for this request. Use your repository read tools to open the full document if you need a section that is not shown above.]
+
+The specification has a fixed set of sections, and no revision can add one: `product_scope`, `component_boundaries`, `domain_model`, `api_and_event_contracts`, `data_flows`, `security_and_privacy`, `reliability_and_observability`, `testing`, `deployment`, `open_questions`, `acceptance_criteria`, `interface_design`, `interface_contract`, `specialist_advice_decisions`, `file_plan`, `function_contracts`, `data_contracts`, `error_catalogue`, `implementation_order`, `test_cases`, `configuration`, `library_usage`, `decisions`.
+So do not require a new section by name - it cannot be created, and the finding would come back unresolved however good the revision is. Say what is missing and which of those sections it belongs in, and judge the next revision by whether the content is there, wherever it was put.
+
+
+--- Brief requirements this specification defers, redefines or never describes ---
+- `search`. The brief: "- Search and filter functionality". The specification: "Deferred: Advanced search beyond basic title/description keyword matching."
+- `update`. The brief: "- Create, read, update, delete tasks". The specification: "Deferred: WebSocket real-time updates."
+- `reminders`. The brief: "- Due dates and reminders". The specification: "Deferred: Reminder trigger mechanism and notification channels."
+
+Each of these is an acceptance criterion in the operator's brief. Narrowing, reinterpreting or deferring one is the operator's decision, not the run's: a specification that does it is a major finding, and the remediation is to specify how it will be built - its flow, as the specification gives every other action. The one exception is an action the specification does describe under another name, or a line that defers only a variant of something it builds elsewhere - then quote where it is built. The run's final check reads the brief, so a requirement dropped here is built at the end anyway, after every sprint that could have planned for it.
+
+--- What the specification adds beyond the brief ---
+The brief, as the customer wrote it:
+--- Document 1 ---
+# Product Brief: Task Management Dashboard
+
+## Overview
+Build a comprehensive task management dashboard with user authentication, team collaboration features, and analytics.
+
+## Requirements
+1. **User Interface**: Modern web application with responsive design
+2. **Features**:
+   - User registration and authentication (JWT-based)
+   - Create, read, update, delete tasks
+   - Assign tasks to team members
+   - Set priorities (low, medium, high, urgent)
+   - Due dates and reminders
+   - Task categories and tags
+   - Search and filter functionality
+3. **Data Storage**: PostgreSQL database with proper schema
+4. **API**: RESTful API with proper error handling
+
+## Technical Constraints
+- Backend: Python/FastAPI or Node.js/Express
+- Frontend: React or Vue.js
+- Authentication: JWT tokens with refresh mechanism
+- Database migrations required
+- Docker containerization
+
+## Acceptance Criteria
+- Users can register, login, logout securely
+- Task CRUD operations work correctly
+- Team collaboration features function properly
+- Analytics dashboard shows task statistics
+- API documentation available (Swagger/OpenAPI)
+- All endpoints have proper error handling
+
+Where the brief speaks to a subject - what the user is shown, in what form, what an action does - read what the specification says of that same subject. A rule it adds there, one that changes what can be observed beyond what the brief says, is a major finding: quote the brief's line and the specification's rule, and the remediation is to drop the rule or to state it as the brief does. Where the brief's own words suggest a plainer reading, the plainer reading stands, however reasonable the addition looks; every later stage treats the specification as the requirement, so nothing after this review will question it.
+A rule on a subject the brief does not speak to is a design choice and no finding. So is the detail needed to carry out what the brief says, and anything the setup decides.

@@ -26,6 +26,13 @@ import re
 logger = logging.getLogger(__name__)
 
 DEFAULT_SPECIFICATION_BUDGET = 150_000
+
+#: How a document fitted to a request says so (`excerpt`, and the architect's own revision excerpts): the request
+#: does not hold it whole, so the project memory still does (`project_memory.quoted_whole_in`, LF.1573).
+EXCERPT_MARK = "[Excerpt: "
+#: The line the per-role `_truncate` helpers put where they cut a document's middle out
+#: (`technical_lead`, `product_manager`, `stack_selector`, `tools_models`).
+TRUNCATED_MARK = "--- TRUNCATED ("
 """Characters of the technical specification to carry into one request.
 
 About 40-50k tokens at 3-4 characters a token - not the 15k this once said.
@@ -186,6 +193,8 @@ def excerpt(text: str, budget: int, *, what: str) -> str:
 
 __all__ = [
     "DEFAULT_SPECIFICATION_BUDGET",
+    "EXCERPT_MARK",
+    "TRUNCATED_MARK",
     "excerpt",
     "specification_budget",
 ]

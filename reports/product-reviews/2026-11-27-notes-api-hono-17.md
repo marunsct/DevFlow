@@ -7,7 +7,7 @@ JST 11-27, with two diagnosis pauses and several deploys. 110 tool calls, 0.9% f
 - **Time:** about 3 hours went to design replies of 30-44k tokens before the reasoning limit worked (from 05:14, IK.3,
   LF.1588); from the acceptance tests to release took about 2.5 hours, including calls queued on one server until per-request
   sessions (06:38).
-- **Quality 0.75:** the two lost checks are "one error shape" and "the error shape the specification states". The product
+- **Quality 0.75, re-scored 1.0 after LF.1591 (deployed 08:53):** the two lost checks are "one error shape" and "the error shape the specification states". The product
   answers every error as `{error}`; the other "shapes" counted are an internal TypeScript result type in
   `src/validation.ts` (`{ok: false; status; error}`), not a response. Likely a false finding, to be fixed in the scorer.
 - **Gaps:** 32, most of them QA-lead findings about weak assertions left open when fast delivery locked the suite.

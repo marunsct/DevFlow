@@ -15,10 +15,10 @@ decisions in force are `docs/owner-decisions.md`; old information is found throu
 |---|---|
 | Phase | **Learning runs, fixes deployed at once** (deep-review plan, owner 11-18: implement all; frozen-version measuring for Measure batches). The release-candidate count starts only when a full audit cycle finds nothing to fix. |
 | Models | olla `host.docker.internal:4001/olla/openai/v1`, model `inkling-2-mini` (the owner's, under test since 11-27; two llama.cpp servers, 1 slot each, 231k context). Runs pinned to it; per-request sessions (`.env` MODEL_SESSION_SCOPE=request). Re-diagnose after a reasoning or diagnosis change. |
-| Harness | f56bc51 deployed 11-27 07:5x JST: LF.1503-1590 (details `docs/archive/plans/fix-log.md`). Committed, deploying: LF.1591-1592 (quality scorer false findings). Building: LF.1593 (a smaller reasoning budget for agent steps, switch). Scored on inkling: notes-api-hono 17 9/9, web-todo 1 7/10 (silent loss, fixed by LF.1590). Runs: L wordstats-cli (inkling) 1 (run-af51e4c9), L textkit-lib (inkling) 1. Medium 5 (Qwen) not resumed; the bookmarks run paused by the owner. Left in the plan: PA.10, PA.13, PA.18, PA.4 repair, measurements. |
+| Harness | 60061da deployed 11-27 08:53 JST: LF.1503-1593 (details `docs/archive/plans/fix-log.md`); latest LF.1591-1592 quality scorer false findings, LF.1593 a step-sized reasoning budget (switch on, measured). Scored on inkling: notes-api-hono 17 9/9, quality 1.0 re-scored; web-todo 1 7/10 (silent loss, fixed by LF.1590). Runs: L wordstats-cli (inkling) 1 (run-af51e4c9), L textkit-lib (inkling) 1 (run-4d1f3829). Medium 5 (Qwen) not resumed; the bookmarks run paused by the owner. Left in the plan: PA.10, PA.13, PA.18, PA.4 repair, measurements. |
 | Switches | 53 fixes built in (always on). 29 optional switches (9 groups, `docs/measuring.md`); `WEB_LOOKUP_WHEN_STUCK` is off and set per run. Measure arms use `SWITCHES_OFF` per run. |
 | Operations | Nightly backups (`loop.sh backup --check`). At most 2 runs, parallel execution mode (`.env` `MAX_CONCURRENT_RUNS=2`). Suites at SUITE_WORKERS=2 while inkling is loaded (memory). Audit cron every 15 minutes. |
-| Suites | green at 22,765 on e386763; on 4fc039b one doc-length failure, fixed. |
+| Suites | both green at 22,800 passed on 60061da (11-27 08:50 JST), at SUITE_WORKERS=2. |
 
 ## Off until measured
 BATCH_ACCEPTANCE_AUTHOR (web tools are on since 11-23, measured from there). Hosted-model

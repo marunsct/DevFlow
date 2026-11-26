@@ -301,8 +301,10 @@ def _names_sentence(names: list[str], wanted: str) -> str:
     near = [n for n in names if wanted and (wanted.lower() in n.lower() or n.lower() in wanted.lower())]
     near += difflib.get_close_matches(wanted, names, n=5, cutoff=0.6) if wanted else []
     near = list(dict.fromkeys(near))[:5]
-    shown = ", ".join(f"`{n}`" for n in names[:MOST_NAMES_SHOWN]) or "nothing readable"
-    said = f" it has no `{wanted}`; it exports only: {shown}"
+    from app.analysis.package_exports import exports_said
+
+    # A long list is said to be cut, the names nearest the missing one first (LF.1515).
+    said = f" it has no `{wanted}`; it exports {exports_said(names, MOST_NAMES_SHOWN, wanted, quote=True)}"
     if near:
         said += f". The nearest names: {', '.join(f'`{n}`' for n in near)}"
     return said + " - use one of those, or write the function yourself"

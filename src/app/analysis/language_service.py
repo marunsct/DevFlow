@@ -829,6 +829,12 @@ _A_MISSING_NAME = __import__("re").compile(
 )
 
 
+def the_missing_name(message: str) -> str:
+    """The name a finding says an import asks for and its module lacks; "" when it names none."""
+    found = _A_MISSING_NAME.search(message or "")
+    return (found.group(1) or found.group(2) or "") if found else ""
+
+
 def the_names_the_module_has(project: Path, importer: Path, finding: dict) -> str:
     """A sentence naming what the module an import reads really defines, for a finding about a missing name; else "".
 
@@ -854,7 +860,10 @@ def the_names_the_module_has(project: Path, importer: Path, finding: dict) -> st
     module, names = answer
     if not module.is_absolute():
         # A package: nothing in the project can add a name to it.
-        return (f" `{module.as_posix()}` is a package; it exports only: {', '.join(names[:25]) or 'nothing readable'}"
+        from app.analysis.package_exports import exports_said
+
+        # A long list is said to be cut, the names nearest the missing one first (LF.1515).
+        return (f" `{module.as_posix()}` is a package; it exports {exports_said(names, 25, the_missing_name(message))}"
                 " - import one of those, or write the function yourself")
     try:
         shown = module.relative_to(project).as_posix()

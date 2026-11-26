@@ -321,7 +321,9 @@ def underlined_in_the_batch(state: Any, root: str, since: str) -> list[Any]:
     certain, and named by file and line. See `app.analysis.language_service`.
     """
     from app.agents.specialists import ReportedDefect
-    from app.analysis.language_service import ALL_SUFFIXES, service_name, the_names_the_module_has, underlined_in
+    from app.analysis.language_service import (
+        ALL_SUFFIXES, service_name, the_missing_name, the_names_the_module_has, underlined_in,
+    )
 
     try:
         from app.tools.repository import pinned_project_directory
@@ -364,9 +366,12 @@ def underlined_in_the_batch(state: Any, root: str, since: str) -> list[Any]:
                 # A path an installed package does not export: say which paths it does (PACKAGE_EXPORTS_NAMED).
                 expected += the_names_the_module_has(project or Path(root), Path(root) / relative, where[0])
             if module and not importers:
+                from app.analysis.package_exports import exports_said
+
+                # A long list is said to be cut, the names nearest the missing one first (LF.1515).
                 expected += (
-                    f" `{module}` is a package and exports only {', '.join(f'`{n}`' for n in defined[:20]) or 'nothing readable'}: "
-                    "import one of those names or write the function yourself; a name cannot be added to a package."
+                    f" `{module}` is a package and exports {exports_said(defined, 20, the_missing_name(message), quote=True)}"
+                    " - import one of those names or write the function yourself; a name cannot be added to a package."
                 )
             elif module:
                 expected += (

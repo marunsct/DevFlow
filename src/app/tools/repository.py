@@ -3839,8 +3839,9 @@ def edit_approved_artifact(
     if not find:
         raise RepositoryToolError(
             "The `find` text is empty. Give the exact passage to replace, or use "
-            "write_artifact to replace the whole file, or use replace_lines to "
-            "change a numbered range without quoting it."
+            "write_artifact to replace the whole file"
+            + (", or use replace_lines to change a numbered range without quoting it."
+               if _line_edits() else ".")
         )
 
     # Read, replace and write as one step. Parallel tool calls in the same turn
@@ -3966,14 +3967,20 @@ def edit_approved_artifact(
                            f"That text appears {occurrences} times; your `replace` keeps it and adds after it, "
                            "and the last of them ends the file, so the addition went at the end of the file.", find)
         if occurrences > 1:
+            # `replace_lines` is named only where the stage has it (LF.1516): with `LINE_EDITS` off, the
+            # advice sent a stage to a tool it could not call.
+            way_out = (
+                "Either add whichever of these surrounding lines differs between them to your `find` "
+                "and send it again, or - simpler - call `replace_lines` with the line numbers of the one "
+                "you meant. A position is never ambiguous, and the numbers are in the list above."
+                if _line_edits() else
+                "Add whichever of these surrounding lines differs between them to your `find` and send it "
+                "again, so it matches the one you meant and no other."
+            )
             raise RepositoryToolError(
                 f"That text appears {occurrences} times in '{relative_path}', so it is "
                 "ambiguous which one to change. It starts at "
-                f"{_where_each_match_starts(original, find)}. Either add whichever "
-                "of these surrounding lines differs between them to your `find` "
-                "and send it again, or - simpler - call `replace_lines` with the "
-                "line numbers of the one you meant. A position is never "
-                "ambiguous, and the numbers are in the list above."
+                f"{_where_each_match_starts(original, find)}. {way_out}"
                 f"{_a_collision_on_one_line(original, find)}"
                 f"{_what_sits_around_each_match(original, find)}"
                 f"{_the_replace_lines_call_for_each_copy(original, find)}"
@@ -4286,6 +4293,11 @@ def _a_collision_on_one_line(text: str, find: str) -> str:
     if not crowded:
         return ""
     where = ", ".join(str(line) for line in crowded)
+    if not _line_edits():
+        return (
+            f" Note that more than one copy is on the same line ({where}) - for them, extend your `find` "
+            "along the line until it matches one copy only."
+        )
     return (
         f" Note that more than one copy is on the same line ({where}), and a line "
         "number cannot pick between those - for them, either extend your `find` "
@@ -4357,7 +4369,7 @@ def _the_replace_lines_call_for_each_copy(text: str, find: str) -> str:
     while at >= 0 and len(starts) < _MOST_COPIES_GIVEN_A_CALL:
         starts.append(text.count("\n", 0, at) + 1)
         at = text.find(find, at + 1)
-    if len(starts) < 2:
+    if len(starts) < 2 or not _line_edits():
         return ""
     span = find.rstrip("\n").count("\n")
     calls = "; ".join(f"`start_line={n}, end_line={n + span}`" for n in dict.fromkeys(starts))
@@ -6793,6 +6805,11 @@ def _line_edits() -> bool:
     return line_edits_offered()
 
 
+def _the_edit_tools() -> str:
+    """The tools that change part of a file, as a refusal names them: only those the stage is offered (LF.1516)."""
+    return "`edit_artifact` or `replace_lines`" if _line_edits() else "`edit_artifact`"
+
+
 def _refuse_a_blind_overwrite_of_another_stage_s_file(
     root: Path, target: Path, relative_path: str, content: str
 ) -> None:
@@ -6940,7 +6957,7 @@ def _a_fragment_sent_as_the_file(
         f"Refusing to write '{relative_path}': a whole-file write replaces the file, "
         f"and what you sent is {after} line(s) where the file has {before}, so this "
         "would leave only what you sent. Nothing was written. To change one part, "
-        "change that part with `edit_artifact` or `replace_lines` and the rest stays. "
+        f"change that part with {_the_edit_tools()} and the rest stays. "
         "If the file really is to become only this, send the same write again."
     )
 
@@ -7035,7 +7052,7 @@ def _a_rewrite_that_drops_what_the_file_defines(
             "rewrite of it in this stage that would. Nothing was written. Another "
             "task in this sprint may own the part you are dropping - in parallel "
             "mode it may have been written minutes ago. Change only your own part "
-            "with `edit_artifact` or `replace_lines`. If those names really should "
+            f"with {_the_edit_tools()}. If those names really should "
             "go, delete them one at a time so the change is visible, or say in "
             "your structured response why the file should be replaced whole."
         )

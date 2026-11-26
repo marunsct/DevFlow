@@ -101,7 +101,7 @@ def test_a_model_can_look_before_it_writes_with_the_module_exports_tool(tmp_path
 
     answered = tools[0].invoke({"module": "hono/testing"})
 
-    assert answered["exports"] == ["testClient"] and "Only these names exist" in answered["note"]
+    assert answered["exports"] == ["testClient"] and answered["count"] == 1 and not answered.get("cut")
     assert "error" in tools[0].invoke({"module": "nothing-installed"})
     assert "error" in tools[0].invoke({"module": "./local"})
 

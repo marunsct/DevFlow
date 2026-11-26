@@ -21,9 +21,15 @@ from app.switches import is_on
 #: Off in code like every switch; the compose file turns it on.
 ON_BY_DEFAULT = False
 
-#: How many files `export * from` is followed through, and how many names are listed.
+#: How many files `export * from` is followed through, and how many import paths `package_paths` lists.
 MOST_DEPTH = 3
 MOST_NAMES = 60
+#: How many characters of names the `module_exports` tool answers with before it says its list is cut (LF.1515).
+#: The readers return every name: a list cut at 60 that read as whole told a fixer `ValidationError` and
+#: `field_validator` did not exist in `pydantic`, which exports 151 names (about 2,100 characters).
+MOST_ANSWER_CHARACTERS = 4000
+#: How many near names an answer about one name gives.
+MOST_NEAR_NAMES = 8
 
 
 def enabled() -> bool:
@@ -131,8 +137,7 @@ def script_package_exports(project: Path, specifier: str) -> list[str] | None:
             if entry is None and subpath == ".":
                 entry = _type_file(base / "node_modules" / "@types" / name.replace("@", "").replace("/", "__"), ".")
             if entry is not None:
-                names = sorted(dict.fromkeys(_names_of_type_file(entry, 0, set())))
-                return names[:MOST_NAMES]
+                return sorted(dict.fromkeys(_names_of_type_file(entry, 0, set())))
     return None
 
 
@@ -176,7 +181,7 @@ def python_package_exports(project: Path, dotted: str) -> list[str] | None:
                 elif isinstance(node, (ast.Import, ast.ImportFrom)):
                     names += [(a.asname or a.name).split(".")[0] for a in node.names if a.name != "*"]
             chosen = listed if listed else [n for n in names if not n.startswith("_")]
-            return sorted(dict.fromkeys(chosen))[:MOST_NAMES]
+            return sorted(dict.fromkeys(chosen))
     return None
 
 
@@ -193,9 +198,74 @@ def _project_of(repo_root: str | Path) -> Path:
     return root / pinned if pinned else root
 
 
-def exports_of(repo_root: str | Path, module: str) -> dict:
-    """What the installed package or module `module` exports, for the tool; {"error": ...} when it cannot be read."""
+def nearest_names(names: list[str], wanted: str, most: int = MOST_NEAR_NAMES) -> list[str]:
+    """The names closest to `wanted`: those containing it or contained in it (any case), then the most alike."""
+    import difflib
+
+    if not wanted:
+        return []
+    low = wanted.lower()
+    others = [n for n in names if n != wanted]
+    near = [n for n in others if low in n.lower() or n.lower() in low]
+    near += difflib.get_close_matches(wanted, others, n=most, cutoff=0.6)
+    return list(dict.fromkeys(near))[:most]
+
+
+def exports_said(names: list[str], most: int, wanted: str = "", quote: bool = False) -> str:
+    """The names for a sentence that goes on from "exports": "only: a, b" when all of them fit in `most`; past it,
+    how many there are, those nearest `wanted` first, and how many are left out - never a cut list read as whole."""
+    shown = (lambda n: f"`{n}`") if quote else (lambda n: n)
+    if not names:
+        return "nothing readable"
+    if len(names) <= most:
+        return "only: " + ", ".join(shown(n) for n in names)
+    first = list(dict.fromkeys(nearest_names(names, wanted) + names))[:most]
+    return (f"{len(names)} names, among them: " + ", ".join(shown(n) for n in first)
+            + f" and {len(names) - most} more")
+
+
+def _fitted(names: list[str], most: int = MOST_ANSWER_CHARACTERS) -> list[str]:
+    """The names, in order, as far as they fit in `most` characters of a list."""
+    kept: list[str] = []
+    used = 0
+    for name in names:
+        used += len(name) + 4
+        if used > most:
+            break
+        kept.append(name)
+    return kept
+
+
+def _answer(module: str, names: list[str], name: str) -> dict:
+    """The tool's answer: the whole list, a list that says it is cut, or, asked for one `name`, whether it is there."""
+    if name:
+        if name in names:
+            return {"module": module, "name": name, "exported": True,
+                    "note": f"`{module}` exports `{name}`: import it from `{module}`."}
+        near = nearest_names(names, name)
+        return {"module": module, "name": name, "exported": False, "nearest": near,
+                "note": f"`{module}` exports no `{name}` (it exports {len(names)} names)"
+                        + (f"; the nearest: {', '.join(f'`{n}`' for n in near)}" if near else "")
+                        + ". Import one of those, or write the function yourself."}
+    shown = _fitted(names)
+    if len(shown) == len(names):
+        return {"module": module, "exports": names, "count": len(names),
+                "note": f"These are all {len(names)} names it exports; import from this list or write the function "
+                        "yourself."}
+    return {"module": module, "exports": shown, "count": len(names), "cut": True,
+            "note": f"The list is cut: {len(shown)} of its {len(names)} names are shown, so a name not shown may "
+                    "still be exported. Ask again with `name` set to the name you mean to import to learn whether it "
+                    "is exported, and its nearest names if not."}
+
+
+def exports_of(repo_root: str | Path, module: str, name: str = "") -> dict:
+    """What the installed package or module `module` exports, for the tool; {"error": ...} when it cannot be read.
+
+    With `name`, whether it exports that one name and, if not, the names nearest it. A list past
+    `MOST_ANSWER_CHARACTERS` is cut and says so, with how many names there are (LF.1515).
+    """
     module = str(module or "").strip()
+    name = str(name or "").strip()
     if not module or module.startswith((".", "/")):
         return {"error": "Name an installed package or one of its subpaths, as an import writes it "
                          "(`hono/testing`, `@hono/node-server`, `fastapi`, `jwt`); for a file of this project, read it."}
@@ -203,8 +273,7 @@ def exports_of(repo_root: str | Path, module: str) -> dict:
     for read in (script_package_exports, python_package_exports):
         names = read(project, module)
         if names is not None:
-            return {"module": module, "exports": names,
-                    "note": "Only these names exist; import from this list or write the function yourself."}
+            return _answer(module, names, name)
     return {"error": f"`{module}` is not installed in this project, or its files cannot be read. "
                      "Install it first, or check the name with look_up_package."}
 
@@ -236,17 +305,20 @@ def exports_tools(repo_root: str | Path) -> list:
     from langchain_core.tools import tool
 
     @tool
-    def module_exports(module: str) -> dict:
+    def module_exports(module: str, name: str = "") -> dict:
         """Read the names an installed package really exports, before importing a name from it.
 
         Use it whenever you are about to import something from a package you are not sure of: a name you remember
-        may not exist (a test client, a helper). Reads the installed files; runs nothing.
+        may not exist (a test client, a helper). Reads the installed files; runs nothing. A long list is cut and
+        says so; set `name` to learn whether one name is exported.
 
         Args:
             module: the package or subpath as an import writes it - `hono/testing`, `@hono/node-server`,
                 `fastapi`, `jwt`, `sqlalchemy.orm`.
+            name: optional - one name you mean to import; the answer says whether the package exports it and,
+                if not, the names nearest it.
         """
-        return exports_of(repo_root, module)
+        return exports_of(repo_root, module, name)
 
     return [module_exports]
 

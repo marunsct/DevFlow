@@ -2186,7 +2186,7 @@ def test_the_refusal_says_nothing_was_written(repo_root: Path) -> None:
     assert "Send the file again, complete" in message
 
 
-def test_an_ambiguous_edit_says_where_the_copies_are(repo_root: Path) -> None:
+def test_an_ambiguous_edit_says_where_the_copies_are(repo_root: Path, monkeypatch) -> None:
     """"Include more surrounding text" is advice; line numbers are information.
 
     Measured on one run: 7 of 24 `edit_artifact` failures were ambiguity,
@@ -2206,8 +2206,11 @@ def test_an_ambiguous_edit_says_where_the_copies_are(repo_root: Path) -> None:
     message = str(caught.value)
     assert "lines 3 and 7" in message
     assert "whichever of these surrounding lines differs" in message
-    # And the way out that cannot be ambiguous, named with the numbers in hand.
-    assert "replace_lines" in message
+    # And, where the stage has it, the way out that cannot be ambiguous, named with the numbers in hand.
+    monkeypatch.setenv("LINE_EDITS", "on")
+    with pytest.raises(RepositoryToolError) as caught:
+        edit_approved_artifact(repo_root, "p/a.mjs", "  assert(ok);\n", "  assert(better);\n")
+    assert "replace_lines" in str(caught.value)
     # And the surroundings themselves, which is what makes it actable.
     assert "the copy at line 3:" in message
     assert "loadTasks();" in message

@@ -179,9 +179,11 @@ class TestTheMessageTheStageReceives:
 
         assert "same line" in str(raised.value)
 
-    def test_copies_on_separate_lines_still_get_the_position_advice(self, tmp_path):
-        """Which is the right advice there, and must not be lost."""
+    def test_copies_on_separate_lines_still_get_the_position_advice(self, tmp_path, monkeypatch):
+        """Which is the right advice there, and must not be lost where the stage has `replace_lines`."""
         from app.tools.repository import RepositoryToolError, edit_approved_artifact
+
+        monkeypatch.setenv("LINE_EDITS", "on")
 
         root = tmp_path / "workspace"
         (root / "app").mkdir(parents=True)

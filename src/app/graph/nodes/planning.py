@@ -446,6 +446,10 @@ def scrum_master_node(state: WorkflowGraphState, config: RunnableConfig, ctx: Gr
     from app.agents.specification_rulings import with_the_rulings
 
     request = with_the_rulings(request, root_path)
+    # What the design review approved the specification on, and the risks it accepted (LF.1512).
+    from app.agents.design_review_conditions import with_the_conditions
+
+    request = with_the_conditions(request, state, risks=True)
     # Sent back at the plan gate: the owner's words, with the plan they read, in this request (plan WS.3).
     from app.graph import plan_gate
 

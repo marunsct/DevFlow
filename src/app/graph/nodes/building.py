@@ -174,6 +174,10 @@ def technical_lead_node(state: WorkflowGraphState, config: RunnableConfig, ctx: 
     from app.agents.specification_rulings import with_the_rulings
 
     request = with_the_rulings(request, state["repository"].root_path)
+    # What the design review approved the specification on, and the risks it accepted (LF.1512).
+    from app.agents.design_review_conditions import with_the_conditions
+
+    request = with_the_conditions(request, state, risks=True)
     # A release held back hands on with no milestone plan, so the lead
     # plans afresh - and the planning request never read the comments:
     # a release held for a missing README or a credential in the code
@@ -810,6 +814,10 @@ def specialist_dispatch_node(state: WorkflowGraphState, config: RunnableConfig, 
         )
         # The facts the work is built and judged under (plan CM.1).
         request = with_the_facts(request, state["repository"].root_path, built=False)
+        # What the design review approved the specification on (LF.1512).
+        from app.agents.design_review_conditions import with_the_conditions
+
+        request = with_the_conditions(request, state)
         # The adopted advice of the domains its files are in, and their guidance (SK.1); a craft checklist (SK.2).
         from app.agents import domain_advice, domain_craft
 
@@ -909,6 +917,10 @@ def specialist_worker_node(state: dict, config: RunnableConfig, ctx: GraphContex
     )
     # The facts the work is built and judged under (plan CM.1).
     request = with_the_facts(request, state["repository"].root_path, built=False)
+    # What the design review approved the specification on (LF.1512).
+    from app.agents.design_review_conditions import with_the_conditions
+
+    request = with_the_conditions(request, state)
     # The adopted advice of the domains its files are in, and their guidance (SK.1); a craft checklist (SK.2).
     from app.agents import domain_advice, domain_craft
 

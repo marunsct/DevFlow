@@ -5932,12 +5932,13 @@ def _approved_once_the_harness_s_findings_are_settled(state: Any, spec_text: str
         return None
     if _the_harness_findings_still_open(state, spec_text, overturned):
         return None
-    from app.agents.architecture_reviewer import ArchitectureReviewOutput
+    from app.agents.design_review_conditions import approval_keeping_what_the_reviewer_said, what_is_carried
     from app.decisions import record_decision
 
     logger.info("The revision settled the workflow's own findings (%s): approved without a second review",
                 ", ".join(overturned))
-    approved = ArchitectureReviewOutput(status="approved", findings=[])
+    # The reviewer's own approval, as it last said it: its conditions, risks and answers are kept (LF.1511).
+    approved = approval_keeping_what_the_reviewer_said(state.get("architecture_review"))
     update: dict[str, Any] = {"architecture_review": approved, "approved_but_for_the_harness": []}
     design_gate.settled_by_the_checks(state, update, f"the workflow's checks ({', '.join(overturned)}) no longer find it")
     _record_document(state, "docs/architecture_review.md", render_architecture_review(approved))
@@ -5946,7 +5947,7 @@ def _approved_once_the_harness_s_findings_are_settled(state: Any, spec_text: str
         question="Is the specification ready to build from?",
         options=["approve", "send it back to the architect"], decision="approve",
         rationale=("The architecture reviewer approved it; the revision settled the workflow's own findings "
-                   f"({', '.join(overturned)}), checked again by the same checks."),
+                   f"({', '.join(overturned)}), checked again by the same checks." + what_is_carried(approved)),
     )
     update["stage"] = "user_review_specification" if _review_enabled(state, SPECIFICATION_REVIEW) else "scaffold"
     return update
@@ -5984,10 +5985,10 @@ def _decided_after_one_revision(state: Any, spec_text: str) -> dict[str, Any] | 
                           f"finding(s), the workflow's checks still find {len(open_points)} point(s) open."),
             },
         }
-    from app.agents.architecture_reviewer import ArchitectureReviewOutput
+    from app.agents.design_review_conditions import approval_keeping_what_the_reviewer_said, what_is_carried
     from app.decisions import record_decision
 
-    approved = ArchitectureReviewOutput(status="approved", findings=[])
+    approved = approval_keeping_what_the_reviewer_said(previous)  # LF.1511
     update: dict[str, Any] = {"architecture_review": approved}
     _record_document(state, "docs/architecture_review.md", render_architecture_review(approved))
     record_decision(
@@ -5995,7 +5996,8 @@ def _decided_after_one_revision(state: Any, spec_text: str) -> dict[str, Any] | 
         question="Is the specification ready to build from?",
         options=["approve", "send it back to the architect"], decision="approve",
         rationale=(f"The specification was {one_design_review.SAID}: one revision answered the review's {answered} "
-                   "finding(s), and the workflow's design checks and the contradiction check find nothing open."),
+                   "finding(s), and the workflow's design checks and the contradiction check find nothing open."
+                   + what_is_carried(approved)),
     )
     update["stage"] = "user_review_specification" if _review_enabled(state, SPECIFICATION_REVIEW) else "scaffold"
     return update

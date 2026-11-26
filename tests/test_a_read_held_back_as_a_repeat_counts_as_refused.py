@@ -1,4 +1,4 @@
-"""A read whose content is held back as a repeat counts toward taking the read tool away.
+"""A read whose content is held back as a repeat counts toward the read rung.
 
 Measured live: a fixer read one file fourteen times with the same arguments.
 The last eleven came back "This file has given you these same bytes N times
@@ -63,20 +63,25 @@ def _held_back(times):
     return messages
 
 
-def _kept(messages):
+def _decided(messages):
+    """What the next call is told, and the tools it lists."""
     request = _Request(messages, [_Tool("read_file"), _Tool("grep"), _Tool("write_artifact")])
     build_settled_answer_middleware(Verdict, "defect_fix_1_2", 40).wrap_model_call(request, lambda r: r)
-    return {t.name for t in request.captured.get("tools", request.tools)}
+    said = str((request.captured.get("messages") or [""])[-1])
+    return said, {t.name for t in request.captured.get("tools", request.tools)}
 
 
-def test_reads_held_back_as_repeats_take_the_read_tool_away(monkeypatch):
-    # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
+def test_reads_held_back_as_repeats_turn_the_read_rung(monkeypatch):
+    # STABLE_TOOLS off: this checks the bound tool list.
     monkeypatch.setenv("STABLE_TOOLS", "off")
-    kept = _kept(_held_back(READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL))
+    said, kept = _decided(_held_back(READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL))
 
-    assert "read_file" not in kept
-    assert {"grep", "write_artifact"} <= kept
+    # Since TR.2 the rung decides reads file by file and leaves the tool listed.
+    assert "file by file" in said
+    assert {"read_file", "grep", "write_artifact"} <= kept
 
 
-def test_fewer_than_the_threshold_keep_it():
-    assert "read_file" in _kept(_held_back(READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL - 1))
+def test_fewer_than_the_threshold_leave_reading_alone():
+    said, kept = _decided(_held_back(READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL - 1))
+
+    assert "file by file" not in said and "read_file" in kept

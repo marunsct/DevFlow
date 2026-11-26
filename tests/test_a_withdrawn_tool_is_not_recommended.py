@@ -55,7 +55,7 @@ def test_another_stage_is_not_affected(tmp_path: Path) -> None:
     assert "read it with `read_file`" in hint
 
 
-def test_once_the_middleware_withholds_it_the_stage_is_not_sent_back_to_it(tmp_path: Path, monkeypatch) -> None:
+def test_while_reads_are_decided_per_file_the_stage_is_sent_to_the_read_tool(tmp_path: Path, monkeypatch) -> None:
     from types import SimpleNamespace
 
     from pydantic import BaseModel
@@ -86,5 +86,6 @@ def test_once_the_middleware_withholds_it_the_stage_is_not_sent_back_to_it(tmp_p
         middleware.wrap_model_call(_Request(messages, tools), sent.append)
         hint = _and_a_path_is_read_with_read_file("app/app.js (1 lines)", str(root))
 
-    assert "read_file" not in [tool.name for tool in sent[0].tools]
-    assert "read it with `read_file`" not in hint
+    # Since TR.2 the read rung decides reads file by file: the tool stays, and a file not held can still be read.
+    assert "read_file" in [tool.name for tool in sent[0].tools]
+    assert "read it with `read_file`" in hint

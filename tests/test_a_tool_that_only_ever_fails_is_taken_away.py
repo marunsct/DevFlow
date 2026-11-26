@@ -236,18 +236,25 @@ class TestWhatIsTakenAway:
 class TestTheNotice:
     def test_it_names_the_tool_the_count_and_a_way_forward(self) -> None:
         """A tool that vanishes unexplained is a tool the model keeps calling."""
-        notice = _a_tool_withheld_notice("edit_artifact", 15)
+        notice = _a_tool_withheld_notice("edit_artifact", 15, ["edit_artifact", "write_artifact", "read_file"])
 
         assert "`edit_artifact`" in notice
         assert "15 times" in notice
         assert "write_artifact" in notice
         assert "blockers" in notice
 
-    @pytest.mark.parametrize("tool", ("edit_artifact", "replace_lines", "run_terminal_command"))
-    def test_the_notice_does_not_claim_everything_is_gone(self, tool: str) -> None:
-        notice = _a_tool_withheld_notice(tool, 7)
+    def test_a_way_forward_is_named_only_where_the_stage_is_offered_it(self) -> None:
+        """TR.3: what the notice names must be a tool the stage has."""
+        notice = _a_tool_withheld_notice("edit_artifact", 15, ["edit_artifact", "read_file"])
 
-        assert "Everything else still works" in notice
+        assert "write_artifact" not in notice
+
+    @pytest.mark.parametrize("tool", ("edit_artifact", "replace_lines", "run_terminal_command"))
+    def test_the_notice_claims_nothing_about_the_other_tools(self, tool: str) -> None:
+        """TR.3: measured on a live fixer, "Everything else still works" stood beside a list refusing all but three."""
+        notice = _a_tool_withheld_notice(tool, 7, ["write_artifact", tool])
+
+        assert "still works" not in notice
 
 
 def test_the_threshold_leaves_room_for_the_note_to_work() -> None:

@@ -63,13 +63,13 @@ def _cycles(pointers: int) -> list:
     return messages
 
 
-def test_enough_pointers_take_the_read_tool_away(monkeypatch) -> None:
-    # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
+def test_enough_pointers_turn_the_read_rung(monkeypatch) -> None:
+    # STABLE_TOOLS off: this checks the bound tool list. Since TR.2 the rung decides reads file by file.
     monkeypatch.setenv("STABLE_TOOLS", "off")
-    kept = _names(_call(_cycles(POINTED_READS_BEFORE_WITHHOLDING_THE_TOOL)))
+    captured = _call(_cycles(POINTED_READS_BEFORE_WITHHOLDING_THE_TOOL))
 
-    assert "read_file" not in kept and "read_repository_file" not in kept
-    assert {"edit_artifact", "run_terminal_command", "grep"} <= kept
+    assert "file by file" in str(captured["messages"][-1])
+    assert "tools" not in captured
 
 
 def _each_followed_by_a_write(pointers: int) -> list:

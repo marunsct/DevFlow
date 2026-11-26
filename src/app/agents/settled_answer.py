@@ -1928,8 +1928,8 @@ def _a_query_withheld_notice(name: str, repeats: int) -> str:
         f"the same thing {repeats + 2} times or more and it has answered identically "
         "every time, because nothing it reports on has changed. The answer is "
         "already in this conversation above.\n"
-        "Everything else still works. Act on what you have: make the change, run "
-        "the check, or return your structured response."
+        "Act on what you have: make the change or return your "
+        "structured response."
     )
 
 
@@ -1973,9 +1973,10 @@ _WRITE_NOW_NOTICE = (
 )
 
 
-#: Said to a fix stage on its last two model calls with no answer written (LF.1270): its last call is kept for a
-#: write. Measured on a medium run: 10 fix stages ended at their call cap with their final edit refused - the calls
-#: reserved for the answer had withheld every tool, the writers too.
+#: Said to a stage that writes on its last two model calls with no answer written (LF.1270, every writing stage since
+#: TR.6): its last call is kept for a write. Measured on a medium run: 10 fix stages ended at their call cap with their
+#: final edit refused - the calls reserved for the answer had withheld every tool, the writers too. Measured again over
+#: 26 runs once fixers kept theirs: 18 writes refused so in 15 visits of builders, suite writers, test rounds and setup.
 LAST_CALLS_KEPT_FOR_A_WRITE = (
     "Two model calls are left in this stage: this one and the last. Reading and running are withheld from here; the "
     "tools that change files are still yours. If your change is not made yet, your next call must be that write - or "
@@ -1989,9 +1990,10 @@ LAST_CALL_KEPT_FOR_A_WRITE = (
 )
 
 
-def _a_fix_stage_s_last_calls(messages: list[Any], limit: int, stage_name: str, tools: list[Any]) -> str:
-    """The notice for a fix stage on its last two calls under `limit`, which keep its writers; "" otherwise."""
-    if limit <= 0 or not _the_graph_stage(stage_name).startswith("defect_fix_"):
+def _a_writing_stage_s_last_calls(messages: list[Any], limit: int, tools: list[Any]) -> str:
+    """The notice for a stage offered a tool that changes a file, on its last two calls under `limit`, which keep its
+    writers; "" otherwise (a stage that only looks has only its answer left there)."""
+    if limit <= 0:
         return ""
     if not any(_named(tool) in _THE_WRITING_TOOLS for tool in tools or ()):
         return ""
@@ -2003,10 +2005,9 @@ def _a_fix_stage_s_last_calls(messages: list[Any], limit: int, stage_name: str, 
     return ""
 
 
-def _only_writes_pending(pending: list[Any], stage_name: str) -> bool:
-    """Whether a fix stage's reply asks only for writes - run, even at the call cap (LF.1270)."""
-    return (bool(pending) and _the_graph_stage(stage_name).startswith("defect_fix_")
-            and all(str((call or {}).get("name") or "") in _THE_WRITING_TOOLS for call in pending))
+def _only_writes_pending(pending: list[Any]) -> bool:
+    """Whether a reply asks only for writes - run, even at the call cap (LF.1270; every writing stage since TR.6)."""
+    return bool(pending) and all(str((call or {}).get("name") or "") in _THE_WRITING_TOOLS for call in pending)
 
 
 def _the_graph_stage(role_name: str = "") -> str:
@@ -2056,20 +2057,24 @@ def _without_the_read_tools_in(tools: list[Any]) -> list[Any] | None:
     return kept
 
 
-def _a_tool_withheld_notice(name: str, refusals: int) -> str:
-    """Why that one tool is gone, and what is left to do the work with.
+def _a_tool_withheld_notice(name: str, refusals: int, offered: Iterable[str] = ()) -> str:
+    """Why that one tool is gone: its reason only.
 
     Only the repeated tool is taken, never the whole set: the same edit usually
     goes through as a whole-file `write_artifact`, and a stage left with no way
-    to change a file at all could only give up.
+    to change a file at all could only give up. That way is named only where the
+    stage is offered it, and what may be called is said once, by the call's own
+    list (TR.3): measured on a live fixer, "Everything else still works" stood
+    beside a list that refused every tool but three.
     """
+    whole_file = ("write the whole file with `write_artifact`, or "
+                  if name != "write_artifact" and "write_artifact" in set(offered) else "")
     return (
         f"`{name}` has been withheld for the rest of this stage. You have called "
         f"it {refusals} times with the same arguments and it has been refused "
         "the same way every time, so the next identical call would be refused "
         "too. Nothing about the file has changed in between.\n"
-        "Everything else still works. If the change is still needed, reach it "
-        "another way - write the whole file with `write_artifact`, or fix "
+        f"If the change is still needed, reach it another way - {whole_file}fix "
         "whatever the refusal named first. If it is not needed, or something is "
         "genuinely in the way, say so in `blockers` and return your structured "
         "response."
@@ -2077,15 +2082,28 @@ def _a_tool_withheld_notice(name: str, refusals: int) -> str:
 
 
 #: Sent on the call the read tool is taken away, because a tool that vanishes
-#: with no explanation is a tool the model will keep trying to call.
+#: with no explanation is a tool the model will keep trying to call. Its reason
+#: only: what may still be called is said once, by the call's own list (TR.3).
+#: Measured on a live fixer, this said "`grep` and the directory listings still
+#: work" to a stage offered no listing, beside a list that refused `grep` too.
 _READ_TOOL_WITHHELD_NOTICE = (
     "Your file-reading tool has been withheld for the rest of this stage. You "
     "have been refused several reads that returned nothing you had not already "
     "been given, and on the runs this was measured on, almost every read after "
-    "that point was redundant too. `grep` and the directory listings still "
-    "work, and so does everything that changes a file or runs a command. Use "
-    "what you have: make the change, run the check, or return your structured "
-    "response. If something is genuinely missing, say so in `blockers`."
+    "that point was redundant too. Use what you have: make the change or "
+    "return your structured response. If something is genuinely "
+    "missing, say so in `blockers`."
+)
+
+#: Sent instead when reading is decided per file (TR.2). Measured over 26 runs: 51 of 85 reads refused by withholding
+#: the whole tool asked for a file whose text the request no longer held - read before a summary, or never read - and
+#: the refusal told the stage to use text it did not have.
+_READS_DECIDED_PER_FILE_NOTICE = (
+    "From here reading is decided file by file. You have been refused several reads that returned nothing you had "
+    "not already been given, so a read of a file this conversation already holds - in the project memory at its "
+    "start, or read since its last summary - is refused, and the refusal says where its text is. A file it does not "
+    "hold can still be read, and each read counts against this stage's model calls. Use what you have: make the "
+    "change, run the check, or return your structured response."
 )
 
 
@@ -2246,6 +2264,91 @@ def _writes_the_stage_s_deliverable(call: Any) -> bool:
     args = call.get("args") or {}
     path = str(args.get("relative_path") or args.get("file_path") or args.get("path") or "")
     return path.replace("\\", "/").rsplit("/", 1)[-1] in DELIVERABLE_FILES
+
+
+def reads_decided_per_file() -> bool:
+    """Whether the stage's latest call withheld its read tool file by file (TR.2), for `project_memory`, which refuses
+    a read of a file it holds before the read reaches the refusal here. False outside a stage."""
+    try:
+        from app.agents.stage_memory import store
+
+        return bool(store("withheld tools", {}).get("per_file"))
+    except Exception:  # noqa: BLE001 - then reading is decided as before
+        return False
+
+
+def _the_read_asked(args: Any) -> tuple[str, int, int]:
+    """(path, first line, lines) a read asks for; 0 lines for the default window, however it was spelled."""
+    from app.agents.workspace_paths import DEFAULT_READ_LINES
+
+    args = args if isinstance(args, dict) else {}
+    path = str(args.get("file_path") or args.get("path") or "").strip().lstrip("/")
+    try:
+        offset = int(args.get("offset") or 0)
+        limit = int(args.get("limit") or 0)
+    except (TypeError, ValueError):
+        offset, limit = 0, 0
+    return path, offset, 0 if limit == DEFAULT_READ_LINES else limit
+
+
+#: A read result that is the file's text: numbered lines, as the read tool gives them ("  1  ..." or "     1<tab>...").
+_NUMBERED_LINE = re.compile(r"(?m)^ *\d+(?:\t| {2})")
+
+
+def _reads_in_the_conversation(messages: list[Any]) -> set[tuple[str, int, int]]:
+    """The reads whose text the conversation still holds: a result of numbered lines, not folded or stubbed, of a file
+    not written since. Counted from the conversation the call sends, so a read a summary took out is not held."""
+    from app.agents.observation_folding import FOLDED as FOLDED_OBSERVATION
+    from app.agents.old_reads_stubbed import TAKEN_OUT
+    from app.agents.refusal_folding import FOLDED as FOLDED_REFUSAL
+
+    asked: dict[str, tuple[str, int, int]] = {}
+    held: set[tuple[str, int, int]] = set()
+    for message in messages:
+        for call in getattr(message, "tool_calls", None) or ():
+            name = str((call or {}).get("name") or "")
+            args = (call or {}).get("args") or {}
+            if name in _READ_TOOLS:
+                asked[str((call or {}).get("id") or "")] = _the_read_asked(args)
+            elif name in _THE_WRITING_TOOLS and isinstance(args, dict):
+                written = str(args.get("relative_path") or args.get("file_path") or args.get("path") or "")
+                written = written.strip().lstrip("/")
+                held = {read for read in held if read[0] != written}
+        if getattr(message, "type", None) != "tool":
+            continue
+        read = asked.get(str(getattr(message, "tool_call_id", "") or ""))
+        content = str(getattr(message, "content", "") or "")
+        if (read is None or getattr(message, "status", "") == "error" or not _NUMBERED_LINE.search(content)
+                or any(mark in content for mark in (FOLDED_OBSERVATION, FOLDED_REFUSAL, TAKEN_OUT))):
+            continue
+        held.add(read)
+    return held
+
+
+def _already_in_the_conversation(path: str) -> str:
+    """The refusal of a read whose text the conversation holds: the file, and where its text is."""
+    from app.agents.workspace_backend import READ_REFUSED_MARKER
+
+    return (f"{READ_REFUSED_MARKER} '{path}' again: these lines were read earlier in this conversation, since its last "
+            "summary, and the file has not been written since - its text is in that read's result above. This "
+            "returns nothing you have not already been given. Use it from there; a file this conversation does not "
+            "hold can still be read.")
+
+
+def _usable_on_the_next_call(messages: list[Any], limit: int, schema: Any, every: set[str],
+                             repeated: set[str]) -> set[str] | None:
+    """The tools the stage's next call will allow, when the budget decides them; None when it does not (TR.3).
+
+    The next call is the one a refusal's list is acted on in. On the budget's last two calls a stage that writes keeps
+    only its writers (TR.6) and one that does not has only its answer; past them only the answer is left.
+    """
+    if limit <= 0 or schema is None or _most_recent_answer(messages, schema) is not None:
+        return None
+    left = limit - (_model_calls_used(messages) + 1)
+    if left > CALLS_RESERVED_FOR_THE_ANSWER:
+        return None
+    writers = {name for name in every if name in _THE_WRITING_TOOLS} - set(repeated)
+    return writers if left >= 1 else set()
 
 
 def build_settled_answer_middleware(
@@ -2471,9 +2574,10 @@ def build_settled_answer_middleware(
                     correction = f"{correction}\n\n{_FIXED_ANSWER_NOW_NOTICE}" if correction else _FIXED_ANSWER_NOW_NOTICE
                     logger.warning("Stage %s was told its defect is fixed and carried on; only its answer is left", stage_name or "?")
                 answer_due = _nothing_left_but_the_answer(messages, _the_step_limit(step_limit), schema)
-                # A fix stage's last two calls keep its writers: its last call is kept for the write (LF.1270).
-                last_writes = _a_fix_stage_s_last_calls(
-                    messages, _the_step_limit(step_limit), stage_name, list(getattr(request, "tools", None) or [])
+                # A writing stage's last two calls keep its writers: its last call is kept for the write (LF.1270,
+                # TR.6).
+                last_writes = _a_writing_stage_s_last_calls(
+                    messages, _the_step_limit(step_limit), list(getattr(request, "tools", None) or [])
                 ) if answer_due else ""
                 if last_writes:
                     budget_warning = _running_out_of_room(messages, _the_step_limit(step_limit), schema)
@@ -2490,7 +2594,8 @@ def build_settled_answer_middleware(
                     # Named as well: the model is told which call it kept
                     # sending, not only that its tools are gone.
                     refused = _a_tool_refused_identically(messages)
-                    named = (_a_tool_withheld_notice(*refused) if refused is not None
+                    named = (_a_tool_withheld_notice(*refused, [_named(tool) for tool in getattr(request, "tools", None) or []])
+                             if refused is not None
                              else _a_query_withheld_notice(*_a_query_answered_identically(messages)))
                     if not writers:
                         # With writers kept, the repeat rung below names it.
@@ -2553,16 +2658,18 @@ def build_settled_answer_middleware(
                     from app.agents import worked_out
 
                     acting_only = worked_out.acting_tools_only(list(getattr(request, "tools", None) or []))
+                # Reading decided per file, not per tool, where only the read rung withholds it (TR.2): withheld
+                # by any other rung on this call, the read tool goes whole, as before.
+                reads_per_file = False
                 if not answer_only:
                     notices = []
-                    if read_tool_due:
-                        notices.append(_READ_TOOL_WITHHELD_NOTICE)
                     if acting_only is not None:
                         from app.agents.worked_out import ACTING_ONLY_NOTICE
 
                         notices.append(ACTING_ONLY_NOTICE)
+                    offered_names = [_named(tool) for tool in getattr(request, "tools", None) or []]
                     repeated = _a_tool_refused_identically(messages)
-                    notice = _a_tool_withheld_notice(*repeated) if repeated is not None else ""
+                    notice = _a_tool_withheld_notice(*repeated, offered_names) if repeated is not None else ""
                     if repeated is None:
                         repeated = _a_query_answered_identically(messages)
                         notice = _a_query_withheld_notice(*repeated) if repeated is not None else ""
@@ -2574,6 +2681,13 @@ def build_settled_answer_middleware(
                         notice = _the_same_call_running_notice(*repeated) if repeated is not None else ""
                     if notice:
                         notices.append(notice)
+                    if read_tool_due:
+                        reads_per_file = not (
+                            ignored or (stalled and writers) or acting_only is not None or last_writes
+                            or (repeated is not None and repeated[0] in _READ_TOOLS)
+                        )
+                        notices.insert(0, _READS_DECIDED_PER_FILE_NOTICE if reads_per_file
+                                       else _READ_TOOL_WITHHELD_NOTICE)
                     # What the model has already done, when it sends the same action again (behind `AGENT_LOOP_FIX_LIMITS`).
                     from app.graph import agent_loop_fix_limits
 
@@ -2638,12 +2752,19 @@ def build_settled_answer_middleware(
                     if read_tool_due:
                         without_reads = _without_the_read_tools_in(kept)
                         if without_reads is not None:
-                            kept, narrowed = without_reads, True
+                            # Per file, the read tool stays listed and each read is decided as it is called; the
+                            # stage-long memo is for a tool that is gone, which a file not yet read is not.
                             already = the_read_tool_is_withheld()
-                            _remember_the_read_tool_is_withheld()
+                            if not reads_per_file:
+                                kept, narrowed = without_reads, True
+                                _remember_the_read_tool_is_withheld()
                             # Said once per stage: it is withheld on every later call too, and one stage logged it
                             # five times in a minute.
-                            if not already:
+                            if reads_per_file:
+                                logger.info("Stage %s has been refused %d redundant reads and pointed to the project "
+                                            "memory for %d; reading is decided file by file", stage_name or "?",
+                                            reading_nothing_new, _pointed_reads(messages))
+                            elif not already:
                                 logger.warning(
                                     "Stage %s has been refused %d redundant reads and pointed to the "
                                     "project memory for %d; withholding the read tool for the rest of it",
@@ -2690,11 +2811,24 @@ def build_settled_answer_middleware(
                 if refused_fallback is not None:
                     refused_fallback = request.override(messages=corrected, **refused_fallback)
                 every = {_named(tool) for tool in getattr(request, "tools", None) or []} - {""}
+                # Read per file: listed and callable, each read decided by `wrap_tool_call` against what the
+                # conversation holds (TR.2).
+                per_file = (every & _READ_TOOLS) if reads_per_file else set()
+                withheld_now_here = None
                 if "tools" in overrides:
-                    sent = {_named(tool) for tool in overrides["tools"]}
-                    self._set_withheld(every - sent, every)
+                    withheld_now_here = every - {_named(tool) for tool in overrides["tools"]}
                 elif withheld_here is not None:
-                    self._set_withheld(withheld_here, every)
+                    withheld_now_here = set(withheld_here)
+                elif per_file:
+                    withheld_now_here = set()
+                if withheld_now_here is not None:
+                    self._set_withheld(
+                        withheld_now_here | per_file, every, per_file=per_file,
+                        in_conversation=_reads_in_the_conversation(messages) if per_file else (),
+                        next_usable=_usable_on_the_next_call(
+                            messages, _the_step_limit(step_limit), schema, every,
+                            {repeated[0]} if repeated is not None else set()),
+                    )
                 request = request.override(messages=corrected, **overrides)
             except Exception:  # noqa: BLE001 - never fail the call over a hint
                 return handler(request)
@@ -2724,31 +2858,58 @@ def build_settled_answer_middleware(
                 )
                 return handler(refused_fallback)
 
-        def _set_withheld(self, names: Any, every: Any = None) -> None:
+        def _set_withheld(self, names: Any, every: Any = None, per_file: Any = (), in_conversation: Any = (),
+                          next_usable: Any = None) -> None:
             """The tools this call withholds, on the instance and in the stage's memory.
 
             A call that needs approval pauses the graph, and the node builds the
             agent afresh to resume it, running the paused call with no model call
             first: on the instance alone the new middleware knew of nothing
             withheld, and a withheld write or command ran after its pause.
+
+            `per_file` are the read tools withheld file by file, with the reads the conversation holds in
+            `in_conversation` (TR.2); `next_usable`, the tools the next call will allow when that is known (TR.3).
             """
             from app.agents.stage_memory import store
 
             self._withheld = set(names)
+            self._per_file = set(per_file)
+            self._in_conversation = {tuple(read) for read in in_conversation}
+            self._next_usable = None if next_usable is None else sorted(next_usable)
             kept = store("withheld tools", {})
             kept["names"] = sorted(self._withheld)
+            kept["per_file"] = sorted(self._per_file)
+            kept["in_conversation"] = sorted(self._in_conversation)
+            kept["next_usable"] = self._next_usable
             if every is not None:
-                self._usable = sorted(set(every) - self._withheld)
+                self._usable = sorted(set(every) - (self._withheld - self._per_file))
                 kept["usable"] = self._usable
 
         def _usable_now(self) -> list[str] | None:
-            """The tools still offered, or None when this call did not record them."""
-            if "_usable" in self.__dict__:
-                return list(self._usable)
+            """The tools the stage may call next, or None when this call did not record them.
+
+            The next call's own set when it is known: measured on a live fixer, a refusal listed `grep` and
+            `run_terminal_command` as callable now, and the next call - its last two of the budget - refused both.
+            """
             from app.agents.stage_memory import store
 
-            usable = store("withheld tools", {}).get("usable")
+            kept = store("withheld tools", {})
+            following = self.__dict__.get("_next_usable", kept.get("next_usable"))
+            if following is not None:
+                return list(following)
+            if "_usable" in self.__dict__:
+                return list(self._usable)
+            usable = kept.get("usable")
             return list(usable) if usable is not None else None
+
+        def _read_per_file(self) -> tuple[set[str], set[tuple]]:
+            """The read tools withheld file by file on this call, and the reads its conversation holds."""
+            from app.agents.stage_memory import store
+
+            if "_per_file" in self.__dict__:
+                return set(self._per_file), set(self._in_conversation)
+            kept = store("withheld tools", {})
+            return set(kept.get("per_file") or ()), {tuple(read) for read in kept.get("in_conversation") or ()}
 
         def _withheld_now(self) -> set[str]:
             if "_withheld" in self.__dict__:
@@ -2770,6 +2931,17 @@ def build_settled_answer_middleware(
             scratch = a_harness_scratch_delete(call)
             if scratch is not None:
                 return scratch
+            per_file, in_conversation = self._read_per_file()
+            if name in per_file:
+                # Decided for this file (TR.2): refused only when the conversation holds what it asks for. A read of a
+                # file the project memory holds is refused before it reaches here (`project_memory`).
+                read = _the_read_asked(call.get("args") or {})
+                if read not in in_conversation:
+                    return handler(request)
+                from langchain_core.messages import ToolMessage
+
+                return ToolMessage(content=_already_in_the_conversation(read[0]), tool_call_id=str(call.get("id") or ""),
+                                   name=name, status="error")
             if name and name in self._withheld_now() and not _writes_the_stage_s_deliverable(call):
                 from langchain_core.messages import ToolMessage
 
@@ -2883,9 +3055,9 @@ def build_settled_answer_middleware(
             # repetition is still required.
             if _the_step_limit(step_limit) and _model_calls_used(messages) >= _the_step_limit(step_limit):
                 spent = _most_recent_answer(messages, schema)
-                if (spent is None and _only_writes_pending(pending, stage_name)
+                if (spent is None and _only_writes_pending(pending)
                         and _model_calls_used(messages) == _the_step_limit(step_limit)):
-                    # A fix stage's write on its last call is run, not dropped with the stage (LF.1270); the call after
+                    # A write on the last call is run, not dropped with the stage (LF.1270, TR.6); the call after
                     # it has only its answer left (`_nothing_left_but_the_answer`), and past that the stage ends here.
                     logger.info("Stage %s wrote on its last model call; running the write before its answer",
                                 stage_name or "?")

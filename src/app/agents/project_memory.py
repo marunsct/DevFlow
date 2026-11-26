@@ -514,6 +514,17 @@ def quoted_whole_in(request: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(m.group(1).lstrip("/") for m in _QUOTED_WHOLE.finditer(str(request or ""))))
 
 
+def held_read_refused(path: str, quoted: bool = False) -> str:
+    """The refusal of a read of a file the request holds, once reading is decided file by file (TR.2): the file, and
+    where its text is. Counted as a refusal and as a pointer by the guards that count either."""
+    from app.agents.workspace_backend import READ_REFUSED_MARKER
+
+    where = ("is quoted whole in your request, under the heading that names it" if quoted
+             else f"{HELD_POINTER}, whole and as it is now")
+    return (f"{READ_REFUSED_MARKER} '{path}' again: it {where}; it has not changed since. Use it, and any lines of it, "
+            "from there. A file this conversation does not hold can still be read.")
+
+
 def quoted_whole_pointer(path: str) -> str:
     """The answer to a read of a document the request quotes whole."""
     return (f"`{path}` is quoted whole in your request, under the heading that names it; it has not changed since. "
@@ -1653,26 +1664,38 @@ def build_project_memory_middleware(repo_root: str) -> Any:
             # to disk for lines already in the conversation.
             visit = self._visit()
             if call.get("name") == "read_file" and visit.get("quoted_whole"):
-                from app.agents.settled_answer import withheld_now
+                from app.agents.settled_answer import reads_decided_per_file, withheld_now
 
                 path = str(args.get("file_path") or args.get("path") or "").strip().lstrip("/")
-                if (path in visit["quoted_whole"] and "read_file" not in withheld_now()
-                        and not _a_narrow_window(args, current(repo_root).get(path, ""))):
+                if path in visit["quoted_whole"] and not _a_narrow_window(args, current(repo_root).get(path, "")):
                     from langchain_core.messages import ToolMessage
 
-                    return ToolMessage(content=quoted_whole_pointer(path), tool_call_id=call.get("id") or "",
-                                       name="read_file")
+                    if "read_file" not in withheld_now():
+                        return ToolMessage(content=quoted_whole_pointer(path), tool_call_id=call.get("id") or "",
+                                           name="read_file")
+                    if reads_decided_per_file():
+                        return ToolMessage(content=held_read_refused(path, quoted=True),
+                                           tool_call_id=call.get("id") or "", name="read_file", status="error")
             if call.get("name") == "read_file" and visit.get("held"):
-                from app.agents.settled_answer import withheld_now
+                from app.agents.settled_answer import reads_decided_per_file, withheld_now
 
+                path = str(args.get("file_path") or args.get("path") or "").strip().lstrip("/")
+                held = visit["held"].get(path)
                 if "read_file" in withheld_now():
                     # The call withheld reading and said a read is refused: the refusal answers it, not a pointer.
                     # Measured on one medium run: a fixer told reading was withheld read one held file six times
                     # more, each answered with this pointer, so the guards that count refusals never saw one
                     # (LF.1405).
+                    unchanged = (held is not None and (visit.get("first_held") or {}).get(path, held) == held
+                                 and current(repo_root).get(path) == held)
+                    if reads_decided_per_file() and unchanged and not _a_narrow_window(args, held):
+                        # Reading decided file by file (TR.2): this file is here, so its read is refused as one, by
+                        # name; a file the memory does not hold goes on to be decided against the conversation.
+                        from langchain_core.messages import ToolMessage
+
+                        return ToolMessage(content=held_read_refused(path), tool_call_id=call.get("id") or "",
+                                           name="read_file", status="error")
                     return handler(request)
-                path = str(args.get("file_path") or args.get("path") or "").strip().lstrip("/")
-                held = visit["held"].get(path)
                 if held is not None and _a_narrow_window(args, held):
                     return handler(request)
                 # A file changed since this visit began is read for real once:

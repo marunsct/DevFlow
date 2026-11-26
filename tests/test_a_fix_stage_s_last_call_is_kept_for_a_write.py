@@ -1,7 +1,8 @@
-"""A fix stage's last call is kept for a write: told one call before that its next must be the write, and not refused.
+"""A writing stage's last call is kept for a write: told one call before that its next must be the write, and not refused.
 
 Measured on a medium run: 10 fix attempts ended at the call cap with their final edit refused - the calls reserved for
 the answer withheld every tool, the writers too, and a write on the last call ended with the stage, unrun (LF.1270).
+Every stage that writes since (TR.6, LF.1519).
 """
 from __future__ import annotations
 
@@ -58,13 +59,13 @@ def _calls(count: int, last: dict | None = None) -> list:
     return messages
 
 
-def _offered(count: int, monkeypatch, stage: str = "defect_fix_2_3") -> tuple[set[str], str]:
+def _offered(count: int, monkeypatch, stage: str = "defect_fix_2_3", tools: list | None = None) -> tuple[set[str], str]:
     monkeypatch.setenv("STABLE_TOOLS", "off")
     monkeypatch.setattr(settled_answer, "_the_graph_stage", lambda role="": stage)
-    request = _Request(_calls(count))
+    request = _Request(_calls(count), tools)
     build_settled_answer_middleware(Fixed, "specialist_backend", LIMIT).wrap_model_call(request, lambda r: r)
-    tools = request.captured.get("tools")
-    return ({t.name for t in TOOLS} if tools is None else {t.name for t in tools}), str(request.captured.get("messages", [""])[-1])
+    offered = request.captured.get("tools")
+    return ({t.name for t in request.tools} if offered is None else {t.name for t in offered}), str(request.captured.get("messages", [""])[-1])
 
 
 def test_one_call_before_the_last_the_writers_stay_and_the_next_call_is_named_the_write(monkeypatch):
@@ -87,18 +88,31 @@ def test_after_the_last_call_only_the_answer_is_left(monkeypatch):
     assert offered == set()
 
 
-def test_a_stage_that_is_not_a_fix_has_only_its_answer_on_its_last_calls(monkeypatch):
-    offered, _ = _offered(LIMIT - 2, monkeypatch, stage="specialist_backend_1")
+@pytest.mark.parametrize("stage", ["specialist_backend_1", "specialist_testing_0", "acceptance_author_2",
+                                   "test_round_0", "custom_setup"])
+def test_every_stage_that_writes_keeps_its_writers_on_its_last_calls(monkeypatch, stage):
+    """TR.6: measured over 26 runs, 18 last writes refused in 15 visits of builders, suite writers, test rounds and the
+    setup - only fix stages kept their writers there."""
+    offered, said = _offered(LIMIT - 2, monkeypatch, stage=stage)
+
+    assert offered == {"edit_artifact", "write_artifact"}
+    assert "next call must be that write" in said
+
+
+def test_a_stage_that_only_looks_has_only_its_answer_on_its_last_calls(monkeypatch):
+    offered, _ = _offered(LIMIT - 2, monkeypatch, stage="code_review_1",
+                          tools=[_Tool(n) for n in ("read_file", "ls", "grep")])
 
     assert offered == set()
 
 
+@pytest.mark.parametrize("stage", ["defect_fix_2_3", "specialist_backend_1"])
 @pytest.mark.parametrize(("last", "ended"), [
     ({"name": "edit_artifact", "args": {"relative_path": "app/x.py", "content": "fixed"}}, False),
     ({"name": "read_file", "args": {"file_path": "app/y.py"}}, True),
 ])
-def test_a_write_sent_on_the_last_call_is_run_and_any_other_call_ends_the_stage(monkeypatch, last, ended):
-    monkeypatch.setattr(settled_answer, "_the_graph_stage", lambda role="": "defect_fix_2_3")
+def test_a_write_sent_on_the_last_call_is_run_and_any_other_call_ends_the_stage(monkeypatch, last, ended, stage):
+    monkeypatch.setattr(settled_answer, "_the_graph_stage", lambda role="": stage)
     state = {"messages": _calls(LIMIT, last=last)}
 
     update = build_settled_answer_middleware(Fixed, "specialist_backend", LIMIT).after_model(state, None)

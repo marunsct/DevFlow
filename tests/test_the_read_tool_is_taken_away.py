@@ -87,32 +87,21 @@ def _names(captured):
     return {getattr(t, "name", "") for t in captured.get("tools", [])}
 
 
-def test_the_read_tools_go_once_the_stage_is_refused_enough(  ) -> None:
+def test_once_the_stage_is_refused_enough_its_reads_are_decided_per_file(monkeypatch) -> None:
+    """TR.2 (LF.1517): withholding the whole tool refused 51 of 85 reads of files whose text the request no longer
+    held; the read tool now stays listed and each read is decided by what the conversation holds."""
+    # STABLE_TOOLS off: this checks the bound tool list.
+    monkeypatch.setenv("STABLE_TOOLS", "off")
     captured = _call(_conversation(READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL))
 
-    assert "read_file" not in _names(captured)
-    assert "read_repository_file" not in _names(captured)
+    assert "tools" not in captured, "every tool stays listed: grep, the listings, the writers and the readers"
+    assert "file by file" in str(captured["messages"][-1])
 
 
-def test_grep_and_the_listings_stay(monkeypatch) -> None:
-    """The refusal's own words are "a range you have NOT read still works, and
-    so does `grep`". A harness that says that and removes `grep` is the
-    contradiction this file keeps finding elsewhere."""
-    # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
-    monkeypatch.setenv("STABLE_TOOLS", "off")
-    kept = _names(_call(_conversation(READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL)))
+def test_a_stage_below_the_threshold_is_told_nothing_about_reading() -> None:
+    captured = _call(_conversation(READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL - 1))
 
-    assert "grep" in kept
-    assert "ls" in kept
-
-
-def test_the_tools_that_change_things_stay(monkeypatch) -> None:
-    # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
-    monkeypatch.setenv("STABLE_TOOLS", "off")
-    kept = _names(_call(_conversation(READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL)))
-
-    assert "edit_artifact" in kept
-    assert "run_terminal_command" in kept
+    assert "file by file" not in str(captured.get("messages", [""])[-1])
 
 
 def test_a_stage_below_the_threshold_keeps_everything() -> None:
@@ -125,15 +114,14 @@ def test_a_stage_that_was_never_refused_keeps_everything() -> None:
     assert "tools" not in _call(_conversation(0))
 
 
-def test_the_model_is_told_the_tool_is_gone() -> None:
-    """A tool that vanishes with no explanation is a tool the model keeps
-    trying to call."""
+def test_the_model_is_told_how_reads_are_decided() -> None:
+    """A tool that changes how it answers with no explanation is a tool the model keeps calling as before."""
     captured = _call(_conversation(READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL))
     said = str(captured["messages"][-1])
 
-    assert "withheld for the rest of this stage" in said
-    assert "grep" in said
-    assert "`blockers`" in said
+    assert "file by file" in said
+    assert "can still be read" in said
+    assert "still work" not in said, "what may be called is said once, by the call's own list (TR.3)"
 
 
 def test_it_does_not_narrow_a_request_that_has_no_read_tool() -> None:

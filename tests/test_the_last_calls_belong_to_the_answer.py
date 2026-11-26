@@ -32,7 +32,8 @@ class Verdict(BaseModel):
 
 ANSWER = '{"status": "changes_required", "reason": "tests copy the code"}'
 
-TOOLS = ["read_file", "edit_artifact", "run_terminal_command"]
+#: A stage that only looks and runs: one that writes keeps its writers on these calls (TR.6, LF.1519).
+TOOLS = ["read_file", "grep", "run_terminal_command"]
 
 
 class _Request:

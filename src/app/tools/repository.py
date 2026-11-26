@@ -7050,7 +7050,7 @@ def _a_rewrite_that_drops_what_the_file_defines(
             f"Refusing to write '{relative_path}'{whose}: it would remove {listed}{more}, "
             f"which the file defines now, and this is the {losses}{'nd' if losses == 2 else 'th'} "
             "rewrite of it in this stage that would. Nothing was written. Another "
-            "task in this sprint may own the part you are dropping - in parallel "
+            "work order in this sprint may own the part you are dropping - in parallel "
             "mode it may have been written minutes ago. Change only your own part "
             f"with {_the_edit_tools()}. If those names really should "
             "go, delete them one at a time so the change is visible, or say in "
@@ -7058,7 +7058,7 @@ def _a_rewrite_that_drops_what_the_file_defines(
         )
     return (
         f" This write removes {listed}{more}, which the file{whose} defines now. If "
-        "that was not deliberate, another task may own that code - in parallel mode "
+        "that was not deliberate, another work order may own that code - in parallel mode "
         "it may have been written minutes ago - and a targeted `edit_artifact` keeps "
         "it. Nothing else in this pipeline will tell you it is gone."
     )

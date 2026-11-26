@@ -88,7 +88,7 @@ class TestItsOwnCode:
         first, second = _drop_it_twice(root, "visit-a")
 
         for result in (first, second):
-            assert "another task may own" not in (result.get("note") or "")
+            assert "another work order may own" not in (result.get("note") or "")
 
     def test_a_name_it_added_by_an_edit_is_its_own(self, root):
         """The run's case: the name came in by an edit, not the creating write."""

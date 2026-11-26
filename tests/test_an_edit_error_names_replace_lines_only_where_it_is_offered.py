@@ -86,11 +86,7 @@ def test_with_line_edits_off_no_error_names_replace_lines(tmp_path, make):
     assert "replace_lines" not in said, said
 
 
-#: The errors whose way out this change wrote; the rewrite refusal's older sentences are not part of it.
-NEW_WORDING = [_copies_on_separate_lines, _copies_on_one_line, _an_empty_find, _a_fragment_over_the_file]
-
-
-@pytest.mark.parametrize("make", NEW_WORDING, ids=list(ERRORS)[:4])
+@pytest.mark.parametrize("make", ERRORS.values(), ids=ERRORS.keys())
 def test_the_way_out_avoids_the_banned_words(tmp_path, make):
     assert not BANNED.search(make(tmp_path))
 

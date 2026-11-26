@@ -244,6 +244,34 @@ def test_the_cards_stay_a_small_share_of_the_request_however_large_the_library(n
     assert len(section) < 7_000
 
 
+def test_a_card_whose_names_are_cut_does_not_call_the_rest_missing(newer_library, monkeypatch):
+    """The card lists 40 names; past that, "A name not here is not exported by this release" was false."""
+    from app.stacks import api_cards
+
+    root, _ = newer_library
+    monkeypatch.setenv("API_CARDS_FOR_NEWER_RELEASES", "on")
+    (root / "node_modules" / "quickserve" / "index.d.ts").write_text(
+        "export declare function createApp(): void;\n"
+        + "".join(f"export declare function call{n:02d}(): void;\n" for n in range(59)))
+
+    section = api_cards.for_a_fixer(root, ["src/server.ts"], "", SimpleNamespace(model_name="a-local-model"))
+
+    assert "`createApp`" in section
+    assert "is not exported by this release" not in section
+    assert "20 more of its 60 names" in section and "may still be exported" in section
+
+
+def test_a_card_with_every_name_listed_still_says_a_name_not_here_is_not_exported(newer_library, monkeypatch):
+    from app.stacks import api_cards
+
+    root, _ = newer_library
+    monkeypatch.setenv("API_CARDS_FOR_NEWER_RELEASES", "on")
+
+    section = api_cards.for_a_fixer(root, ["src/server.ts"], "", SimpleNamespace(model_name="a-local-model"))
+
+    assert "A name not here is not exported by this release." in section
+
+
 def test_the_cards_name_no_product_word(newer_library, monkeypatch):
     from app.stacks import api_cards
 

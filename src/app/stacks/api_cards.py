@@ -332,8 +332,13 @@ def card(root: str | Path, entry: dict[str, Any], text: str, cutoff: str, *, mos
         rest = [n for n in exports if n not in used]
         shown = (", ".join(f"`{n}`" for n in used[:MOST_NAMES]) + (" - then: " if used and rest else "")
                  + ", ".join(f"`{n}`" for n in rest[: max(0, MOST_NAMES - len(used))]))
+        # A list cut at `MOST_NAMES` says so: past it, a name not shown may still be exported (LF.1515).
+        left_out = len(exports) - min(len(exports), MOST_NAMES)
+        closing = (f" and {left_out} more of its {len(exports)} names, not shown - so a name not here may still be "
+                   "exported by this release." if left_out else
+                   ". A name not here is not exported by this release.")
         parts.append(f"Names it exports, read from its installed files{' (those this work names first)' if used else ''}: "
-                     f"{shown}. A name not here is not exported by this release.")
+                     f"{shown}{closing}")
     imported = _python_import_names(project, entry["package"])[0] if family == "python" else entry["package"]
     directory = installed_packages.package_directory(project, family, imported) if family else None
     changes = [line for name in used[:4] for line in installed_packages.changelog_lines(directory, name)][:4]

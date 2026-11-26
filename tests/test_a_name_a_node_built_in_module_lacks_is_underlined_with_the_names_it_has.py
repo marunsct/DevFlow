@@ -80,3 +80,19 @@ def test_with_the_switch_off_built_in_modules_are_left_alone(tmp_path, monkeypat
     found = _findings(root, "server.ts", "import { promises as fs } from 'node:fs/promises';\nexport const x = fs;\n")
 
     assert found == []
+
+
+@needs_the_compiler
+def test_a_built_in_module_with_more_names_than_are_listed_says_its_list_is_cut(tmp_path, monkeypatch):
+    """The list stops at 40 names; past that it gave "exports only:" and called every name left out missing."""
+    monkeypatch.setenv("PACKAGE_EXPORTS_NAMED", "on")
+    root = _project(tmp_path)
+    wide = "".join(f"  export function helper{n:02d}(): void;\n" for n in range(50))
+    (root / "node_modules" / "@types" / "node" / "index.d.ts").write_text(
+        'declare module "node:fs/promises" {\n' + wide + "}\n")
+
+    found = _findings(root, "server.ts", "import { promises as fs } from 'node:fs/promises';\nexport const x = fs;\n")
+
+    assert len(found) == 1
+    assert "exports only" not in found[0]["message"]
+    assert "50 names" in found[0]["message"] and "10 more" in found[0]["message"]

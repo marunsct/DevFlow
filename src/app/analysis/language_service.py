@@ -244,7 +244,12 @@ process.stdin.on('data', d => content += d).on('end', () => {
         const near = names.filter(x => wanted && (x.toLowerCase().includes(wanted.toLowerCase())
           || wanted.toLowerCase().includes(x.toLowerCase())));
         const rest = names.filter(x => !near.includes(x)).sort();
-        return ' `' + n.moduleSpecifier.text + '` exports only: ' + [...near, ...rest].slice(0, 40).join(', ')
+        // A list cut at 40 says so, with the count: "only" is for a whole list (LF.1515).
+        const shown = [...near, ...rest].slice(0, 40);
+        const said = names.length > shown.length
+          ? names.length + ' names, among them: ' + shown.join(', ') + ' and ' + (names.length - shown.length) + ' more'
+          : 'only: ' + shown.join(', ');
+        return ' `' + n.moduleSpecifier.text + '` exports ' + said
           + ' - import one of those, or write the function yourself';
       }
     }

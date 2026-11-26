@@ -84,7 +84,7 @@ class TestTheWriteThatCostRun6e50b630:
         """Which is the case parallel mode creates and nothing else mentions."""
         result = write_approved_artifact(str(a_project), "todo-app/app.js", WITHOUT_THEM)
 
-        assert "another task may own that code" in (result.get("note") or "")
+        assert "another work order may own that code" in (result.get("note") or "")
 
     def test_it_says_nothing_else_will_report_it(self, a_project):
         result = write_approved_artifact(str(a_project), "todo-app/app.js", WITHOUT_THEM)

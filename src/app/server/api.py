@@ -174,9 +174,14 @@ def create_app(
 
     @application.middleware("http")
     async def security_headers(request: Request, call_next):
+        from app.server.preview import separate_origin
+
         response = await call_next(request)
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
-        response.headers.setdefault("X-Frame-Options", "DENY")
+        # A preview served from its own origin is framed by the app (plan UX.9): its CSP `frame-ancestors` names the
+        # app's origin, and a DENY here would forbid the framing in a browser that reads this header beside it.
+        if not (separate_origin() and _A_PREVIEW_PATH.match(request.url.path)):
+            response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "no-referrer")
         response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
         return response

@@ -3,11 +3,12 @@
 # - ENV=production, so missing or published secrets stop the server instead of being generated, and the API pages and
 #   unguarded metrics are off;
 # - the app is no longer published on the host - only Caddy, on 80 and 443, with TLS and security headers;
-# - product previews (switch PRODUCT_PREVIEW) are served from an origin of their own (plan UX.9), `preview.<site>` by
-#   default; set PRODUCT_PREVIEW_ORIGIN to `https://*.preview.<site>` for one host per run where wildcard DNS exists.
+# - product previews (switch PRODUCT_PREVIEW) may be served from an origin of their own (plan UX.9): opt-in, since it
+#   needs DNS and TLS for that name; set PRODUCT_PREVIEW_ORIGIN (docs/HANDOVER.md, "Product previews in production").
 x-production: &production
   ENV: production
-  PRODUCT_PREVIEW_ORIGIN: "${PRODUCT_PREVIEW_ORIGIN:-https://preview.${SITE_ADDRESS:-localhost}}"
+  PRODUCT_PREVIEW_ORIGIN: "${PRODUCT_PREVIEW_ORIGIN:-}"
+  PRODUCT_PREVIEW_APP_ORIGIN: "${PRODUCT_PREVIEW_APP_ORIGIN:-}"
 
 services:
   app:
@@ -25,7 +26,7 @@ services:
       - "443:443"
     environment:
       SITE_ADDRESS: "${SITE_ADDRESS:-localhost}"
-      PRODUCT_PREVIEW_ORIGIN: "${PRODUCT_PREVIEW_ORIGIN:-https://preview.${SITE_ADDRESS:-localhost}}"
+      PRODUCT_PREVIEW_ORIGIN: "${PRODUCT_PREVIEW_ORIGIN:-}"
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

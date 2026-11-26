@@ -7,18 +7,19 @@
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "same-origin"
-		Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self' wss:; frame-src 'self' {$PRODUCT_PREVIEW_ORIGIN:https://preview.localhost}; frame-ancestors 'none'"
+		Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self' wss:; frame-src 'self' {$PRODUCT_PREVIEW_ORIGIN}; frame-ancestors 'none'"
 	}
 	reverse_proxy app:8000
 }
 
-# Product previews (plan UX.9, switch PRODUCT_PREVIEW): an origin of their own, so a product's page keeps its own
-# storage and cookies and never runs with the app's. PRODUCT_PREVIEW_ORIGIN is the value the app reads too:
-# `https://preview.<site>` (the default), or `https://*.preview.<site>` for one host per run where DNS and TLS cover
-# the wildcard (a public wildcard name needs a Caddy build with a DNS-challenge module). Keep it a sub-domain of the
-# app's site: the framed page's cookies are then first-party. Only a preview's own paths are passed on, unbuffered, so
-# event streams and WebSockets work; the app sets the page's own security headers.
-{$PRODUCT_PREVIEW_ORIGIN:https://preview.localhost} {
+# Product previews (plan UX.9, switch PRODUCT_PREVIEW), opt-in. With PRODUCT_PREVIEW_ORIGIN set (the value the app reads
+# too: `https://preview.<site>`, or `https://*.preview.<site>` for one host per run) previews get an origin of their
+# own, so a product's page keeps its own storage and cookies and never runs with the app's. It needs DNS for that name
+# and a certificate for it (a public wildcard needs a Caddy build with a DNS-challenge module); keep it a sub-domain of
+# the app's site, so the framed page's cookies are first-party. Unset, this block answers only the dormant
+# `http://preview.invalid`, a name nothing resolves to. Only a preview's own paths are passed on, unbuffered, so event
+# streams and WebSockets work; the app sets the page's own security headers.
+{$PRODUCT_PREVIEW_ORIGIN} http://preview.invalid {
 	@preview path_regexp ^/api/runs/[^/]+/preview/app/
 	handle @preview {
 		reverse_proxy app:8000 {

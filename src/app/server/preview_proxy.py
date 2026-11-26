@@ -5,8 +5,8 @@ A page or a stylesheet is read whole (at most `preview.MOST_RESPONSE_BYTES`) so 
 under the link; everything else is relayed as it arrives, so an event stream or a long download reaches the browser
 before the product has finished it. A WebSocket upgrade is relayed both ways, with the subprotocol the product chose
 (a development server's hot reload names one). Every relayed chunk or message counts as use for the idle clock, at
-most once every few seconds. On a separate preview origin the product's cookies pass both ways (`preview.passed_cookies`);
-on the app's own host none ever does.
+most once every few seconds. On a separate preview origin the product's cookies pass both ways
+(`preview.passed_cookies`); on the app's own host none ever does.
 """
 
 from __future__ import annotations

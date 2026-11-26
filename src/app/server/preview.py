@@ -14,7 +14,7 @@ content headers: never its cookies or its credentials. A preview served from the
 response's Content-Security-Policy as well as by the frame, so the product's script never runs with the app's origin
 (where the person's sign-in is kept), however the page is opened.
 
-`PRODUCT_PREVIEW_ORIGIN` names a separate origin for previews (plan UX.9; the production front serves one by default):
+`PRODUCT_PREVIEW_ORIGIN` names a separate origin for previews (plan UX.9; opt-in, as it needs DNS and TLS for it):
 `https://preview.example.com`, one host for every preview, or `https://*.preview.example.com` where the deployment has
 wildcard DNS and TLS, one host per run (`origin_for`), so one product can never read another's storage. The proxy
 then answers only on the run's own host, and the page keeps an origin of its own: its storage works, and its cookies
@@ -147,6 +147,24 @@ def separate_origin() -> str:
     """The origin previews are served from when the deployment has one (`https://preview.example.com`, or
     `https://*.preview.example.com` for one host per run); "" for the app's own host under its distinct path."""
     return str(os.environ.get("PRODUCT_PREVIEW_ORIGIN") or "").strip().rstrip("/")
+
+
+def app_origin() -> str:
+    """The app's own origin, the one origin allowed to frame a preview served from a separate origin:
+    `PRODUCT_PREVIEW_APP_ORIGIN`, else the preview origin's parent (`https://preview.example.com` and
+    `https://*.preview.example.com` give `https://example.com`); "" when neither says it."""
+    from urllib.parse import urlsplit
+
+    explicit = str(os.environ.get("PRODUCT_PREVIEW_APP_ORIGIN") or "").strip().rstrip("/")
+    if explicit:
+        return explicit
+    origin = separate_origin()
+    if not origin:
+        return ""
+    parts = urlsplit(origin)
+    host = parts.netloc.removeprefix("*.")
+    _, dot, parent = host.partition(".")
+    return f"{parts.scheme}://{parent}" if dot and parent else ""
 
 
 #: Where a run's own label goes in `PRODUCT_PREVIEW_ORIGIN` when the deployment has wildcard DNS.
@@ -677,8 +695,10 @@ def response_headers(upstream: Any, prefix: str) -> dict[str, str]:
         headers[name] = value
     sandbox = "sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads"
     if separate_origin():
-        # Its own origin: the page may keep its own storage there, and the app on another origin frames it.
-        headers["content-security-policy"] = f"{sandbox} allow-same-origin; frame-ancestors *"
+        # Its own origin: the page may keep its own storage there, and only the app, on its own origin, frames it
+        # (no other site can frame the product and its signed link). Not said: framed by nobody.
+        framed_by = app_origin() or "'none'"
+        headers["content-security-policy"] = f"{sandbox} allow-same-origin; frame-ancestors {framed_by}"
     else:
         # The app's own host: an opaque origin always, so the product's script cannot read the app's storage even
         # when the page is opened outside the frame.
@@ -704,7 +724,8 @@ def preflight_headers() -> dict[str, str]:
 __all__ = [
     "ACTIVE", "PICKER_SCRIPT", "PreviewRefused", "app_prefix", "container_name", "forwarded_request_headers",
     "is_for_pointing", "observe", "A_PREVIEW_PATH", "PreviewOriginServesPreviewsOnly", "cookie_path",
-    "is_a_preview_host", "is_streamed", "newer_version", "opening_problem", "origin_for", "passed_cookies",
-    "socket_url", "preview_switch", "public", "read", "rewritten", "response_headers", "say_the_worker_serves", "scratch_for",
+    "app_origin", "is_a_preview_host", "is_streamed", "newer_version", "opening_problem", "origin_for",
+    "passed_cookies", "socket_url", "preview_switch", "public", "read", "rewritten", "response_headers",
+    "say_the_worker_serves", "scratch_for",
     "start", "stop", "the_worker_serving", "token_for", "token_problem", "touch", "upstream_url", "what_it_wrote",
 ]

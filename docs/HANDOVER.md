@@ -300,12 +300,18 @@ deploy wipes the worker's `/tmp` and `docker logs`.
   `docker info` takes over 20 s. Restarting Docker Desktop is permitted (owner 2026-11-09) after pausing every run:
   `systemctl --user restart docker-desktop`, then check the owner's other containers returned, `deploy`, resume.
   `ship-live` exit 2 (THE DEPLOY DID NOT LAND) means the old containers still run the old code.
-- **Product previews in production** (`PRODUCT_PREVIEW`, plan UX.9): `docker-compose.prod.yml` sets
-  `PRODUCT_PREVIEW_ORIGIN=https://preview.<SITE_ADDRESS>` for the app, the worker and Caddy; that name must resolve to
-  the host (`*.localhost` does by itself). For one host per run set it to `https://*.preview.<site>`: wildcard DNS, and
-  for a public name a Caddy build with a DNS-challenge module. Keep it a sub-domain of the app's site, or the framed
-  product's cookies are third-party and browsers drop them. The local loop's compose leaves it empty (app-host
-  previews, opaque origin, no storage or cookies).
+- **Product previews in production** (`PRODUCT_PREVIEW`, plan UX.9): a separate preview origin is opt-in. Unset,
+  previews are served on the app's own host with an opaque origin (no storage or cookies; the toolbar says so). To turn
+  it on, set `PRODUCT_PREVIEW_ORIGIN` in `.env` (`docker-compose.prod.yml` passes it to the app, the worker and Caddy):
+  1. a name for it under the app's site, `https://preview.<site>` (a sub-domain, or the framed product's cookies are
+     third-party and browsers drop them), with DNS pointing it at this host (`*.localhost` needs none);
+  2. for one host per run, `https://*.preview.<site>`: a wildcard DNS record, and for a public name a wildcard
+     certificate, which Caddy gets only with a DNS-challenge build (`xcaddy build --with
+     github.com/caddy-dns/<provider>` plus a `tls { dns <provider> ... }` line in the preview block);
+  3. `PRODUCT_PREVIEW_APP_ORIGIN` only when the app's origin is not the preview origin's parent (`https://preview.a.b`
+     and `https://*.preview.a.b` give `https://a.b`): it is the one origin allowed to frame a preview.
+  Then `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d app worker proxy`. The local loop's
+  compose leaves it empty.
 - **Never grow the Celery pool** (`pool_grow`): two slots serve one run per port; growing it made workers fork and be
   killed every few seconds.
 - **Disk full:** `loop.sh ready`/`audit` print the disk line; `ready` fails under 50 GB / 5% free (`DISK_MIN_FREE_GB`,

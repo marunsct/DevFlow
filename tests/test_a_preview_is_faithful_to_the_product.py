@@ -189,6 +189,47 @@ def test_with_wildcard_dns_each_run_s_preview_has_a_host_of_its_own(tmp_path, pr
     assert on_its_own.headers.get_list("set-cookie")[0] == "sid=abc123; HttpOnly; SameSite=Lax; Path=/"
 
 
+@pytest.mark.parametrize("origin, app_setting, framed_by", [
+    ("https://preview.example.com", "", "https://example.com"),
+    ("https://*.preview.example.com", "", "https://example.com"),
+    ("https://preview.example.com", "https://devflow.example.org", "https://devflow.example.org"),
+])
+def test_on_a_separate_origin_only_the_app_s_own_origin_may_frame_the_preview(tmp_path, preview_on, monkeypatch,
+                                                                              signs_in, origin, app_setting,
+                                                                              framed_by):
+    """Any site could frame the product and its signed link while `frame-ancestors` was `*`."""
+    monkeypatch.setenv("PRODUCT_PREVIEW_ORIGIN", origin)
+    monkeypatch.setenv("PRODUCT_PREVIEW_APP_ORIGIN", app_setting)
+    run_id = _a_run()
+    client = _client(_workspace(tmp_path), run_id)
+    link = _a_ready_preview(client, run_id, signs_in)["url"]
+    host = link.split("/")[2]
+
+    answered = client.get(link.split(host, 1)[1] + "me", headers={"Host": host})
+
+    policy = answered.headers["content-security-policy"]
+    assert policy.endswith(f"frame-ancestors {framed_by}")
+    assert "frame-ancestors *" not in policy
+
+
+def test_a_preview_on_its_own_origin_is_not_refused_framing_by_the_app_s_own_header(client, preview_on, monkeypatch,
+                                                                                    signs_in):
+    """The app's security headers added `X-Frame-Options: DENY` to every answer, a preview's on its own origin too,
+    where the app frames it: only browsers that let the CSP's `frame-ancestors` win showed the product."""
+    monkeypatch.setenv("PRODUCT_PREVIEW_ORIGIN", "https://preview.example.com")
+    run_id, instance = _a_run(), uuid.uuid4().hex[:16]
+    preview.write({"run_id": run_id, "instance": instance, "state": "ready", "host": "127.0.0.1", "port": signs_in,
+                   "scratch": "/nonexistent", "started_at": time.time(), "last_used": time.time()})
+    token = preview.token_for(run_id, instance, int(time.time()) + 600)
+
+    answered = client.get(f"/api/runs/{run_id}/preview/app/{token}/me", headers={"Host": "preview.example.com"})
+    the_app_s_own = client.get("/api/health")
+
+    assert answered.status_code == 200
+    assert "x-frame-options" not in answered.headers
+    assert the_app_s_own.headers["x-frame-options"] == "DENY"
+
+
 @pytest.mark.parametrize("origin, host", [
     ("https://preview.example.com", "preview.example.com"),
     ("https://*.preview.example.com", "p0123456789abcdef.preview.example.com"),

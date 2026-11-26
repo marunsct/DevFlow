@@ -1356,7 +1356,12 @@ def after_a_batch(
     nothing broken is the culprit, and only its change is reverted. Measured (deep review 2026-11-18, A3): 8 of 37
     recent reverts were a whole batch put back for one fixer's change. With nothing to tell the fixers apart, or no
     single fixer to blame, the whole batch is reverted as before.
+
+    Only a fixer that wrote is a suspect (LF.1543, `batch_attribution`): one that wrote nothing no longer sends the
+    whole batch back, and a batch whose every changed file one fixer wrote is that fixer's, with no measurement.
     """
+    from app.graph import batch_attribution
+
     every = [name for name, _ in fixers]
     kept: dict[str, str] = {}
 
@@ -1370,16 +1375,28 @@ def after_a_batch(
         # A split's put-back is each fixer's whose files it put back, recorded with its attempt (LF.1447).
         _charge_the_put_back_to_its_fixers(root, stage_name, fixers)
         return [], []
-    if not whole or not all(files for _, files in fixers):
+    suspects = batch_attribution.writers(fixers)
+    cleared = [name for name in every if name not in {suspect for suspect, _ in suspects}]
+    if not whole or not suspects:
+        batch_attribution.note(stage_name, batch_attribution.NOT_TOLD_APART, len(fixers), every, broke)
         return broke, every
-    for name, files in fixers[:MOST_ATTRIBUTION_MEASUREMENTS]:
+    only = batch_attribution.the_only_writer(fixers, batch_attribution.changed_between(root, base, whole) or [])
+    if only and ci.revert_to(root, base):
+        # The batch without `only`'s files is the workspace at `base`, measured before the batch: nothing to measure.
+        logger.warning("Put back %s, the one fixer of %s that changed the product; its change broke %d test(s)",
+                       only, stage_name, len(broke))
+        batch_attribution.note(stage_name, batch_attribution.ONLY_WRITER, len(fixers), [only], broke, cleared)
+        return broke, [only]
+    for name, files in suspects[:MOST_ATTRIBUTION_MEASUREMENTS]:
         if not ci.revert_to(root, whole) or not ci.restore_paths(root, base, [str(path) for path in files]):
             break
         if not after_a_fix(root, base, stage_name, description, contested=contested):
             logger.warning("Kept %d fix(es) of %s and put back %s, whose change broke %d test(s)",
                            len(fixers) - 1, stage_name, name, len(broke))
+            batch_attribution.note(stage_name, batch_attribution.ONE_CULPRIT, len(fixers), [name], broke, cleared)
             return broke, [name]
     ci.revert_to(root, base)
+    batch_attribution.note(stage_name, batch_attribution.NO_ONE_CULPRIT, len(fixers), every, broke)
     return broke, every
 
 

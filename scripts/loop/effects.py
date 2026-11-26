@@ -159,6 +159,10 @@ def effects(records: list[dict], decisions: str = "") -> list[str]:
     from app.agents.withheld_records import effects_lines as withheld_lines
 
     lines.extend(withheld_lines(records))
+    # LF.1543: the broken batches of fixes, by how each was settled; the fixers that wrote nothing kept out of blame.
+    from app.graph.batch_attribution import effects_lines as batch_attribution_lines
+
+    lines.extend(batch_attribution_lines(records))
     # LF.1524: fast delivery's design findings held as product-breaking, those not held, and the revisions they took.
     from app.graph.fast_design_gate import effects_lines as fast_design_gate_lines
 

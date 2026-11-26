@@ -167,6 +167,10 @@ def _the_fix_request(
     from app.agents import ledger as _ledger
 
     add(KEPT, _ledger.earlier_attempts(defect, cycle.defects[:defect_index]))
+    # What the changes reverted before this one broke: each test with its runner's words, and the change (LF.1547).
+    from app.graph import what_a_revert_broke
+
+    add(EVIDENCE, what_a_revert_broke.told(root, defect))
     # What was tried on its cause in earlier cycles too: a re-plan clears the cycle, not the journal (deep review 1.4).
     from app.graph import cause_journal
 
@@ -408,6 +412,16 @@ def _fixed_by_rewriting(
         # product's own source, which the finding must leave as it is. A
         # new unit test is the agent loop's (plan QM.2).
         declined("a mutation finding: the product's source stays as it is")
+        return None
+    # Reverted twice for breaking the same test: not rewritten a third time; the tool-using fixer takes it (LF.1547).
+    from app.graph import what_a_revert_broke
+
+    again = what_a_revert_broke.repeated(state["repository"].root_path, defect)
+    if again:
+        from app.observability import defect_ledger
+
+        defect_ledger.note("rewrite skipped", stage or "defect_fix", defect=defect, detail=again)
+        declined(again)
         return None
     from types import SimpleNamespace
 
@@ -666,11 +680,12 @@ def _fix_one(state: Any, config: RunnableConfig, defect_index: int, ctx: GraphCo
     repo = Path(state["repository"].root_path)
     if not state.get("pending_inner_thread_id"):
         _diagnosed_if_it_keeps_failing(state, defect, ctx)
-    rewritten = None if state.get("pending_inner_thread_id") else (
-        kept_fix_candidates.replayed(repo, defect, stage_name) or _fixed_by_rewriting(
-            state, config, defect, fix_model, failed_fix_tries(cycle, defect_index), ctx=ctx,
-        )
-    )
+    replay = None if state.get("pending_inner_thread_id") else kept_fix_candidates.replayed(repo, defect, stage_name)
+    rewritten = None if state.get("pending_inner_thread_id") else (replay or _fixed_by_rewriting(
+        state, config, defect, fix_model, failed_fix_tries(cycle, defect_index), ctx=ctx, stage=stage_name,
+    ))
+    # How the change measured below was made: a revert of the harness's own rewrite counts toward its repeats (LF.1547).
+    made_by = "replay" if replay is not None else "rewrite" if rewritten is not None else "agent"
     if rewritten is not None:
         update: dict[str, Any] = {}
         co_defects: list[tuple[int, Any]] = []
@@ -717,18 +732,26 @@ def _fix_one(state: Any, config: RunnableConfig, defect_index: int, ctx: GraphCo
             update["fix_started"] = started
             return update  # paused waiting for approval on this fix
 
+        answered = update.pop("__fix_result__")
         fix_result = _rewritten_after_a_surrender(
-            state, config, defect_index, stage_name, fix_model, update.pop("__fix_result__"), started, ctx=ctx)
+            state, config, defect_index, stage_name, fix_model, answered, started, ctx=ctx)
+        if fix_result is not answered:
+            made_by = "rewrite"
     defect_fix_modes.end(config, stage_name)
     # A fix that stopped the product is handed back to its own model once before it is reverted (LF.1271).
+    from app.graph import what_a_revert_broke
+
     repair = judged_fixes.ForwardRepair(
         str(repo), fix_base, defect,
         lambda asked, files: _repaired_forward(state, config, defect, fix_model, asked, files, ctx=ctx))
     broke = engineering.after_a_fix(
         state["repository"].root_path, fix_base, stage_name, defect.description,
         contested=_a_contested_test_past_repair(state, cycle),
-        on_revert=lambda lost: kept_fix_candidates.keep(
-            repo, fix_base, defect, stage_name, lambda: _the_defect_s_tests_pass(repo, defect), lost),
+        on_revert=lambda lost: (
+            # What it broke and its change, kept for the next fixer of this defect (LF.1547), before it is reverted.
+            what_a_revert_broke.record(repo, fix_base, defect, stage_name, lost, made_by),
+            kept_fix_candidates.keep(
+                repo, fix_base, defect, stage_name, lambda: _the_defect_s_tests_pass(repo, defect), lost))[-1],
         repair_forward=repair.attempt,
     )
     # Ended worse than the best version it reached - reverted, or its own tests failing again: that version, measured
@@ -774,6 +797,10 @@ def _fix_one(state: Any, config: RunnableConfig, defect_index: int, ctx: GraphCo
                                   repair.outcome(f"reverted: it broke {'; '.join(broke[:3])}", broke),
                                   defect_budget.calls_in(config["configurable"].get(APP_RUN_ID_KEY), stage_name, started),
                                   root=state["repository"].root_path, sprint=state.get("current_sprint_index", 0))
+        # A schema finding whose fix broke a test that passed is doubtful: set aside, not fixed again (LF.1547).
+        noted = what_a_revert_broke.set_aside_if_doubtful(
+            repo, noted, defect_index, broke, stage=stage_name, round_=state.get("test_round", 0),
+            sprint=state.get("current_sprint_index", 0))
         contested = _a_locked_test_two_fixes_broke(noted)
         if contested and _a_dispute_may_be_held_now(state, also=[contested]):
             logger.warning(

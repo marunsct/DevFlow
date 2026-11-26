@@ -176,6 +176,10 @@ def effects(records: list[dict], decisions: str = "") -> list[str]:
     from app.graph.fast_design_gate import effects_lines as fast_design_gate_lines
 
     lines.extend(fast_design_gate_lines(decisions))
+    # LF.1547: rewrites after a revert told what broke, repeats stopped, doubtful schema findings set aside.
+    from app.graph.what_a_revert_broke import effects_lines as revert_lines
+
+    lines.extend(revert_lines(records))
     # Beside what fired: a switch that was on, had its chance and did nothing (`CHANCES`).
     from app.observability.switch_firing import chance_lines, no_signal_line
 

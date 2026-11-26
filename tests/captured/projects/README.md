@@ -16,6 +16,7 @@ the code graph's tests (KG.2, KG.3): each folder is one product's files in one l
 | `kotlin-notes-api` | Kotlin | **not captured**: no Kotlin product exists in any stored workspace, so this is `java-notes-api`'s model, repository and service written in Kotlin, with one wildcard import |
 | `react-to-do-list-app` | TypeScript (React) | a page product: components rendering the labels and names its acceptance suite selects (KG.4), and unit tests importing them |
 | `browser-to-do-list-app` | JavaScript (no framework) | a page product whose markup renders the form's labels and loads its script; the suite selects controls by label and name (KG.4) |
+| `python-tasks-api` | Python | **for the schema-conformance check, not the code graph**: the record table `database.py` declares, against `../technical-specification-a-token-generated-on-signin.md` (LF.1547) |
 
 When a Kotlin run is stored, replace `kotlin-notes-api` with its files.
 

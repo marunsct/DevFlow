@@ -473,12 +473,15 @@ def fix_request(root: Path, path: str, defect: Any, failure: str, specification:
                    f"Expected: {getattr(defect, 'expected_behavior', '')}" + (f"\nActual: {actual}" if actual else ""))
     from app.agents.ledger import enabled as _ledger_on
     from app.agents.request_budget import EVIDENCE, KEPT
+    from app.graph import what_a_revert_broke
     from app.graph.cause_journal import tried_before
     from app.stacks import api_cards
 
     # Each with what it is to the input budget: what the defect is, or what binds the fix.
     changing_parts = (
         (KEPT, earlier_attempts(defect).strip()),
+        # What the changes reverted before this one broke: each test with its runner's words, and the change (LF.1547).
+        (EVIDENCE, what_a_revert_broke.told(root, defect).strip()),
         # What was tried on its cause in earlier cycles too (deep review 1.4).
         (KEPT, tried_before(root, defect, shown=(getattr(defect, "attempts", None) or []) if _ledger_on() else ()).strip()),
         (EVIDENCE, f"--- What failed ---\n{failure}" if failure.strip() else ""),

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>To-Do List</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <h1>To-Do List</h1>
+
+      <form id="add-form" class="add-form" novalidate>
+        <div class="field">
+          <label for="title-input">Title</label>
+          <input type="text" id="title-input" name="title" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="description-input">Description</label>
+          <textarea id="description-input" name="description"></textarea>
+        </div>
+        <button type="submit" class="btn-primary">Add task</button>
+      </form>
+
+      <div class="filters" role="group" aria-label="Filter tasks">
+        <button type="button" data-filter="all" aria-pressed="true">All</button>
+        <button type="button" data-filter="active" aria-pressed="false">Active</button>
+        <button type="button" data-filter="completed" aria-pressed="false">Completed</button>
+      </div>
+
+      <ul id="task-list" class="task-list"></ul>
+
+      <p id="empty-state" class="empty-state">No tasks yet — add one above</p>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

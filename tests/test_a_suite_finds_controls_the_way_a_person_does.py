@@ -60,6 +60,20 @@ def test_the_rule_s_examples_are_not_any_one_product_s() -> None:
         assert not re.search(rf"\b{re.escape(word)}\b", FIND_CONTROLS, re.I), word
 
 
+def test_every_page_pack_tells_the_suite_writer_to_find_a_labelled_control_by_its_label() -> None:
+    """LF.1590: the locked suite found a control the brief labelled by its role, which sees only that role, and passed
+    a page that gave the label to a second element in each item; three hidden tests finding it by its label failed."""
+    from app.stacks.packs._javascript import LABELLED_IS_FOUND_BY_ITS_LABEL
+
+    for pack in ALL_PACKS:
+        if pack.name not in PAGES:
+            continue
+        guide = " ".join(pack.acceptance_guide.split())
+        assert "A control the brief says is labelled is found by that label" in guide, pack.name
+        assert "A role locator sees only elements of that role" in guide, pack.name
+    assert not re.search(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", LABELLED_IS_FOUND_BY_ITS_LABEL, re.I)
+
+
 def test_a_suite_that_finds_a_control_by_its_placeholder_is_named(tmp_path) -> None:
     acceptance = _scaffolded(tmp_path)
     acceptance.mkdir(parents=True, exist_ok=True)

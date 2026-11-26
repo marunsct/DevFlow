@@ -916,7 +916,18 @@ AWAIT_EVERY_VALUE = (
     "once and take no await."
 )
 
-FIND_CONTROLS = """Find each control by the name a person sees, exactly as the brief gives
+#: LF.1590. Measured on one run: the brief labelled a control of each list item, the product gave that label to the
+#: control (through the label element around it) and again to the label element itself (`aria-label`), and the locked
+#: suite, which found the control by its role, passed; three hidden tests finding it by its label failed on two matches.
+LABELLED_IS_FOUND_BY_ITS_LABEL = (
+    "A control the brief says is labelled is found by that label - `getByLabel('...', { exact: true })`, inside its "
+    "item where each item of a list shows one - even when its role is known too. A role locator sees only elements of "
+    "that role, so a page that also gives the label to a second element where the control sits (the label element "
+    "itself, or something around the control) passes it, while a screen reader, and every test finding the control "
+    "by its label, meets two. Found by its label, the locator refuses the second, as it should."
+)
+
+FIND_CONTROLS ="""Find each control by the name a person sees, exactly as the brief gives
 it: a field the brief says is labelled "Email" is
 `page.getByLabel('Email', { exact: true })`, a button named "Send" is
 `page.getByRole('button', { name: 'Send', exact: true })`, an entry of a list is
@@ -935,7 +946,7 @@ on what the page shows after it. Act on a locator - `page.getByLabel(...).fill(.
 never `page.fill(selector, ...)` or `page.click(selector)` - and never take
 `.first()` of a control found by its name: both act on whichever match comes
 first, so a page that shows the same control twice still passes, where a
-locator refuses more than one. """ + PLAYWRIGHT_LOCATORS_RULE + " " + AWAIT_EVERY_VALUE + """ A locator found by its text keeps that filter:
+locator refuses more than one. """ + LABELLED_IS_FOUND_BY_ITS_LABEL + " " + PLAYWRIGHT_LOCATORS_RULE + " " + AWAIT_EVERY_VALUE + """ A locator found by its text keeps that filter:
 once the test changes the text, find the item again by its new text. A list
 item takes no name from its text: find one by
 `page.getByRole('listitem').filter({ hasText: '...' })`, never by

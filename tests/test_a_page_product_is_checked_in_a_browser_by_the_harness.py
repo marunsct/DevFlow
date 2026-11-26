@@ -104,12 +104,14 @@ def _serve(html: str):
     return server
 
 
-def _checked(tmp_path: Path, html: str, persists: bool, small_screens: bool = True, serve=_serve) -> list[SimpleNamespace]:
+def _checked(tmp_path: Path, html: str, persists: bool, small_screens: bool = True, serve=_serve,
+             controls=(("textbox", "Title"),)) -> list[SimpleNamespace]:
     (tmp_path / "node_modules" / "@playwright" / "test").mkdir(parents=True)
     (tmp_path / "node_modules" / "@playwright" / "test" / "package.json").write_text(
         json.dumps({"name": "@playwright/test", "type": "module", "main": "index.mjs"}))
     (tmp_path / "node_modules" / "@playwright" / "test" / "index.mjs").write_text(SHIM)
-    (tmp_path / "spec.mjs").write_text(page_probe.playwright_page_checks([None], persists=persists, small_screens=small_screens))
+    (tmp_path / "spec.mjs").write_text(page_probe.playwright_page_checks([None], persists=persists, small_screens=small_screens,
+                                                                    controls=controls))
     (tmp_path / "run.mjs").write_text(RUN)
     server = serve(html)
     try:
@@ -135,7 +137,7 @@ def test_a_page_failing_each_check_is_found_and_one_keeping_them_passes(tmp_path
 
     safe = _checked(tmp_path / "safe", SAFE, persists=True)
 
-    assert [t.outcome for t in safe] == ["passed"] * 4, safe
+    assert [t.outcome for t in safe] == ["passed"] * 5, safe
 
 
 @pytest.mark.skipif(shutil.which("node") is None or not CORE.is_file(), reason="no browser driver here")
@@ -309,3 +311,136 @@ def test_a_product_without_a_page_is_not_probed(tmp_path, monkeypatch):
     monkeypatch.setattr(contract, "the_pack", lambda root: (service, {"project": "app"}))
 
     assert page_probe.page_errors(tmp_path, "brief", runner=lambda *a: {}) is None
+
+
+#: LF.1590. A page product as it was delivered: each item of its list showed a control the contract names, labelled
+#: by the label element around it, and that label element was given `aria-label` with the same name. Its own suite
+#: found the control by its role and passed; three hidden tests finding it by its label failed on two matches.
+CAPTURED = Path(__file__).resolve().parent / "captured" / "page-a-label-also-given-its-control-s-name"
+#: The product's interface contract, as its specification wrote it and the lock kept it.
+CONTRACT_LINES = [
+    'AC-6 page / textbox "Title"', 'AC-6 page / textbox "Description"', 'AC-6 page / button "Add task"',
+    'AC-5 page / button "All"', 'AC-5 page / button "Active"', 'AC-5 page / button "Completed"',
+    'AC-9 page / checkbox "Done"', 'AC-3 page / button "Edit"', 'AC-3 page / textbox "Edit title"',
+    'AC-10 page / button "Save"', 'AC-4 page / button "Delete"',
+]
+#: The line of the captured page that gives the label element its control's name.
+SECOND_LABEL = "doneLabel.setAttribute('aria-label', 'Done');"
+#: Two records the page already holds when it opens, in its own storage, so the probe's item is the third.
+TWO_STORED = (
+    "<script>localStorage.setItem('simple-to-do-list.tasks', localStorage.getItem('simple-to-do-list.tasks') || "
+    "JSON.stringify([{ id: 'a', title: 'First', description: '', completed: false },"
+    " { id: 'b', title: 'Second', description: '', completed: true }]));</script>"
+)
+
+
+def _serve_the_captured_page(*, second_label: bool, stored: bool):
+    """The captured page's own files; without `second_label` its one line giving the label element the name is gone."""
+    script = (CAPTURED / "app.js").read_text(encoding="utf-8")
+    assert SECOND_LABEL in script
+    files = {
+        "/": (CAPTURED / "index.html").read_text(encoding="utf-8").replace(
+            '<script type="module"', (TWO_STORED if stored else "") + '<script type="module"'),
+        "/app.js": script if second_label else script.replace(SECOND_LABEL, ""),
+        "/storage.js": (CAPTURED / "storage.js").read_text(encoding="utf-8"),
+        "/task-store.js": (CAPTURED / "task-store.js").read_text(encoding="utf-8"),
+    }
+
+    def serve(_html: str):
+        class Page(BaseHTTPRequestHandler):
+            def log_message(self, *args):  # noqa: D401 - quiet
+                pass
+
+            def do_GET(self):  # noqa: N802
+                path = "/" if self.path in ("/", "/index.html") else self.path
+                raw = files.get(path, "not here").encode()
+                self.send_response(200 if path in files else 404)
+                self.send_header("content-type", "text/html" if path == "/" else "text/javascript")
+                self.send_header("content-length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Page)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        return server
+
+    return serve
+
+
+def _the_label_check(found: list[SimpleNamespace]) -> SimpleNamespace:
+    return next(t for t in found if t.name.startswith("page check 5"))
+
+
+def _the_contract_s_controls():
+    return page_probe.controls_on_the_page(ic.parse(CONTRACT_LINES)[0])
+
+
+@pytest.mark.skipif(shutil.which("node") is None or not CORE.is_file(), reason="no browser driver here")
+@pytest.mark.parametrize("stored, where", [(False, "page"), (True, "item")])
+def test_a_label_element_given_its_control_s_name_is_a_second_element_carrying_that_label(tmp_path, stored, where):
+    found = _checked(tmp_path, "", persists=True, controls=_the_contract_s_controls(),
+                     serve=_serve_the_captured_page(second_label=True, stored=stored))
+
+    finding = page_probe.what_the_test_found(_the_label_check(found)) or {}
+    assert finding.get("kind") == "repeated_label", found
+    assert [(c["role"], c["name"], c["count"], c["where"]) for c in finding["controls"]] == [
+        ("checkbox", "Done", 2, where)], finding
+    said = " ".join(finding["controls"][0]["carriers"])
+    assert '<label class="done-label"> by aria-label' in said and "<input> by the label element around it" in said
+
+
+@pytest.mark.skipif(shutil.which("node") is None or not CORE.is_file(), reason="no browser driver here")
+def test_the_same_control_once_in_each_of_several_items_is_no_repeat(tmp_path):
+    """The captured page without its second label: three items each show the control once, and pass."""
+    found = _checked(tmp_path, "", persists=True, controls=_the_contract_s_controls(),
+                     serve=_serve_the_captured_page(second_label=False, stored=True))
+
+    assert _the_label_check(found).outcome == "passed", found
+
+
+def test_the_controls_asked_are_the_contract_s_page_controls_once_each():
+    lines = [*CONTRACT_LINES, 'AC-9 page / checkbox "Done"', 'AC-2 page /settings textbox "Email"',
+             'AC-7 page / alert "Saved"', "AC-1 GET /api/items -> 200"]
+
+    assert page_probe.controls_on_the_page(ic.parse(lines)[0]) == [
+        ("textbox", "Title"), ("textbox", "Description"), ("button", "Add task"), ("button", "All"),
+        ("button", "Active"), ("button", "Completed"), ("checkbox", "Done"), ("button", "Edit"),
+        ("textbox", "Edit title"), ("button", "Save"), ("button", "Delete")]
+
+
+def test_a_round_asks_the_locked_contract_s_controls(tmp_path, monkeypatch):
+    monkeypatch.setenv("PAGE_PROBE", "on")
+    _a_page_project(tmp_path, monkeypatch)
+    ic.record_at_lock(tmp_path, ['AC-9 page / checkbox "Done"', "AC-1 GET /api/items -> 200"])
+    specs = []
+
+    def report(project, name, probe, web, run, compiled_by="checks", bodies=None):
+        specs.append(probe[compiled_by](web))
+        return SimpleNamespace(found=True, tests=[])
+
+    monkeypatch.setattr(ic, "_the_probe_s_report", report)
+
+    page_probe.page_errors(tmp_path, "A list kept on the page.", runner=lambda *a, **k: {})
+
+    assert 'const CONTROLS = [{"role": "checkbox", "name": "Done"}];' in specs[0]
+
+
+#: What check 5 throws, as the spec words it, for a field labelled twice within one item.
+REPEATED = {"kind": "repeated_label", "controls": [
+    {"role": "textbox", "name": "Email", "count": 2, "where": "item",
+     "carriers": ['<label class="field-label"> by aria-label', "<input> by the label element around it"]}]}
+
+
+def test_the_defect_names_the_control_where_it_is_repeated_and_what_carries_the_label(tmp_path, monkeypatch):
+    described = page_probe.page_description([REPEATED])
+
+    assert described.startswith(page_probe.PAGE_CHECK_FAILED)
+    assert 'textbox "Email": 2 elements within one item' in described
+    assert '<label class="field-label"> by aria-label' in described
+    assert "the only element carrying its label within its item" in described
+    assert not BANNED.search(described)
+    _a_page_project(tmp_path, monkeypatch)
+    monkeypatch.setenv("PAGE_PROBE", "on")
+    monkeypatch.setattr(ic, "_the_probe_s_report", lambda *a, **k: SimpleNamespace(found=True, tests=[SimpleNamespace(
+        name="page check 5: each control", outcome="failed", message=f"Error: {page_probe.MARKER} {json.dumps(REPEATED)}")]))
+    assert page_probe.still_raised(tmp_path, described, runner=lambda *a, **k: {}) is True

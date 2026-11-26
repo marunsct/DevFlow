@@ -24,6 +24,8 @@ RAN = [
                     message="the brief does not ask for small screens"),
     SimpleNamespace(name="page check 4: an item added is still shown after a reload", outcome="skipped",
                     message="the brief does not say the data persists"),
+    SimpleNamespace(name="page check 5: each control the contract names is the only element carrying its label where "
+                         "it sits", outcome="passed", message=""),
 ]
 
 
@@ -46,7 +48,7 @@ def test_a_clean_run_is_kept_with_each_check_s_result(a_page_project, monkeypatc
     assert page_probe.page_errors(a_page_project, "A list of notes.", runner=lambda *a, **k: {}) == []
 
     kept = _kept(a_page_project)
-    assert kept["outcome"] == "ran clean" and kept["probed"] == 2
+    assert kept["outcome"] == "ran clean" and kept["probed"] == 3
     assert sorted(s["reason"] for s in kept["skipped"]) == ["the brief does not ask for small screens",
                                                             "the brief does not say the data persists"]
 

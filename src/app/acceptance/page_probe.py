@@ -15,6 +15,14 @@ the form holding the first text field are filled, each with a value its meaning 
 number, a date, a phone number, else the text), so a field that checks its value does not refuse the item and a field
 outside the form (a filter) does not hide it. A page with no
 text field is not probed. Off until measured: a page's own way of adding an item may be one the probe cannot drive.
+
+Check 5 (LF.1590): each control the interface contract names on the page is the only element carrying its label where
+it sits - within the item of a list it belongs to, or on the page for a control shown once. Measured on one run: every
+item of a list carried two elements labelled with the control's name, the control (named by the label element
+wrapping it) and that label element, given `aria-label` with the same name; the locked suite found the control by its
+role and passed, and three hidden tests finding it by its label failed on two matches. A label is read the way a
+browser reads one for a label lookup: `aria-labelledby`, `aria-label`, and each label element linked to the element or
+wrapping it. The same control shown once in each of several items is not a repeat: each item is its own place.
 """
 from __future__ import annotations
 
@@ -53,6 +61,7 @@ CHECKS = (
     (2, "errors", "no console error or failed request while an item is added"),
     (3, "overflow", f"the page fits a {PHONE[0]}px-wide screen"),
     (4, "not_kept", "an item added is still shown after a reload"),
+    (5, "repeated_label", "each control the contract names is the only element carrying its label where it sits"),
 )
 
 
@@ -71,6 +80,7 @@ const MARKER = %(marker)s;
 const MARKUP = %(markup)s;
 const PERSISTS = %(persists)s;
 const SMALL_SCREENS = %(small_screens)s;
+const CONTROLS = %(controls)s;
 const NOT_THE_PRODUCT = /favicon\\.ico/;
 const FIELDS = 'input:not([type]), input[type=text], input[type=search], input[type=url], input[type=email], ' +
   'input[type=number], input[type=date], input[type=tel], textarea';
@@ -192,17 +202,100 @@ test('page check 4: an item added is still shown after a reload', async ({ page 
   await page.waitForTimeout(600);
   if (!(await page.getByText(text, { exact: false }).first().isVisible().catch(() => false))) found('not_kept', { text });
 });
+
+// In the page: where one of `shown` (the control's instances) sits - the widest element holding it and no other
+// instance, so each item of a list is its own place and a control shown once has the whole page - and the elements
+// there carrying `name` as a label, when more than one does; else null.
+function carriedTwice({ shown, name }) {
+  const plain = (text) => String(text || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const wanted = plain(name);
+  const textOf = (node, without) => {
+    let text = '';
+    const walk = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+    while (walk.nextNode()) if (!without || !without.contains(walk.currentNode)) text += walk.currentNode.textContent;
+    return text;
+  };
+  // How an element is labelled with `name`, by each way a label lookup reads a label.
+  const labels = (el) => {
+    const said = [];
+    const by = el.getAttribute('aria-labelledby');
+    if (by) {
+      const named = by.split(/\s+/).map((id) => document.getElementById(id)).filter(Boolean);
+      if (named.length) said.push(['aria-labelledby', named.map((n) => textOf(n)).join(' ')]);
+    }
+    if (el.hasAttribute('aria-label')) said.push(['aria-label', el.getAttribute('aria-label')]);
+    for (const label of el.labels || []) {
+      said.push([label.contains(el) ? 'the label element around it' : 'a label element linked to it', textOf(label, el)]);
+    }
+    return said.filter(([, text]) => plain(text) === wanted).map(([how]) => how);
+  };
+  const tag = (el) => '<' + el.localName + (el.id ? ` id="${el.id}"` : '') +
+    (el.getAttribute('class') ? ` class="${el.getAttribute('class')}"` : '') + '>';
+  for (const one of shown) {
+    let place = one;
+    while (place.parentElement && shown.filter((other) => place.parentElement.contains(other)).length === 1) {
+      place = place.parentElement;
+    }
+    const carriers = [place, ...place.querySelectorAll('*')]
+      .map((el) => [el, labels(el)]).filter(([, how]) => how.length);
+    if (carriers.length > 1) {
+      return { count: carriers.length, where: place.parentElement ? 'item' : 'page',
+               carriers: carriers.slice(0, 4).map(([el, how]) => `${tag(el)} by ${how.join(' and ')}`) };
+    }
+  }
+  return null;
+}
+
+test('page check 5: each control the contract names is the only element carrying its label where it sits', async ({ page }) => {
+  test.skip(!CONTROLS.length, 'the contract names no control on this page');
+  await page.goto('/');
+  await page.waitForTimeout(400);
+  // An item added first, so the controls each item of a list shows are on the page.
+  await addAnItem(page, `probe item ${Date.now()}`);
+  const repeated = [];
+  for (const { role, name } of CONTROLS) {
+    const shown = await page.getByRole(role, { name, exact: true }).elementHandles().catch(() => []);
+    if (!shown.length) continue;
+    const twice = await page.evaluate(carriedTwice, { shown: shown.slice(0, 20), name }).catch(() => null);
+    if (twice) repeated.push({ role, name, ...twice });
+  }
+  if (repeated.length) found('repeated_label', { controls: repeated.slice(0, 6) });
+});
 """
 
 
-def playwright_page_checks(_web: list[Any], *, persists: bool = False, small_screens: bool = False) -> str:
-    """The spec: the four checks, each throwing `MARKER` and its finding when the page fails it.
+def playwright_page_checks(_web: list[Any], *, persists: bool = False, small_screens: bool = False,
+                           controls: Any = ()) -> str:
+    """The spec: the five checks, each throwing `MARKER` and its finding when the page fails it.
 
     Check 3 (the phone width) is asked only when the brief asks for small screens, as the pack's own 375px check is
-    (`interface_checks.asks_for_small_screens`): a brief that never asks for a phone is not held to one.
+    (`interface_checks.asks_for_small_screens`): a brief that never asks for a phone is not held to one. Check 5 is
+    asked of `controls`, the (role, name) of each control the contract names on the page (`controls_on_the_page`).
     """
+    named = [{"role": str(role), "name": str(name)} for role, name in controls or ()]
     return _SPEC % {"marker": json.dumps(MARKER), "markup": json.dumps(MARKUP), "persists": json.dumps(bool(persists)),
-                    "small_screens": json.dumps(bool(small_screens)), "width": PHONE[0], "height": PHONE[1]}
+                    "small_screens": json.dumps(bool(small_screens)), "controls": json.dumps(named),
+                    "width": PHONE[0], "height": PHONE[1]}
+
+
+def controls_on_the_page(checks: Any) -> list[tuple[str, str]]:
+    """The (role, name) of each control the contract's page lines name on the page the probe opens, once each.
+
+    Only lines a page can show at all (`interface_contract.why_a_bare_visit_cannot_check` says nothing against them);
+    a line on another path is not on the page the probe opens.
+    """
+    from app.acceptance import interface_contract as ic
+
+    named: list[tuple[str, str]] = []
+    for check in checks or ():
+        if getattr(check, "kind", "") != "page" or str(getattr(check, "path", "") or "/") not in ("/", "/index.html"):
+            continue
+        if ic.why_a_bare_visit_cannot_check(check) or not check.name:
+            continue
+        role = ic._ELEMENT_ROLES.get(check.role, check.role)  # noqa: SLF001 - the contract's own reading of a role
+        if (role, check.name) not in named:
+            named.append((role, check.name))
+    return named
 
 
 _NUMBER = re.compile(r"\bpage check (\d)\b")
@@ -259,8 +352,10 @@ def page_errors(repo_root: str | Path, brief: str | None = None, *, runner: Any 
             state[_PERSISTS_KEY] = persists
             state[_SMALL_SCREENS_KEY] = small_screens
             suite._save_state(root, state)  # noqa: SLF001
+        controls = controls_on_the_page(ic.the_locked_contract(root))
         probe = {**ic.PROBE_RUNNERS["playwright"],
-                 "page_checks": lambda web: playwright_page_checks(web, persists=persists, small_screens=small_screens)}
+                 "page_checks": lambda web: playwright_page_checks(web, persists=persists, small_screens=small_screens,
+                                                                   controls=controls)}
         report = ic._the_probe_s_report(root / project_name, project_name, probe, [None], run,  # noqa: SLF001
                                         "page_checks")
         if report is None or not report.found:
@@ -320,6 +415,7 @@ _OPENINGS = {
     "errors": "while the page loaded and an item was added, it reported",
     "overflow": f"at a {PHONE[0]}px-wide screen the page is",
     "not_kept": "an item added was gone after the page was reloaded",
+    "repeated_label": "more than one element carries the label of a control the contract names",
 }
 
 
@@ -335,6 +431,13 @@ def _said(finding: dict[str, Any]) -> str:
         return f"at a {PHONE[0]}px-wide screen the page is {finding.get('wider')}px wider than the screen and scrolls sideways"
     if kind == "not_kept":
         return "an item added was gone after the page was reloaded, where the brief says the data persists"
+    if kind == "repeated_label":
+        return ("more than one element carries the label of a control the contract names, so a test or a screen "
+                "reader finding the control by its label meets several: " + "; ".join(
+                    f'{c.get("role")} "{c.get("name")}": {c.get("count")} elements '
+                    f'{"within one item" if c.get("where") == "item" else "on the page"} - '
+                    + ", ".join(str(x) for x in c.get("carriers") or [])
+                    for c in finding.get("controls") or [] if isinstance(c, dict))[:900])
     return str(kind)
 
 
@@ -343,8 +446,11 @@ def page_description(found: list[dict[str, Any]]) -> str:
     return (
         f"{PAGE_CHECK_FAILED} " + "; ".join(_said(f) for f in found) + ". Text a person types is shown as text, never "
         "added to the page as markup (set it as text content, or escape it); the page reports no error and every "
-        f"request it makes is answered under 500; it fits a {PHONE[0]}px-wide screen without scrolling sideways; and "
-        "what the brief says persists is shown again after a reload."
+        f"request it makes is answered under 500; it fits a {PHONE[0]}px-wide screen without scrolling sideways; "
+        "what the brief says persists is shown again after a reload; and each control the contract names is the only "
+        "element carrying its label within its item, or on the page for a control shown once: the label names the "
+        "control (a label element around it or linked to it, or `aria-label` on the control itself) and is never "
+        "given again to that label element or to anything around the control."
     )
 
 
@@ -362,6 +468,7 @@ def still_raised(repo_root: str | Path, description: str, *, runner: Any = None)
     return any(_OPENINGS.get(str(f.get("kind")), "\0") in text for f in errors)
 
 
-__all__ = ["CHECKS", "MARKER", "MARKUP", "ON_BY_DEFAULT", "PAGE_CHECK_FAILED", "PHONE", "enabled", "page_description",
+__all__ = ["CHECKS", "MARKER", "MARKUP", "ON_BY_DEFAULT", "PAGE_CHECK_FAILED", "PHONE", "controls_on_the_page", "enabled",
+           "page_description",
            "page_errors", "playwright_page_checks", "still_raised", "the_brief_says_data_persists",
            "what_the_test_found"]

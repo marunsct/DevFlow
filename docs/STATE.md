@@ -14,11 +14,11 @@ decisions in force are `docs/owner-decisions.md`; old information is found throu
 | | |
 |---|---|
 | Phase | **Learning runs, fixes deployed at once** (deep-review plan, owner 11-18: implement all; frozen-version measuring for Measure batches). The release-candidate count starts only when a full audit cycle finds nothing to fix. |
-| Models | :8888 `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` (key); :1234 `qwen3.6-35b-a3b-mtp@iq4_nl` (no key). Both the owner's; both take runs; each run is pinned to its port. |
-| Harness | Deploying 11-26 ~07:3x JST: the FX bundle (fixers, context and lookups: LF.1410-1427) and every deep-review fix (`reports/audits/2026-11-25-deep-review-*.md`: LF.1430-1497). New switches, off until measured: FIX_STAGES_STUB_OLD_READS, LOOKUP_AT_FIRST_SIGHT, USAGE_NOTES_FROM_THE_INSTALLED_PACKAGE, DOCUMENTATION_EXCERPTS_BOUNDED, OPENING_ROOM_FOR_REVIEWS, MEASURED_ROUND_WHEN_RED, FIXERS_HOLD_WHAT_THEY_READ. Runtime `model_reads_images=no` (the served build has no vision part). |
+| Models | olla `host.docker.internal:4001/olla/openai/v1`, model `qwen3.6-35b-a3b` (the owner's; two llama.cpp instances, 93K-token slots). Runs pinned to it. |
+| Harness | 5bb84d3 deployed 11-26 10:45 JST: LF.1503-1508 (llama.cpp context refusal read as an overflow; a design finding the specification answers is not held open; a stuck lookup once per run; Redis run histories bounded and cut at stop - the first sweep freed 203 MB; a specification given as JSON keeps every section in a review's excerpt, the cause of Medium 5's nine reviews). Before it: the FX bundle and every deep-review fix (LF.1410-1497). Switches off until measured: FIX_STAGES_STUB_OLD_READS, LOOKUP_AT_FIRST_SIGHT, USAGE_NOTES_FROM_THE_INSTALLED_PACKAGE, DOCUMENTATION_EXCERPTS_BOUNDED, OPENING_ROOM_FOR_REVIEWS, MEASURED_ROUND_WHEN_RED, FIXERS_HOLD_WHAT_THEY_READ. Runtime `model_reads_images=no`. Merged, suites running: LF.1509 (KG.1). Building: KG.2. Reviewing: every tool, offered/withheld/used/value (Fable). |
 | Switches | 53 fixes built in (always on). 29 optional switches (9 groups, `docs/measuring.md`); `WEB_LOOKUP_WHEN_STUCK` is off and set per run. Measure arms use `SWITCHES_OFF` per run. |
 | Operations | Nightly backups (`loop.sh backup --check`). **One model endpoint since 11-25 ~17:45 JST** (owner): olla `host.docker.internal:4001/olla/openai/v1` over two llama.cpp instances, model `qwen3.6-35b-a3b`, 4 requests at once; **at most 2 runs, each in parallel execution mode** (owner 17:54: test the parallel mode; `.env` `MAX_CONCURRENT_RUNS=2`). :8888 and :1234 are gone. Audit cron `0a7ebf80` every 15 minutes. |
-| Suites | `loop.sh suite` and `loop.sh suite-production` both green at 21,864 passed (11-26 08:5x JST). |
+| Suites | `loop.sh suite` and `loop.sh suite-production` both green at 21,908 passed on 5bb84d3 (11-26 10:40 JST). |
 
 ## Off until measured
 BATCH_ACCEPTANCE_AUTHOR (web tools are on since 11-23, measured from there). Hosted-model

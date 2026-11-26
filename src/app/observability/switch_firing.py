@@ -95,6 +95,11 @@ SIGNALS: dict[str, str] = {
     "GRAPH_IN_SEARCH_ANSWERS": "The harness's code graph:",
     "USES_NAMED_AT_THE_WRITE": "Other files use what this write changed",
     "REVIEWS_HOLD_THE_CHANGE_AND_ITS_USES": "each with the signatures of what uses it",
+    # Plan PF.2-PF.4: the harness's record of a stuck defect's candidates, a write's answer naming a test it broke,
+    # and the heading of a reading stage's chosen lines in its memory.
+    "CANDIDATE_FIXES_WHEN_STUCK": "Candidate fixes for a stuck defect, each measured against its own tests and the regression set",
+    "TESTS_REACHED_FIRST": "The tests that reach the files you changed ran first",
+    "RANGES_CHOSEN_BEFORE_A_READING_STAGE": "lines chosen for this work before it opened",
     # Recorded by the harness once per run and role kind, and once per run it offers no web tool
     # (`app.agents.role_tool_lists`, `app.tools.research_tool`).
     "TOOL_LISTS_BY_ROLE_KIND": "tools held to its role's list",
@@ -110,6 +115,8 @@ HARNESS_RECORDS: dict[str, str] = {"repository_delivery": "message", "prompt_sha
                                    "project_graph_reach": "message",
                                    # The tools the harness chose for a role or a model (`app.agents.role_tool_lists`).
                                    "tool_list_chosen": "message",
+                                   # A stuck defect's candidate fixes (`app.graph.candidate_fixes_when_stuck`, PF.2).
+                                   "candidate_fixes": "message",
                                    # Each decision the run took, with its rationale (`app.decisions.record_decision`):
                                    # switches whose acts are decisions say so only there.
                                    "decision": "text"}

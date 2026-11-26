@@ -250,6 +250,10 @@ GROUPS: dict[str, tuple[str, ...]] = {
     # changed, and a review's changed definitions with what uses them. Each its own measurement.
     "Code graph answers": ("DEFINITIONS_BEFORE_FILES", "GRAPH_IN_SEARCH_ANSWERS", "USES_NAMED_AT_THE_WRITE",
                            "REVIEWS_HOLD_THE_CHANGE_AND_ITS_USES"),
+    # Where the time of a fix round and a reading stage goes (plan PF.2-PF.4): a stuck defect's candidate fixes sized to
+    # the server's idle slots and held to the regression set, the tests a write reaches run before the defect's own,
+    # and a reading stage past its room opened on the lines one short call chose. Each its own measurement.
+    "Fix and reading speed": ("CANDIDATE_FIXES_WHEN_STUCK", "TESTS_REACHED_FIRST", "RANGES_CHOSEN_BEFORE_A_READING_STAGE"),
 }
 #: Every grouped switch, in the admin page's order.
 EXPERIMENTS = tuple(name for members in GROUPS.values() for name in members)
@@ -298,6 +302,9 @@ EXPERIMENTS_ON: dict[str, str] = {
     "USES_NAMED_AT_THE_WRITE": "owner 2026-11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M-KG.7)",
     "REVIEWS_HOLD_THE_CHANGE_AND_ITS_USES": "owner 2026-11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M-KG.8)",
     "FAST_DESIGN_GATE_ON_PRODUCT_BREAKING": "owner 2026-11-26 (LF.1524): fast delivery built with blocking design findings open; on, holding only the product-breaking ones, and off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M-LF.1524)",
+    "CANDIDATE_FIXES_WHEN_STUCK": "owner 2026-11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes, or its tokens per accepted criterion rise more than 5% (docs/measuring.md M-PF.2)",
+    "TESTS_REACHED_FIRST": "owner 2026-11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M-PF.3)",
+    "RANGES_CHOSEN_BEFORE_A_READING_STAGE": "owner 2026-11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M-PF.4)",
     "TOOL_LISTS_BY_ROLE_KIND": "tool review 2026-11-26 (TR.7, LF.1541): seven tools in every writer's list made 9 calls in 4,260 writer requests, about 6,200 characters of schema; on, and off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M-TR.7)",
 }
 _GROUP_OF = {name: group for group, members in GROUPS.items() for name in members}

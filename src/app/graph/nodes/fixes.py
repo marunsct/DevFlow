@@ -481,13 +481,21 @@ def _fixed_by_rewriting(
                 defect, failure, root, fix_model or ctx.model or ctx.building_model,
                 files_to_fix(defect, failure, root, may_write), may_write,
             )
+            # A stuck defect: as many candidates as the server has room for, each held to the regression set (PF.2).
+            from app.graph import candidate_fixes_when_stuck
+
+            count = candidate_fixes_when_stuck.width(failed_tries, located)
+            stuck = candidate_fixes_when_stuck.Stuck(root, defect, stage, count) if count else None
             kept = fix_by_candidates(
                 defect, root, candidate_model, lambda: _the_defect_s_tests_pass(root, defect),
                 specification=state.get("technical_specification"),
                 stack=getattr(state.get("stack_selection"), "technology_stack", None),
                 last_failure=last_failure, may_write=may_write, files=located, co_defects=co_defects,
                 kept=_the_fixes_to_keep_for(state, defect),
+                **({"candidates": count, "holds": stuck.holds, "seed_base": failed_tries * 10} if stuck else {}),
             )
+            if stuck is not None:
+                stuck.note(kept is not None)
             if kept is not None:
                 return kept
         except Exception as swallowed:  # noqa: BLE001 - one rewrite, or the agent loop, takes the defect
@@ -708,15 +716,22 @@ def _fix_one(state: Any, config: RunnableConfig, defect_index: int, ctx: GraphCo
         from app.graph import verify_after_write
 
         root = Path(state["repository"].root_path)
+        # A mutation finding's write is answered by its own change (`MUTANT_CHECK_IN_THE_FIX_STAGE`).
+        check_after_a_write = mutant_check_in_stage.check_for(root, defect, lambda: _the_defect_s_tests_pass(root, defect))
+        # A fix alone keeps the version its own tests passed at (A3, `best_checkpoint`); not a mutation finding's,
+        # whose check is of its own change.
+        # Still failing, the write's reply says how, and what the server printed (FX.7).
+        how_after_a_write = mutant_check_in_stage.how_for(defect)
+        if not how_after_a_write:
+            # The tests that reach the files a write changed run before the defect's own (PF.3, `TESTS_REACHED_FIRST`).
+            from app.graph import tests_reached_first
+
+            check_after_a_write, how_after_a_write = tests_reached_first.first(
+                root, fix_base, defect, check_after_a_write,
+                {"checkpoints_in": root, "then": lambda: first_failure.after_a_write(root, defect)},
+                run_id=config["configurable"].get(APP_RUN_ID_KEY), stage=stage_name)
         with verify_after_write.watching(
-            config["configurable"].get(APP_RUN_ID_KEY), stage_name,
-            # A mutation finding's write is answered by its own change (`MUTANT_CHECK_IN_THE_FIX_STAGE`).
-            mutant_check_in_stage.check_for(root, defect, lambda: _the_defect_s_tests_pass(root, defect)),
-            # A fix alone keeps the version its own tests passed at (A3, `best_checkpoint`); not a mutation finding's,
-            # whose check is of its own change.
-            # Still failing, the write's reply says how, and what the server printed (FX.7).
-            **(mutant_check_in_stage.how_for(defect) or {
-                "checkpoints_in": root, "then": lambda: first_failure.after_a_write(root, defect)}),
+            config["configurable"].get(APP_RUN_ID_KEY), stage_name, check_after_a_write, **how_after_a_write,
         ):
             update = _run_gated_agent(
                 state,

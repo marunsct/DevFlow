@@ -159,6 +159,14 @@ def effects(records: list[dict], decisions: str = "") -> list[str]:
 
     for lines_of in (definitions_lines, search_answer_lines, write_uses_lines, review_change_lines):
         lines.extend(lines_of(records))
+    # PF.2-PF.4: stuck defects' candidates held to the regression set, writes checked with the tests reaching their
+    # files first, and reading stages opened on the lines chosen for them.
+    from app.agents.ranges_chosen_first import effects_lines as chosen_ranges_lines
+    from app.graph.candidate_fixes_when_stuck import effects_lines as stuck_candidate_lines
+    from app.graph.tests_reached_first import effects_lines as reached_first_lines
+
+    for lines_of in (stuck_candidate_lines, reached_first_lines, chosen_ranges_lines):
+        lines.extend(lines_of(records))
     # TR.2 and TR.6: reads while reading was withheld, refused by class against run; writes at the call budget.
     from app.agents.withheld_records import effects_lines as withheld_lines
 

@@ -883,8 +883,14 @@ def fix_by_candidates(
     specification: Any = None, stack: Any = None, last_failure: Any = None,
     may_write: Callable[[str], bool] | None = None, write: Callable[[str, str, str], Any] | None = None,
     candidates: int = CANDIDATES, files: list[str] | None = None, co_defects: Sequence[Any] = (), kept: str = "",
+    holds: Callable[[list[str]], bool] | None = None, seed_base: int | None = None,
 ) -> Any | None:
     """A defect fixed by several candidate rewrites asked for at once, the first its tests pass kept; or None.
+
+    `holds`, for a stuck defect (`candidate_fixes_when_stuck`, PF.2): a candidate whose own tests pass is kept only
+    when it is also given its changed files and answers True - the regression set still passes - else the files are
+    put back and the next is tried. `seed_base`: each candidate asked with its own seed (`seed_base` + its number),
+    where the server takes one (`candidate_fixes_when_stuck.seed_for`).
 
     `files`, when given, is used as the files to change and no localisation
     call is made. See `app.graph.nodes.fixes._fixed_by_rewriting`.
@@ -954,10 +960,15 @@ def fix_by_candidates(
             if repeated_rewrite_prompts.exhausted(root, asked):
                 return index, path, ""
             sent.append(asked)
+            seeded: dict[str, Any] = {}
+            if seed_base is not None:
+                from app.graph.candidate_fixes_when_stuck import seed_for
+
+                seeded = seed_for(active_model, seed_base + index)
             reply = active_model.invoke([
                 SystemMessage(content=_system_for(originals[path])),
                 HumanMessage(content=asked),
-            ], **config_for_this_run("defect_fix"))
+            ], **seeded, **config_for_this_run("defect_fix"))
             # A long file's anchored edits that cannot be made leave this
             # candidate without the file, like a reply that failed.
             return index, path, _the_reply_s_file(path, originals[path], reply)
@@ -994,6 +1005,11 @@ def fix_by_candidates(
         passed = check()
         if passed is False:
             repeated_rewrite_prompts.reply_failed(root, {path: version[path] for path in changed})
+        if passed is not False and holds is not None and not holds(changed):
+            # Its own tests pass and it broke what passed before: the next candidate is tried (PF.2).
+            logger.info("Candidate %d of %d passes its own tests and breaks others; not kept", number, candidates)
+            put_back()
+            continue
         if passed is not False:
             logger.info("Candidate fix %d of %d kept%s: %s", number, candidates,
                         "" if passed else " (nothing to check it against)", ", ".join(changed))

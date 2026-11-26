@@ -643,7 +643,8 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
            documents_at_most: int = 0, review_files: tuple[str, ...] = (),
            numbered_as: str = "", outlined: bool = False,
            interface_only: tuple[str, ...] = (), localised: tuple[str, ...] = (),
-           quoted_whole: tuple[str, ...] = ()) -> tuple[str, dict[str, str]]:
+           quoted_whole: tuple[str, ...] = (),
+           chosen_ranges: dict[str, str] | None = None) -> tuple[str, dict[str, str]]:
     """The memory as text within `budget_characters`, and the files it holds by path.
 
     `for_a_fixer`: the product's code first, the acceptance criteria, and the specification as its outline and the
@@ -685,6 +686,9 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
 
     `quoted_whole`: the workflow documents the request quotes whole (`quoted_whole_in`): neither held nor digested,
     named as in the request (LF.1469).
+
+    `chosen_ranges`: {file: its block} of the lines chosen for a reading stage before it opened
+    (`ranges_chosen_first`, PF.4): those blocks first, and every other code file only in the outline (with `outlined`).
     """
     files = current(repo_root)
     if not files or budget_characters <= 0:
@@ -710,6 +714,8 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
     by_definitions = definitions_before_files.for_the_memory(
         repo_root, files, ask, budget_characters, for_a_fixer=for_a_fixer, localised=localised,
         the_slice=first or the_slice) if (for_a_fixer or sliced) and replan is None else {}
+    if chosen_ranges:
+        by_definitions = {**by_definitions, **chosen_ranges}
     held: dict[str, str] = {}
     parts: list[str] = []
     from app.agents.canonical_memory import enabled as canonical_order
@@ -751,6 +757,9 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
         # Where the failure is handled first, before the other files its evidence names (FX.2).
         first_of_all = [path for path in localised if path in files]
         ranked = first_of_all + [path for path in ranked if path not in set(first_of_all)]
+    if chosen_ranges:
+        # The lines chosen for a reading stage first (PF.4).
+        ranked = [path for path in chosen_ranges if path in files] + [path for path in ranked if path not in chosen_ranges]
     not_given = set(interface_only)
     under_review = [path for path in dict.fromkeys(review_files) if path in files and not path.startswith("docs/")
                     and path not in not_given]
@@ -815,6 +824,10 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
         if path in by_definitions:
             parts.append(by_definitions[path])
             used += len(by_definitions[path])
+            continue
+        if chosen_ranges and path in outline_blocks and _a_code_file(path):
+            # A reading stage holds the lines chosen for it; its other code is in the outline, read by range (PF.4).
+            left_out.append(path)
             continue
         if path in under_review:
             from app.agents.review_files import NUMBERED_MARK, numbered
@@ -925,6 +938,13 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
 
 #: The product's source files named one by one in the memory of a suite writer not given them, at most.
 MOST_SOURCE_NAMED = 12
+
+
+def _a_code_file(path: str) -> bool:
+    """Whether `path` is the product's code or a test, by its name (`file_kinds.classify_file`)."""
+    from app.analysis.file_kinds import classify_file
+
+    return classify_file(path) in ("application", "test")
 
 
 #: The most of a review's room (the budget less the documents' room) its outline of the other files may take.
@@ -1096,6 +1116,10 @@ def render_for_a_stage(repo_root: str | Path, model: Any, opening: str, stage: s
             evidence = fixer_request_shape.the_evidence(opening)
             return render(repo_root, min(budget_for(model), max(least, target - len(opening))), evidence,
                           for_a_fixer=True, sliced=True, localised=localised_fix.files_in(evidence))
+    chosen = _ranges_chosen_for(repo_root, model, opening, stage, noted, quoted_whole)
+    if chosen is not None:
+        return _within_its_budget(repo_root, model, opening, stage, chosen[0], chosen[1], chosen[2], noted=noted,
+                                  framing=framing)
     from app.agents import review_files
 
     named = review_files.held_named_in(opening) if not fixer and review_files.holds_what_it_reads(stage) else ()
@@ -1124,6 +1148,34 @@ def render_for_a_stage(repo_root: str | Path, model: Any, opening: str, stage: s
         memory, held = render(repo_root, budget_for(model), opening, **arguments)
     return _within_its_budget(repo_root, model, opening, stage, memory, held, arguments, noted=noted,
                               framing=framing)
+
+
+def _ranges_chosen_for(repo_root: str | Path, model: Any, opening: str, stage: str, ask: bool,
+                       quoted_whole: tuple[str, ...]) -> tuple[str, dict[str, str], dict[str, Any]] | None:
+    """A reading stage's memory past its room, holding the lines one short call chose for it, its held files and the
+    arguments it was rendered with (`RANGES_CHOSEN_BEFORE_A_READING_STAGE`, PF.4); None for the memory as before.
+    Asked only when `ask` (not the size gate's look at what a stage is shown). A suite writer given only the product's
+    interface is left as it is. Never raises: None."""
+    try:
+        from app.agents import ranges_chosen_first
+
+        if not ranges_chosen_first.enabled() or not ranges_chosen_first.applies(stage):
+            return None
+        arguments = _arguments_for(repo_root, stage)
+        if arguments.get("interface_only"):
+            return None
+        files = current(repo_root)
+        ranges = ranges_chosen_first.chosen(repo_root, model, opening, stage, files, budget_for(model), ask=ask)
+        if not ranges:
+            return None
+        arguments = {**arguments, "outlined": True, "chosen_ranges": ranges_chosen_first.blocks(files, ranges)}
+        if quoted_whole:
+            arguments["quoted_whole"] = tuple(quoted_whole)
+        memory, held = render(repo_root, budget_for(model), opening, **arguments)
+        return (memory, held, arguments) if memory else None
+    except Exception:  # noqa: BLE001 - the memory as before
+        logger.debug("Could not hold the lines chosen for a reading stage", exc_info=True)
+        return None
 
 
 def _a_review_within_its_room(repo_root: str | Path, model: Any, opening: str, stage: str, named: Sequence[str],

@@ -19,6 +19,10 @@ before a fixer or a rewrite is sent, the candidates are replayed (`replayed`):
   applies to the workspace is dropped.
 
 The candidates live in `.harness/kept_candidates.json` of the workspace, so a restarted worker has them.
+
+A stuck defect's candidate rewrites (`candidate_fixes_when_stuck`, PF.2) are measured against the regression set
+before one is kept: one whose own tests pass and that broke tests that passed before is kept here the same way, from
+the workspace as it stands before its files are put back (`keep_from_the_tree`), and replayed at the next attempt.
 """
 
 from __future__ import annotations
@@ -118,24 +122,62 @@ def keep(
             return False  # a replay reverted again is not kept again
         ci.commit(root, f"{stage_name} as written, kept as a candidate")
         patches = _patches_since(root, base)
-        if not patches or passes() is not True:
+        if not patches or passes() is not True or not _store_candidate(root, defect, stage_name, patches, broke):
             return False
-        text = "".join(patches[p] for p in sorted(patches))
-        digest = hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()[:16]
-        if digest in mine["spent"] or any(c.get("digest") == digest for c in mine["candidates"]):
-            return False
-        mine["candidates"].append({
-            "digest": digest, "stage": stage_name, "files": patches,
-            "size": sum(_lines_changed(t) for t in patches.values()), "broke": [str(item)[:200] for item in broke[:3]],
-        })
-        mine["candidates"] = sorted(mine["candidates"], key=lambda c: c["size"])[:MOST_KEPT]
-        store[defect_key(defect)] = mine
-        _write(root, store)
         logger.warning("Kept %s as a candidate for its defect: its tests pass, and it broke %d test(s) that passed before",
                        stage_name, len(broke))
         return True
     except Exception as error:  # noqa: BLE001 - the fix is reverted as before
         degraded("kept_candidates.keep", error)
+        return False
+
+
+def _store_candidate(root: str | Path, defect: Any, stage_name: str, patches: dict[str, str], broke: list[str]) -> bool:
+    """Add one candidate of `patches` for `defect`; False when it is one kept or spent already."""
+    store = _read(root)
+    mine = store.get(defect_key(defect)) or {"candidates": [], "spent": []}
+    text = "".join(patches[p] for p in sorted(patches))
+    digest = hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()[:16]
+    if digest in mine["spent"] or any(c.get("digest") == digest for c in mine["candidates"]):
+        return False
+    mine["candidates"].append({
+        "digest": digest, "stage": stage_name, "files": patches,
+        "size": sum(_lines_changed(t) for t in patches.values()), "broke": [str(item)[:200] for item in broke[:3]],
+    })
+    mine["candidates"] = sorted(mine["candidates"], key=lambda c: c["size"])[:MOST_KEPT]
+    store[defect_key(defect)] = mine
+    _write(root, store)
+    return True
+
+
+def keep_from_the_tree(root: str | Path, defect: Any, stage_name: str, paths: list[str], broke: list[str]) -> bool:
+    """Keep the change `paths` now hold in the workspace, uncommitted, as a candidate for `defect` (PF.2): a stuck
+    defect's candidate rewrite whose own tests passed and that broke `broke`, before its files are put back.
+
+    Each file's patch is against the last commit. Never raises; True when a candidate was kept.
+    """
+    if not enabled():
+        return False
+    try:
+        wanted = [p for p in dict.fromkeys(paths) if p and not p.startswith(_NOT_A_CHANGE)]
+        if not wanted or len(wanted) > MOST_FILES:
+            return False
+        patches: dict[str, str] = {}
+        for path in wanted:
+            done = _version_control(root, "diff", "--no-color", "HEAD", "--", path)
+            text = done.stdout if done is not None and done.returncode == 0 else ""
+            if not text.strip():
+                continue
+            if "GIT binary patch" in text or "Binary files" in text or len(text) > MOST_PATCH_CHARACTERS:
+                return False
+            patches[path] = text
+        if not patches or not _store_candidate(root, defect, stage_name, patches, broke):
+            return False
+        logger.warning("Kept a candidate rewrite of %s for its defect: its tests pass, and it broke %d test(s) that "
+                       "passed before", ", ".join(sorted(patches)), len(broke))
+        return True
+    except Exception as error:  # noqa: BLE001 - the candidate is dropped as before
+        degraded("kept_candidates.keep_from_the_tree", error)
         return False
 
 
@@ -198,4 +240,4 @@ def replayed(root: str | Path, defect: Any, stage_name: str) -> Any | None:
         return None
 
 
-__all__ = ["MOST_KEPT", "ON_BY_DEFAULT", "defect_key", "enabled", "keep", "replayed"]
+__all__ = ["MOST_KEPT", "ON_BY_DEFAULT", "defect_key", "enabled", "keep", "keep_from_the_tree", "replayed"]

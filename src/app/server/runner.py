@@ -816,6 +816,19 @@ class RunRecord:
             return {}
 
 
+def _refuse_while_a_person_holds_the_turn(record: Any) -> None:
+    """A person editing the run's files holds it (plan UX.12): nothing resumes, rewinds or answers a gate until
+    they hand back or the edits are discarded, so no stage writes beside them. A record with no workspace is not held."""
+    root = getattr(record, "repo_root", "") if record is not None else ""
+    if not root:
+        return
+    from app.server.edit_session import blocking_resume
+
+    why = blocking_resume(root)
+    if why:
+        raise RunConflict(why)
+
+
 class WorkflowRunner:
     """Manages workflow runs for the web server.
 
@@ -1169,7 +1182,7 @@ class WorkflowRunner:
                 "history inconsistent, so resuming it would read a state no single run "
                 "produced. Clone it to repeat the attempt from the beginning."
             )
-        self._refuse_while_a_person_holds_the_turn(record)
+        _refuse_while_a_person_holds_the_turn(record)
 
         await self._require_command_execution()
         self._require_a_ceiling_that_can_hold()
@@ -1207,16 +1220,6 @@ class WorkflowRunner:
         except Exception:
             self._put_back_a_resume_that_was_not_dispatched(run_id, resumable, record)
             raise
-
-    @staticmethod
-    def _refuse_while_a_person_holds_the_turn(record: RunRecord | None) -> None:
-        """A person editing the run's files holds it (plan UX.12): nothing resumes, rewinds or answers a gate until
-        they hand back or the edits are discarded, so no stage writes beside them."""
-        from app.server.edit_session import blocking_resume
-
-        why = blocking_resume(record.repo_root) if record is not None else None
-        if why:
-            raise RunConflict(why)
 
     def _put_back_a_start_that_was_not_dispatched(self, run_id: str) -> None:
         """Return a run whose start was not dispatched to `created`, so it can be started again. Never raises."""
@@ -1280,7 +1283,7 @@ class WorkflowRunner:
             raise RunConflict(
                 f"Run {run_id} is {record.status}; pause it first, then rewind it."
             )
-        self._refuse_while_a_person_holds_the_turn(record)
+        _refuse_while_a_person_holds_the_turn(record)
         # "Paused" is honoured at the next stage boundary; the step in flight still finishes and writes its
         # checkpoint. Measured: it wrote over a rewind nine seconds later, and the rewound stage never ran.
         from app.server import driving
@@ -1401,7 +1404,7 @@ class WorkflowRunner:
         # dispatch a second task onto a thread that one is still driving, and
         # both would write checkpoints to it.
         record = self.run_store.load(run_id)
-        self._refuse_while_a_person_holds_the_turn(record)
+        _refuse_while_a_person_holds_the_turn(record)
         if record is not None and record.auto_approve:
             raise RunConflict(
                 f"Run {run_id} is unattended and approves its own gates. "
@@ -1417,7 +1420,7 @@ class WorkflowRunner:
         self._dispatch(run_id, resume=True, decision_payload={"type": "approval", "decision": decision})
 
     async def submit_review(self, run_id: str, decision: dict[str, Any]) -> None:
-        self._refuse_while_a_person_holds_the_turn(self.run_store.load(run_id))
+        _refuse_while_a_person_holds_the_turn(self.run_store.load(run_id))
         now = datetime.now(timezone.utc).isoformat()
         if not self.run_store.compare_and_set_status(
             run_id, "waiting_for_review", "running", updated_at=now

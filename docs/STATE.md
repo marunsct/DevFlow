@@ -5,9 +5,9 @@ the block below is written by `loop.sh state`. The map of all documents is `docs
 `docs/improvement-plan.md`; how the product works is `docs/PRODUCT.md`; how to run and test it is `docs/HANDOVER.md`;
 decisions in force are `docs/owner-decisions.md`; old information is found through `docs/ARCHIVE.md`.
 <!-- state:generated -->
-**As of:** 11-26 06:36 JST (written by `loop.sh state`). Harness f661efd3 committed; 647b21e8 deployed (not the same).
-**Live, and stopped in the last day:** run-17098b4b running at tools_models; run-03668d05 running at ?; run-a2f91f9f failed at awaiting_approval:acceptance_author_1; run-038f60eb failed at ?; run-32362f3b failed at failed; run-7259e30d failed at ?
-**Last scored:** run-f4bab632 notes-api-php 9/9 (completed, handoff 1.0; scored 11-26 06:36 JST); run-2f653f55 fullstack-bookmarks 8/8 (completed, mixed, 326 active min, handoff 1.0; scored 11-26 01:59 JST); run-1d79334d notes-api-go 9/9 (completed, mixed, 60 active min, handoff 1.0; scored 11-25 09:44 JST).
+**As of:** 11-26 11:22 JST (written by `loop.sh state`). Harness d4d81362 committed; 74720600 deployed (not the same).
+**Live, and stopped in the last day:** run-a79c55df running at tools_models; run-e799301e running at technical_lead; run-7259e30d failed at ?; run-17098b4b failed at awaiting_approval:specialist_testing_1; run-03668d05 failed at awaiting_approval:specialist_testing_2; run-a2f91f9f failed at awaiting_approval:acceptance_author_1
+**Last scored:** run-6c1444a0 tasks-api 10/10 (completed, mixed, 140 active min, handoff 1.0; scored 11-26 11:19 JST); run-f4bab632 notes-api-php 9/9 (completed, handoff 1.0; scored 11-26 06:36 JST); run-2f653f55 fullstack-bookmarks 8/8 (completed, mixed, 326 active min, handoff 1.0; scored 11-26 01:59 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -15,10 +15,10 @@ decisions in force are `docs/owner-decisions.md`; old information is found throu
 |---|---|
 | Phase | **Learning runs, fixes deployed at once** (deep-review plan, owner 11-18: implement all; frozen-version measuring for Measure batches). The release-candidate count starts only when a full audit cycle finds nothing to fix. |
 | Models | olla `host.docker.internal:4001/olla/openai/v1`, model `qwen3.6-35b-a3b` (the owner's; two llama.cpp instances, 93K-token slots). Runs pinned to it. |
-| Harness | 5bb84d3 deployed 11-26 10:45 JST: LF.1503-1508 (llama.cpp context refusal read as an overflow; a design finding the specification answers is not held open; a stuck lookup once per run; Redis run histories bounded and cut at stop - the first sweep freed 203 MB; a specification given as JSON keeps every section in a review's excerpt, the cause of Medium 5's nine reviews). Before it: the FX bundle and every deep-review fix (LF.1410-1497). Switches off until measured: FIX_STAGES_STUB_OLD_READS, LOOKUP_AT_FIRST_SIGHT, USAGE_NOTES_FROM_THE_INSTALLED_PACKAGE, DOCUMENTATION_EXCERPTS_BOUNDED, OPENING_ROOM_FOR_REVIEWS, MEASURED_ROUND_WHEN_RED, FIXERS_HOLD_WHAT_THEY_READ. Runtime `model_reads_images=no`. Merged, suites running: LF.1509 (KG.1). Building: KG.2. Reviewing: every tool, offered/withheld/used/value (Fable). |
+| Harness | 7472060 deployed 11-26 11:19 JST: LF.1503-1512 (LF.1508 a JSON specification keeps every section in a review's excerpt; LF.1507 Redis run histories bounded, first sweep freed 203 MB; LF.1509-1510 KG.1 graph records and KG.2 parser imports in every language; LF.1511-1512 the reviewer's approval conditions kept and given to planning, building and the judges). Merged, suites running: LF.1513-1516, LF.1520-1522 (KG.3 names used, KG.4 routes/tests in the graph, TR.1 module_exports truthful, TR.10, TR.4 reader descriptions, TR.5 grep expressions, TR.9 command slips). Building: TR.2/TR.3/TR.6 (withheld reads per file), LF.1523 (contract probes on every sprint). Runtime `model_reads_images=no`. |
 | Switches | 53 fixes built in (always on). 29 optional switches (9 groups, `docs/measuring.md`); `WEB_LOOKUP_WHEN_STUCK` is off and set per run. Measure arms use `SWITCHES_OFF` per run. |
 | Operations | Nightly backups (`loop.sh backup --check`). **One model endpoint since 11-25 ~17:45 JST** (owner): olla `host.docker.internal:4001/olla/openai/v1` over two llama.cpp instances, model `qwen3.6-35b-a3b`, 4 requests at once; **at most 2 runs, each in parallel execution mode** (owner 17:54: test the parallel mode; `.env` `MAX_CONCURRENT_RUNS=2`). :8888 and :1234 are gone. Audit cron `0a7ebf80` every 15 minutes. |
-| Suites | `loop.sh suite` and `loop.sh suite-production` both green at 21,908 passed on 5bb84d3 (11-26 10:40 JST). |
+| Suites | both green at 21,977 passed on 7472060 (11-26 11:12 JST), at SUITE_WORKERS=3 (a global OOM at 10:58 JST killed the owner's GPU0 server; the owner restarted it). |
 
 ## Off until measured
 BATCH_ACCEPTANCE_AUTHOR (web tools are on since 11-23, measured from there). Hosted-model

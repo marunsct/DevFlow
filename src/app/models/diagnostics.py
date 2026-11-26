@@ -525,10 +525,16 @@ def diagnose_if_new(model: Any) -> Diagnosis | None:
         name = served_name(model)
         diagnosis = recorded(name)
         if diagnosis is None:
-            if not the_model_answers(model):
-                return None
-            diagnosis = diagnose(model, name)
-            keep(diagnosis)
+            from app.models.diagnosis_flight import one_at_a_time
+
+            # One diagnosis of a model at a time: a run started beside another waits for its result (LF.1568).
+            with one_at_a_time(name):
+                diagnosis = recorded(name)
+                if diagnosis is None:
+                    if not the_model_answers(model):
+                        return None
+                    diagnosis = diagnose(model, name)
+                    keep(diagnosis)
         apply(model, diagnosis)
         return diagnosis
     except Exception:  # noqa: BLE001

@@ -1,0 +1,43 @@
+[Carrying over from your previous attempt at this stage, which ended without a structured response. The conversation is gone; these facts are not. Do not re-establish them.]
+
+It ended because it spun without returning an answer: answer sooner this time, with what you have.
+
+Its work note at its last summary - what it had found, decided and changed, and what it had left - start from here:
+## Found
+- `acceptance/tasks.spec.js:435`: Acceptance tests expect validation error responses (HTTP 422) to include an `error_code` field instead of standard Pydantic payloads.
+- `task_management_dashboard/main.py`: Grep for `exception_handler`, `validation_error`, and `HTTPException` returned no matches, confirming no custom error formatting is currently registered.
+- `task_management_dashboard/routes.py:51-56`: Imports `PaginatedResponse`, `RefreshRequest`, `RegisterRequest`, `TaskResponse`, and `UpdateTaskRequest` from the local `.schemas` module.
+- `task_management_dashboard/schemas.py:213-270`: `CreateTaskRequest` already contains a custom validator for `due_date` that rejects past dates and normalizes timezone info to UTC.
+
+## Decided
+- Chose to implement a custom FastAPI exception handler for `RequestValidationError` in `main.py` to intercept 422 responses and map them to the `{ "error_code": "..." }` structure mandated by the acceptance spec.
+- Ruled out modifying the acceptance tests or relying on Pydantic's default error serialization, as the API contract is fixed.
+- Ruled out scattering validation error formatting inside individual route functions; a centralized exception handler will keep routes clean and consistent.
+
+## Changed
+None
+
+## Left
+- Implement the `RequestValidationError` exception handler in `main.py` to format 422 responses with the correct `error_code` mapping.
+- Update `task_management_dashboard/models.py` to define the `Task` ORM model with columns: `priority`, `status`, `due_date`, `tags`, `reminders`, `version`, `created_at`, `updated_at`.
+- Finalize `task_management_dashboard/schemas.py` by adding the remaining Pydantic v2 models (`TaskResponse`, `UpdateTaskRequest`) to match the work order field definitions.
+- Draft backend unit tests in `tests/` covering task creation validation, ID retrieval with permission scoping, optimistic locking via `If-Match` headers, deletion, and cross-project constraints.
+- Read `task_management_dashboard/routes.py:110-350` to review existing route signatures and dependency injection patterns before integrating the new schemas and exception handler.
+
+Files you already read, and which have not changed since:
+  task-management-dashboard/acceptance/due-dates.spec.js
+  task-management-dashboard/acceptance/tasks.spec.js
+  task-management-dashboard/task_management_dashboard/routes.py
+  task-management-dashboard/task_management_dashboard/schemas.py
+
+Commands this stage already ran, with how they exited:
+  python -m pytest tests/test_routes.py -x --tb=short  -> exit 1
+  python -m pytest tests/test_routes.py::TestLogoutInvalidToken::test_logout_with_unknown_refresh_token_returns_401 -x --tb=long -v  -> exit 1
+  python -m pytest tests/test_routes.py -x --tb=short -v  -> exit 1
+  python -m pytest tests/test_routes.py -x --tb=short -v  -> exit 0
+  python -m pytest tests/ -x --tb=short  -> exit 1
+  python -m pytest tests/ -x --tb=short  -> exit 1
+  python -m pytest tests/test_schemas.py::TestRegisterRequest::test_username_with_hyphen_raises_validation_error -x --tb=short  -> exit 0
+  python -m pytest tests/test_schemas.py -x --tb=short  -> exit 0
+
+Re-reading a file listed above or re-running a command listed above will return what it returned before. Start from what is here and write your structured response.

@@ -644,7 +644,8 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
            numbered_as: str = "", outlined: bool = False,
            interface_only: tuple[str, ...] = (), localised: tuple[str, ...] = (),
            quoted_whole: tuple[str, ...] = (),
-           chosen_ranges: dict[str, str] | None = None) -> tuple[str, dict[str, str]]:
+           chosen_ranges: dict[str, str] | None = None,
+           review_first: bool = False) -> tuple[str, dict[str, str]]:
     """The memory as text within `budget_characters`, and the files it holds by path.
 
     `for_a_fixer`: the product's code first, the acceptance criteria, and the specification as its outline and the
@@ -689,6 +690,13 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
 
     `chosen_ranges`: {file: its block} of the lines chosen for a reading stage before it opened
     (`ranges_chosen_first`, PF.4): those blocks first, and every other code file only in the outline (with `outlined`).
+
+    `review_first`: a review's memory held to its room (`OPENING_ROOM_FOR_REVIEWS`, LF.1567): the code under review
+    comes first, the files the request's work bears on (`the_work_s_files`) first among it, its configuration and
+    tests after it, and no file outside the review is held whole (each is in the outline). Measured on the code
+    review the switch was built on: its cut memory held the migration tool's environment script, the manifest, the
+    tool's settings file, the requirements files and a module nobody reviewed, and left out the batch's page, its two
+    form components, its hook and its authentication module.
     """
     files = current(repo_root)
     if not files or budget_characters <= 0:
@@ -763,6 +771,8 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
     not_given = set(interface_only)
     under_review = [path for path in dict.fromkeys(review_files) if path in files and not path.startswith("docs/")
                     and path not in not_given]
+    if review_first and under_review:
+        under_review = _code_the_work_bears_on_first(repo_root, focus, files, under_review)
     review_room = budget_characters - min(REVIEW_DOCUMENTS_ROOM, budget_characters // 4)
     # Past the size gate (a review or reading stage's files under review), every code file not held whole is in an
     # outline with its line ranges (LF.1287), its room taken before the whole files are chosen: each file held whole
@@ -878,7 +888,8 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
                  else after_the_rest if canonical else parts).append(block)
                 used += len(block)
                 continue
-        if len(text) > LARGEST_FILE_CHARACTERS or used + len(block) + outline_room(path) > budget_characters:
+        if (len(text) > LARGEST_FILE_CHARACTERS or used + len(block) + outline_room(path) > budget_characters
+                or (review_first and under_review and not path.startswith("docs/"))):
             left_out.append(path)
             continue
         (whole_documents if stable and path.startswith("docs/") else parts).append(block)
@@ -936,6 +947,22 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
     return head + "\n".join(parts) + tail, held
 
 
+def _code_the_work_bears_on_first(repo_root: str | Path, focus: str, files: dict[str, str],
+                                  under_review: list[str]) -> list[str]:
+    """`under_review` with its code first, then its configuration, then its tests; within each, the files the
+    request's work bears on (`the_work_s_files`) first, by their place, the rest in the request's order (LF.1567)."""
+    from app.analysis.file_kinds import classify_file
+
+    wanted = the_work_s_files(repo_root, focus, files)
+    group = {"config": 1, "document": 1, "test": 2}
+
+    def key(item: tuple[int, str]) -> tuple[int, int, int]:
+        order, path = item
+        return (group.get(classify_file(path), 0), wanted.get(path, len(wanted) + 9), order)
+
+    return [path for _, path in sorted(enumerate(under_review), key=key)]
+
+
 #: The product's source files named one by one in the memory of a suite writer not given them, at most.
 MOST_SOURCE_NAMED = 12
 
@@ -986,8 +1013,13 @@ def _the_sprint_s_slice(repo_root: str | Path, sprint_files: tuple[str, ...], fi
 
 
 def render_for_a_replan(repo_root: str | Path, budget_characters: int, opening: str, sprint_files: tuple[str, ...],
-                        kept_out: tuple[str, ...] = ()) -> tuple[str, dict[str, str], str]:
+                        kept_out: tuple[str, ...] = (),
+                        quoted_whole: tuple[str, ...] = ()) -> tuple[str, dict[str, str], str]:
     """A re-plan's memory, the files it holds and the request it goes with (`LEAD_REPLAN_REQUEST_SMALLER`).
+
+    `quoted_whole`: the documents the request quotes whole (`quoted_whole_in`), held once - in the request - and named
+    in the memory as there (LF.1566). Measured on a re-plan: the lead's request quoted the sprint plan under
+    `--- Approved sprint plan (/docs/sprint_plan.md) ---` while its memory held `docs/sprint_plan.md` whole again.
 
     Never longer than the request it replaces: the memory, the request and the line naming the held files together
     are held to the length they have without the switch, the request less its list of the sprint's files. Measured
@@ -998,13 +1030,13 @@ def render_for_a_replan(repo_root: str | Path, budget_characters: int, opening: 
     from app.agents import prompt_size
 
     plain = opening.replace(prompt_size.sprint_files_section(list(sprint_files)), "", 1)
-    whole, whole_held = render(repo_root, budget_characters, plain, kept_out=kept_out)
+    whole, whole_held = render(repo_root, budget_characters, plain, kept_out=kept_out, quoted_whole=quoted_whole)
 
     def length(memory: str, held: dict[str, str], request: str) -> int:
         return (len(memory) + 2 if memory else 0) + len(request) + len(files_held_line(list(held)))
 
     smaller, smaller_held = render(repo_root, min(budget_characters, len(whole)), opening, kept_out=kept_out,
-                                   sprint_files=sprint_files)
+                                   sprint_files=sprint_files, quoted_whole=quoted_whole)
     if smaller and length(smaller, smaller_held, opening) < length(whole, whole_held, plain):
         return smaller, smaller_held, opening
     return whole, whole_held, plain
@@ -1062,7 +1094,7 @@ REVIEW_DOCUMENTS_ROOM = 12_000
 
 def render_for_a_review(repo_root: str | Path, model: Any, opening: str, stage: str,
                         review_files: Sequence[str], budget: int | None = None,
-                        quoted_whole: tuple[str, ...] = ()) -> tuple[str, dict[str, str]]:
+                        quoted_whole: tuple[str, ...] = (), review_first: bool = False) -> tuple[str, dict[str, str]]:
     """A review's memory with `review_files` held first, numbered, and each long document as its digest (LF.1284);
     another reading stage's the same way (`review_files.READING_STAGES`, LF.1286).
 
@@ -1074,7 +1106,7 @@ def render_for_a_review(repo_root: str | Path, model: Any, opening: str, stage: 
 
     return render(repo_root, budget or budget_for(model), opening, **_arguments_for(repo_root, stage),
                   documents_at_most=DOCUMENTS_PAST_THE_BUDGET, review_files=tuple(review_files),
-                  numbered_as=numbered_heading(stage), quoted_whole=tuple(quoted_whole))
+                  numbered_as=numbered_heading(stage), quoted_whole=tuple(quoted_whole), review_first=review_first)
 
 
 def render_for_a_stage(repo_root: str | Path, model: Any, opening: str, stage: str,
@@ -1195,8 +1227,9 @@ def _a_review_within_its_room(repo_root: str | Path, model: Any, opening: str, s
         if share is None or built <= target:
             return None
         room = min(budget_for(model), max(int(target * request_budget.MEMORY_LEAST_SHARE), target - len(opening) - 2))
+        # The code under review first, and nothing outside the review held whole (LF.1567).
         smaller, smaller_held = render_for_a_review(repo_root, model, opening, stage, named, budget=room,
-                                                    quoted_whole=quoted_whole)
+                                                    quoted_whole=quoted_whole, review_first=True)
         if not smaller or len(smaller) >= len(memory):
             return None
         if noted:
@@ -1218,7 +1251,8 @@ def as_the_stage_opens(repo_root: str | Path, model: Any, opening: str, stage: s
     sprint_files = _the_sprint_s_files(stage, opening)
     if sprint_files:
         memory, held, _ = render_for_a_replan(repo_root, budget_for(model), opening, sprint_files,
-                                              kept_out=_kept_out_for(stage, repo_root))
+                                              kept_out=_kept_out_for(stage, repo_root),
+                                              quoted_whole=quoted_whole_in(opening))
         return memory, held
     return render_for_a_stage(repo_root, model, opening, stage, noted=False)
 
@@ -1634,6 +1668,48 @@ def _the_opening_turn(messages: list[Any]) -> str:
     return "\n".join(texts)
 
 
+def _text_of(content: Any) -> str | None:
+    """A message's text: the string, or the text parts of a list (a request sent with pictures); None for neither."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = [str(part.get("text") or "") for part in content if isinstance(part, dict) and part.get("type") == "text"]
+        return "\n".join(parts) if parts else None
+    return None
+
+
+#: How the harness's own notes in a stage's opening turn begin - a restarted stage's carry-over (`carry_over`), the
+#: empty-project notice (`project_snapshot`), the workspace listing each call is given (`workspace_digest`) and the
+#: memory's own notes. None of them is what the stage is asked.
+_NOTE_LEADS = ("[Carrying over from your previous attempt", "The project directory `", "The workspace as it stands",
+               "[Project memory")
+
+
+def the_stage_s_ask(messages: list[Any]) -> str:
+    """The stage's own request: the user messages before the model's first reply that are not the harness's notes
+    (`_NOTE_LEADS`), joined when a request comes as several; else the first message's text.
+
+    The harness puts its notes before the request - a restarted stage's carry-over note, the empty-project notice -
+    and the workspace listing after it (`graph.workflow`, `workspace_digest`). Measured: the memory was chosen by the first
+    message, so a restarted code review was ranked by its carry-over note and held none of the three files its request
+    said were held with their line numbers (one not at all), and every stage that opens on the empty-project notice
+    was sized as if its request were that notice's 300 characters."""
+    asked: list[str] = []
+    for message in messages:
+        if getattr(message, "type", None) == "ai" or (isinstance(message, dict) and message.get("role") == "assistant"):
+            break
+        human = getattr(message, "type", None) == "human" or (isinstance(message, dict)
+                                                                and message.get("role") in ("user", "human"))
+        text = _text_of(getattr(message, "content", None) if not isinstance(message, dict) else message.get("content"))
+        if human and text is not None and not text.lstrip().startswith(_NOTE_LEADS):
+            asked.append(text)
+    if asked:
+        return "\n\n".join(asked)
+    first = next(iter(messages), None)
+    text = _text_of(getattr(first, "content", None) if not isinstance(first, dict) else (first or {}).get("content"))
+    return text or ""
+
+
 def build_project_memory_middleware(repo_root: str) -> Any:
     """Middleware that hands each call the project memory, and answers a read of what it already holds."""
     from langchain.agents.middleware import AgentMiddleware
@@ -1669,26 +1745,27 @@ def build_project_memory_middleware(repo_root: str) -> Any:
             if not isinstance(messages, list) or not messages or not enabled():
                 return handler(request)
             try:
-                opening = next((str(getattr(m, "content", "") or (m.get("content") if isinstance(m, dict) else ""))
-                                for m in messages), "")
+                # The stage's own request, not the note before it (a carry-over, the empty-project notice).
+                opening = the_stage_s_ask(messages)
                 visit = self._visit()
                 if visit.get("snapshot") is None:
                     from app.observability.log_context import _from_the_graph
 
                     stage = str(_from_the_graph()[1] or "")
                     sprint_files = _the_sprint_s_files(stage, opening)
+                    # The documents the opening turn quotes whole: not held again, a read pointed there (LF.1469); a
+                    # re-plan's too (LF.1566).
+                    visit["quoted_whole"] = list(quoted_whole_in(_the_opening_turn(messages)))
                     if sprint_files:
                         visit["snapshot"], visit["held"], visit["request"] = render_for_a_replan(
                             repo_root, budget_for(getattr(request, "model", None)), opening, sprint_files,
-                            kept_out=_kept_out_for(stage, repo_root))
+                            kept_out=_kept_out_for(stage, repo_root), quoted_whole=tuple(visit["quoted_whole"]))
                         visit["opening"] = opening
                     else:
                         from app.agents.opening_room import framing_of
 
                         # The call's system prompt and tool descriptions, for the room its opening leaves (PA.1).
                         visit["framing"] = framing_of(request)
-                        # The documents the opening turn quotes whole: not held again, a read pointed there (LF.1469).
-                        visit["quoted_whole"] = list(quoted_whole_in(_the_opening_turn(messages)))
                         visit["snapshot"], visit["held"] = render_for_a_stage(
                             repo_root, getattr(request, "model", None), opening, stage, framing=visit["framing"],
                             quoted_whole=tuple(visit["quoted_whole"]))

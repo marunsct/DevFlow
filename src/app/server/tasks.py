@@ -785,23 +785,29 @@ def execute_workflow_run(
             # Said in the transcript (HR2.OB.1): a new model's diagnosis makes dozens of calls before the first
             # stage, and an audit reading only the transcript saw a run "stalled at 0%".
             note_in_transcript(run_id, "", "model_diagnostic", event="start", steps="diagnose, salvage, deep, capabilities")
-            diagnose_if_new(served)
-            measure_if_new(served)
-            from app.models.model_guidance import deep_if_new
-
-            deep_if_new(served)
-            from app.models.diagnostics import apply, recorded
+            from app.models.diagnosis_flight import one_at_a_time
             from app.models.reply_salvage import served_name
 
-            apply(served, recorded(served_name(served)))
-            from app.models import capabilities
+            # One run at a time diagnoses a model; a run started beside it waits and uses its result (LF.1568).
+            with one_at_a_time(served_name(served), waiting=lambda: note_in_transcript(
+                    run_id, "", "model_diagnostic", event="waiting",
+                    why="another run is diagnosing this model; its result is used")):
+                diagnose_if_new(served)
+                measure_if_new(served)
+                from app.models.model_guidance import deep_if_new
 
-            if not capabilities.found_values(served_name(served)):
-                capabilities.fill(served, served_name(served), str(getattr(served, "model_name", "") or ""))
-            from app.models import research_check
+                deep_if_new(served)
+                from app.models.diagnostics import apply, recorded
 
-            # A model whose capabilities were found before the check existed (plan HK.11).
-            research_check.measure_if_new(served, served_name(served))
+                apply(served, recorded(served_name(served)))
+                from app.models import capabilities
+
+                if not capabilities.found_values(served_name(served)):
+                    capabilities.fill(served, served_name(served), str(getattr(served, "model_name", "") or ""))
+                from app.models import research_check
+
+                # A model whose capabilities were found before the check existed (plan HK.11).
+                research_check.measure_if_new(served, served_name(served))
             note_in_transcript(run_id, "", "model_diagnostic", event="end")
         except _NotDiagnosed:
             pass

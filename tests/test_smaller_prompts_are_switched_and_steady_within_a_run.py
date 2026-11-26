@@ -278,7 +278,8 @@ def test_with_the_smaller_replan_on_a_replan_holds_only_the_sprint_s_files_whole
     assert f"=== {SPRINT_FILE} ===" in read and "export function addEntry" in read
     assert f"=== {OTHER_FILE} ===" not in read and "monthlyReport" in read, "the other file is named with what it defines"
     assert "docs/technical_specification.md (outline" in read and "Line 11 of what the product must do." not in read
-    assert "=== docs/sprint_plan.md ===" in read, "a short document is still held whole"
+    # The request quotes the sprint plan whole, so the memory names it as there (LF.1566).
+    assert "=== docs/sprint_plan.md ===" not in read and "quotes it whole" in read and "docs/sprint_plan.md" in read
     assert "You are now planning the milestone for this sprint: 'Entries'" in read
 
 

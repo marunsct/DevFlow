@@ -171,13 +171,16 @@ def a_model_call(server: str = "") -> Iterator[None]:
                 from app.models.reply_salvage import measure_if_new
 
                 served = build_default_chat_model()
-                diagnose_if_new(served)
-                measure_if_new(served)
+                from app.models.diagnosis_flight import one_at_a_time
                 from app.models.diagnostics import apply, recorded
                 from app.models.model_guidance import deep_if_new
                 from app.models.reply_salvage import served_name
 
-                deep_if_new(served)
+                # One run at a time diagnoses a model; another waits for its result (LF.1568).
+                with one_at_a_time(served_name(served)):
+                    diagnose_if_new(served)
+                    measure_if_new(served)
+                    deep_if_new(served)
                 apply(served, recorded(served_name(served)))
         except Exception:  # noqa: BLE001 - telemetry never stops a call
             pass

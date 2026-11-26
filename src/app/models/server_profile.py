@@ -121,6 +121,11 @@ def _from_lm_studio(models: Any, instances: Any = None) -> ServerProfile | None:
     run, seven fixers sent at once to a model loaded with 182,528 tokens and `parallel: 4` were refused "Context size
     has been exceeded" in waves for half an hour, while the harness took the whole window for each and its slots for
     unknown. With `parallel` read, the fan-out is held to the slots and each request to its share of the window.
+
+    Whether it reads images is the server's own word (LF.1569): `/api/v0/models` gives each model's `type` - `vlm`
+    for a model it holds a vision part for, `llm` for one it does not - and `/api/v1/models` its `capabilities`'
+    `vision`. Read as None before, so the model card's word stood; on a llama.cpp server the same gap sent pictures
+    to a model with no vision part, and every fix call was refused.
     """
     entries = models.get("data") if isinstance(models, dict) else None
     loaded = [m for m in entries or [] if isinstance(m, dict) and m.get("state") == "loaded"]
@@ -136,7 +141,30 @@ def _from_lm_studio(models: Any, instances: Any = None) -> ServerProfile | None:
         slot_context=(context // slots if context and slots else context),
         quantisation=quantisation.upper() if _QUANT.fullmatch(quantisation) else "",
         model=str(model.get("id") or ""),
+        reads_images=_lm_studio_vision(model, instances),
     )
+
+
+#: LM Studio's model types (`/api/v0/models`): one with a vision part, and one without.
+_LM_STUDIO_TYPES = {"vlm": True, "llm": False}
+
+
+def _lm_studio_vision(model: dict[str, Any], instances: Any) -> bool | None:
+    """Whether LM Studio says the loaded `model` reads images: its `type` in `/api/v0/models`, else the `vision` of
+    its `capabilities` in `/api/v1/models`; None when neither says (LF.1569)."""
+    said = _LM_STUDIO_TYPES.get(str(model.get("type") or "").strip().lower())
+    if said is not None:
+        return said
+    model_id = str(model.get("id") or "")
+    for entry in (instances.get("models") if isinstance(instances, dict) else None) or []:
+        if not isinstance(entry, dict):
+            continue
+        ids = {str(entry.get("key") or "")} | {str(i.get("id") or "") for i in entry.get("loaded_instances") or []
+                                               if isinstance(i, dict)}
+        vision = (entry.get("capabilities") or {}).get("vision") if isinstance(entry.get("capabilities"), dict) else None
+        if model_id in ids and isinstance(vision, bool):
+            return vision
+    return None
 
 
 def _lm_studio_parallel(instances: Any, model_id: str) -> int | None:

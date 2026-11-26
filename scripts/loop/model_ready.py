@@ -63,7 +63,7 @@ def check(label, s):
                 return False, (f"NOTREADY {head} (BUSY: it lists the model, and a small request timed out while "
                                f"{', '.join(busy[:4])} of ours use this server)")
             return False, f"NOTREADY {head} (listed, but it does not answer a request: {answered})"
-        return True, f"READY {head} ({len(served)} models listed){server_facts(reached, naming, key)}"
+        return True, f"READY {head} ({len(served)} models listed){server_facts(reached, naming, key, s.model_name or '')}"
     return False, f"NOTREADY {head} (served there: {served[:20]})"
 
 
@@ -116,7 +116,7 @@ def answers(reached, naming, key, model_name, words=0):
         return f"{type(error).__name__}: {str(error)[:80]}"
 
 
-def server_facts(reached, naming, key):
+def server_facts(reached, naming, key, model=""):
     """What a llama.cpp-style server says of itself at /props: slots, context, quantisation. "" if nothing.
 
     One slot serves one request at a time: two runs on it each waited for the
@@ -124,17 +124,24 @@ def server_facts(reached, naming, key):
     fan-out only queues. The context it was started with is the real ceiling,
     whatever the settings say (one server refused at ~54k with 131k set).
     The harness applies both itself now (`app.models.server_profile`).
+    Behind a load balancer the slots are the pool's, summed over the endpoints
+    serving `model`, and the line names how many endpoints (LF.1579).
     """
     try:
         from app.models.server_profile import read
     except ImportError:  # an image from before the profile module
         return ""
-    profile = read(reached, key)
+    try:
+        profile = read(reached, key, model)
+    except TypeError:  # an image from before the balancer's pool was read
+        profile = read(reached, key)
     if profile is None:
         return ""
     said = []
     if profile.slots:
-        said.append(f"{profile.slots} slot(s)" + ("; parallel mode and a second run will wait their turn" if profile.slots == 1 else ""))
+        pooled = getattr(profile, "endpoints", None)
+        said.append(f"{profile.slots} slot(s)" + (f" across {pooled} endpoint(s)" if pooled else "")
+                    + ("; parallel mode and a second run will wait their turn" if profile.slots == 1 else ""))
     if profile.slot_context:
         said.append(f"context {profile.slot_context} tokens as started")
     if profile.quantisation:

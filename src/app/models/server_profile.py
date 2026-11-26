@@ -12,6 +12,9 @@ Read once per run segment in the worker (`record`), with one GET and never a
 model call, and consulted by the context budget and the parallel cap without
 touching the network (`current`). A server without `/props` - any hosted API -
 records nothing and changes nothing.
+
+Behind a load balancer the profile is the pool's (LF.1579): its slots are the sum of the slots of every endpoint that
+takes requests and serves the model, and its per-slot context the smallest among them (`app.models.balancer`).
 """
 
 from __future__ import annotations
@@ -19,8 +22,9 @@ from __future__ import annotations
 import json
 import logging
 import re
+import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -40,6 +44,10 @@ class ServerProfile:
     model: str = ""
     #: Whether the server holds a vision part for it (`modalities.vision`); None when it does not say.
     reads_images: bool | None = None
+    #: Other names the server answers to for its model (llama.cpp's `model_alias`).
+    aliases: tuple[str, ...] = ()
+    #: How many servers behind a balancer serve the model, `slots` being their sum; None for a single server.
+    endpoints: int | None = None
 
     @property
     def bits(self) -> int | None:
@@ -69,17 +77,23 @@ def from_props(props: dict[str, Any]) -> ServerProfile:
     name = path.replace("\\", "/").rsplit("/", 1)[-1]
     found = _QUANT.findall(name)
     vision = (props.get("modalities") or {}).get("vision") if isinstance(props.get("modalities"), dict) else None
+    alias = str(props.get("model_alias") or "").strip()
     return ServerProfile(
         slots=slots if isinstance(slots, int) and slots > 0 else None,
         slot_context=context if isinstance(context, int) and context > 0 else None,
         quantisation=found[-1].upper() if found else "",
         model=name,
         reads_images=vision if isinstance(vision, bool) else None,
+        aliases=(alias,) if alias else (),
     )
 
 
-def read(base_url: str, api_key: str = "") -> ServerProfile | None:
-    """GET `/props` beside the OpenAI-compatible `base_url`; None when the server has none. Never raises."""
+def read(base_url: str, api_key: str = "", model: str = "") -> ServerProfile | None:
+    """GET `/props` beside the OpenAI-compatible `base_url`; None when the server has none. Never raises.
+
+    When `base_url` is a load balancer, the profile is its pool's: the slots of every endpoint it routes to that serves
+    `model` (any model when "") summed, and the smallest per-slot context among them (LF.1579).
+    """
     if not base_url:
         return None
     try:
@@ -87,16 +101,75 @@ def read(base_url: str, api_key: str = "") -> ServerProfile | None:
 
         reached, naming = reached_from_here(base_url.rstrip("/"))
         root = reached[:-3] if reached.endswith("/v1") else reached
-        headers = {**({"Authorization": f"Bearer {api_key}"} if api_key else {}), **naming}
+        auth = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        headers = {**auth, **naming}
     except Exception:  # noqa: BLE001
         return None
+    single = _read_one(root, headers)
+    if single is None:
+        return None
+    try:
+        return _pooled(single, base_url.rstrip("/"), auth, model)
+    except Exception:  # noqa: BLE001 - a balancer that cannot be read leaves the one server's profile
+        logger.debug("Could not read the balancer's endpoints", exc_info=True)
+        return single
+
+
+def _read_one(root: str, headers: dict[str, str]) -> ServerProfile | None:
+    """The profile of the one server at `root`: its `/props`, else LM Studio's model lists; None when neither."""
     if root not in _WITHOUT_PROPS:
         props = _get_json(root + "/props", headers)
         if isinstance(props, dict) and any(key in props for key in _PROPS_KEYS):
             return from_props(props)
-        # No `/props`, or an answer without one (LM Studio says 200 with an error body, and logs an ERROR each time).
-        _WITHOUT_PROPS.add(root)
+        # An answer without one (LM Studio says 200 with an error body, and logs an ERROR each time). A server that
+        # did not answer at all is asked again: one down when first read was never read again once it was back.
+        if props is not None:
+            _WITHOUT_PROPS.add(root)
     return _from_lm_studio(_get_json(root + "/api/v0/models", headers), _get_json(root + "/api/v1/models", headers))
+
+
+def _pooled(single: ServerProfile, base_url: str, auth: dict[str, str], model: str) -> ServerProfile:
+    """`single` as the pool behind the balancer at `base_url`; `single` itself when it is no balancer, or when none of
+    its endpoints can be read as serving `model` (a naming this cannot match keeps the old reading)."""
+    from app.models import balancer
+    from app.models.endpoints import reached_from_here
+
+    origin = balancer.origin_of(base_url)
+    reached_origin, naming = reached_from_here(origin)
+    listed = balancer.endpoints(reached_origin, {**auth, **naming})
+    if not listed:
+        return single
+    serving: list[ServerProfile] = []
+    for endpoint in listed:
+        if not endpoint.routable:
+            continue
+        address, same_host = balancer.beside(base_url, endpoint.url)
+        reached, naming = reached_from_here(address.rstrip("/"))
+        root = reached[:-3] if reached.endswith("/v1") else reached
+        # The balancer's key goes only to its own machine.
+        profile = _read_one(root, {**(auth if same_host else {}), **naming})
+        if profile is not None and serves(profile, model):
+            serving.append(profile)
+    if not serving:
+        return single
+    contexts = [p.slot_context for p in serving if p.slot_context]
+    return replace(
+        single,
+        slots=sum(p.slots or 1 for p in serving),
+        slot_context=min(contexts) if contexts else single.slot_context,
+        endpoints=len(serving),
+    )
+
+
+def serves(profile: ServerProfile, model: str) -> bool:
+    """Whether the server `profile` describes serves `model` by name, path or alias; any model when `model` is ""."""
+    wanted = str(model or "").strip().lower()
+    if not wanted:
+        return True
+    wanted_names = {wanted, wanted.replace("\\", "/").rsplit("/", 1)[-1]}
+    names = {str(n).strip().lower() for n in (profile.model, *profile.aliases) if n}
+    every = wanted_names | {n[:-5] for n in wanted_names if n.endswith(".gguf")}
+    return bool((names | {n[:-5] for n in names if n.endswith(".gguf")}) & every)
 
 
 #: Fields a llama.cpp `/props` body has; an answer with none of them is not one.
@@ -106,10 +179,13 @@ _WITHOUT_PROPS: set[str] = set()
 
 
 def _get_json(url: str, headers: dict[str, str]) -> Any:
+    """The JSON at `url`; {} when the server answered with an error or no JSON, None when it did not answer."""
     try:
         with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=PROPS_TIMEOUT_SECONDS) as reply:
             return json.load(reply)
-    except Exception:  # noqa: BLE001 - a server without the endpoint says nothing
+    except (urllib.error.HTTPError, ValueError):
+        return {}
+    except Exception:  # noqa: BLE001 - a server that does not answer says nothing
         return None
 
 
@@ -200,14 +276,16 @@ def record() -> ServerProfile | None:
         if (settings.llm_provider or "") in {"anthropic", "gemini"}:
             _RECORDED = None
             return None
-        _RECORDED = read(settings.openai_base_url or "", settings.openai_api_key or "")
+        _RECORDED = read(settings.openai_base_url or "", settings.openai_api_key or "", settings.model_name or "")
     except Exception:  # noqa: BLE001
         logger.debug("Could not read the model server's profile", exc_info=True)
         _RECORDED = None
     if _RECORDED is not None:
         logger.info(
-            "Model server: %s slot(s), %s tokens per slot%s",
-            _RECORDED.slots or "?", _RECORDED.slot_context or "?",
+            "Model server: %s slot(s)%s, %s tokens per slot%s",
+            _RECORDED.slots or "?",
+            f" across {_RECORDED.endpoints} endpoint(s)" if _RECORDED.endpoints else "",
+            _RECORDED.slot_context or "?",
             f", {_RECORDED.quantisation}" if _RECORDED.quantisation else "",
         )
     return _RECORDED
@@ -224,6 +302,8 @@ def what_changed(before: ServerProfile, after: ServerProfile) -> list[str]:
     changes = []
     if before.slots != after.slots:
         changes.append(f"slots {before.slots or '?'} -> {after.slots or '?'}")
+    if before.endpoints != after.endpoints:
+        changes.append(f"endpoints behind the balancer {before.endpoints or '-'} -> {after.endpoints or '-'}")
     if before.slot_context != after.slot_context:
         changes.append(f"tokens per slot {before.slot_context or '?'} -> {after.slot_context or '?'}")
     if before.quantisation != after.quantisation:
@@ -287,7 +367,7 @@ def check_again(run_id: str = "", *, clock: Any = None, reader: Any = None) -> s
             from app.models import _runtime_settings
 
             settings = _runtime_settings()
-            fresh = read(settings.openai_base_url or "", settings.openai_api_key or "")
+            fresh = read(settings.openai_base_url or "", settings.openai_api_key or "", settings.model_name or "")
     except Exception:  # noqa: BLE001 - telemetry never stops a call
         return ""
     noticed, kind, details = "", "", {}
@@ -360,4 +440,4 @@ def forget() -> None:
     _UNREACHABLE = False
 
 
-__all__ = ["PAGE_MAX_AGE_SECONDS", "ServerProfile", "asked", "check_again", "current", "forget", "from_props", "read", "recent", "record", "what_changed"]
+__all__ = ["PAGE_MAX_AGE_SECONDS", "ServerProfile", "asked", "check_again", "current", "forget", "from_props", "read", "recent", "record", "serves", "what_changed"]

@@ -116,7 +116,7 @@ def test_the_server_profile_is_read_again_when_the_run_moves_to_another_server(w
 
     served = {A: server_profile.ServerProfile(slots=1, slot_context=100000),
               B: server_profile.ServerProfile(slots=2, slot_context=32768)}
-    monkeypatch.setattr(server_profile, "read", lambda base, key="": served.get(base))
+    monkeypatch.setattr(server_profile, "read", lambda base, key="", model="": served.get(base))
     server_profile.forget()
     with model_pin.as_the_run(RUN):
         server_profile.record()

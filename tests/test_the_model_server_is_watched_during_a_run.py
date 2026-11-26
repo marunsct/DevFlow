@@ -86,7 +86,7 @@ def test_every_model_call_goes_through_the_check(tmp_path, monkeypatch):
     monkeypatch.setenv("MODEL_CALL_GATE_DIR", str(tmp_path))
     written = []
     monkeypatch.setattr("app.observability.transcript.record", lambda run, stage, kind, **f: written.append(kind))
-    monkeypatch.setattr(sp, "read", lambda base_url, api_key="": sp.ServerProfile(slots=2, slot_context=63232))
+    monkeypatch.setattr(sp, "read", lambda base_url, api_key="", model="": sp.ServerProfile(slots=2, slot_context=63232))
     _start(sp.ServerProfile(slots=1, slot_context=126464))
     token = log_context._TASK_RUN.set("run-x")
     try:

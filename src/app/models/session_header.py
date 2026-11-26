@@ -13,13 +13,27 @@ that does not know the header ignores it. `MODEL_SESSION_SCOPE` says what one se
 balancer picks the least-busy server for each call and the cache affinity is given up - the owner judged that three
 requests sharing one GPU are no faster than a lost cache. Sent only to a self-hosted server (`CompatibleChatOpenAI`), never to a
 hosted API.
+
+Which calls share a session, by conversation (LF.1576). Measured with olla over two llama.cpp instances of two slots
+each: every one-shot rewrite of one run went out as the run alone, olla kept that one session on one instance, and
+four calls sat there for 214-656 s while the other instance was idle. So:
+
+- **an agent's conversation** - a stage known (`<run>:<stage>`) - keeps one session, for its prompt cache; a one-call
+  request made inside an agent's turn (a tool's or a middleware's) shares it, since the agent waits for it;
+- **a call with no conversation to reuse** - no stage known: a graph node's one-shot call, a measurement outside any
+  run - gets a fresh session per request, the run kept in front (`<run>:<fresh>`), as `request` scope does;
+- **the parts of a fan-out** (`app.observability.direct_calls.mapped_in_this_context`: candidate fixes, drafted
+  files, parts of a specification) each get a session of their own (`<run>[:<stage>]:<part>`), so the balancer can
+  put side-by-side calls on different servers; a part's later calls (a retry) keep its session.
 """
 from __future__ import annotations
 
+import contextvars
 import os
 import re
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from typing import TypeVar
 
 #: olla's session header; its sticky sessions read it before falling back to a hash of the request's opening bytes.
 DEFAULT_SESSION_HEADER = "X-Olla-Session-ID"
@@ -50,8 +64,24 @@ def session_scope(environment: Mapping[str, str] | None = None) -> str:
     return raw if raw in SCOPES else "conversation"
 
 
-def _the_conversation() -> str:
-    """`<run>:<stage>` of the running call; the run or the stage alone where only one is known; "" outside both."""
+#: The part of a fan-out the running call belongs to (`as_a_part_of_its_own`); "" outside one.
+_PART: contextvars.ContextVar[str] = contextvars.ContextVar("model_session_part", default="")
+
+T = TypeVar("T")
+R = TypeVar("R")
+
+
+def as_a_part_of_its_own(function: Callable[[T], R], item: T) -> R:
+    """`function(item)` as one part of a fan-out: its model requests get a session no sibling part shares.
+
+    Run inside the part's own context copy (`mapped_in_this_context`), so the mark ends with the part.
+    """
+    _PART.set(uuid.uuid4().hex[:10])
+    return function(item)
+
+
+def _the_conversation() -> tuple[str, str]:
+    """The running call's run and stage; "" for either not known."""
     run = stage = ""
     try:
         from app.observability.transcript import _run_id_from_config, _stage_from_config
@@ -66,22 +96,30 @@ def _the_conversation() -> str:
             run = current_run_id()
         except Exception:  # noqa: BLE001
             run = ""
-    value = ":".join(part for part in (run, stage) if part)
-    return _UNSAFE.sub("_", value)[:_MOST_CHARS]
+    return run, stage
+
+
+def session_value(run: str, stage: str, part: str, scope: str, fresh: str) -> str:
+    """The session a request is sent under (see the module's notes): `<run>:<stage>` for an agent's conversation, with
+    `:<part>` in a fan-out; `<run>:<part>` for a fan-out part with no stage; `<run>:<fresh>` for a call with no
+    conversation to reuse, and under `request` scope `<run>:<stage>:<fresh>`. The run is kept in front where known."""
+    known = ":".join(p for p in (run, stage) if p)
+    if scope == "request" or not (stage or part):
+        tail = fresh
+    else:
+        tail = part
+    kept = _UNSAFE.sub("_", known)[:_MOST_CHARS - len(tail) - 1]
+    return f"{kept}:{tail}" if kept and tail else (kept or tail)
 
 
 def session_headers(environment: Mapping[str, str] | None = None) -> dict[str, str]:
-    """The header naming the running call's session; empty when the setting is off, or, by conversation, when no
-    conversation is known."""
+    """The header naming the running call's session; empty when the setting is off."""
     name = session_header_name(environment)
     if not name:
         return {}
-    conversation = _the_conversation()
-    if session_scope(environment) == "request":
-        # The conversation kept in front for the balancer's own log; the fresh part makes every request a new session.
-        fresh = uuid.uuid4().hex[:12]
-        return {name: f"{conversation}:{fresh}" if conversation else fresh}
-    return {name: conversation} if conversation else {}
+    run, stage = _the_conversation()
+    value = session_value(run, stage, _PART.get(), session_scope(environment), uuid.uuid4().hex[:12])
+    return {name: value} if value else {}
 
 
 def with_the_session_named(payload: dict, address: str, environment: Mapping[str, str] | None = None) -> None:
@@ -98,6 +136,6 @@ def with_the_session_named(payload: dict, address: str, environment: Mapping[str
 
 
 __all__ = [
-    "DEFAULT_SESSION_HEADER", "SCOPES", "session_header_name", "session_headers", "session_scope",
-    "with_the_session_named",
+    "DEFAULT_SESSION_HEADER", "SCOPES", "as_a_part_of_its_own", "session_header_name", "session_headers",
+    "session_scope", "session_value", "with_the_session_named",
 ]

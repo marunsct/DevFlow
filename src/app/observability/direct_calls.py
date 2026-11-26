@@ -40,10 +40,15 @@ def mapped_in_this_context(pool: Any, function: Callable[[T], R], items: Iterabl
     """`pool.map(function, items)`, each call run in a copy of the caller's context.
 
     One copy per call, taken here in the caller's thread: a context cannot be
-    entered by two threads at once.
+    entered by two threads at once. Each call is a part of its own for a
+    balancer in front of several model servers (`session_header`, LF.1576):
+    side-by-side calls of one run and stage shared one session, and the
+    balancer queued them all on one server while the other sat idle.
     """
+    from app.models.session_header import as_a_part_of_its_own
+
     jobs = [(contextvars.copy_context(), item) for item in items]
-    return list(pool.map(lambda job: job[0].run(function, job[1]), jobs))
+    return list(pool.map(lambda job: job[0].run(as_a_part_of_its_own, function, job[1]), jobs))
 
 
 __all__ = ["config_for_this_run", "mapped_in_this_context"]

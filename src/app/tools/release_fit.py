@@ -190,11 +190,56 @@ def fits(ecosystem: str, needs: str | None, here: str | tuple[int, ...]) -> bool
 
 # --- each registry's releases -------------------------------------------------------------------------------------
 
+#: The abbreviated forms registries offer of a package's release document, asked for by content type: npm's install
+#: document (each release's `engines` and `deprecated`, no dates) and PyPI's simple JSON index (each file's
+#: `requires-python`, `yanked` and `upload-time`).
+NPM_ABBREVIATED = "application/vnd.npm.install-v1+json"
+PYPI_SIMPLE = "application/vnd.pypi.simple.v1+json"
+#: The record a release read that could not be made leaves in the run's transcript (never silent).
+SKIPPED_RECORD = "registry_read_skipped"
+
+
+class TooLarge(ValueError):
+    """A registry document longer than the read takes, and no shorter form of it could be read."""
+
+
+def _was_cut(body: bytes) -> bool:
+    """Whether `body` stopped at the fetch's bound (`package_registry._fetch` reads one chunk past it)."""
+    from app.tools import package_registry
+
+    return len(body) > package_registry.MAX_RESPONSE_BYTES
+
+
+def _document(fetch: Fetch, url: str, shorter: str, accept: str) -> tuple[int, Any, bool]:
+    """(status, the JSON at `url`, whether it is the abbreviated form): the whole document, else - where the read cut
+    it - the abbreviated form the registry serves at `shorter` for `accept`, read to a larger bound. Raises
+    `TooLarge` when that cannot be read either."""
+    status, body = fetch(url)
+    if status != 200:
+        return status, None, False
+    try:
+        return status, _json(body), False
+    except ValueError:
+        if not _was_cut(body):
+            raise
+    try:
+        status, body = fetch(shorter, accept=accept)  # type: ignore[call-arg]
+    except TypeError as exc:  # a fetch that cannot ask for another form
+        raise TooLarge(f"the registry's document is longer than {len(body):,} bytes") from exc
+    if status != 200:
+        raise TooLarge(f"the registry's document is longer than the read takes; its abbreviated form answered {status}")
+    try:
+        return status, _json(body), True
+    except ValueError as exc:
+        raise TooLarge(f"the registry's document and its abbreviated form are longer than {len(body):,} bytes") from exc
+
+
 def _npm(name: str, fetch: Fetch) -> list[Release]:
-    status, body = fetch(f"https://registry.npmjs.org/{name}")
+    url = f"https://registry.npmjs.org/{name}"
+    status, data, _abbreviated = _document(fetch, url, url, NPM_ABBREVIATED)
     if status != 200:
         return []
-    data = _json(body)
+    # The abbreviated document gives no release dates: each is unknown (""), as for a registry that does not say.
     times = data.get("time") or {}
     found = []
     for version, document in (data.get("versions") or {}).items():
@@ -207,12 +252,38 @@ def _npm(name: str, fetch: Fetch) -> list[Release]:
     return found
 
 
+_SDIST = re.compile(r"\.(?:tar\.gz|tar\.bz2|tar\.xz|tgz|zip)$", re.I)
+
+
+def _simple_index_releases(data: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    """PyPI's simple JSON index as the JSON API's `releases`: files by version, each with `requires_python`,
+    `yanked` and `upload_time_iso_8601` (the version read from the file's name: a wheel's second part, an sdist's
+    last)."""
+    out: dict[str, list[dict[str, Any]]] = {str(v): [] for v in data.get("versions") or []}
+    for entry in data.get("files") or []:
+        if not isinstance(entry, dict):
+            continue
+        filename = str(entry.get("filename") or "")
+        if filename.endswith(".whl"):
+            parts = filename.split("-")
+            version = parts[1] if len(parts) > 2 else ""
+        elif _SDIST.search(filename):
+            version = _SDIST.sub("", filename).rsplit("-", 1)[-1] if "-" in filename else ""
+        else:
+            continue
+        if version in out:
+            out[version].append({"requires_python": entry.get("requires-python"), "yanked": bool(entry.get("yanked")),
+                                 "upload_time_iso_8601": entry.get("upload-time")})
+    return out
+
+
 def _pypi(name: str, fetch: Fetch) -> list[Release]:
-    status, body = fetch(f"https://pypi.org/pypi/{quote(name)}/json")
+    status, data, abbreviated = _document(fetch, f"https://pypi.org/pypi/{quote(name)}/json",
+                                          f"https://pypi.org/simple/{quote(name)}/", PYPI_SIMPLE)
     if status != 200:
         return []
     found = []
-    for version, files in (_json(body).get("releases") or {}).items():
+    for version, files in ((_simple_index_releases(data) if abbreviated else data.get("releases")) or {}).items():
         files = [f for f in files or [] if isinstance(f, dict)]
         if not files:
             continue
@@ -360,6 +431,28 @@ _CACHE: dict[tuple[str, str, Any], list[list[Any]]] = {}
 _NEEDS: dict[tuple[str, str, str, Any], list[str]] = {}
 
 
+_SKIPS_RECORDED: set[tuple[str, str, str]] = set()
+
+
+def skipped(ecosystem: str, name: str, why: str) -> None:
+    """Say that the releases of `name` could not be read, so its release check is skipped: a warning in the worker's
+    log, and once per run a `registry_read_skipped` record in the run's transcript. Measured: npm's `playwright`,
+    `@playwright/test` and `@types/node` documents were cut at 8 MiB and failed to parse eight times in 15 minutes,
+    each said only at info level, and their release checks were skipped without a word. Never raises."""
+    logger.warning("Release check skipped for %s %s: its releases could not be read: %s", ecosystem, name, why)
+    try:
+        from app.observability.transcript import _run_id_from_config, _stage_from_config, record
+
+        run = _run_id_from_config()
+        if not run or (str(run), ecosystem, name) in _SKIPS_RECORDED:
+            return
+        _SKIPS_RECORDED.add((str(run), ecosystem, name))
+        record(run, _stage_from_config(""), SKIPPED_RECORD, ecosystem=ecosystem, package=name, reason=why[:300],
+               message=f"the release check of {ecosystem} {name} was skipped: its releases could not be read ({why[:200]})")
+    except Exception:  # noqa: BLE001
+        logger.debug("Could not record the skipped release read", exc_info=True)
+
+
 def releases(ecosystem: str, name: str, *, fetch: Fetch | None = None) -> list[Release]:
     """Every release of `name` its registry lists, newest first; [] when it cannot be read. Never raises. Kept an
     hour for every run and machine (`lookup_service.releases_kept`)."""
@@ -373,7 +466,7 @@ def releases(ecosystem: str, name: str, *, fetch: Fetch | None = None) -> list[R
         try:
             found = _newest_first([r for r in reader(name, fetch or _fetch_default()) if r.version])
         except Exception as exc:  # noqa: BLE001 - an unreadable registry is no answer, not a crash
-            logger.info("Could not read the releases of %s %s: %s", ecosystem, name, exc)
+            skipped(ecosystem, name, str(exc))
             return None
         return [[r.version, r.released, r.needs, r.withdrawn] for r in found]
 
@@ -581,5 +674,6 @@ def fitted(ecosystem: str, name: str, found: dict[str, Any], fetch: Fetch | None
         return found
 
 
-__all__ = ["RUNTIME_OF", "Release", "fits", "fitted", "is_stable", "maven_needs", "needs_of", "newest_on_line",
-           "newest_that_fits", "numbers", "on_the_line", "releases", "satisfies", "toolchain"]
+__all__ = ["NPM_ABBREVIATED", "PYPI_SIMPLE", "RUNTIME_OF", "Release", "SKIPPED_RECORD", "TooLarge", "fits", "fitted",
+           "is_stable", "maven_needs", "needs_of", "newest_on_line",
+           "newest_that_fits", "numbers", "on_the_line", "releases", "satisfies", "skipped", "toolchain"]

@@ -8,6 +8,7 @@ registry lookup.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 from app.agents import research_brief
@@ -155,3 +156,13 @@ def test_the_architect_is_given_the_reading_and_keeps_it_for_a_retry(tmp_path):
 
     assert reads == 0, "the retry is given the reading kept, not a second one"
     assert NOTES in asked[0][0] and asked[0][1]
+
+
+def test_a_word_describing_a_name_in_brackets_is_not_looked_up_as_a_library():
+    """A browser run looked up `mobile` 0.0.1 in the registry and its advisories: the stack selector wrote
+    "Playwright for page acceptance tests (mobile and desktop viewports)", a description of the viewports in brackets
+    (the stack as captured from that run)."""
+    captured = Path(__file__).parent / "captured" / "stack-a-browser-app-tested-at-two-viewports.json"
+    stack = TechnologyStack(**json.loads(captured.read_text()))
+
+    assert research_brief.libraries_of(stack) == ["Playwright"]

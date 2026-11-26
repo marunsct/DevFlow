@@ -189,6 +189,8 @@ def effects(records: list[dict], decisions: str = "") -> list[str]:
         ("TR.7/TR.8", "app.agents.role_tool_lists", lambda m: m.effects_lines(records)),
         # LF.1570: narrow reads widened to the room, and reads and input tokens per review and per fixer visit.
         ("LF.1570", "app.agents.read_windows", lambda m: m.effects_lines(records)),
+        # IK.3: stage visits held to a reasoning budget, and the replies still cut off while reasoning.
+        ("IK.3", "app.models.reasoning_budget", lambda m: m.effects_lines(records)),
         # LF.1524: fast delivery's design findings held as product-breaking, those not held, and the revisions they
         # took.
         ("LF.1524", "app.graph.fast_design_gate", lambda m: m.effects_lines(decisions)),

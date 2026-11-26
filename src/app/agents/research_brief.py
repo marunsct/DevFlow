@@ -64,21 +64,29 @@ def libraries_of(stack: Any) -> list[str]:
         named.append(str(getattr(stack, field, "") or ""))
     named.extend(str(item) for item in getattr(stack, "additional_tools", None) or [])
     found: list[str] = []
-    pieces: list[str] = []
+    #: (the text, whether it stood in brackets after a name).
+    pieces: list[tuple[str, bool]] = []
     for entry in named:
         # "Hono (on @hono/node-server)": the name, and the one in brackets.
-        pieces.append(re.sub(r"\(.*?\)", " ", entry))
-        pieces.extend(re.findall(r"\((.*?)\)", entry))
+        pieces.append((re.sub(r"\(.*?\)", " ", entry), False))
+        pieces.extend((inside, True) for inside in re.findall(r"\((.*?)\)", entry))
         # Names written as code or scoped, wherever they stand in a sentence.
-        pieces.extend(re.findall(r"`([^`]+)`", entry))
-        pieces.extend(_SCOPED_NAME.findall(entry))
-    for entry in pieces:
+        pieces.extend((code, False) for code in re.findall(r"`([^`]+)`", entry))
+        pieces.extend((scoped, False) for scoped in _SCOPED_NAME.findall(entry))
+    for entry, bracketed in pieces:
         # A sentence about the stack split on its connectives left its words
         # as names: one run looked up `already`, `build` and `pairs`.
         for segment in re.split(r"\s*(?:,|;|\+|\s[-\u2014]\s)\s*", entry):
             if len(segment.split()) > MOST_WORDS_IN_A_NAME:
                 continue
-            for part in re.split(r"\s*(?:\band\b|\bwith\b|\bon\b|\bvia\b|\bfor\b)\s*", segment):
+            parts = re.split(r"\s*(?:\band\b|\bwith\b|\bon\b|\bvia\b|\bfor\b)\s*", segment)
+            # In brackets, a part of several words makes the segment a description of the name before it, and its
+            # one-word parts plain words: "Playwright for page acceptance tests (mobile and desktop viewports)" had
+            # `mobile` looked up in the registry and its advisories (LF.1587). Names written as code or scoped there
+            # are taken above.
+            if bracketed and any(" " in part.strip().strip(".`") for part in parts):
+                continue
+            for part in parts:
                 name = part.strip().strip(".`")
                 name = re.sub(r"\s+v?\d[\w.]*$", "", name).strip()
                 if " " in name or not _A_PACKAGE_NAME.match(name) or _NOT_A_PACKAGE.search(name):

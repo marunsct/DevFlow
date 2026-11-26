@@ -61,8 +61,14 @@ def test_an_engine_that_cannot_force_at_all_is_still_offered():
     assert diagnostics.settled(_checks(named_works=False, required_works=False), {}).structured_answers == "offered"
     # `required` works on a small request but not on a stage-shaped one.
     assert diagnostics.settled(_checks(named_works=False, required_stage=False), {}).structured_answers == "offered"
-    # The refusal is about something else than the type of the choice.
-    assert diagnostics.settled(_checks(named_works=False, only_strings=False), {}).structured_answers == "offered"
+
+
+
+def test_a_named_choice_failing_for_another_reason_is_sent_as_required_where_required_works():
+    """IK.6 (LF.1582): whatever the reason the named form failed, `required` measured to work small and stage-shaped
+    is sent; until then only the type refusal led there, and a llama.cpp server that reads a named choice as `auto`
+    kept "forced"."""
+    assert diagnostics.settled(_checks(named_works=False, only_strings=False), {}).structured_answers == "required"
 
 
 def test_an_engine_that_forces_by_name_is_forced_as_before():

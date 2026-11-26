@@ -190,6 +190,17 @@ def capabilities_view() -> dict[str, Any]:
     return {"model": name, **status(), "fields": capabilities.resolved(name) if name else []}
 
 
+def _effort_shown(settings: Any) -> str:
+    """The least reasoning effort as the settings page shows it: "not measurable" where the probe could not tell
+    (IK.1), and the chat template's argument named where it is sent there (IK.2)."""
+    if not getattr(settings, "reasoning_measurable", True):
+        return "not measurable"
+    effort = getattr(settings, "least_reasoning_effort", "") or ""
+    if not effort:
+        return "not honoured"
+    return f"{effort} (chat template argument)" if getattr(settings, "effort_route", "field") == "template" else effort
+
+
 def view() -> dict[str, Any]:
     """What the settings page shows of the serving model's steering."""
     from app.models import deep_diagnosis, diagnostics, guidance
@@ -222,7 +233,7 @@ def view() -> dict[str, Any]:
         })
     settings = {
         "structured_answers": tools.settings.structured_answers if tools else "forced",
-        "reasoning_effort": (tools.settings.least_reasoning_effort or "not honoured") if tools else "",
+        "reasoning_effort": _effort_shown(tools.settings) if tools else "",
         "reply_ceiling": (deep or {}).get("reply_ceiling"),
         "tail_reminder": bool(profile and profile.tail_reminder),
     }

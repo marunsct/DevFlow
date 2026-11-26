@@ -21,7 +21,7 @@ import type { ModelProfile, SettingsView } from '../types';
  *  Sending "" deletes the stored credential and lets the deployment's own
  *  environment apply again. */
 const THINKING_MODES = ['default', 'on', 'off'] as const;
-const THINKING_EFFORTS = ['low', 'medium', 'high'] as const;
+const THINKING_EFFORTS = ['minimal', 'low', 'medium', 'high'] as const;
 const EXECUTION_MODES = ['linear', 'parallel'] as const;
 
 /** The server reports these as text and accepts only its listed values: anything else is sent as the default. */
@@ -36,7 +36,7 @@ interface ProviderForm {
   model_context_window: number;
   model_max_output_tokens: number;
   thinking_mode: 'default' | 'on' | 'off';
-  thinking_effort: 'low' | 'medium' | 'high';
+  thinking_effort: 'minimal' | 'low' | 'medium' | 'high';
   execution_mode: 'linear' | 'parallel';
   openai_api_key?: string;
   anthropic_api_key?: string;
@@ -620,11 +620,12 @@ export const Settings: React.FC = () => {
                                     onChange={(e) =>
                                       setSettings({
                                         ...settings,
-                                        thinking_effort: e.target.value as 'low' | 'medium' | 'high',
+                                        thinking_effort: e.target.value as 'minimal' | 'low' | 'medium' | 'high',
                                       })
                                     }
                                     className="w-40 bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary"
                                   >
+                                    <option value="minimal">Minimal - where the model's server lists it</option>
                                     <option value="low">Low - a quarter of the reply</option>
                                     <option value="medium">Medium - half the reply</option>
                                     <option value="high">High - three quarters</option>

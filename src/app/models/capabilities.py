@@ -55,7 +55,7 @@ FIELDS: tuple[Field, ...] = (
     Field("reads_images", "Reads images (vision)", "bool"),
     Field("reasons", "Reasons before it answers (thinking)", "bool"),
     Field("thinking_switch", "How its reasoning is turned down", "choice",
-          ("none", "chat template", "reasoning effort", "both")),
+          ("none", "chat template", "reasoning effort", "both", "not measurable")),
     Field("native_tool_calls", "Calls tools natively", "bool"),
     Field("forced_tool_enforced", "A required tool call is enforced by the server", "bool"),
     Field("parallel_tool_calls", "Several calls in one reply", "bool"),
@@ -349,9 +349,13 @@ def from_what_was_measured(model: str) -> dict[str, dict]:
             cost = diagnosis.reasoning_tokens or {}
             template = diagnosis.settings.template_thinking_switch
             effort = bool(diagnosis.settings.least_reasoning_effort)
+            # A probe question that cost too little to show any switch says nothing either way (IK.1).
+            measurable = diagnosis.settings.reasoning_measurable
             out["thinking_switch"] = _found(
+                "not measurable" if not measurable else
                 "both" if template and effort else "chat template" if template else "reasoning effort" if effort else "none",
-                "measured", "which request fields made it reason less")
+                "measured", "which request fields made it reason less"
+                + (" (the effort as the chat template's argument)" if effort and diagnosis.settings.effort_route == "template" else ""))
         support = reply_salvage.recorded(model)
         if support is not None:
             out["continues_a_begun_reply"] = _found(support.salvages, "measured",

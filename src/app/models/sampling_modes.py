@@ -297,8 +297,12 @@ def thinking_is_off(payload: dict) -> bool:
     """Whether a request has the model's thinking switched off, by either switch the harness sends."""
     extra = payload.get("extra_body") or {}
     template = extra.get("chat_template_kwargs") or {}
-    effort = str(payload.get("reasoning_effort") or extra.get("reasoning_effort") or "").lower()
-    return template.get("enable_thinking") is False or effort in ("none", "minimal")
+    # The effort as the chat template's argument wins over the top-level one, as the server reads them (IK.2).
+    effort = str(template.get("reasoning_effort") or payload.get("reasoning_effort") or extra.get("reasoning_effort")
+                 or "").lower()
+    from app.models.reasoning_budget import is_off
+
+    return template.get("enable_thinking") is False or effort in ("none", "minimal") or is_off(extra)
 
 
 def mode_of(payload: dict, model: str) -> str:

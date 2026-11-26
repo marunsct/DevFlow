@@ -387,7 +387,12 @@ def _thinking_is_off_in(kwargs: dict) -> bool:
     """Whether a call's settings switch thinking off (`app.agents.thinking.answering_without_reasoning`)."""
     body = kwargs.get("extra_body") or {}
     template = body.get("chat_template_kwargs") or {}
-    return template.get("enable_thinking") is False or str(body.get("reasoning_effort") or "") == "none"
+    if template.get("enable_thinking") is False or str(body.get("reasoning_effort") or "") == "none":
+        return True
+    # The effort as the chat template's own argument (IK.2), and a switched-off call's reasoning budget (IK.4).
+    from app.models.reasoning_budget import is_off
+
+    return str(template.get("reasoning_effort") or "") == "none" or is_off(body)
 
 
 def thinking_off_reply_cap(cap: int | None, ceiling: int | None, kwargs: dict) -> int | None:
@@ -731,6 +736,18 @@ class CompatibleChatOpenAI(ChatOpenAI):
         deadline = getattr(_REPLY_CAP, "deadline", None)
         if deadline:
             payload["timeout"] = deadline
+        # The effort sent as the chat template's own argument (IK.2): the server lets a top-level value overwrite it,
+        # so the client's own (`thinking.ThinkingPolicy`, "medium") is not sent beside it.
+        extra = payload.get("extra_body") if isinstance(payload.get("extra_body"), dict) else {}
+        if (extra.get("chat_template_kwargs") or {}).get("reasoning_effort") and "reasoning_effort" not in extra:
+            payload.pop("reasoning_effort", None)
+        # A reasoning budget of the cap less the answer's room, where the server enforces one (IK.3).
+        try:
+            from app.models.reasoning_budget import with_the_reasoning_budget
+
+            with_the_reasoning_budget(payload, self._served_by())
+        except Exception:  # noqa: BLE001 - the request as it was
+            pass
         # The answer tool by name on a call where only the answer is allowed, where the server honours that (PA.16);
         # before the downgrades below, which still apply to a server later found to refuse it.
         try:

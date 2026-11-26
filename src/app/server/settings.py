@@ -153,7 +153,7 @@ class SettingsUpdate(BaseModel):
             "launched with reasoning enabled keeps it under 'default'."
         ),
     )
-    thinking_effort: Literal["low", "medium", "high"] = Field(
+    thinking_effort: Literal["minimal", "low", "medium", "high"] = Field(
         default="medium",
         description=(
             "How much of the reply budget thinking may spend: low a quarter, "
@@ -561,7 +561,7 @@ class LocalModelSettingsPayload(BaseModel):
     model_context_window: int = Field(default=0, ge=0, le=MAX_CONTEXT_WINDOW)
     model_max_output_tokens: int = Field(default=0, ge=0, le=MAX_CONTEXT_WINDOW)
     thinking_mode: Literal["default", "on", "off"] = Field(default="default")
-    thinking_effort: Literal["low", "medium", "high"] = Field(default="medium")
+    thinking_effort: Literal["minimal", "low", "medium", "high"] = Field(default="medium")
     anthropic_workspace_id: str | None = Field(default=None, max_length=128, pattern=r"^[A-Za-z0-9_-]*$")
     # The parallel/linear toggle sits beside these on the page; a save that left it out reloaded the stored mode
     # over the person's choice. None leaves it as it is.

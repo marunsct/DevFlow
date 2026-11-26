@@ -794,7 +794,7 @@ export const saveLocalModelSettings = async (payload: {
   model_context_window: number;
   model_max_output_tokens: number;
   thinking_mode: 'default' | 'on' | 'off';
-  thinking_effort: 'low' | 'medium' | 'high';
+  thinking_effort: 'minimal' | 'low' | 'medium' | 'high';
   api_key?: string;
 }): Promise<SettingsView> => {
   const response = await api.put<SettingsView>('/settings/local', payload);

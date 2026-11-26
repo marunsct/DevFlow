@@ -184,7 +184,7 @@ export interface LocalModelSettingsPayload {
   model_max_output_tokens?: number;
   model_name?: string;
   openai_base_url?: string;
-  thinking_effort?: "low" | "medium" | "high";
+  thinking_effort?: "minimal" | "low" | "medium" | "high";
   thinking_mode?: "default" | "on" | "off";
 }
 
@@ -682,7 +682,7 @@ export interface SettingsUpdate {
   /** Whether intake, stack choice, the sprint plan and the work orders run on the judgement model. */
   plan_on_judgement_model?: boolean;
   /** How much of the reply budget thinking may spend: low a quarter, medium a half, high three quarters. Thinking tokens are output tokens, so a higher setting leaves less room for the answer. */
-  thinking_effort?: "low" | "medium" | "high";
+  thinking_effort?: "minimal" | "low" | "medium" | "high";
   /** 'default' sends nothing and leaves the model server's own setting in force; 'on' asks a reasoning-capable model to deliberate; 'off' explicitly disables it. 'off' is not the absence of 'on' - a server launched with reasoning enabled keeps it under 'default'. */
   thinking_mode?: "default" | "on" | "off";
 }

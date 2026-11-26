@@ -15,9 +15,11 @@ measurements (`registry.fitness_dir`) under its served name:
   has it and with it off - each tried a few times: answered with the right
   tool and arguments, refused, or written wrongly;
 - a name that was never offered, when the request invites one;
-- the reasoning switch: how many tokens a short question costs with no
-  switch, with `reasoning_effort` "none" and "low", and with the chat
-  template's thinking off;
+- the reasoning switch: how many tokens a small puzzle costs with no
+  switch, with `reasoning_effort` "none" and "low" (and each level the
+  server lists below "low"), with the chat template's thinking off, with the
+  effort given as the chat template's own argument, and with a per-request
+  reasoning budget of 64 tokens and of none;
 - reply salvage (`app.models.reply_salvage`).
 
 From those, the settings the harness uses for that model (`Settings`):
@@ -59,7 +61,29 @@ _READ = {"type": "function", "function": {
 _ASK_WEATHER = "What is the weather in Paris right now? Use the tool."
 #: Invites a name the model may know from elsewhere (`edit_file`, `str_replace`).
 _ASK_EDIT = "In notes.txt, change the word 'draft' to 'final'. The file holds: 'This is a draft.' Make the change."
-_QUESTION = "What is 12 plus 30? Reply with the number only."
+#: The reasoning probe's question: one a reasoning model does reason about, so a switch that works shows (IK.1).
+#: Measured: "What is 12 plus 30?" cost one model 47 tokens as served and 38-48 every other way - nothing to remove,
+#: so every switch read "not honoured" though the model's template took one. The same puzzle the per-process probe
+#: asks (`thinking.least_reasoning_effort`); its answer is one number whatever the effort.
+_QUESTION = (
+    "A farmer has 17 sheep; all but 9 run away; then he buys twice as many as "
+    "remain and sells a third of the total. How many sheep? Reply with the "
+    "number only."
+)
+_ANSWER = "18"
+#: Below this many output tokens as served the question cost too little for any switch to show: the switches are
+#: "not measurable", not "not honoured" (IK.1).
+MEASURABLE_FROM_TOKENS = 200
+#: A switch is honoured when the question costs under this share of what it costs as served.
+HONOURED_BELOW = 0.7
+#: The reasoning budget the probe sends, and the longest reply (reasoning and answer) that counts as held to it: the
+#: budget is per thinking block, so a reply of two or three blocks may spend two or three budgets (IK.3).
+BUDGET_PROBE_TOKENS = 64
+BUDGET_HELD_AT_MOST = 256
+#: The effort names chat templates use, least first: a level the server lists below "low" is tried too (IK.2).
+EFFORT_LEVELS_IN_ORDER = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
+#: The check that names a tool the request does not fit: answered with it only where a named choice is enforced (IK.6).
+NAMED_AGAINST_THE_REQUEST = "a named tool the request does not fit"
 
 
 @dataclass(frozen=True)
@@ -90,6 +114,18 @@ class Settings:
     #: Whether the chat template's thinking switch is honoured.
     template_thinking_switch: bool = False
     advice: tuple[str, ...] = ()
+    #: False when the probe question cost too few tokens as served for any switch to show: the switches are then
+    #: not measurable rather than not honoured, and nothing is kept for them (IK.1).
+    reasoning_measurable: bool = True
+    #: Where the least effort is sent: "field" - the request's `reasoning_effort`; "template" - the chat template's
+    #: own `reasoning_effort` argument, for a server that lets a top-level value overwrite or erase it (IK.2).
+    effort_route: str = "field"
+    #: Whether the server ends reasoning at a per-request budget (`reasoning_budget_tokens`) and the model answers.
+    reasoning_budget: bool = False
+    #: Whether a budget of zero still gets the right answer.
+    zero_budget_answers: bool = False
+    #: The effort the chat template reasons at when a request sends none, as the template writes it; "" unread.
+    template_default_effort: str = ""
 
 
 @dataclass(frozen=True)
@@ -99,6 +135,8 @@ class Diagnosis:
     checks: tuple[Check, ...]
     reasoning_tokens: dict[str, int | None] = field(default_factory=dict)
     settings: Settings = Settings()
+    #: Whether each way of asking the reasoning question got its right answer.
+    reasoning_answered: dict[str, bool] = field(default_factory=dict)
 
 
 def speaks_chat_completions(model: Any) -> bool:
@@ -187,19 +225,70 @@ def _the_edit(arguments: dict) -> bool:
     return str(arguments.get("relative_path", "")).endswith("notes.txt") and "final" in str(arguments.get("content", ""))
 
 
-def _reasoning_cost(model: Any) -> dict[str, int | None]:
-    """Output tokens a one-number question costs each way; None where the server refused it."""
+def _template_argument(effort: str) -> dict:
+    return {"extra_body": {"chat_template_kwargs": {"reasoning_effort": effort}}}
+
+
+def _reasoning_ways(levels: tuple[str, ...] = ()) -> list[tuple[str, dict]]:
+    """Each way the reasoning question is asked: (label, request fields).
+
+    The effort is tried as the request's field and as the chat template's own argument: on llama.cpp a top-level
+    "none" sets the template's thinking flag and erases the effort, so a template that reads only the effort falls
+    back to its own default - "none" then reasons as much as "high" (IK.2). A per-request reasoning budget is tried
+    at 64 tokens and at none: a server that enforces one ends the thinking there and the model must answer (IK.3).
+    """
+    from app.models.reply_salvage import ENOUGH
+
+    ways: list[tuple[str, dict]] = [
+        ("as served", {}), ("effort none", {"reasoning_effort": "none"}), ("effort low", {"reasoning_effort": "low"}),
+        ("template thinking off", _THINKING_OFF), ("template effort none", _template_argument("none")),
+    ]
+    low = EFFORT_LEVELS_IN_ORDER.index("low")
+    for level in levels:
+        if level in EFFORT_LEVELS_IN_ORDER[1:low]:
+            ways += [(f"effort {level}", {"reasoning_effort": level}),
+                     (f"template effort {level}", _template_argument(level))]
+    ways += [
+        (f"budget {BUDGET_PROBE_TOKENS}", {"extra_body": {"reasoning_budget_tokens": BUDGET_PROBE_TOKENS,
+                                                          "reasoning_budget_message": ENOUGH}}),
+        ("budget 0", {"extra_body": {"reasoning_budget_tokens": 0}}),
+    ]
+    return ways
+
+
+def _reasoning_cost(model: Any, levels: tuple[str, ...] = ()) -> tuple[dict[str, int | None], dict[str, bool]]:
+    """Output tokens the reasoning question costs each way (None where the server refused it), and whether each way
+    got the right answer."""
     out: dict[str, int | None] = {}
-    for label, extra in (("as served", {}), ("effort none", {"reasoning_effort": "none"}),
-                         ("effort low", {"reasoning_effort": "low"}), ("template thinking off", _THINKING_OFF)):
+    answered: dict[str, bool] = {}
+    for label, extra in _reasoning_ways(levels):
         try:
-            _message_, _finish, usage = _message(_create(model)(
+            message, _finish, usage = _message(_create(model)(
                 model=model.model_name, messages=[{"role": "user", "content": _QUESTION}],
                 max_tokens=REPLY_TOKENS, stream=False, **extra))
             out[label] = int(usage.get("completion_tokens") or 0) or None
+            answered[label] = _ANSWER in str(message.get("content") or "")
         except Exception:  # noqa: BLE001
             out[label] = None
-    return out
+            answered[label] = False
+    return out, answered
+
+
+def _served_reasoning(model: Any) -> tuple[tuple[str, ...], str]:
+    """(the effort levels the server's chat template lists, the effort the template uses when none is sent), from its
+    `/props` (`server_profile`); ((), "") for a server without one. No model call."""
+    try:
+        from app.models import server_profile
+
+        key = getattr(model, "openai_api_key", None)
+        key = key.get_secret_value() if hasattr(key, "get_secret_value") else str(key or "")
+        profile = server_profile.read(str(getattr(model, "openai_api_base", "") or ""), key,
+                                      str(getattr(model, "model_name", "") or ""))
+    except Exception:  # noqa: BLE001 - a server that says nothing of itself
+        return (), ""
+    if profile is None:
+        return (), ""
+    return tuple(profile.reasoning_effort_levels), str(profile.template_default_effort or "")
 
 
 #: Tools by the names a stage is offered, so "the right one of many" is asked the way a stage is.
@@ -346,6 +435,10 @@ def diagnose(model: Any, name: str = "") -> Diagnosis:
                     extra={"tool_choice": "required"}),
         _tool_check(model, "one tool named", tools=[_WEATHER, _READ], ask=_ASK_WEATHER, wanted="get_weather",
                     args_ok=_paris, extra=_named(_WEATHER)),
+        # The tool the request fits is not the one named: answered with the named one only where the name is enforced.
+        # A server that reads a named choice as `auto` passes "one tool named" by the model's own choice (IK.6).
+        _tool_check(model, NAMED_AGAINST_THE_REQUEST, tools=[_WEATHER, _READ], ask=_ASK_WEATHER, wanted="read_file",
+                    args_ok=lambda a: True, extra=_named(_READ)),
         _tool_check(model, "one tool named, thinking off", tools=[_WEATHER, _READ], ask=_ASK_WEATHER,
                     wanted="get_weather", args_ok=_paris, extra={**_named(_WEATHER), **_THINKING_OFF}),
         _tool_check(model, "only offered names", tools=[_READ, _WRITE], ask=_ASK_EDIT, wanted="write_artifact",
@@ -373,47 +466,66 @@ def diagnose(model: Any, name: str = "") -> Diagnosis:
     checks += [_parallel_check(model), _recall_check(model)]
     probed, probe_advice = _existing_probes(model, name)
     checks += probed
-    cost = _reasoning_cost(model)
-    settings = settled(checks, cost)
+    levels, template_default = _served_reasoning(model)
+    cost, answered = _reasoning_cost(model, levels)
+    settings = settled(checks, cost, answered, template_default=template_default)
     if probe_advice:
         settings = Settings(**{**asdict(settings), "advice": (*settings.advice, *probe_advice)})
-    diagnosis = Diagnosis(name, datetime.now(timezone.utc).isoformat(timespec="seconds"), tuple(checks), cost, settings)
+    diagnosis = Diagnosis(name, datetime.now(timezone.utc).isoformat(timespec="seconds"), tuple(checks), cost, settings,
+                          answered)
     logger.info("Diagnosed %s in %.0f s: %s", name, time.monotonic() - started, "; ".join(settings.advice))
     return diagnosis
 
 
-def settled(checks: list[Check], cost: dict[str, int | None]) -> Settings:
+def settled(checks: list[Check], cost: dict[str, int | None], answered: dict[str, bool] | None = None, *,
+            template_default: str = "") -> Settings:
     """The settings the checks call for, and why, in words."""
     by = {c.name: c for c in checks}
     advice: list[str] = []
+    against = by.get(NAMED_AGAINST_THE_REQUEST)
     forced = by["one tool named"].works and by["a tool required"].works
+    if forced and against is not None and not against.works:
+        # The named tool was called because the request fits it, not because it was named (IK.6).
+        forced = False
+        advice.append(f"a named tool choice is not enforced ({against.name} {against.passed}/{against.tries}): the "
+                      "model chose the named tool by itself")
+    required_in_a_stage = by.get("a structured answer, required")
+    # `required` enforced on a small request and on one shaped like a stage's: the form to send whenever a named
+    # choice falls short, whatever the reason it did (IK.6).
+    required_ok = bool(by["a tool required"].works and required_in_a_stage is not None and required_in_a_stage.works)
     stage_shaped = [by[n] for n in ("a structured answer forced", "forced after a long request") if n in by]
     if forced and stage_shaped and not all(c.works for c in stage_shaped):
         offered = by.get("a structured answer, offered")
-        if offered is not None and offered.works:
+        failing = ", ".join(f"{c.name} {c.passed}/{c.tries}" for c in stage_shaped if not c.works)
+        if required_ok:
+            forced = False
+            advice.append(f"a named tool choice falls short on a request shaped like a stage's ({failing}) while "
+                          "`required` works there: a structured answer's named choice is sent as `required`")
+        elif offered is not None and offered.works:
             forced = False
             advice.append("forcing works on a small request but not on one shaped like a stage's; offered, the "
                           "answer is given: structured answers are offered")
         else:
-            failing = ", ".join(f"{c.name} {c.passed}/{c.tries}" for c in stage_shaped if not c.works)
             advice.append(f"a stage-shaped structured answer is unreliable forced ({failing}) and offered does no "
                           "better: forced stays; long stages are where this build may fall short")
     forced_without_thinking = by["one tool named, thinking off"].works
     # An engine that takes only the strings none, auto and required refuses the named form with a 400 about its
     # type, which says nothing about forcing: `required` forces. Measured on an LM Studio server, where `auto` made
-    # the model's output fail the engine's own parser and `required` never did.
+    # the model's output fail the engine's own parser and `required` never did. A llama.cpp server reads the named
+    # form as `auto` without a word (measured: structured answers forced 0/3, required 3/3), so whatever the reason
+    # the named form failed, `required` is sent where it works.
     only_strings = any("Supported string values" in note for note in by["one tool named"].notes)
-    required_in_a_stage = by.get("a structured answer, required")
-    required_works = bool(
-        not forced and only_strings and by["a tool required"].works
-        and required_in_a_stage is not None and required_in_a_stage.works
-    )
+    required_works = not forced and required_ok
     if forced:
         structured, only_off = "forced", False
     elif required_works:
         structured, only_off = "required", False
-        advice.append("the engine refuses a named tool choice but enforces `required`: a structured answer's named "
-                      "choice is sent as `required`")
+        if only_strings:
+            advice.append("the engine refuses a named tool choice but enforces `required`: a structured answer's "
+                          "named choice is sent as `required`")
+        elif not any("`required`" in line for line in advice):
+            advice.append("a named tool choice is not enforced but `required` is: a structured answer's named choice "
+                          "is sent as `required`")
     elif forced_without_thinking:
         structured, only_off = "forced", True
         advice.append("a forced tool works only with thinking off: structured answers are forced with thinking off")
@@ -431,14 +543,53 @@ def settled(checks: list[Check], cost: dict[str, int | None]) -> Settings:
     if "a fact in a long request" in by and not by["a fact in a long request"].works:
         advice.append("a fact in the middle of a 24,000-token request was not read: long requests (the project "
                       "memory, a large specification) are unreliable on this build")
+    reasoning = _reasoning_settled(cost, answered or {}, template_default)
+    advice += reasoning.pop("advice")
+    return Settings(structured, only_off, advice=tuple(advice), **reasoning)
+
+
+def _reasoning_settled(cost: dict[str, int | None], answered: dict[str, bool], template_default: str) -> dict:
+    """The reasoning settings the probe's costs call for: least effort and its route, the template switch, the budget."""
     served = cost.get("as served")
-    efforts = {label: tokens for label, tokens in cost.items() if label.startswith("effort") and tokens}
-    least = min(efforts, key=efforts.get) if efforts else ""
-    effort = least.split(" ", 1)[1] if least and served and efforts[least] < 0.7 * served else ""
-    switch = bool(served and cost.get("template thinking off") and cost["template thinking off"] < 0.7 * served)
-    advice.append(f"reasoning switch: {'reasoning_effort=' + effort if effort else 'reasoning_effort not honoured'}; "
-                  f"template thinking switch {'honoured' if switch else 'not honoured'}")
-    return Settings(structured, only_off, effort, switch, tuple(advice))
+    advice: list[str] = []
+    out = {"least_reasoning_effort": "", "template_thinking_switch": False, "reasoning_measurable": True,
+           "effort_route": "field", "reasoning_budget": False, "zero_budget_answers": False,
+           "template_default_effort": template_default}
+    if template_default:
+        advice.append(f"with nothing sent, the chat template reasons at its own default ({template_default})")
+    if not served or served < MEASURABLE_FROM_TOKENS:
+        # A question answered in a few dozen tokens has no reasoning to remove: no switch can show (IK.1).
+        out["reasoning_measurable"] = False
+        advice.append(f"reasoning switches not measurable: the reasoning question cost {served or 'no'} output tokens "
+                      f"as served, under {MEASURABLE_FROM_TOKENS}; nothing is kept for them")
+        return {**out, "advice": advice}
+
+    def honoured(tokens: int | None) -> bool:
+        return bool(tokens) and tokens < HONOURED_BELOW * served
+
+    # (tokens, route, effort) of each effort that reasoned clearly less than as served; the field first on a tie.
+    candidates = sorted(
+        (tokens, label.startswith("template "), label.rsplit(" ", 1)[1])
+        for label, tokens in cost.items()
+        if (label.startswith("effort ") or label.startswith("template effort ")) and honoured(tokens)
+    )
+    if candidates:
+        _tokens, template, effort = candidates[0]
+        out["least_reasoning_effort"], out["effort_route"] = effort, "template" if template else "field"
+    out["template_thinking_switch"] = honoured(cost.get("template thinking off"))
+    held = cost.get(f"budget {BUDGET_PROBE_TOKENS}")
+    out["reasoning_budget"] = bool(honoured(held) and held <= BUDGET_HELD_AT_MOST
+                                   and answered.get(f"budget {BUDGET_PROBE_TOKENS}"))
+    out["zero_budget_answers"] = bool(out["reasoning_budget"] and cost.get("budget 0") and answered.get("budget 0"))
+    effort = out["least_reasoning_effort"]
+    named = (f"reasoning_effort={effort}" + (" as the chat template's argument" if out["effort_route"] == "template"
+                                             else "")) if effort else "reasoning_effort not honoured"
+    advice.append(f"reasoning switch: {named}; template thinking switch "
+                  f"{'honoured' if out['template_thinking_switch'] else 'not honoured'}")
+    advice.append("a per-request reasoning budget is enforced"
+                  + ("; a zero budget still answers" if out["zero_budget_answers"] else "")
+                  if out["reasoning_budget"] else "a per-request reasoning budget is not enforced")
+    return {**out, "advice": advice}
 
 
 def keep(diagnosis: Diagnosis) -> None:
@@ -455,7 +606,8 @@ def recorded(name: str) -> Diagnosis | None:
         found = json.loads((fitness_dir() / f"{_slug(name)}.json").read_text(encoding="utf-8")).get(RECORD_KEY)
         checks = tuple(Check(**{**c, "notes": tuple(c.get("notes") or ())}) for c in found.get("checks") or ())
         settings = Settings(**{**found.get("settings", {}), "advice": tuple((found.get("settings") or {}).get("advice") or ())})
-        return Diagnosis(found["model"], found["measured_at"], checks, dict(found.get("reasoning_tokens") or {}), settings)
+        return Diagnosis(found["model"], found["measured_at"], checks, dict(found.get("reasoning_tokens") or {}), settings,
+                         dict(found.get("reasoning_answered") or {}))
     except Exception:  # noqa: BLE001 - never diagnosed, or kept by an older harness
         return None
 
@@ -477,7 +629,12 @@ def apply(model: Any, diagnosis: Diagnosis | None) -> None:
         # A named choice answered with that tool: asked for on the calls where only the answer is allowed (PA.16).
         from app.models.named_answer import HONOURED
 
-        if diagnosis.settings.structured_answers == "forced" and not diagnosis.settings.force_only_without_thinking:
+        # Not where a stage-shaped named choice itself failed: "forced" can stay when nothing better works, and a
+        # server that reads the named form as `auto` would then get a named choice in place of the `required` it
+        # enforces (IK.6).
+        stage_forced = next((c for c in diagnosis.checks if c.name == "a structured answer forced"), None)
+        if (diagnosis.settings.structured_answers == "forced" and not diagnosis.settings.force_only_without_thinking
+                and (stage_forced is None or stage_forced.works)):
             HONOURED.add(server)
         else:
             HONOURED.discard(server)
@@ -487,13 +644,19 @@ def apply(model: Any, diagnosis: Diagnosis | None) -> None:
 
         deep = deep_diagnosis.recorded(diagnosis.model) or {}
         model_guidance.set_ceiling(server, deep.get("reply_ceiling"))
-        if diagnosis.reasoning_tokens:
+        if diagnosis.reasoning_tokens and diagnosis.settings.reasoning_measurable:
             # The switch the diagnosis measured, so the per-process probe of
-            # `thinking.least_reasoning_effort` does not ask again.
+            # `thinking.least_reasoning_effort` does not ask again; where the
+            # probe could not tell, nothing is kept and that probe measures (IK.1).
             from app.agents import thinking
 
-            with thinking._least_effort_lock:
-                thinking._least_effort.setdefault(server, diagnosis.settings.least_reasoning_effort or None)
+            thinking.measured(server, diagnosis.settings.least_reasoning_effort or None,
+                              diagnosis.settings.effort_route)
+        # Whether the server enforces a per-request reasoning budget, and the budget that turns thinking off where
+        # the model has no switch for it (IK.3, IK.4; used behind `REASONING_BUDGET`).
+        from app.models import reasoning_budget
+
+        reasoning_budget.learnt(server, diagnosis.settings)
     except Exception:  # noqa: BLE001
         logger.debug("Could not apply the model's diagnosis", exc_info=True)
 
@@ -549,7 +712,7 @@ def report(diagnosis: Diagnosis) -> str:
                      + (f"  - {check.notes[0]}" if check.notes else ""))
         for note in check.notes[1:]:
             lines.append(f"  {'':<30} - {note}")
-    lines.append("  reasoning output tokens for a one-number question: "
+    lines.append("  reasoning output tokens for the reasoning question: "
                  + ", ".join(f"{k} {v if v is not None else 'refused'}" for k, v in diagnosis.reasoning_tokens.items()))
     lines.append(f"  settings: structured answers {diagnosis.settings.structured_answers}"
                  + (" (thinking off)" if diagnosis.settings.force_only_without_thinking else ""))

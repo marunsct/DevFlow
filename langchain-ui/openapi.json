@@ -738,6 +738,7 @@
      "thinking_effort": {
       "default": "medium",
       "enum": [
+       "minimal",
        "low",
        "medium",
        "high"
@@ -3046,6 +3047,7 @@
       "default": "medium",
       "description": "How much of the reply budget thinking may spend: low a quarter, medium a half, high three quarters. Thinking tokens are output tokens, so a higher setting leaves less room for the answer.",
       "enum": [
+       "minimal",
        "low",
        "medium",
        "high"

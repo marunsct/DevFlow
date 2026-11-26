@@ -48,6 +48,10 @@ class ServerProfile:
     aliases: tuple[str, ...] = ()
     #: How many servers behind a balancer serve the model, `slots` being their sum; None for a single server.
     endpoints: int | None = None
+    #: The reasoning effort levels the chat template takes, as the server lists them (`chat_template_caps`).
+    reasoning_effort_levels: tuple[str, ...] = ()
+    #: The effort the chat template reasons at when a request sends none, as the template writes it; "" unread.
+    template_default_effort: str = ""
 
     @property
     def bits(self) -> int | None:
@@ -78,6 +82,8 @@ def from_props(props: dict[str, Any]) -> ServerProfile:
     found = _QUANT.findall(name)
     vision = (props.get("modalities") or {}).get("vision") if isinstance(props.get("modalities"), dict) else None
     alias = str(props.get("model_alias") or "").strip()
+    caps = props.get("chat_template_caps") if isinstance(props.get("chat_template_caps"), dict) else {}
+    levels = caps.get("reasoning_effort_levels") if isinstance(caps.get("reasoning_effort_levels"), list) else []
     return ServerProfile(
         slots=slots if isinstance(slots, int) and slots > 0 else None,
         slot_context=context if isinstance(context, int) and context > 0 else None,
@@ -85,7 +91,27 @@ def from_props(props: dict[str, Any]) -> ServerProfile:
         model=name,
         reads_images=vision if isinstance(vision, bool) else None,
         aliases=(alias,) if alias else (),
+        reasoning_effort_levels=tuple(str(level).strip().lower() for level in levels if str(level).strip()),
+        template_default_effort=template_default_effort(str(props.get("chat_template") or "")),
     )
+
+
+#: A chat template's default effort, in the two ways Jinja templates write one: `reasoning_effort if reasoning_effort
+#: is defined ... else 0.9`, and `{% if reasoning_effort is not defined %}{% set reasoning_effort = "medium" %}`.
+_DEFAULT_EFFORT = (
+    re.compile(r"reasoning_effort\s+if\s+reasoning_effort\s+is\s+defined[^%}]*?\belse\s+([\w.]+|\"[^\"]*\"|'[^']*')"),
+    re.compile(r"(?:not\s+reasoning_effort\s+is\s+defined|reasoning_effort\s+is\s+not\s+defined)\s*-?%\}\s*"
+               r"\{%-?\s*set\s+reasoning_effort\s*=\s*([\w.]+|\"[^\"]*\"|'[^']*')"),
+)
+
+
+def template_default_effort(template: str) -> str:
+    """The effort a chat template uses when a request sends none, as written there; "" when it names none."""
+    for pattern in _DEFAULT_EFFORT:
+        found = pattern.search(template or "")
+        if found:
+            return found.group(1).strip("\"'")
+    return ""
 
 
 def read(base_url: str, api_key: str = "", model: str = "") -> ServerProfile | None:

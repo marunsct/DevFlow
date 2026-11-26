@@ -1,0 +1,12 @@
+{
+ "additional_tools": [
+  "Playwright (dev-only browser acceptance runner)",
+  "Static hosting (Netlify/GitHub Pages/Cloudflare Pages) - no server runtime"
+ ],
+ "database": "None - browser localStorage only (no server database)",
+ "frontend_framework": "None (plain HTML, CSS and JavaScript modules)",
+ "framework": "None - plain HTML/CSS/JS, no build step, no framework",
+ "language": "JavaScript (ES modules, ES2022) with HTML and CSS",
+ "product_kind": "browser_app",
+ "testing_framework": "node:test for task-logic unit tests, Playwright for page acceptance tests (mobile and desktop viewports)"
+}

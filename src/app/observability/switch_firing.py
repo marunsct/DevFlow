@@ -108,6 +108,9 @@ SIGNALS: dict[str, str] = {
     # (`app.agents.role_tool_lists`, `app.tools.research_tool`).
     "TOOL_LISTS_BY_ROLE_KIND": "tools held to its role's list",
     "WEB_TOOLS_BY_MEASURED_TIER": "No web tool offered to this model",
+    # Recorded by the harness once per stage visit whose calls were sent a reasoning budget
+    # (`app.models.reasoning_budget`, IK.3).
+    "REASONING_BUDGET": "reasoning held to a budget of",
 }
 #: Transcript records the harness writes of what it did itself, with no model reading it: kind -> the field whose
 #: text a switch's signal is looked for in.
@@ -121,6 +124,8 @@ HARNESS_RECORDS: dict[str, str] = {"repository_delivery": "message", "prompt_sha
                                    "tool_list_chosen": "message",
                                    # A stuck defect's candidate fixes (`app.graph.candidate_fixes_when_stuck`, PF.2).
                                    "candidate_fixes": "message",
+                                   # A reasoning budget sent (`app.models.reasoning_budget`, IK.3).
+                                   "reasoning_budget": "message",
                                    # Each decision the run took, with its rationale (`app.decisions.record_decision`):
                                    # switches whose acts are decisions say so only there.
                                    "decision": "text"}

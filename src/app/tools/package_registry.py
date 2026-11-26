@@ -33,6 +33,10 @@ TIMEOUT_SECONDS = float(os.environ.get("PACKAGE_LOOKUP_TIMEOUT", "10"))
 #: The most of one response read. PyPI's and Packagist's documents for a large
 #: project run to a megabyte; anything past this is not a registry answer.
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+#: The most of one abbreviated release document read (`fetch(url, accept=...)`): a registry's whole document of a
+#: much-released package runs past `MAX_RESPONSE_BYTES` (measured: npm's `playwright` 17 MB, `@types/node` 11 MB, cut
+#: at 8 MiB, so their release check was skipped), and even its abbreviated form can come close (`playwright` 8.2 MB).
+LARGEST_DOCUMENT_BYTES = 32 * 1024 * 1024
 #: The longest free text (a description) passed on.
 MAX_TEXT = 300
 #: The most dependencies listed for one package.
@@ -51,15 +55,20 @@ def enabled() -> bool:
     return os.environ.get("PACKAGE_LOOKUP_ENABLED", "true").strip().lower() not in {"0", "false", "no", "off"}
 
 
-def _fetch(url: str, most_bytes: int = MAX_RESPONSE_BYTES) -> tuple[int, bytes]:
-    """(status, body) of a GET; the body stops one chunk past `most_bytes`, so a longer one says it is longer."""
+def _fetch(url: str, most_bytes: int | None = None, *, accept: str = "") -> tuple[int, bytes]:
+    """(status, body) of a GET; the body stops one chunk past `most_bytes`, so a longer one says it is longer.
+
+    `accept` asks for a form the registry offers by content type (an abbreviated release document), read up to
+    `LARGEST_DOCUMENT_BYTES` unless `most_bytes` says otherwise; any other read up to `MAX_RESPONSE_BYTES`."""
     import httpx
 
     from app.tools import lookup_service
 
+    if most_bytes is None:
+        most_bytes = LARGEST_DOCUMENT_BYTES if accept else MAX_RESPONSE_BYTES
     lookup_service.registry_rate(url)  # a registry's own rate, shared by every run (crates.io: one a second)
-    with httpx.Client(timeout=TIMEOUT_SECONDS, follow_redirects=True,
-                      headers={"User-Agent": "software-harness-package-lookup"}) as client:
+    headers = {"User-Agent": "software-harness-package-lookup", **({"Accept": accept} if accept else {})}
+    with httpx.Client(timeout=TIMEOUT_SECONDS, follow_redirects=True, headers=headers) as client:
         with client.stream("GET", url) as response:
             body = bytearray()
             for chunk in response.iter_bytes():

@@ -34,7 +34,7 @@ from typing import Any, Literal
 
 logger = logging.getLogger(__name__)
 
-ThinkingEffort = Literal["low", "medium", "high"]
+ThinkingEffort = Literal["minimal", "low", "medium", "high"]
 
 ThinkingMode = Literal["default", "on", "off"]
 """Three states, because two were not enough and the difference broke a run.
@@ -82,10 +82,39 @@ def normalise_mode(value: object) -> ThinkingMode:
     return "default"
 
 
+#: The level below "low" that chat templates name (IK.5); taken behind `REASONING_BUDGET`, with any other level the
+#: serving model's chat template lists (`server_profile`, `chat_template_caps.reasoning_effort_levels`).
+LEAST_NAMED_EFFORT = "minimal"
+
+
 def normalise_effort(value: str | None) -> ThinkingEffort:
-    """The effort level, or the default when the value is unrecognised."""
+    """The effort level, or the default when the value is unrecognised.
+
+    Behind `REASONING_BUDGET`, also "minimal" and any level the serving model's chat template lists (IK.5): measured,
+    one model's template reads minimal as 0.1 and low as 0.2, and the settings offered only low, medium and high.
+    """
     candidate = (value or "").strip().lower()
-    return candidate if candidate in EFFORT_FRACTIONS else DEFAULT_EFFORT  # type: ignore[return-value]
+    if candidate in EFFORT_FRACTIONS:
+        return candidate  # type: ignore[return-value]
+    if candidate and _levels_the_server_takes(candidate):
+        return candidate  # type: ignore[return-value]
+    return DEFAULT_EFFORT
+
+
+def _levels_the_server_takes(candidate: str) -> bool:
+    try:
+        from app.models import reasoning_budget
+
+        if not reasoning_budget.reasoning_budget_switch.enabled():
+            return False
+        if candidate == LEAST_NAMED_EFFORT:
+            return True
+        from app.models import server_profile
+
+        profile = server_profile.current()
+        return bool(profile is not None and candidate in tuple(profile.reasoning_effort_levels))
+    except Exception:  # noqa: BLE001 - the three levels every server takes
+        return False
 
 
 def thinking_budget_tokens(effort: str | None, max_output_tokens: int) -> int:
@@ -99,7 +128,8 @@ def thinking_budget_tokens(effort: str | None, max_output_tokens: int) -> int:
     ceiling = max(int(max_output_tokens or 0), 0)
     if ceiling < MIN_THINKING_TOKENS + MIN_ANSWER_TOKENS:
         return 0
-    wanted = int(ceiling * EFFORT_FRACTIONS[normalise_effort(effort)])
+    # A level below "low" (IK.5) takes low's share of an Anthropic budget, the least that provider is given.
+    wanted = int(ceiling * EFFORT_FRACTIONS.get(normalise_effort(effort), EFFORT_FRACTIONS["low"]))
     return max(MIN_THINKING_TOKENS, min(wanted, ceiling - MIN_ANSWER_TOKENS))
 
 
@@ -235,8 +265,26 @@ def answering_without_reasoning(model: object) -> dict:
     # The template switch is a self-hosted server's; a hosted API may reject it.
     extra = _without_the_template_switch(model) if is_self_hosted(base) else dict(getattr(model, "extra_body", None) or {})
     effort = least_reasoning_effort(model)
-    if effort:
+    if effort and effort_route(model) == TEMPLATE_ROUTE:
+        # On llama.cpp a top-level "none" erases the effort and a template that reads only the effort falls back
+        # to its own default (measured: 0.9, "high"); as the template's own argument it is the template's lowest
+        # (IK.2). The client's own top-level effort is dropped from such a call's payload (`app.models`).
+        template = dict(extra.get("chat_template_kwargs") or {})
+        template[_EFFORT_FIELD] = effort
+        extra["chat_template_kwargs"] = template
+    elif effort:
         extra[_EFFORT_FIELD] = effort
+    # A model with no working off switch, on a server that enforces a reasoning budget: a zero or small budget
+    # (behind `REASONING_BUDGET`; IK.4). Measured: a helper capped at 2,048 tokens spent 1,833 reasoning to name
+    # three languages with every switch above sent.
+    try:
+        from app.models import reasoning_budget
+
+        budget = reasoning_budget.off_budget(_key(model))
+    except Exception:  # noqa: BLE001 - the call as it was
+        budget = None
+    if budget is not None:
+        extra.update(reasoning_budget.fields(budget))
     return {"extra_body": extra}
 
 
@@ -286,6 +334,36 @@ _HONOURED_TOKENS = 64
 
 _least_effort: dict[tuple[str, str], str | None] = {}
 _least_effort_lock = threading.Lock()
+#: Where the least effort is sent, per endpoint and model, as the diagnosis measured it: the request's field, or the
+#: chat template's own argument (IK.2). Unmeasured is the field.
+FIELD_ROUTE = "field"
+TEMPLATE_ROUTE = "template"
+#: (the effort, its route), kept beside `_least_effort`: a route speaks only for the effort it was measured with.
+_effort_route: dict[tuple[str, str], tuple[str | None, str]] = {}
+
+
+def _key(model: object) -> tuple[str, str]:
+    return (str(getattr(model, "openai_api_base", "") or ""), str(getattr(model, "model_name", "") or ""))
+
+
+def measured(server: tuple[str, str], effort: str | None, route: str = FIELD_ROUTE) -> None:
+    """Keep the least effort and its route the model's diagnosis measured for `server`, unless this process has
+    measured it already."""
+    with _least_effort_lock:
+        if server in _least_effort:
+            return
+        _least_effort[server] = effort
+        _effort_route[server] = (effort, TEMPLATE_ROUTE if route == TEMPLATE_ROUTE else FIELD_ROUTE)
+
+
+def effort_route(model: object) -> str:
+    """Where this model's least effort is sent: `FIELD_ROUTE` or `TEMPLATE_ROUTE`."""
+    key = _key(model)
+    with _least_effort_lock:
+        kept = _effort_route.get(key)
+        if kept is None or key not in _least_effort or _least_effort[key] != kept[0]:
+            return FIELD_ROUTE
+        return kept[1]
 
 
 class _Unmeasured(Exception):
@@ -314,6 +392,8 @@ def least_reasoning_effort(model: object) -> str | None:
         except _Unmeasured:
             return NO_REASONING_EFFORT
         _least_effort[key] = chosen
+        # Measured here, as the request's field.
+        _effort_route.pop(key, None)
     logger.info(
         "Reasoning switch for %s at %s: reasoning_effort=%s", key[1], key[0], chosen
     )
@@ -366,14 +446,24 @@ def without_the_effort_field(settings: dict) -> dict | None:
     added, or None when it carries none - for a server that refused the request.
     """
     extra = dict((settings or {}).get("extra_body") or {})
-    if _EFFORT_FIELD not in extra:
+    template = dict(extra.get("chat_template_kwargs") or {})
+    if _EFFORT_FIELD not in extra and _EFFORT_FIELD not in template:
         return None
-    extra.pop(_EFFORT_FIELD)
+    extra.pop(_EFFORT_FIELD, None)
+    if _EFFORT_FIELD in template:
+        # The effort sent as the chat template's argument (IK.2): a template may refuse a value it does not know.
+        template.pop(_EFFORT_FIELD)
+        extra["chat_template_kwargs"] = template
     return {**settings, "extra_body": extra}
 
 
 __all__ = [
+    "FIELD_ROUTE",
+    "LEAST_NAMED_EFFORT",
     "NO_REASONING_EFFORT",
+    "TEMPLATE_ROUTE",
+    "effort_route",
+    "measured",
     "answering_without_reasoning",
     "least_reasoning_effort",
     "without_the_effort_field",

@@ -1,0 +1,13 @@
+{
+ "finding": {
+  "severity": "major",
+  "description": "The error_catalogue section referenced by adopted specialist decisions (BE-5, SR-7) does not exist in the specification. BE-5 says 'adopted - error_catalogue' but there is no `error_catalogue` key in the spec. While some error codes ('DUPLICATE_EMAIL', 'TASK_NOT_FOUND') appear in reliability_and_observability, there is no comprehensive catalogue of all error codes, their meanings, and when each is returned \u2014 which BE-5 was adopted to provide.",
+  "evidence": "specialist_advice_decisions: 'BE-5: adopted - error_catalogue' and 'SR-7: adopted - error_catalogue' \u2014 but the specification JSON has no `error_catalogue` section. reliability_and_observability mentions only 'DUPLICATE_EMAIL' and 'TASK_NOT_FOUND' as examples.",
+  "required_remediation": "Add an `error_catalogue` section listing all error codes (e.g., DUPLICATE_EMAIL, TASK_NOT_FOUND, VERSION_CONFLICT, INVALID_PRIORITY, etc.), their HTTP status codes, and the conditions under which each is returned."
+ },
+ "re_review_answer": {
+  "number": 4,
+  "resolved": true,
+  "where": "## Error Catalogue section added at line 210, listing DUPLICATE_EMAIL (409), VALIDATION_ERROR (422), INVALID_CREDENTIALS (401), TOKEN_NOT_FOUND (404), TASK_NOT_FOUND (404), CATEGORY_NOT_FOUND (404), FORBIDDEN_ACCESS (403), VERSION_CONFLICT (409), DUPLICATE_CATEGORY (409), RATE_LIMITED (429), UNAUTHORIZED (401) with HTTP status codes and conditions for each."
+ }
+}

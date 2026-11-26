@@ -1,0 +1,6 @@
+{
+ "severity": "major",
+ "description": "The data_contracts section is '_Not specified._'. Without a formal data contract specifying the persisted JSON format (bookmarks.json on disk) and exact API request/response body shapes, there is no baseline schema for ADR-21's forward compatibility decision to reference.",
+ "evidence": "docs/technical_specification.md lines 152–153: '## Data Contracts\\n_Not specified._' The domain_model defines Bookmark fields and api_and_event_contracts describes API shapes, but neither is a formal data contract.",
+ "required_remediation": "Populate the data_contracts section with the persisted JSON schema for bookmarks.json (an array of objects with id, title, url, tag) and the exact request/response body shapes for each API endpoint."
+}

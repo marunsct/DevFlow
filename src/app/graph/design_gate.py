@@ -134,8 +134,11 @@ _NAME_ENDS = re.compile(r"\s*\(|\s+(?:for|with|against|on|via|as)\s+", re.I)
 class _RestsOn:
     """What a resolution rests on: the stack's tools it names, the claim it quotes, and why it is refused ("")."""
 
-    def __init__(self, tools: list[str] | None = None, claim: str = "", refused: str = "") -> None:
+    def __init__(self, tools: list[str] | None = None, claim: str = "", refused: str = "", *,
+                 unquoted: bool = False) -> None:
         self.tools, self.claim, self.refused = list(tools or []), claim, refused
+        #: Refused only for quoting nothing of the specification: the harness may check it itself (LF.1504).
+        self.unquoted = unquoted
 
 
 def _strings(value: Any) -> list[str]:
@@ -200,7 +203,14 @@ def what_a_resolution_rests_on(where: str, specification: Any, stack: Any) -> _R
     quoted = quotes_the_specification(where, specification)
     if quoted is False:
         return _RestsOn(refused="the re-review said it is resolved without quoting the specification's own words; "
-                                "a resolution is the specification's text that resolves it, word for word")
+                                "a resolution is the specification's text that resolves it, word for word",
+                        unquoted=True)
+    return _what_a_quote_rests_on(where, stack)
+
+
+def _what_a_quote_rests_on(where: str, stack: Any) -> _RestsOn:
+    """What a quote of the specification rests on: the stack's tools it names, and whether it is about how the
+    acceptance suite is run."""
     tools, acceptance = _the_stack_s_tools(stack) if stack is not None else ([], set())
     named = [tool for tool in tools if _names(tool, where)]
     claim = " ".join(str(where or "").split())[:600]
@@ -221,6 +231,98 @@ def _what_it_rests_on(state: Any, where: str) -> _RestsOn:
 
         degraded("design_gate.what_it_rests_on", error)
         return _RestsOn()
+
+
+# --- The harness's own check (LF.1504) -------------------------------------------------------------------------------
+#
+# A re-review that says a finding is resolved but quotes nothing usable is refused by the quote rule above. Where the
+# finding says a section, a key or a term is missing, the harness looks for it in the current specification itself
+# (`app.graph.design_gate_check`): found, the finding is resolved on the harness's own quote. The rules above still
+# apply to that quote: one naming a tool of the stack is a claim to verify, one about how the suite is run is refused.
+# The same check runs on every open finding before the run waits for a person.
+
+#: How the decision log names a resolution the harness checked.
+CHECKED = "resolved: checked by the harness - "
+
+
+def _checked_by_the_harness(state: Any, entry: dict[str, Any]) -> tuple[str, _RestsOn] | None:
+    """The specification's own words that answer `entry`, and what they rest on; None when they do not. Never raises."""
+    try:
+        from app.graph.design_gate_check import answered_by_the_specification
+
+        quote = answered_by_the_specification(str(entry.get("text") or ""), state.get("technical_specification"),
+                                              entry.get("absent"))
+    except Exception as error:  # noqa: BLE001 - not checked: the finding stays as it is
+        from app.observability.degraded import degraded
+
+        degraded("design_gate.checked_by_the_harness", error)
+        return None
+    if not quote:
+        return None
+    try:
+        # The quote is the specification's own text, so only what it rests on is judged, not whether it quotes.
+        rests = _what_a_quote_rests_on(quote, getattr(state.get("stack_selection"), "technology_stack", None))
+    except Exception as error:  # noqa: BLE001 - not checked: the finding stays as it is
+        from app.observability.degraded import degraded
+
+        degraded("design_gate.checked_by_the_harness", error)
+        return None
+    return None if rests.refused else (quote, rests)
+
+
+def _resolved_by_the_check(entry: dict[str, Any], checked: tuple[str, _RestsOn]) -> str:
+    """How `entry` was resolved on the harness's check; a quote that names a tool of the stack is a claim to verify."""
+    quote, rests = checked
+    entry.pop("refused", None)
+    if rests.tools:
+        entry["assumption"] = {"claim": rests.claim, "rests_on": rests.tools}
+        return (f"{CHECKED}{quote} - a claim about how {', '.join(rests.tools)} "
+                f"behave{'s' if len(rests.tools) == 1 else ''}, which nothing has checked - a claim to verify, not a fact")
+    return f"{CHECKED}{quote}"
+
+
+def _absent(text: str, state: Any) -> list[str]:
+    try:
+        from app.graph.design_gate_check import absent_terms
+
+        return absent_terms(text, state.get("technical_specification"))
+    except Exception:  # noqa: BLE001 - no terms kept: the check then settles only sections
+        return []
+
+
+def holds_after_checking(state: Any, update: dict[str, Any]) -> bool:
+    """`holds`, once each open gating finding the reviewer raised has been checked against the specification itself.
+
+    Called when the run is about to wait for a person: one the specification now answers is resolved on the harness's
+    quote and recorded, so the run does not stop on it. One the last re-review said is still open is left to the
+    person. Never raises.
+    """
+    try:
+        ledger = _ledger(state)
+        entries = [dict(entry) for entry in ledger.get("findings") or []]
+        last = int(ledger.get("round") or 0)
+        settled = []
+        for entry in entries:
+            if entry.get("status") != "open" or entry.get("source") != REVIEWER or entry.get("still_open") == last:
+                continue
+            checked = _checked_by_the_harness(state, entry)
+            if checked is None:
+                continue
+            how = _resolved_by_the_check(entry, checked)
+            entry.update(status="resolved", settled="the harness's check before waiting for a person", how=how)
+            settled.append(entry)
+            _record(state, update, entry, "resolved before waiting for a person"
+                    + (", on a claim to verify" if entry.get("assumption") else ""), how, decided_by="auto")
+        if settled:
+            logger.info("Design gate: %d open gating finding(s) answered by the specification itself", len(settled))
+            update[KEY] = {**ledger, "findings": entries}
+            _keep_the_claims(state, entries)
+            return holds({**dict(state), KEY: update[KEY]})
+    except Exception as error:  # noqa: BLE001 - held as before: a person can always answer
+        from app.observability.degraded import degraded
+
+        degraded("design_gate.holds_after_checking", error)
+    return holds(state)
 
 
 def _keep_the_claims(state: Any, entries: list[dict[str, Any]]) -> None:
@@ -349,6 +451,11 @@ def _after_a_review(
         answer = answers.get(numbers.get(str(entry.get("text")), -1))
         if answer is not None and answer[0]:
             rests = _what_it_rests_on(state, answer[1])
+            checked = _checked_by_the_harness(state, entry) if rests.unquoted else None
+            if checked is not None:
+                # Resolved, but on the harness's own quote of the specification (LF.1504).
+                resolved.append((entry, _resolved_by_the_check(entry, checked)))
+                continue
             if rests.refused:
                 # Not resolved: kept open and sent back with the reason (LF.1440).
                 logger.info("Design gate: G%s kept open: %s", entry.get("number"), rests.refused)
@@ -368,15 +475,17 @@ def _after_a_review(
             matched.add(at)
             entry["text"] = current[at][1]
             entry["finding"] = _dumped(current[at][0])
+            entry["still_open"] = this_round
             continue
         if answer is not None:
+            entry["still_open"] = this_round
             carried.append(_rebuilt(entry))
             continue
         resolved.append((entry, "the re-review no longer finds it"))
 
     for at, item in enumerate(current):
         if at not in matched:
-            entries.append(_an_entry(len(entries) + 1, item, this_round))
+            entries.append(_an_entry(len(entries) + 1, item, this_round, _absent(item[1], state)))
     for entry, how in resolved:
         entry.update(status="resolved", settled=f"review round {this_round}", how=how)
         decision = f"resolved in review round {this_round}" + (", on a claim to verify" if entry.get("assumption") else "")
@@ -389,10 +498,15 @@ def _after_a_review(
     return review
 
 
-def _an_entry(number: int, item: tuple[Any, str, str], this_round: int) -> dict[str, Any]:
+def _an_entry(number: int, item: tuple[Any, str, str], this_round: int,
+              absent: list[str] | None = None) -> dict[str, Any]:
     finding, text, source = item
-    return {"number": number, "source": source, "text": text, "finding": _dumped(finding),
-            "raised": this_round, "status": "open"}
+    entry = {"number": number, "source": source, "text": text, "finding": _dumped(finding),
+             "raised": this_round, "status": "open"}
+    if absent:
+        # The terms it says are missing that the specification it was raised on does not name (LF.1504).
+        entry["absent"] = absent
+    return entry
 
 
 def settled_by_the_checks(state: Any, update: dict[str, Any], how: str) -> None:
@@ -478,6 +592,6 @@ def held_for_a_person(state: Any, delivery_mode: str | None = None) -> bool:
 
 __all__ = [
     "KEY", "REVIEWER", "WAITS", "a_finding_the_reviewer_raised_is_open", "after_a_review", "applies",
-    "approved_by_the_person", "held_for_a_person", "holds", "open_findings", "settled_by_the_checks",
+    "approved_by_the_person", "held_for_a_person", "holds", "holds_after_checking", "open_findings", "settled_by_the_checks",
     "the_open_findings_text", "why_it_waits",
 ]

@@ -209,7 +209,8 @@ def escalation(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         update["design_escalation_count"] = int(state.get("design_escalation_count") or 0) + 1
         from app.graph import design_gate
 
-        held = design_gate.holds(state)
+        # A finding the specification itself now answers is resolved before the run waits on it (LF.1504).
+        held = design_gate.holds_after_checking(state, update)
         if held and not asks_a_person(state):
             # Thorough delivery never builds by itself with a gating design finding open (`app.graph.design_gate`).
             record_decision(

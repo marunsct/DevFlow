@@ -1,0 +1,20 @@
+[
+ {
+  "severity": "blocking",
+  "description": "Missing Authorization header handling: The spec describes that get_current_user_id raises HTTPException(401) when the Authorization header is missing (component_boundaries line 9, function_contracts line 134 step 1). However, the function signature uses `token: str = Header(...)` — a required parameter. FastAPI validates this at the middleware level and returns 422 Unprocessable Entity before get_current_user_id ever executes. The described 401 code path is unreachable for missing headers. This violates the brief's requirement: 'without a valid token it answers 401'.",
+  "evidence": "component_boundaries line 9: 'raising HTTPException(401) if the header is missing'; function_contracts line 134: 'token: str = Header(...)' with step 1 describing code that handles missing headers. The brief states: 'without a valid token it answers 401'.",
+  "required_remediation": "Change the auth dependency to use `token: str | None = Header(None)` (or equivalent FastAPI pattern) so the function body receives None when the header is absent, allowing step 1's missing-header logic to execute and raise HTTPException(401). Update the component_boundaries description and function_contracts signature accordingly."
+ },
+ {
+  "severity": "major",
+  "description": "Deployment section (line 78) and File Plan pyproject.toml description (line 131) still reference `fastapi>=0.162.0`, which does not exist. Only the Configuration section was corrected to `>=0.118.0`. This creates an internal contradiction in the specification and would cause dependency resolution to fail.",
+  "evidence": "",
+  "required_remediation": "Update the Deployment section (line 78) and File Plan pyproject.toml description (line 131) to `fastapi>=0.118.0` to match the Configuration section and use a real, available version."
+ },
+ {
+  "severity": "blocking",
+  "description": "Body field not required on POST: the error_catalogue specifies HTTP 400 for 'POST /notes request body is missing the body key', but the function_contracts for NotesResource.on_post uses req.media.get('body', '') which silently defaults a missing body to empty string. No validation step is described in the function contract.",
+  "evidence": "error_catalogue: 'Condition: POST /notes request body is missing the body key. Status: HTTP 400 Bad Request.' vs. function_contracts for NotesResource.on_post: 'Calls store.add_note(title=req.media[title], body=req.media.get(body, )).'",
+  "required_remediation": "Add a validation step in the function_contracts for NotesResource.on_post that checks whether 'body' exists in req.media and returns HTTP 400 with {detail: 'Body is required.'} if missing. This aligns the function contract with the existing error_catalogue entry."
+ }
+]

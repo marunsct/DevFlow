@@ -659,6 +659,13 @@ def build_terminal_command_tool(repo_root: str, role_name: str = "general") -> B
         held_back = _a_look_with_the_looking_tools_withheld(command, repo_root, working_directory)
         if held_back:
             return {"error": held_back}
+        from app.analysis import stage_scratch
+        from app.observability.transcript import _stage_from_config
+
+        # A file a fix or testing stage's command creates is recorded as that stage's, as a write's is: the
+        # structural scratch rule asks who created it (LF.1533).
+        stage = _stage_from_config("")
+        before = stage_scratch.files_before_a_command(repo_root, stage)
         result = SandboxExecutor.execute(
             command=command,
             repo_root=repo_root,
@@ -666,6 +673,7 @@ def build_terminal_command_tool(repo_root: str, role_name: str = "general") -> B
             category=category,
             working_directory=working_directory,
         )
+        stage_scratch.record_what_a_command_created(repo_root, before, result, stage)
         if moved and isinstance(result, dict):
             result = {**result, "note": moved}
         starred = a_star_taken_as_written(command, result)

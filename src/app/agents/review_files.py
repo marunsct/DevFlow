@@ -261,7 +261,7 @@ def chosen_again(named: Sequence[str], written: Sequence[str], reads: Sequence[S
         counted = [(str(item[0]), int(item[1]), index) for index, item in enumerate(reads or ()) if len(item) >= 2]
         order += [path for path, _, _ in sorted(counted, key=lambda r: (-r[1], -r[2]))]
         order += [str(p) for p in named or ()]
-        order = [p for p in dict.fromkeys(p.strip().lstrip("/") for p in order if p) if not is_scratch(p)]
+        order = [p for p in dict.fromkeys(p.strip().lstrip("/") for p in order if p) if not is_scratch(p, repo_root)]
         accepted = {path for path, _ in under_review(repo_root, order)}
         return [path for path in order if path in accepted]
     except Exception:  # noqa: BLE001 - the memory as it is

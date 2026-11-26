@@ -2933,7 +2933,7 @@ def _diagnostics_in_files_touched(
     if len(diagnostics) >= most:
         return _with_known_causes(root, diagnostics)
     for relative in sorted(files_to_check):
-        if not relative.lower().endswith(ALL_SUFFIXES) or is_scratch(Path(relative).name):
+        if not relative.lower().endswith(ALL_SUFFIXES) or is_scratch(relative, root):
             continue
         target = Path(root) / relative
         if not target.is_file():

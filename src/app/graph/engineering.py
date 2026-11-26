@@ -341,7 +341,7 @@ def underlined_in_the_batch(state: Any, root: str, since: str) -> list[Any]:
     # rather than on whatever sorts last by name.
     files = sorted(
         (p for p in ci.changed_since(root, since)
-         if p.lower().endswith(ALL_SUFFIXES) and not is_scratch(Path(p).name)),
+         if p.lower().endswith(ALL_SUFFIXES) and not is_scratch(p, root)),
         key=lambda p: classify_file(p) != "application",
     )
     findings = underlined_in(root, files, project, MOST_FILES_UNDERLINED)
@@ -1014,7 +1014,7 @@ def what_the_fix_made_certain_to_fail(root: str, base: str, measured: Any = None
         pinned = pinned_project_directory(Path(root))
         project = Path(root) / pinned if pinned else None
         files = [p for p in changed_since(root, base)
-                 if p.lower().endswith(ALL_SUFFIXES) and not is_scratch(Path(p).name)][:MOST_FILES_UNDERLINED]
+                 if p.lower().endswith(ALL_SUFFIXES) and not is_scratch(p, root)][:MOST_FILES_UNDERLINED]
         if not files:
             return []
         findings = underlined_in(root, files, project, MOST_FILES_UNDERLINED)
@@ -1049,7 +1049,7 @@ def what_the_fix_made_the_compiler_report(root: str, base: str, before_problem: 
         from app.tools.version_control import changed_since
 
         files = [p for p in changed_since(root, base)
-                 if p.lower().endswith(compiler_check.SUFFIXES) and not is_scratch(Path(p).name)]
+                 if p.lower().endswith(compiler_check.SUFFIXES) and not is_scratch(p, root)]
         if not files:
             return []
         found = []

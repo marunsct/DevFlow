@@ -31,6 +31,7 @@ discovering, one checker at a time, that none of them knew.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Literal
 
 from app.stacks.languages import LOCKFILE_PATTERN, TEST_FILE_PATTERNS, is_manifest
@@ -185,15 +186,28 @@ SCRATCH_NAME = re.compile(
 )
 
 
-def is_scratch(relative_path: str) -> bool:
-    """Whether this file's name says it is a throwaway - a probe, not the product.
+def is_scratch(relative_path: str, root: str | Path | None = None) -> bool:
+    """Whether this file is a throwaway - a probe, not the product.
 
     Separate from `classify_file`, because a scratch script still counts as
     application code against the size budget: that is the point of reporting it.
     What this answers is narrower: is work *on* this file work on the product?
+
+    Its name says so (`SCRATCH_NAME`); or, given the workspace `root`, what it is
+    says so: a fix or testing stage created it, outside every plan, and nothing
+    in the product imports or names it (`analysis.stage_scratch`, LF.1533).
+    `relative_path` is then workspace-relative, or relative to the project.
     """
     name = str(relative_path or "").replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
-    return bool(name) and SCRATCH_NAME.search(name) is not None
+    if not name:
+        return False
+    if SCRATCH_NAME.search(name) is not None:
+        return True
+    if root is None:
+        return False
+    from app.analysis.stage_scratch import is_a_stage_s_scratch
+
+    return is_a_stage_s_scratch(root, str(relative_path))
 
 
 #: Extensions a file is commonly given, across languages and the documents,

@@ -4133,6 +4133,21 @@ def _line_count(content: str) -> int:
     return content.count("\n") + (0 if content.endswith("\n") else 1)
 
 
+def _a_stage_s_probe_note(root: Path, relative_path: str, created: bool) -> str:
+    """Once per fix or testing stage: the file it just created reads as a throwaway probe (LF.1533). Never raises.
+
+    Measured on a page product: three fixers left `diag.js`, `diag.mjs`, `diag2.mjs` and `diag-filter.js` at the
+    project root, and the cross-file check raised one of them as the product's defect. See `analysis.stage_scratch`.
+    """
+    try:
+        from app.analysis.stage_scratch import note_for_a_write
+        from app.observability.transcript import _stage_from_config
+
+        return note_for_a_write(root, relative_path, created, _stage_from_config(""))
+    except Exception:  # noqa: BLE001 - a note never fails a write
+        return ""
+
+
 def _remember_who_wrote_it(root: Path, relative_path: str, created: bool = False) -> None:
     """Record the authoring stage in the project memory. Never raises.
 
@@ -7494,6 +7509,7 @@ def write_approved_artifact(
         _the_page_and_this_module_disagree_on_how_it_loads(root, target, content),
         dropped_note,
         _budget_note(root, str(target.relative_to(root))).strip(),
+        "" if unchanged else _a_stage_s_probe_note(root, str(target.relative_to(root)), created),
     ]
     joined = " ".join(n for n in notes if n)
     if joined:
@@ -7751,7 +7767,8 @@ def clear_the_throwaways_left_behind(repo_root: str | Path) -> list[str]:
     A finding that asks for them to be deleted costs a stage; this does not.
 
     Narrow, because it deletes. Only inside the pinned project; only a name
-    that says throwaway (`file_kinds.is_scratch`); only a file a stage of this
+    that says throwaway (`file_kinds.is_scratch`), or a fix or testing stage's
+    file that is scratch by what it is (`analysis.stage_scratch`); only a file a stage of this
     run created, so nothing a seeded codebase arrived with is touched; and
     only when no other file there mentions it by name - a script something
     still runs or imports is not finished with. Returns what was removed.
@@ -7777,7 +7794,13 @@ def clear_the_throwaways_left_behind(repo_root: str | Path) -> list[str]:
             )
         ]
         unrun = set(_tests_no_suite_runs(root, project, everything))
-        candidates = [path for path in everything if is_scratch(path.name) or path in unrun]
+        # And a probe no name rule knows: a fix or testing stage's file outside every plan that nothing in the
+        # product imports or names (LF.1533), worked out afresh because this deletes.
+        from app.analysis.stage_scratch import found
+
+        probes = found(root, fresh=True)
+        candidates = [path for path in everything
+                      if is_scratch(path.name) or path in unrun or path.relative_to(root).as_posix() in probes]
         if not candidates:
             return removed
         kept_text: list[str] = []

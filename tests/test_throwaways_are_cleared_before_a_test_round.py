@@ -65,7 +65,9 @@ def test_a_file_no_stage_of_this_run_created_is_kept(workspace) -> None:
 
 def test_ordinary_files_and_deliberate_script_directories_are_kept(workspace) -> None:
     ordinary = _wrote(workspace, "the-app/storage.js")
-    tool = _wrote(workspace, "the-app/tools/debug-linecount.mjs")
+    # Used by the product: a fixer's new file nothing uses is its scratch by what it is (LF.1533).
+    (workspace / "the-app" / "app.js").write_text("import './storage.js';\nexport const add = (a, b) => a + b;\n")
+    tool =_wrote(workspace, "the-app/tools/debug-linecount.mjs")
     installed = _wrote(workspace, "the-app/node_modules/pkg/tmp_build.js")
 
     assert clear_the_throwaways_left_behind(workspace) == []

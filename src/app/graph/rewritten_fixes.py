@@ -403,7 +403,7 @@ def _the_files(
         # fixes as what failed, and each rewrote the probe and was recorded
         # as having fixed its defect.
         is_a_test = classify_file(relative) == "test"
-        why = ("a stage's scratch file" if is_scratch(relative)
+        why = ("a stage's scratch file" if is_scratch(relative, root)
                else "a test, and the acceptance suite judges this criterion" if judged_by_the_suite and is_a_test
                else "the project's ignore rules leave it out" if _the_project_ignores(root, relative)
                else "a test runner's report" if _a_test_report(root, relative, target)

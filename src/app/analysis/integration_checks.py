@@ -31,6 +31,7 @@ from app.analysis.file_kinds import (
     SCRATCH_NAME,
     SCRIPTED_MARKUP_SUFFIXES,
     is_application,
+    is_scratch,
     is_test,
 )
 
@@ -1238,7 +1239,7 @@ def _tests_the_project_never_runs(files: list[Path], root: Path) -> list[str]:
             sorted(
                 str(path.relative_to(project))
                 for path in stranded
-                if not _A_SCRATCH_SCRIPT.search(path.name)
+                if not _is_scratch(path, root)
             )
         )
         if not where:
@@ -2102,7 +2103,7 @@ def _unreferenced_scripts(files: list[Path], root: Path) -> list[str]:
         f"{relative} is never loaded by a page or imported by another "
         "module. Nothing runs it."
         for relative in _orphaned_scripts(files, root)
-        if not _A_SCRATCH_SCRIPT.search(Path(relative).name)
+        if not _is_scratch(root / relative, root)
     ]
 
 
@@ -2567,7 +2568,7 @@ def _files_that_contradict_the_declared_module_type(
             nearer = [m for m in manifests if m != manifest and _is_within(path, m.parent)]
             if any(_is_within(m.parent, package) and m.parent != package for m in nearer):
                 continue
-            if _A_SCRATCH_SCRIPT.search(path.name):
+            if _is_scratch(path, root):
                 # A scratch script's remedy is deletion, not conversion; see
                 # `_scratch_scripts_left_behind`, which names it with that.
                 continue
@@ -2821,6 +2822,18 @@ def how_the_page_receives_text(root: str | Path) -> str:
 _A_SCRATCH_SCRIPT = SCRATCH_NAME
 
 
+def _is_scratch(path: Path, root: Path) -> bool:
+    """Whether a file is a throwaway: by its name, or by what it is - a fix or testing stage's file outside every
+    plan that nothing in the product imports or names (`file_kinds.is_scratch`, LF.1533). One run's fixers left
+    `diag.js` at the project root, and its `require` under `"type": "module"` was raised as the product's defect."""
+    if _A_SCRATCH_SCRIPT.search(path.name):
+        return True
+    try:
+        return is_scratch(path.relative_to(root).as_posix(), root)
+    except ValueError:
+        return False
+
+
 def _scratch_scripts_left_behind(files: list[Path], root: Path) -> list[str]:
     """Throwaway debugging scripts still sitting in the product.
 
@@ -2849,7 +2862,7 @@ def _scratch_scripts_left_behind(files: list[Path], root: Path) -> list[str]:
         # against the brief's 500-line cap - a utility the project meant to
         # keep, not a throwaway someone forgot.
         and not any(part in {"tools", "scripts", "bin"} for part in path.parts)
-        and _A_SCRATCH_SCRIPT.search(path.name)
+        and _is_scratch(path, root)
     ]
     if not scratch:
         return []
@@ -4634,7 +4647,7 @@ def _a_source_file_that_does_not_parse(files: list[Path], root: Path) -> list[st
         # A throwaway is not the product: the one-liner a command was run from (`tmp-inline-<hash>.py`) held
         # a stage's own typo, and the check raised it as a defect for a fixer - measured, the first
         # defect of a sprint.
-        if _A_SCRATCH_SCRIPT.search(path.name):
+        if _is_scratch(path, root):
             continue
         relative = str(path.relative_to(root))
         suffix = path.suffix.lower()

@@ -180,7 +180,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
                          "LEAN_PROMPTS_FOR_STRONG_MODELS", "QA_PROMPT_TRIMMED", "REVIEWER_SHAPED_PLUGIN_CONTENT",
                          "LEAD_REPLAN_REQUEST_SMALLER", "REQUEST_BUDGET_FOR_EVERY_STAGE",
                          "READS_SIZED_TO_THE_ROOM", "DOCUMENTATION_EXCERPTS_BOUNDED",
-                         "OPENING_ROOM_FOR_REVIEWS"),
+                         "OPENING_ROOM_FOR_REVIEWS", "TOOL_LISTS_BY_ROLE_KIND"),
     # Fewer calls on mutation findings: time, not what the run proves.
     "Efficiency": ("EQUIVALENT_MUTANTS_REMEMBERED", "MUTANT_CHECK_IN_THE_FIX_STAGE", "REVIEWS_WITHOUT_REASONING",
                    "HARNESS_FINDINGS_RECHECKED", "NEAR_GREEN_REPLANNED_ONCE", "STABLE_MEMORY_ORDER",
@@ -294,6 +294,7 @@ EXPERIMENTS_ON: dict[str, str] = {
     "USES_NAMED_AT_THE_WRITE": "owner 2026-11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M-KG.7)",
     "REVIEWS_HOLD_THE_CHANGE_AND_ITS_USES": "owner 2026-11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M-KG.8)",
     "FAST_DESIGN_GATE_ON_PRODUCT_BREAKING": "owner 2026-11-26 (LF.1524): fast delivery built with blocking design findings open; on, holding only the product-breaking ones, and off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M-LF.1524)",
+    "TOOL_LISTS_BY_ROLE_KIND": "tool review 2026-11-26 (TR.7, LF.1541): seven tools in every writer's list made 9 calls in 4,260 writer requests, about 6,200 characters of schema; on, and off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M-TR.7)",
 }
 _GROUP_OF = {name: group for group, members in GROUPS.items() for name in members}
 

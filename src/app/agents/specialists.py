@@ -1568,6 +1568,7 @@ def create_specialist_agent(
     # sat alongside the sandboxed tool as a silent fallback whenever the
     # container runtime was missing - which is exactly what happened in the
     # shipped image. Everything now goes through the contained executor.
+    mcp = mcp_tools_for("specialist", resolved_repo_root)
     extra_tools = [
         build_terminal_command_tool(resolved_repo_root, role_name=f"{role}_specialist"),
         # Paired with the command tool, never on its own: only a command can
@@ -1583,7 +1584,7 @@ def create_specialist_agent(
         # `app.tools.web_search` and `app.tools.mcp_tools`.
         *docs_tools(resolved_repo_root),
         *(web_tools_for_this_fix or web_tools(resolved_repo_root)),
-        *mcp_tools_for("specialist", resolved_repo_root),
+        *mcp,
         # A runtime version the image lacks, for this project only: see `app.tools.runtimes`.
         *runtime_tools(resolved_repo_root),
         # The running page as a test sees it, for a product with one: see `app.tools.page_view`.
@@ -1595,8 +1596,15 @@ def create_specialist_agent(
     # A bounded question to the specification, the architect on a miss (plan CM.4, off).
     from app.agents import ask_specification
 
-    if ask_specification.enabled():
-        extra_tools.append(ask_specification.build_tool(resolved_repo_root, model if hasattr(model, "invoke") else None))
+    asked = [ask_specification.build_tool(resolved_repo_root, model if hasattr(model, "invoke") else None)] \
+        if ask_specification.enabled() else []
+    extra_tools.extend(asked)
+    kept_tools = (*(("use_runtime",) if setting_up_the_stack else ()),
+                  *(str(getattr(t, "name", "")) for t in web_tools_for_this_fix or ()))
+    # The role kind's own list, with the switch on (`app.agents.role_tool_lists`, TR.7); every tool as before with it off.
+    from app.agents import role_tool_lists
+
+    only = role_tool_lists.only_tools(role, extra_tools, kept_tools, [*mcp, *asked], stage=f"specialist_{role}")
 
     return create_role_agent(
         name=f"specialist_{role}",
@@ -1607,8 +1615,8 @@ def create_specialist_agent(
         checkpointer=checkpointer,
         repo_root=repo_root, allow_subdirectories=allow_subdirectories,
         extra_tools=extra_tools,
-        kept_tools=(*(("use_runtime",) if setting_up_the_stack else ()),
-                    *(str(getattr(t, "name", "")) for t in web_tools_for_this_fix or ())),
+        kept_tools=kept_tools,
+        only_tools=only,
         suite_folder=_the_suite_s_folder(resolved_repo_root) if writing_the_suite else None,
     )
 

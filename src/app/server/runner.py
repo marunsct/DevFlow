@@ -1757,6 +1757,11 @@ class WorkflowRunner:
                     await self._deliver_to_the_seeded_repository(record)
                 await asyncio.to_thread(self._archive_artifacts, record)
                 await asyncio.to_thread(self._prune_scratch)
+                # The lookups each model was offered and called, kept with it: run evidence that can overrule the
+                # model diagnosis's research check (TR.8, `app.models.research_check`).
+                from app.models.research_check import keep_the_run_s_use
+
+                await asyncio.to_thread(keep_the_run_s_use, run_id)
                 await self.event_bus.publish(
                     run_id,
                     RunEvent(

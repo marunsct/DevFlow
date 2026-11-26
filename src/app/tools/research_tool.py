@@ -16,7 +16,10 @@ to do (`app.models.research_check`, the model diagnosis's check, kept with its c
   such a model: it is the same lookup the harness already trusts for a stuck fixer, asked by the model instead;
 - **a model measured never to look things up** is offered no web tool at all, behind `WEB_TOOLS_BY_MEASURED_TIER`
   (off until measured: the report leaves it to the owner, open point 2), so its requests shrink. The harness's own
-  lookups at their fixed points (a stuck fixer, an install that failed) go on as the run's choice says;
+  lookups at their fixed points (a stuck fixer, an install that failed) go on as the run's choice says. What the model
+  did in runs overrules the check (tool review TR.8, LF.1542): offered `research` 2,343 times after passing it 3 of 3,
+  the local model called it 0 times, so a model whose kept runs offered it a lookup often enough with no call is one
+  that never looks things up (`research_check.never_looks_things_up_in_runs`), under the same switch;
 - **a model not yet measured** is offered what it was before.
 
 The run's "Internet lookups" choice still decides whether anything leaves: neither tool is offered unless it is
@@ -62,7 +65,8 @@ class _ByMeasuredTier:
 
     ON_BY_DEFAULT = False
     #: What the admin page says this switch does.
-    explanation = ("A model the diagnosis measured never to look things up is offered no web search or page reader, "
+    explanation = ("A model the diagnosis measured never to look things up, or one offered a lookup hundreds of times "
+                   "in its last runs without a call, is offered no web search, page reader or research tool, "
                    "so its requests are smaller; the harness still looks errors up for it where the run's Internet "
                    "lookups choice allows. A model measured to look things up gets one research tool either way.")
 
@@ -153,9 +157,20 @@ def build_research_tool(repo_root: str | Path | None = None, *, model: Any = Non
                                         args_schema=_Question)
 
 
+#: What the harness records once per run when it offers no web tool; the switch-firing check reads it.
+NONE_OFFERED = "No web tool offered to this model"
+
+
+def _note_none_offered(why: str) -> None:
+    from app.agents.role_tool_lists import note_once
+
+    note_once("no web tool", "", f"{NONE_OFFERED}: {why}", switch="WEB_TOOLS_BY_MEASURED_TIER")
+
+
 def tools_by_tier(repo_root: str | Path | None = None, *, model: Any = None) -> list[Any] | None:
     """The web tools a stage is offered by the model's measured verdict: [the research tool] for a model that looks
-    things up; [] for one that never does, with `WEB_TOOLS_BY_MEASURED_TIER` on; None - what was offered before - for a
+    things up; [] for one that never does - by the check, or by its kept runs, which overrule the check (TR.8:
+    `research_check.never_looks_things_up_in_runs`) - with `WEB_TOOLS_BY_MEASURED_TIER` on; None - what was offered before - for a
     model not yet measured, with the switch off, or when the run's Internet lookups choice offers no web tools. Never
     raises."""
     try:
@@ -165,10 +180,16 @@ def tools_by_tier(repo_root: str | Path | None = None, *, model: Any = None) -> 
             return None
         from app.models import research_check
 
+        # What the model did in runs overrules the check: offered a lookup often enough and never calling it (TR.8).
+        if withheld_from_non_callers() and research_check.never_looks_things_up_in_runs(model):
+            _note_none_offered("in its last runs it was offered a lookup "
+                               f"{research_check.OFFERS_WITHOUT_A_CALL:,} times or more and called none")
+            return []
         verdict = research_check.verdict_of_the_build_model(model)
         if verdict is True:
             return [build_research_tool(repo_root)]
         if verdict is False and withheld_from_non_callers():
+            _note_none_offered("the model diagnosis measured that it does not look things up")
             return []
     except Exception:  # noqa: BLE001 - offered as before
         logger.debug("Could not choose the web tools by the model's measured tier", exc_info=True)

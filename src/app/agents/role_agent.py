@@ -805,7 +805,8 @@ def create_role_agent(
             say it in place of "tests live beside the code" and "the project
             directory". None for every other agent.
         only_tools: the names of the only tools offered, the built-in readers among them, beside the answer (a
-            fixer's, `app.agents.lean_fixer`); None for every tool the role is given.
+            fixer's, `app.agents.lean_fixer`; a writing specialist's role kind's, `app.agents.role_tool_lists`); None
+            for every tool the role is given.
         writing_rules: the rules a writing role is given in place of the general ones (a fixer's); None for those.
 
     Returns:
@@ -857,6 +858,11 @@ def create_role_agent(
     # cost a stage; withholding the irrelevant half costs nothing.
     full_system_prompt = without_line_edits(f"{system_prompt}\n\n" + (
         (_WRITING_RULES if writing_rules is None else writing_rules) if can_write else _read_only_rules(readers)))
+    if only_tools is not None:
+        # The writing rules name only the file tools a role's own list offers (`app.agents.role_tool_lists`, TR.7).
+        from app.agents.role_tool_lists import rules_for_the_tools
+
+        full_system_prompt = rules_for_the_tools(full_system_prompt, only_tools)
     from app.agents.project_layout import for_this_workspace
 
     full_system_prompt = for_this_workspace(full_system_prompt, resolved_repo_root)

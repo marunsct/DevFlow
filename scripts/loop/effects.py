@@ -163,6 +163,11 @@ def effects(records: list[dict], decisions: str = "") -> list[str]:
     from app.graph.batch_attribution import effects_lines as batch_attribution_lines
 
     lines.extend(batch_attribution_lines(records))
+
+    # TR.7 and TR.8: a writer's request's tool schema and the seldom-used tools it carried; lookups offered and called.
+    from app.agents.role_tool_lists import effects_lines as role_tool_list_lines
+
+    lines.extend(role_tool_list_lines(records))
     # LF.1524: fast delivery's design findings held as product-breaking, those not held, and the revisions they took.
     from app.graph.fast_design_gate import effects_lines as fast_design_gate_lines
 

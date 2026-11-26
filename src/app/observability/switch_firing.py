@@ -94,6 +94,10 @@ SIGNALS: dict[str, str] = {
     "GRAPH_IN_SEARCH_ANSWERS": "The harness's code graph:",
     "USES_NAMED_AT_THE_WRITE": "Other files use what this write changed",
     "REVIEWS_HOLD_THE_CHANGE_AND_ITS_USES": "each with the signatures of what uses it",
+    # Recorded by the harness once per run and role kind, and once per run it offers no web tool
+    # (`app.agents.role_tool_lists`, `app.tools.research_tool`).
+    "TOOL_LISTS_BY_ROLE_KIND": "tools held to its role's list",
+    "WEB_TOOLS_BY_MEASURED_TIER": "No web tool offered to this model",
 }
 #: Transcript records the harness writes of what it did itself, with no model reading it: kind -> the field whose
 #: text a switch's signal is looked for in.
@@ -103,6 +107,8 @@ HARNESS_RECORDS: dict[str, str] = {"repository_delivery": "message", "prompt_sha
                                    "time_budget": "message", "request_budget": "message",
                                    "measured_round": "message", "fixer_memory_chosen_again": "message",
                                    "project_graph_reach": "message",
+                                   # The tools the harness chose for a role or a model (`app.agents.role_tool_lists`).
+                                   "tool_list_chosen": "message",
                                    # Each decision the run took, with its rationale (`app.decisions.record_decision`):
                                    # switches whose acts are decisions say so only there.
                                    "decision": "text"}

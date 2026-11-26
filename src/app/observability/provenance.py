@@ -120,6 +120,7 @@ SWITCHES: dict[str, str] = {
     "REPEATED_REWRITE_PROMPT_STOP": "app.graph.repeated_rewrite_prompts",
     "STABLE_STAGE_PREFIX": "app.agents.stable_prefix:stable_stage_prefix_switch",
     "LEAN_TOOL_LISTS": "app.agents.stage_tools:lean_tool_lists_switch",
+    "TOOL_LISTS_BY_ROLE_KIND": "app.agents.role_tool_lists:by_role_kind_switch",
     "SLICED_MEMORY": "app.agents.memory_slices:sliced_memory_switch",
     "LEAN_PROMPTS_FOR_STRONG_MODELS": "app.agents.lean_prompts:lean_prompts_switch",
     "QA_PROMPT_TRIMMED": "app.agents.prompt_size:qa_prompt_trimmed_switch",

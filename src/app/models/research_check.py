@@ -193,5 +193,104 @@ def verdict_of_the_build_model(model: Any = None) -> bool | None:
     return None
 
 
-__all__ = ["FIELD", "LIBRARY", "NEW_NAME", "PASSES", "TRIES", "measure", "measure_if_new", "one_try",
-           "verdict_of_the_build_model"]
+# --- what the model did in runs (tool review 2026-11-26, TR.8, LF.1542) ---------------------------------------------
+#
+# The check's "yes" did not predict what the model does inside a stage: the local model passed it 3 of 3, and was then
+# offered `research` 2,343 times in runs and called it 0 times (the web pair before it: 1,883 offers, 0 calls). So each
+# finished run's transcript is counted per model that answered - replies to a request that offered a lookup, and lookup
+# calls - and kept with the model; with `WEB_TOOLS_BY_MEASURED_TIER` on, enough offers and no call make the model one
+# that never looks things up, whatever the check said (`app.tools.research_tool.tools_by_tier`). The owner's value on
+# the settings page still wins.
+
+#: The tools a stage looks things up with, as its tool list holds them: the research tool and the web pair.
+LOOKUP_TOOLS: frozenset[str] = frozenset({"research", "search_the_web", "read_web_page"})
+#: Where a model's lookups in runs are kept in its fitness file: {run: [offers, calls]}, oldest first.
+USE_KEY = "lookups_in_runs"
+#: The newest runs that offered the model a lookup kept; older ones age out.
+RUNS_KEPT = 20
+#: Offers with no call, over at least `RUNS_WITHOUT_A_CALL` kept runs, that make a model one that never looks things up.
+OFFERS_WITHOUT_A_CALL = 300
+RUNS_WITHOUT_A_CALL = 2
+
+
+def _tool_names(entry: dict) -> set[str] | None:
+    tools = entry.get("tools")
+    return {str(name) for name in tools} if isinstance(tools, list) else None
+
+
+def lookup_use(entries: Any) -> dict[str, tuple[int, int]]:
+    """{model: (its replies to a request that offered a lookup, its lookup calls)} over a run's transcript entries, by
+    the name the server answered with; a reply naming no model is not counted."""
+    offered: dict[str, bool] = {}
+    use: dict[str, list[int]] = {}
+    for entry in entries or ():
+        if not isinstance(entry, dict):
+            continue
+        stage = str(entry.get("stage") or "")
+        if entry.get("kind") == "model_request":
+            names = _tool_names(entry)
+            if names is not None:
+                offered[stage] = bool(names & LOOKUP_TOOLS)
+        elif entry.get("kind") == "model_response":
+            model = str(entry.get("answered_by") or "")
+            if not model:
+                continue
+            calls = sum(1 for call in entry.get("tool_calls") or [] if isinstance(call, dict)
+                        and str(call.get("name") or "") in LOOKUP_TOOLS)
+            if offered.get(stage) or calls:
+                counted = use.setdefault(model, [0, 0])
+                counted[0] += int(bool(offered.get(stage)))
+                counted[1] += calls
+    return {model: (offers, calls) for model, (offers, calls) in use.items()}
+
+
+def _kept_use(name: str) -> dict[str, list[int]]:
+    try:
+        from app.models.capabilities import _record  # noqa: PLC2701 - the one reader of a model's fitness file
+
+        kept = _record(name).get(USE_KEY)
+    except Exception:  # noqa: BLE001 - nothing kept
+        kept = None
+    return {str(run): list(counts) for run, counts in kept.items()} if isinstance(kept, dict) else {}
+
+
+def keep_the_run_s_use(run_id: str) -> None:
+    """Count a finished run's lookups per model from its transcript and keep them with each model, replacing what an
+    earlier finish of the same run kept. Never raises."""
+    try:
+        from app.models.registry import merge_into_fitness
+        from app.observability.transcript import read_transcript
+
+        for model, (offers, calls) in lookup_use(read_transcript(run_id, {"model_request", "model_response"})).items():
+            kept = _kept_use(model)
+            kept.pop(str(run_id), None)
+            kept[str(run_id)] = [offers, calls]
+            merge_into_fitness(model, {USE_KEY: dict(list(kept.items())[-RUNS_KEPT:])})
+    except Exception:  # noqa: BLE001 - the run is finished either way
+        logger.debug("Could not keep the run's lookups", exc_info=True)
+
+
+def never_looks_things_up_in_runs(model: Any = None) -> bool:
+    """Whether the runs kept for the build model offered it a lookup at least `OFFERS_WITHOUT_A_CALL` times over at
+    least `RUNS_WITHOUT_A_CALL` runs and it called none; False where the owner set its `FIELD`. Never raises."""
+    try:
+        from app.models.capabilities import owner_values
+        from app.models.knowledge_cutoff import _names  # noqa: PLC2701 - one way of naming the build model
+
+        names = _names(model)
+        if any(FIELD in owner_values(name) for name in names):
+            return False
+        for name in names:
+            kept = _kept_use(name)
+            if kept:
+                offers = sum(int(counts[0]) for counts in kept.values())
+                calls = sum(int(counts[1]) for counts in kept.values())
+                return calls == 0 and offers >= OFFERS_WITHOUT_A_CALL and len(kept) >= RUNS_WITHOUT_A_CALL
+    except Exception:  # noqa: BLE001 - unknown, so as the check says
+        logger.debug("Could not read the model's lookups in runs", exc_info=True)
+    return False
+
+
+__all__ = ["FIELD", "LIBRARY", "LOOKUP_TOOLS", "NEW_NAME", "OFFERS_WITHOUT_A_CALL", "PASSES", "RUNS_KEPT",
+           "RUNS_WITHOUT_A_CALL", "TRIES", "USE_KEY", "keep_the_run_s_use", "lookup_use", "measure", "measure_if_new",
+           "never_looks_things_up_in_runs", "one_try", "verdict_of_the_build_model"]

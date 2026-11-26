@@ -8641,6 +8641,19 @@ def _defects_only_about(
     return kept, set_aside
 
 
+def _about_what_is_already_built(description: str) -> bool:
+    """Whether a defect is about work already built, which no later sprint can be its home (LF.1530).
+
+    A regression - a test that passed and fails now - and a definition one file removed that another still uses are
+    both about code this run has already written. Measured on a medium run: a round's seven such defects, the sprint's
+    own sign-in criteria among them ("Regression: `acceptance: auth.spec.js ...[AC-1...`", "`Base` was removed from
+    ..."), were read as later sprints' work by the files and actions they name, and left unfixed.
+    """
+    from app.agents.interface_clashes import _A_CLASH_DESCRIPTION
+
+    return description.startswith("Regression: `") or _A_CLASH_DESCRIPTION.match(description) is not None
+
+
 def _defects_a_later_sprint_builds(reported: list[Any], state: Any) -> tuple[list[Any], list[Any]]:
     """(the reported defects this sprint fixes, those about work a later sprint builds).
 
@@ -8674,7 +8687,9 @@ def _defects_a_later_sprint_builds(reported: list[Any], state: Any) -> tuple[lis
                 str(getattr(item, name, "") or "")
                 for name in ("description", "reproduction_steps", "expected_behavior", "actual_behavior")
             )
-            if (
+            if _about_what_is_already_built(description):
+                kept.append(item)
+            elif (
                 criteria_only_later(state, text)
                 or later_sprint_work_in(description, now, later)
                 or later_sprint_files_in(description, now, later)

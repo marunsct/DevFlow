@@ -139,9 +139,10 @@ def test_a_file_no_work_order_lists_is_still_anyone_s_to_delete(workspace: Path,
     assert not (workspace / "shop" / "probe.py").exists()
 
 
-def test_a_file_refused_again_and_again_says_how_many_times(workspace: Path, monkeypatch) -> None:
+def test_a_file_refused_again_is_one_short_line_naming_its_owner(workspace: Path, monkeypatch) -> None:
     """One run's backend specialist was refused the interface's `src/ui.js` six
-    times, each a different change, so no repeat note ever fired."""
+    times, each a different change, so no repeat note ever fired; told how many
+    times, a later run's database specialist reworded its edit six more (LF.1548)."""
     from app.agents.stage_memory import forget_everything, remembering
 
     forget_everything()
@@ -153,9 +154,9 @@ def test_a_file_refused_again_and_again_says_how_many_times(workspace: Path, mon
                 write_approved_artifact(workspace, "shop/core.py", f"X = {n}\n")
             messages.append(str(refused.value))
 
-    assert "times" not in messages[0] and "times" not in messages[1]
-    assert messages[2].startswith("This stage has now been refused 'shop/core.py' 3 times")
-    assert "the plan gave it to specialist_backend_1" in messages[2]
+    assert "the plan gave it to specialist_backend_1" in messages[0]
+    assert messages[1].startswith("Recorded for specialist_backend_1: ") and "X = 0" in messages[1]
+    assert len(messages[1]) < len(messages[0])
 
 
 def test_the_owners_are_the_work_orders_as_dispatched_not_as_planned(tmp_path: Path, monkeypatch) -> None:

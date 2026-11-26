@@ -959,6 +959,8 @@ _NOTHING_NEW = re.compile(
     # with this, and none counted - it ran on toward its whole budget.
     r"already contain(?:s|ed) exactly this content|"
     r"is withheld at this point of the stage and was not run|"
+    # A write to a path withheld from the stage (LF.1548): another work order's file, refused twice.
+    r"are withheld for the rest of this stage and were not run|"
     r"is not a valid tool",
     re.S,
 )
@@ -2279,6 +2281,48 @@ def reads_decided_per_file() -> bool:
         return False
 
 
+def _a_path(path: Any) -> str:
+    """A written path as the workspace names it: no leading `./` or `/`, forward slashes."""
+    cleaned = str(path or "").strip().replace("\\", "/")
+    while cleaned.startswith(("./", "/")):
+        cleaned = cleaned[2:] if cleaned.startswith("./") else cleaned[1:]
+    return cleaned
+
+
+def withhold_writes_to(path: str, said: str) -> None:
+    """Withhold the running stage's writes to `path` for the rest of the stage; a write to it is answered `said`.
+
+    The per-tool withholding narrowed to one path (LF.1548): a tool cannot be taken off the list for one file, so a
+    write naming it is refused before it runs, in words the stall rule counts as nothing new. Measured on one medium
+    run: a stage refused another work order's file reworded the same change eleven times. Never raises.
+    """
+    try:
+        from app.agents.stage_memory import store
+
+        store("withheld tools", {}).setdefault("paths", {})[_a_path(path)] = str(said)
+    except Exception:  # noqa: BLE001 - the refusal at the tool still stands
+        pass
+
+
+def _a_withheld_path(call: Any) -> str | None:
+    """What a write to a path withheld from this stage is answered with; None for any other call."""
+    if str((call or {}).get("name") or "") not in _WRITES_A_FILE:
+        return None
+    try:
+        from app.agents.stage_memory import store
+
+        paths = store("withheld tools", {}).get("paths") or {}
+    except Exception:  # noqa: BLE001 - nothing withheld
+        return None
+    written = _a_path(_written_path(call))
+    if not written or not paths:
+        return None
+    for path, said in paths.items():
+        if written == path or path.endswith("/" + written):
+            return str(said)
+    return None
+
+
 def _the_read_asked(args: Any) -> tuple[str, int, int]:
     """(path, first line, lines) a read asks for; 0 lines for the default window, however it was spelled."""
     from app.agents.workspace_paths import DEFAULT_READ_LINES
@@ -2991,6 +3035,12 @@ def build_settled_answer_middleware(
                 return scratch
             from app.agents import withheld_records
 
+            withheld_path = _a_withheld_path(call)
+            if withheld_path is not None:
+                from langchain_core.messages import ToolMessage
+
+                return ToolMessage(content=withheld_path, tool_call_id=str(call.get("id") or ""), name=name,
+                                   status="error")
             per_file, in_conversation = self._read_per_file()
             if name in per_file:
                 # Decided for this file (TR.2): refused only when the conversation holds what it asks for. A read of a
@@ -3295,6 +3345,7 @@ def build_settled_answer_middleware(
 
 __all__ = [
     "withheld_now",
+    "withhold_writes_to",
     "READ_TOOLS",
     "already_in_the_conversation",
     "reads_decided_per_file",

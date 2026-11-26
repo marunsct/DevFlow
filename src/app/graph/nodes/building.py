@@ -621,6 +621,10 @@ def technical_lead_node(state: WorkflowGraphState, config: RunnableConfig, ctx: 
     from app.tools import testing_blockers
 
     testing_blockers.forget(state["repository"].root_path)
+    # And the changes refused in another work order's files, kept for their owners (LF.1548).
+    from app.tools import foreign_file_handoffs
+
+    foreign_file_handoffs.forget(state["repository"].root_path)
     return update
 
 
@@ -700,7 +704,11 @@ def _on_to_the_ci_gate(state: Any, **fields: Any) -> dict[str, Any]:
     from app.tools import testing_blockers
     from app.graph.workflow import _handing_on
 
+    from app.tools import foreign_file_handoffs
+
     sent = testing_blockers.joined(unfinished_build.after_the_build(state), testing_blockers.to_their_builders(state))
+    # A change refused in another work order's file that no running owner received goes to its next visit (LF.1548).
+    sent = testing_blockers.joined(sent, foreign_file_handoffs.to_their_owners(state))
     if sent:
         return _handing_on(**{**fields, **sent, "specialist_task_index": 0}, stage="specialist_dispatch")
     return _handing_on(**fields, stage="ci_gate")
@@ -854,8 +862,12 @@ def specialist_dispatch_node(state: WorkflowGraphState, config: RunnableConfig, 
 
         from app.tools import testing_blockers
 
-        outputs[stage_name], built = unfinished_build.built_again(state, stage_name, testing_blockers.with_them(
-            interface_changes.with_them(update.pop("__specialist_result__"), state["repository"].root_path),
+        from app.tools import foreign_file_handoffs
+
+        outputs[stage_name], built = unfinished_build.built_again(state, stage_name, foreign_file_handoffs.with_them(
+            testing_blockers.with_them(
+                interface_changes.with_them(update.pop("__specialist_result__"), state["repository"].root_path),
+                state["repository"].root_path, stage_name),
             state["repository"].root_path, stage_name))
         update.update(built)
         update.update(went_on)
@@ -1001,8 +1013,12 @@ def specialist_worker_node(state: dict, config: RunnableConfig, ctx: GraphContex
 
     from app.tools import testing_blockers
 
-    output, built = unfinished_build.built_again(state, stage_name, testing_blockers.with_them(
-        interface_changes.with_them(update["__specialist_result__"], state["repository"].root_path),
+    from app.tools import foreign_file_handoffs
+
+    output, built = unfinished_build.built_again(state, stage_name, foreign_file_handoffs.with_them(
+        testing_blockers.with_them(
+            interface_changes.with_them(update["__specialist_result__"], state["repository"].root_path),
+            state["repository"].root_path, stage_name),
         state["repository"].root_path, stage_name))
     finished: dict[str, Any] = {"specialist_outputs": {stage_name: output}, **built}
     if answered_in_a_batch:

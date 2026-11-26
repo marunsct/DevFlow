@@ -127,6 +127,10 @@ def effects(records: list[dict], decisions: str = "") -> list[str]:
     from app.tools.testing_blockers import effects_lines as testing_blocker_lines
 
     lines.extend(testing_blocker_lines(records))
+    # LF.1548: writes refused in another work order's file, and the hand-offs to its owner.
+    from app.tools.foreign_file_handoffs import effects_lines as foreign_file_lines
+
+    lines.extend(foreign_file_lines(records))
     # PA.3 and PA.8: the product built before the testing work order, and errors in another's file kept as blockers.
     from app.graph.built_before_testing import effects_lines as built_before_testing_lines
     from app.graph.its_own_to_fix import effects_lines as its_own_to_fix_lines

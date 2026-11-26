@@ -39,7 +39,7 @@
  "src/app/stacks/packs/fullstack_next.py": 1,
  "src/app/stacks/packs/fullstack_node.py": 1,
  "src/app/stacks/packs/python_cli.py": 1,
- "src/app/tools/repository.py": 7,
+ "src/app/tools/repository.py": 4,
  "src/app/tools/sandbox.py": 11,
  "src/app/tools/version_control.py": 1
 }

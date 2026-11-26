@@ -2263,7 +2263,7 @@ _CODE_SUFFIXES_OF_A_PRODUCT = (".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cj
                                ".rb", ".php", ".ex", ".exs", ".vue", ".svelte")
 
 
-def _another_work_order_s_file(root: Path, target: Path) -> str | None:
+def _another_work_order_s_file(root: Path, target: Path, *, change: str = "") -> str | None:
     """The refusal for a specialist writing a file another work order owns, or None.
 
     Work orders list their files so that a newcomer knows exactly what to touch,
@@ -2276,6 +2276,14 @@ def _another_work_order_s_file(root: Path, target: Path) -> str | None:
     Only specialist stages are held to it, only for a file one other work order
     lists, and only in the milestone whose plan recorded it. Files no work
     order lists stay open to whoever needs them.
+
+    The refused `change` is the harness's hand-off to the owner (LF.1548,
+    `app.tools.foreign_file_handoffs`). Measured on one medium run in parallel
+    mode: the database work order was refused the backend's routes file eleven
+    times, each a reworded edit, because the refusal asked it to name the change
+    in `blockers` and took the change nowhere. Now the first refusal records it
+    for the owner, the second is one short line, and from then on the stage's
+    writes to that path are withheld for the rest of the stage.
     """
     beyond = _beyond_the_setup_s_files(root, target)
     if beyond is not None:
@@ -2305,14 +2313,22 @@ def _another_work_order_s_file(root: Path, target: Path) -> str | None:
     )
     if owner is None or owner == stage:
         return None
-    per_file, whole_stage = _again_and_again(shown), _outside_its_own_files()
-    return (per_file or whole_stage) + (
-        f"'{shown}' belongs to another work order in this milestone: the plan gave it "
-        f"to {owner}, which writes it. Change only the files your own work order "
-        "lists. If your task needs something in that file - an export, an element, a "
-        "script - say exactly what in `blockers`, where the milestone review reads it. "
-        "Nothing was written."
-    )
+    from app.tools import foreign_file_handoffs
+
+    _again_and_again(shown)
+    whole_stage = _outside_its_own_files()
+    if _JUST_ASKING.get():
+        return foreign_file_handoffs.first_refusal(shown, owner)
+    if foreign_file_handoffs.record(root, stage, shown, owner, change) < 2:
+        return whole_stage + foreign_file_handoffs.first_refusal(shown, owner)
+    try:
+        from app.agents.settled_answer import withhold_writes_to
+
+        withhold_writes_to(shown, foreign_file_handoffs.withheld(shown, owner))
+    except Exception:  # noqa: BLE001 - the refusal stands without the withholding
+        logger.debug("Could not withhold the stage's writes to %s", shown, exc_info=True)
+    first = foreign_file_handoffs.recorded(root, stage).get(shown) or {}
+    return whole_stage + foreign_file_handoffs.short_refusal(shown, owner, str(first.get("change") or change))
 
 
 def _created_here(root: Path, shown: str, stage: str) -> bool:
@@ -2357,31 +2373,22 @@ def _outside_its_own_files() -> str:
         "stage's to write. Stop, finish what is yours, and return your structured response. "
     )
 
-def _again_and_again(shown: str) -> str:
-    """A lead for the refusal when this stage has been refused this file before, or "".
+def _again_and_again(shown: str) -> None:
+    """Count this stage's refusals of another work order's file, for the note a restart reads (`carry_over`).
 
-    Each attempt was a different change, so the repeat notes - which compare
-    the arguments - never fired. Measured on one run: `specialist_backend_1`
-    was refused `src/ui.js`, the interface work order's file, six times with
-    six different `replace_lines`, the same refusal each time.
+    The refusal no longer quotes the count: from the second refusal of one file it is one short line and the path is
+    withheld (LF.1548). Measured on one medium run: told "refused 'X' N times. Rewording the change does not change
+    whose file it is" from the fifth refusal on, the stage reworded its edit six more times.
     """
     if _JUST_ASKING.get():
-        return ""
+        return
     try:
         from app.agents.stage_memory import store
 
         refused = store("files_refused_as_another_work_order_s", {})
         refused[shown] = refused.get(shown, 0) + 1
-        count = refused[shown]
     except Exception:  # noqa: BLE001 - a count is a courtesy
-        return ""
-    if count < _REFUSALS_BEFORE_COUNTING:
-        return ""
-    return (
-        f"This stage has now been refused '{shown}' {count} times. Rewording the "
-        "change does not change whose file it is: stop changing it, put what your "
-        "work needs from it in `blockers`, and finish the files that are yours. "
-    )
+        return
 
 
 def _not_this_stage_s_to_take(
@@ -2398,7 +2405,7 @@ def _not_this_stage_s_to_take(
     """
     for refusal in (
         _installed_by_a_tool(root, target, done=done),
-        _another_work_order_s_file(root, target),
+        _another_work_order_s_file(root, target, change=f"the file {done}"),
         _a_tester_changing_the_product(root, target, change=f"the file {done}") if product_code else None,
     ):
         if refusal is not None:
@@ -2438,7 +2445,7 @@ def _guard_a_targeted_change(
     if installed is not None:
         raise RepositoryToolError(installed)
     # The owner first: it names who writes the file, which says more.
-    someone_else_s = _another_work_order_s_file(root, target)
+    someone_else_s = _another_work_order_s_file(root, target, change=change or f"it to read {replacement[:400]!r}")
     if someone_else_s is not None:
         raise RepositoryToolError(someone_else_s)
     not_this_round_s = _a_tester_changing_the_product(
@@ -7160,7 +7167,7 @@ def write_approved_artifact(
     if installed is not None:
         raise RepositoryToolError(installed)
     # The owner first: it names who writes the file, which says more.
-    someone_else_s = _another_work_order_s_file(artifact_root, target)
+    someone_else_s = _another_work_order_s_file(artifact_root, target, change=f"the file written as {content[:400]!r}")
     if someone_else_s is not None:
         raise RepositoryToolError(someone_else_s)
     not_this_round_s = _a_tester_changing_the_product(

@@ -1,0 +1,95 @@
+{
+ "stage": "specialist_database_0",
+ "owner": "specialist_backend_1",
+ "execution_mode": "parallel",
+ "calls": [
+  {
+   "tool": "edit_artifact",
+   "args": {
+    "relative_path": "task-management-dashboard/task_management_dashboard/routes.py",
+    "find": "class User(Base):\n    \"\"\"User account model.\n\n    Columns:\n        id: UUID string, primary key.\n        email: Unique, max 255 chars, required.\n        password_hash: bcrypt hash, required.\n        created_at: Record creation timestamp (UTC).\n        updated_at: Last update timestamp (UTC).\n        is_active: Whether the account is active.\n    \"\"\"\n\n    __tablename__ = \"users\"\n\n    id = Column(String(255), primary_key=True)\n    email = Column(String(255), unique=True, nullable=False)\n    password_hash = Column(String(255), nullable=False)\n    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))\n    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))\n    is_active = Column(Boolean, default=True)",
+    "replace": "class User(Base):\n    \"\"\"User account model.\n\n    Columns:\n        id: UUID string, primary key.\n        username: Display name, max 100 chars, required.\n        email: Unique, max 255 chars, required.\n        password_hash: bcrypt hash, required.\n        created_at: Record creation timestamp (UTC).\n        updated_at: Last update timestamp (UTC).\n        is_active: Whether the account is active.\n    \"\"\"\n\n    __tablename__ = \"users\"\n\n    id = Column(String(255), primary_key=True)\n    username = Column(String(100), nullable=False)\n    email = Column(String(255), unique=True, nullable=False)\n    password_hash = Column(String(255), nullable=False)\n    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))\n    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))\n    is_active = Column(Boolean, default=True)"
+   }
+  },
+  {
+   "tool": "edit_artifact",
+   "args": {
+    "relative_path": "task-management-dashboard/task_management_dashboard/routes.py",
+    "find": "class User(Base):\n    \"\"\"User account model.\n\n    Columns:\n        id: UUID string, primary key.\n        email: Unique, max 255 chars, required.\n        password_hash: bcrypt hash, required.\n        created_at: Record creation timestamp (UTC).\n        updated_at: Last update timestamp (UTC).\n        is_active: Whether the account is active.\n    \"\"\"\n\n    __tablename__ = \"users\"\n\n    id = Column(String(255), primary_key=True)\n    email = Column(String(255), unique=True, nullable=False)\n    password_hash = Column(String(255), nullable=False)\n    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))\n    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))\n    is_active = Column(Boolean, default=True)",
+    "replace": "class User(Base):\n    \"\"\"User account model.\n\n    Columns:\n        id: UUID string, primary key.\n        username: Display name, max 100 chars, required.\n        email: Unique, max 255 chars, required.\n        password_hash: bcrypt hash, required.\n        created_at: Record creation timestamp (UTC).\n        updated_at: Last update timestamp (UTC).\n        is_active: Whether the account is active.\n    \"\"\"\n\n    __tablename__ = \"users\"\n\n    id = Column(String(255), primary_key=True)\n    username = Column(String(100), nullable=False)\n    email = Column(String(255), unique=True, nullable=False)\n    password_hash = Column(String(255), nullable=False)\n    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))\n    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))\n    is_active = Column(Boolean, default=True)"
+   }
+  },
+  {
+   "tool": "edit_artifact",
+   "args": {
+    "relative_path": "task-management-dashboard/task_management_dashboard/routes.py",
+    "find": "class User(Base):\n    \"\"\"User account model.\n\n    Columns:\n        id: UUID string, primary key.\n        email: Unique, max 255 chars, required.\n        password_hash: bcrypt hash, required.\n        created_at: Record creation timestamp (UTC).\n        updated_at: Last update timestamp (UTC).\n        is_active: Whether the account is active.\n    \"\"\"\n\n    __tablename__ = \"users\"\n\n    id = Column(String(255), primary_key=True)\n    email = Column(String(255), unique=True, nullable=False)\n    password_hash = Column(String(255), nullable=False)\n    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))\n    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))\n    is_active = Column(Boolean, default=True)",
+    "replace": "class User(Base):\n    \"\"\"User account model.\n\n    Columns:\n        id: UUID string, primary key.\n        username: Display name, max 100 chars, required.\n        email: Unique, max 255 chars, required.\n        password_hash: bcrypt hash, required.\n        created_at: Record creation timestamp (UTC).\n        updated_at: Last update timestamp (UTC).\n        is_active: Whether the account is active.\n    \"\"\"\n\n    __tablename__ = \"users\"\n\n    id = Column(String(255), primary_key=True)\n    username = Column(String(100), nullable=False)\n    email = Column(String(255), unique=True, nullable=False)\n    password_hash = Column(String(255), nullable=False)\n    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))\n    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))\n    is_active = Column(Boolean, default=True)"
+   }
+  },
+  {
+   "tool": "edit_artifact",
+   "args": {
+    "relative_path": "task-management-dashboard/task_management_dashboard/routes.py",
+    "find": "class User(Base):\n    \"\"\"User account model.\n\n    Columns:\n        id: UUID string, primary key.\n        username: Display name, max 100 chars, required.\n        email: Unique, max 255 chars, required.\n        password_hash: bcrypt hash, required.\n        created_at: Record creation timestamp (UTC).\n        updated_at: Last update timestamp (UTC).\n        is_active: Whether the account is active.\n    \"\"\"\n\n    __tablename__ = \"users\"\n\n    id = Column(String(255), primary_key=True)\n    username = Column(String(100), nullable=False)\n    email = Column(String(255), unique=True, nullable=False)\n    password_hash = Column(String(255), nullable=False)\n    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))\n    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))\n    is_active = Column(Boolean, default=True)\n\n\nclass RefreshToken(Base):",
+    "replace": "from .models import User, RefreshToken, RevokedToken  # noqa: F401 \u2014 re-exported for conftest.py\n\n# Keep Base available for any code that still references it here.\n# The actual model classes are now imported from models.py to avoid duplication."
+   }
+  },
+  {
+   "tool": "edit_artifact",
+   "args": {
+    "relative_path": "task-management-dashboard/task_management_dashboard/routes.py",
+    "find": "class User(Base):\n    \"\"\"User account model.\n\n    Columns:\n        id: UUID string, primary key.\n        email: Unique, max 255 chars, required.\n        password_hash: bcrypt hash, required.\n        created_at: Record creation timestamp (UTC).\n        updated_at: Last update timestamp (UTC).\n        is_active: Whether the account is active.\n    \"\"\"\n\n    __tablename__ = \"users\"\n\n    id = Column(String(255), primary_key=True)\n    email = Column(String(255), unique=True, nullable=False)\n    password_hash = Column(String(255), nullable=False)\n    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))\n    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))\n    is_active = Column(Boolean, default=True)",
+    "replace": "class User(Base):\n    \"\"\"User account model.\n\n    Columns:\n        id: UUID string, primary key.\n        username: Display name, max 100 chars, required.\n        email: Unique, max 255 chars, required.\n        password_hash: bcrypt hash, required.\n        created_at: Record creation timestamp (UTC).\n        updated_at: Last update timestamp (UTC).\n        is_active: Whether the account is active.\n    \"\"\"\n\n    __tablename__ = \"users\"\n\n    id = Column(String(255), primary_key=True)\n    username = Column(String(100), nullable=False)\n    email = Column(String(255), unique=True, nullable=False)\n    password_hash = Column(String(255), nullable=False)\n    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))\n    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))\n    is_active = Column(Boolean, default=True)"
+   }
+  },
+  {
+   "tool": "edit_artifact",
+   "args": {
+    "relative_path": "task-management-dashboard/task_management_dashboard/routes.py",
+    "find": "class User(Base):\n    \"\"\"User account model.\n\n    Columns:\n        id: UUID string, primary key.\n        email: Unique, max 255 chars, required.\n        password_hash: bcrypt hash, required.\n        created_at: Record creation timestamp (UTC).\n        updated_at: Last update timestamp (UTC).\n        is_active: Whether the account is active.\n    \"\"\"\n\n    __tablename__ = \"users\"\n\n    id = Column(String(255), primary_key=True)\n    email = Column(String(255), unique=True, nullable=False)\n    password_hash = Column(String(255), nullable=False)\n    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))\n    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))\n    is_active = Column(Boolean, default=True)\n\n\nclass RefreshToken(Base):",
+    "replace": "# Import canonical User model from models.py so that conftest.py's\n# user_factory (which imports User here and passes username=...) works.\nfrom .models import User  # noqa: F401 \u2014 exported for conftest.py\n\n# RefreshToken and RevokedToken are also imported from models.py to keep\n# the data layer consistent across files.\nfrom .models import RefreshToken  # noqa: F401\nfrom .models import RevokedToken  # noqa: F401\n\n\n# The inline model classes above have been replaced by imports from\n# models.py to avoid duplication and ensure a single source of truth."
+   }
+  },
+  {
+   "tool": "edit_artifact",
+   "args": {
+    "relative_path": "task-management-dashboard/task_management_dashboard/routes.py",
+    "find": "class User(Base):\n    \"\"\"User account model.\n\n    Columns:\n        id: UUID string, primary key.\n        email: Unique, max 255 chars, required.\n        password_hash: bcrypt hash, required.\n        created_at: Record creation timestamp (UTC).\n        updated_at: Last update timestamp (UTC).\n        is_active: Whether the account is active.\n    \"\"\"\n\n    __tablename__ = \"users\"\n\n    id = Column(String(255), primary_key=True)\n    email = Column(String(255), unique=True, nullable=False)\n    password_hash = Column(String(255), nullable=False)\n    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))\n    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))\n    is_active = Column(Boolean, default=True)\n\n\nclass RefreshToken(Base):",
+    "replace": "# Import canonical User model from models.py so that conftest.py's\n# user_factory (which imports User here and passes username=...) works.\nfrom .models import User  # noqa: F401 \u2014 exported for conftest.py\n\n# RefreshToken and RevokedToken are also imported from models.py to keep\n# the data layer consistent across files.\nfrom .models import RefreshToken  # noqa: F401\nfrom .models import RevokedToken  # noqa: F401\n\n\n# The inline model classes above have been replaced by imports from\n# models.py to avoid duplication and ensure a single source of truth."
+   }
+  },
+  {
+   "tool": "edit_artifact",
+   "args": {
+    "relative_path": "task-management-dashboard/task_management_dashboard/routes.py",
+    "find": "class User(Base):\n    \"\"\"User account model.\n\n    Columns:\n        id: UUID string, primary key.\n        email: Unique, max 255 chars, required.\n        password_hash: bcrypt hash, required.\n        created_at: Record creation timestamp (UTC).\n        updated_at: Last update timestamp (UTC).\n        is_active: Whether the account is active.\n    \"\"\"\n\n    __tablename__ = \"users\"\n\n    id = Column(String(255), primary_key=True)\n    email = Column(String(255), unique=True, nullable=False)\n    password_hash = Column(String(255), nullable=False)\n    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))\n    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))\n    is_active = Column(Boolean, default=True)\n\n\nclass RefreshToken(Base):",
+    "replace": "# Import canonical User model from models.py so that conftest.py's\n# user_factory (which imports User here and passes username=...) works.\nfrom .models import User  # noqa: F401 \u2014 exported for conftest.py\n\n# RefreshToken and RevokedToken are also imported from models.py to keep\n# the data layer consistent across files.\nfrom .models import RefreshToken  # noqa: F401\nfrom .models import RevokedToken  # noqa: F401\n\n\n# The inline model classes above have been replaced by imports from\n# models.py to avoid duplication and ensure a single source of truth."
+   }
+  },
+  {
+   "tool": "edit_artifact",
+   "args": {
+    "relative_path": "task-management-dashboard/task_management_dashboard/routes.py",
+    "find": "class User(Base):\n    \"\"\"User account model.\n\n    Columns:\n        id: UUID string, primary key.\n        email: Unique, max 255 chars, required.\n        password_hash: bcrypt hash, required.\n        created_at: Record creation timestamp (UTC).\n        updated_at: Last update timestamp (UTC).\n        is_active: Whether the account is active.\n    \"\"\"\n\n    __tablename__ = \"users\"\n\n    id = Column(String(255), primary_key=True)\n    email = Column(String(255), unique=True, nullable=False)\n    password_hash = Column(String(255), nullable=False)\n    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))\n    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))\n    is_active = Column(Boolean, default=True)\n\n\nclass RefreshToken(Base):",
+    "replace": "# Import canonical User model from models.py so that conftest.py's\n# user_factory (which imports User here and passes username=...) works.\nfrom .models import User  # noqa: F401 \u2014 exported for conftest.py\n\n# RefreshToken and RevokedToken are also imported from models.py to keep\n# the data layer consistent across files.\nfrom .models import RefreshToken  # noqa: F401\nfrom .models import RevokedToken  # noqa: F401\n\n\n# The inline model classes above have been replaced by imports from\n# models.py to avoid duplication and ensure a single source of truth."
+   }
+  },
+  {
+   "tool": "edit_artifact",
+   "args": {
+    "relative_path": "task-management-dashboard/task_management_dashboard/routes.py",
+    "find": "class User(Base):\n    \"\"\"User account model.\n\n    Columns:\n        id: UUID string, primary key.\n        email: Unique, max 255 chars, required.\n        password_hash: bcrypt hash, required.\n        created_at: Record creation timestamp (UTC).\n        updated_at: Last update timestamp (UTC).\n        is_active: Whether the account is active.\n    \"\"\"\n\n    __tablename__ = \"users\"\n\n    id = Column(String(255), primary_key=True)\n    email = Column(String(255), unique=True, nullable=False)\n    password_hash = Column(String(255), nullable=False)\n    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))\n    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))\n    is_active = Column(Boolean, default=True)\n\n\nclass RefreshToken(Base):",
+    "replace": "# Import canonical User model from models.py so that conftest.py's\n# user_factory (which imports User here and passes username=...) works.\nfrom .models import User  # noqa: F401 \u2014 exported for conftest.py\n\n# RefreshToken and RevokedToken are also imported from models.py to keep\n# the data layer consistent across files.\nfrom .models import RefreshToken  # noqa: F401\nfrom .models import RevokedToken  # noqa: F401\n\n\n# The inline model classes above have been replaced by imports from\n# models.py to avoid duplication and ensure a single source of truth."
+   }
+  },
+  {
+   "tool": "edit_artifact",
+   "args": {
+    "relative_path": "task-management-dashboard/task_management_dashboard/routes.py",
+    "find": "    is_active = Column(Boolean, default=True, nullable=False)\n\n\nclass RefreshToken(Base):",
+    "replace": "    username = Column(String(100), nullable=False)\n    email = Column(String(255), unique=True, nullable=False)\n    password_hash = Column(String(255), nullable=False)\n    created_at = Column(\n        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False\n    )\n    updated_at = Column(\n        DateTime,\n        default=lambda: datetime.now(timezone.utc),\n        onupdate=lambda: datetime.now(timezone.utc),\n        nullable=False,\n    )\n    is_active = Column(Boolean, default=True, nullable=False)\n\n\nclass RefreshToken(Base):"
+   }
+  }
+ ]
+}

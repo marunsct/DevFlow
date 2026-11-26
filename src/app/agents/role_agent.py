@@ -381,6 +381,12 @@ def _batch_file_claims_middleware() -> Any:
     return build_middleware()
 
 
+def _foreign_file_handoff_middleware(repo_root: str) -> Any:
+    from app.tools.foreign_file_handoffs import build_middleware
+
+    return build_middleware(repo_root)
+
+
 def _tool_result_bound_middleware(repo_root: str | None = None) -> Any:
     from app.agents.tool_result_bound import build_middleware
 
@@ -930,6 +936,8 @@ def create_role_agent(
         # See `app.agents.environment_contract` (Initiative K.1).
         build_environment_contract_middleware(resolved_repo_root),
         build_workspace_digest_middleware(resolved_repo_root),
+        # A change another work order was refused in this stage's files, handed to it while it runs (LF.1548).
+        _foreign_file_handoff_middleware(resolved_repo_root),
         # The project's documents and files, current, at the start of every
         # call; a read of one it already holds is answered with a pointer.
         # After the path rewrite, so it sees the path the tool will resolve.

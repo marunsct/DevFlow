@@ -207,6 +207,9 @@ x-app-env: &app-env
   # contend rather than go faster - measured 2026-09-20, when orphan
   # recovery resumed one run as another was started.
   MAX_CONCURRENT_RUNS: ${MAX_CONCURRENT_RUNS:-}
+  # One session per request lets the balancer send each call to a free server (owner: three calls queued on one GPU are no
+  # faster than a lost prompt cache). `conversation` keeps a stage's calls on one server.
+  MODEL_SESSION_SCOPE: ${MODEL_SESSION_SCOPE:-conversation}
   # JSON corrections to the built-in model price table.
   MODEL_PRICES_JSON: ${MODEL_PRICES_JSON:-}
   # Encrypts provider credentials set through the settings page. Falls back

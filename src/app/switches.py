@@ -241,6 +241,11 @@ GROUPS: dict[str, tuple[str, ...]] = {
     # beyond it, and an item beyond it declined unless the architect quotes the brief line that needs it (plan PA.9).
     # Off until measured, two runs a family: it changes the advice, and so the specification.
     "Specialist advice": ("ADVICE_SIZED_TO_THE_BRIEF",),
+    # The code graph's answers where the model already looks (plan KG.5-KG.8): definitions in place of files past a
+    # memory's room, the graph's line in a search's and a range read's answer, the files still using what a write
+    # changed, and a review's changed definitions with what uses them. Each its own measurement.
+    "Code graph answers": ("DEFINITIONS_BEFORE_FILES", "GRAPH_IN_SEARCH_ANSWERS", "USES_NAMED_AT_THE_WRITE",
+                           "REVIEWS_HOLD_THE_CHANGE_AND_ITS_USES"),
 }
 #: Every grouped switch, in the admin page's order.
 EXPERIMENTS = tuple(name for members in GROUPS.values() for name in members)
@@ -284,6 +289,10 @@ EXPERIMENTS_ON: dict[str, str] = {
     "WEB_LOOKUP_WHEN_STUCK": "owner 2026-11-23: web tools on for every run and measured from here, the medium and high briefs not counted (docs/measuring.md)",
     "WEB_TOOLS_OFFERED": "owner 2026-11-23: web tools on for every run and measured from here, the medium and high briefs not counted (docs/measuring.md)",
     "WEB_TOOLS_AFTER_TWO_FAILED_FIXES": "owner 2026-11-23: web tools on for every run and measured from here, the medium and high briefs not counted (docs/measuring.md)",
+    "DEFINITIONS_BEFORE_FILES": "owner 2026-11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M-KG.5)",
+    "GRAPH_IN_SEARCH_ANSWERS": "owner 2026-11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M-KG.6)",
+    "USES_NAMED_AT_THE_WRITE": "owner 2026-11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M-KG.7)",
+    "REVIEWS_HOLD_THE_CHANGE_AND_ITS_USES": "owner 2026-11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M-KG.8)",
     "FAST_DESIGN_GATE_ON_PRODUCT_BREAKING": "owner 2026-11-26 (LF.1524): fast delivery built with blocking design findings open; on, holding only the product-breaking ones, and off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M-LF.1524)",
 }
 _GROUP_OF = {name: group for group, members in GROUPS.items() for name in members}

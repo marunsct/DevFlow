@@ -146,6 +146,15 @@ def effects(records: list[dict], decisions: str = "") -> list[str]:
     from app.analysis.project_graph import effects_lines as code_graph_lines
 
     lines.extend(code_graph_lines(records))
+    # KG.5-KG.8: what the code graph's answers changed where they were given - reads, repeat reads, opening tokens,
+    # calls from a search to a write, notes at a write followed by an edit of a file named.
+    from app.agents.definitions_before_files import effects_lines as definitions_lines
+    from app.agents.graph_in_search_answers import effects_lines as search_answer_lines
+    from app.agents.reviews_hold_the_change import effects_lines as review_change_lines
+    from app.tools.uses_named_at_the_write import effects_lines as write_uses_lines
+
+    for lines_of in (definitions_lines, search_answer_lines, write_uses_lines, review_change_lines):
+        lines.extend(lines_of(records))
     # TR.2 and TR.6: reads while reading was withheld, refused by class against run; writes at the call budget.
     from app.agents.withheld_records import effects_lines as withheld_lines
 

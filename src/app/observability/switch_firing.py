@@ -88,6 +88,12 @@ SIGNALS: dict[str, str] = {
     # Recorded by the harness once per request that carried its files' neighbours (`app.analysis.project_graph`, KG.1).
     "PROJECT_GRAPH_FIXES": "A fix request carried its files' neighbours from the code graph",
     "PROJECT_GRAPH_BUILDERS": "A work order's request carried its files' neighbours from the code graph",
+    # Plan KG.5-KG.8: each in the text it puts in a request (the memory's block, a review's section) or a tool's
+    # answer (a search, a read, a write).
+    "DEFINITIONS_BEFORE_FILES": "held as the definitions this work reaches",
+    "GRAPH_IN_SEARCH_ANSWERS": "The harness's code graph:",
+    "USES_NAMED_AT_THE_WRITE": "Other files use what this write changed",
+    "REVIEWS_HOLD_THE_CHANGE_AND_ITS_USES": "each with the signatures of what uses it",
 }
 #: Transcript records the harness writes of what it did itself, with no model reading it: kind -> the field whose
 #: text a switch's signal is looked for in.

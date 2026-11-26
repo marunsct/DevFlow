@@ -405,6 +405,12 @@ def _verify_after_write_middleware() -> Any:
     return build_middleware()
 
 
+def _uses_named_at_the_write_middleware(repo_root: str) -> Any:
+    from app.tools.uses_named_at_the_write import build_middleware
+
+    return build_middleware(repo_root)
+
+
 def _compaction_middleware(agent_name: str, model: Any = None, role: str = "", repo_root: str | None = None) -> list:
     """Summarise this agent's history before it outgrows the model's window.
 
@@ -885,6 +891,8 @@ def create_role_agent(
         # Inside the transcript, so it records the line this appends: a fix
         # stage's write followed by its defect's tests (plan AY step 3, off).
         _verify_after_write_middleware(),
+        # Inside the transcript too: a write that changed what other files use names them (KG.7, off).
+        _uses_named_at_the_write_middleware(resolved_repo_root),
         # Fixers of one batch never write the same file (LR.15): a pass-through outside a batch.
         _batch_file_claims_middleware(),
         # A stage on the judgement model gathers on the build model and writes

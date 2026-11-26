@@ -127,9 +127,13 @@ def _the_source_under_review(changed_files: list[str], repository_root: str, hel
     product whose files today's request and memory do not show; otherwise this is as it was.
     """
     shown, not_shown = _select(changed_files, repository_root, held)
+    # The files the budget leaves out given as their changed definitions and what uses them (KG.8, off until measured).
+    from app.agents.reviews_hold_the_change import for_files_not_shown
+
+    the_change, not_shown = for_files_not_shown(repository_root, not_shown)
     if held:
-        return _with_the_files_held(held, shown, not_shown)
-    if not shown and not not_shown:
+        return _with_the_files_held(held, shown, not_shown) + the_change
+    if not shown and not not_shown and not the_change:
         return (
             "None of the changed files could be read for this request. Open "
             "them with your read tools before deciding anything.\n"
@@ -148,7 +152,7 @@ def _the_source_under_review(changed_files: list[str], repository_root: str, hel
             "read tools before deciding: a review that passes code it never read is "
             "recorded as covering only what it read.\n"
         )
-    return request
+    return request + the_change
 
 
 def _with_the_files_held(held: Sequence[str], shown: list[tuple[str, str]], not_shown: list[str]) -> str:

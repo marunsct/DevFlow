@@ -194,12 +194,12 @@ def answer(path: str, text: str, room: int, outline: Outline | None = None) -> s
 
 
 def an_answer_in_place_of_the_whole(path: str, returned: str, total_lines: int,
-                                    whole_text: Callable[[], str]) -> str | None:
+                                    whole_text: Callable[[], str], root: str | None = None) -> str | None:
     """With the switch on, inside a read that named no range: the outline answer when `returned` is past the room.
 
     `returned` is what the read would give and `whole_text` reads the whole file. None (the read as it is) when the
     switch is off, the read named a range, the room is not known, the file is no longer than a narrow range, or what
-    the read gives fits.
+    the read gives fits. `root`: the workspace, whose code graph adds what uses each definition (KG.6, its own switch).
     """
     slot = _A_WHOLE_READ.get()
     if slot is None or not reads_sized_switch.enabled():
@@ -209,7 +209,9 @@ def an_answer_in_place_of_the_whole(path: str, returned: str, total_lines: int,
     room = room_left()
     if room is None or total_lines <= MOST_WINDOW_LINES or numbered_length(returned) <= room:
         return None
-    said = answer(path, whole_text(), room)
+    from app.agents.graph_in_search_answers import for_an_outline
+
+    said = answer(path, whole_text(), room) + for_an_outline(root, path)
     slot["answer"] = said
     return said
 

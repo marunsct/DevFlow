@@ -452,10 +452,13 @@ def build_workspace_path_middleware(repo_root: str) -> Any:
                             return _explained_if_empty(
                                 handler(request), fragment, arguments.get("path")
                             )
+                # The code graph's line ahead of a search for a name and a range read of a definition (KG.6, off).
+                from app.agents.graph_in_search_answers import answered
+
                 if call.get("name") == "read_file":
-                    return _with_the_note_it_held(handler(request))
+                    return answered("read_file", arguments, _with_the_note_it_held(handler(request)), repo_root)
                 if call.get("name") == "grep":
-                    return _with_how_it_searched(handler(request))
+                    return answered("grep", arguments, _with_how_it_searched(handler(request)), repo_root)
             return handler(request)
 
     return WorkspacePathMiddleware()

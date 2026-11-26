@@ -704,6 +704,12 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
     first: set[str] = set()
     if on_code and the_slice is not None:
         first, the_slice = the_slice, None
+    # Past the room, the files the request is about held as the definitions it reaches (`DEFINITIONS_BEFORE_FILES`).
+    from app.agents import definitions_before_files
+
+    by_definitions = definitions_before_files.for_the_memory(
+        repo_root, files, ask, budget_characters, for_a_fixer=for_a_fixer, localised=localised,
+        the_slice=first or the_slice) if (for_a_fixer or sliced) and replan is None else {}
     held: dict[str, str] = {}
     parts: list[str] = []
     from app.agents.canonical_memory import enabled as canonical_order
@@ -805,6 +811,10 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
             # work (see `app.acceptance.sprint_scope`); the snapshot held them
             # back and the memory now stands in for it.
             held_back.append(f"{path} ({', '.join(later[path])})")
+            continue
+        if path in by_definitions:
+            parts.append(by_definitions[path])
+            used += len(by_definitions[path])
             continue
         if path in under_review:
             from app.agents.review_files import NUMBERED_MARK, numbered

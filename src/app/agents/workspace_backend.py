@@ -1310,6 +1310,7 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
             return an_answer_in_place_of_the_whole(
                 str(file_path), content, self._lines_in_the_file(result, content),
                 lambda: self._resolve_path(file_path).read_text(encoding="utf-8"),
+                root=str(self.cwd),
             )
         except Exception:  # noqa: BLE001 - the read as it is
             logger.debug("Could not size a whole read to the room", exc_info=True)

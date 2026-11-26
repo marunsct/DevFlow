@@ -678,13 +678,21 @@ def code_review(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     # is not sent again as a diff of every line (LF.1284).
     from app.agents import review_files
 
-    held = review_files.held_for_review(review_files.under_review(root, ci.changed_since(root, since)), root,
-                                        ctx.judgement_model, stage_name, review_files.opening_of(request))
+    under = review_files.under_review(root, ci.changed_since(root, since))
+    held = review_files.held_for_review(under, root, ctx.judgement_model, stage_name, review_files.opening_of(request))
     if held:
         new = set(ci.new_since(root, since))
         request = with_the_facts(build_code_review_request(
             ci.diff_since(root, since, leaving_out=[path for path in held if path in new]), orders, criteria,
             str(state.get("ci_report") or ""), later, held=held, standards=standards), state["repository"].root_path)
+    # The changed files its memory does not hold, as their changed definitions and what uses them (KG.8, off).
+    from app.agents import reviews_hold_the_change
+
+    if reviews_hold_the_change.enabled() and under:
+        fits = not held and review_files.fits_as_today(under, root, ctx.judgement_model, stage_name,
+                                                       review_files.opening_of(request))
+        request = reviews_hold_the_change.with_the_change(request, root, [path for path, _ in under], held, fits,
+                                                          since)
     # And what the design review approved the specification on, as the builders were told (LF.1512).
     from app.agents.design_review_conditions import with_the_conditions
 

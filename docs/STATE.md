@@ -5,8 +5,8 @@ the block below is written by `loop.sh state`. The map of all documents is `docs
 `docs/improvement-plan.md`; how the product works is `docs/PRODUCT.md`; how to run and test it is `docs/HANDOVER.md`;
 decisions in force are `docs/owner-decisions.md`; old information is found through `docs/ARCHIVE.md`.
 <!-- state:generated -->
-**As of:** 11-27 00:08 JST (written by `loop.sh state`). Harness 7db39b55 committed; 7db39b55 deployed.
-**Live, and stopped in the last day:** run-c13e7189 paused at awaiting_approval:defect_fix_2_2; run-e799301e failed at failed; run-7259e30d failed at ?; run-17098b4b failed at awaiting_approval:specialist_testing_1; run-03668d05 failed at awaiting_approval:specialist_testing_2; run-a2f91f9f failed at awaiting_approval:acceptance_author_1
+**As of:** 11-27 05:14 JST (written by `loop.sh state`). Harness cfa724d1 committed; cfa724d1 deployed.
+**Live, and stopped in the last day:** run-f6502d06 running at acceptance_author_0; run-e3acafda running at acceptance_author_0; run-c13e7189 paused at awaiting_approval:defect_fix_2_2; run-e799301e failed at failed; run-7259e30d failed at ?; run-17098b4b failed at awaiting_approval:specialist_testing_1
 **Last scored:** run-5071b7ef web-todo-react 10/10 (completed, handoff 1.0; scored 11-26 18:03 JST); run-a79c55df notes-api-go 9/9 (completed, mixed, 77 active min, handoff 1.0; scored 11-26 13:54 JST); run-6c1444a0 tasks-api 10/10 (completed, mixed, 140 active min, handoff 1.0; scored 11-26 11:19 JST).
 <!-- /state:generated -->
 
@@ -15,10 +15,10 @@ decisions in force are `docs/owner-decisions.md`; old information is found throu
 |---|---|
 | Phase | **Learning runs, fixes deployed at once** (deep-review plan, owner 11-18: implement all; frozen-version measuring for Measure batches). The release-candidate count starts only when a full audit cycle finds nothing to fix. |
 | Models | olla `host.docker.internal:4001/olla/openai/v1`, model `qwen3.6-35b-a3b` (the owner's; two llama.cpp instances, 93K-token slots). Runs pinned to it. |
-| Harness | 7db39b5 deployed 11-27 00:07 JST: LF.1503-1578. LF.1577 (a file's lines run once a stage while reading is withheld) and LF.1578 (a builder at its step limit settles instead of failing the run) after Medium 5 failed 23:35 on a re-read loop; LF.1576 spreads one-shot and parallel calls across both model servers. Both model servers exited 23:37 JST 11-26 (not by the harness): nothing starts until `loop.sh ready` prints ALL READY. Then: resume Medium 5, start L notes-api-hono 17; the bookmarks run is paused by the owner. Left in the plan: PA.10, PA.13, PA.18, PA.4 repair, balancer capacity, measurements. |
+| Harness | cfa724d deployed 11-27 05:1x JST: LF.1503-1588. Latest for the owner's model under test, inkling-2-mini (olla, 2 slots over 2 llama.cpp instances): LF.1576 sessions spread calls over both servers, LF.1577-1578 re-read loop bounded and a writer's step limit settles, LF.1579 a balancer's capacity summed, LF.1580-1587 reasoning control and registry fixes, LF.1588 a reasoning budget measured by where reasoning stops (enforced and usable on this model; REASONING_BUDGET on). Runs: L notes-api-hono 17 (run-f6502d06), L web-todo (inkling) 1 (run-e3acafda). Medium 5 (Qwen) failed on the fixed loop, not resumed; the bookmarks run paused by the owner. Left in the plan: PA.10, PA.13, PA.18, PA.4 repair, measurements. |
 | Switches | 53 fixes built in (always on). 29 optional switches (9 groups, `docs/measuring.md`); `WEB_LOOKUP_WHEN_STUCK` is off and set per run. Measure arms use `SWITCHES_OFF` per run. |
 | Operations | Nightly backups (`loop.sh backup --check`). **One model endpoint since 11-25 ~17:45 JST** (owner): olla `host.docker.internal:4001/olla/openai/v1` over two llama.cpp instances, model `qwen3.6-35b-a3b`, 4 requests at once; **at most 2 runs, each in parallel execution mode** (owner 17:54: test the parallel mode; `.env` `MAX_CONCURRENT_RUNS=2`). :8888 and :1234 are gone. Audit cron `0a7ebf80` every 15 minutes. |
-| Suites | both green at 22,675 passed on 7db39b5 (11-27 00:05 JST). |
+| Suites | both green at 22,738 passed on cfa724d (11-27 05:00 JST), at SUITE_WORKERS=2 (memory is short with this model loaded). |
 
 ## Off until measured
 BATCH_ACCEPTANCE_AUTHOR (web tools are on since 11-23, measured from there). Hosted-model

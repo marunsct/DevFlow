@@ -36,8 +36,9 @@ MOST_SHAPE_LINES = 30
 MOST_SIGNATURE_LINES = 8
 MOST_SIGNATURE_CHARACTERS = 260
 
-#: A quoted path: "/", "/items", "/items/{id}", "/items/:id", "/api/v1/items/<int:id>".
-_A_QUOTED_PATH = re.compile(r"""["'`](/[\w\-{}:<>*.\[\]/]*)["'`]""")
+#: A quoted path: "/", "/items", "/items/{id}", "/items/:id", "/api/v1/items/<int:id>"; and one after its method in
+#: the same string, "GET /items/{id}" (KG.4: such a route was not read as one).
+_A_QUOTED_PATH = re.compile(r"""["'`](?:(?:GET|POST|PUT|PATCH|DELETE)\s+)?(/[\w\-{}:<>*.\[\]/]*)["'`]""")
 #: A path that names a file rather than a route.
 _A_FILE = re.compile(r"\.[A-Za-z]{1,5}$")
 #: The words a line that declares or mounts a route holds beside its path, in any language's spelling.

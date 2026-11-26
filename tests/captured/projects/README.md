@@ -14,5 +14,9 @@ the code graph's tests (KG.2, KG.3): each folder is one product's files in one l
 | `typescript-notes-api` | TypeScript | routes calling the store and the validation by name (KG.3) |
 | `python-wordstats` | Python | a command line calling its analyser through `from wordstats import analyzer` (KG.3) |
 | `kotlin-notes-api` | Kotlin | **not captured**: no Kotlin product exists in any stored workspace, so this is `java-notes-api`'s model, repository and service written in Kotlin, with one wildcard import |
+| `react-to-do-list-app` | TypeScript (React) | a page product: components rendering the labels and names its acceptance suite selects (KG.4), and unit tests importing them |
+| `browser-to-do-list-app` | JavaScript (no framework) | a page product whose markup renders the form's labels and loads its script; the suite selects controls by label and name (KG.4) |
 
 When a Kotlin run is stored, replace `kotlin-notes-api` with its files.
+
+`../project-tests/<folder>/` holds, for five of these products, the acceptance suite and some unit tests the same run stored (KG.4); a test lays them over the product, so the import edges above stay as they are.

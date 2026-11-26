@@ -128,9 +128,12 @@ def build(root: str | Path) -> dict[str, dict[str, list[Any]]]:
 
         project = root / (pinned_project_directory(root) or "")
         sources = _sources(project)
+        markup = _markup(project)
         # The suite's test names give the criteria, so its files are part of
-        # what the graph was built from.
-        signature = (*_as_they_are(p for p, _ in sources), *_as_they_are(suite.suite_files(root)))
+        # what the graph was built from; so are the markup files a page's
+        # selectors are matched to (KG.4).
+        signature = (*_as_they_are(p for p, _ in sources), *_as_they_are(suite.suite_files(root)),
+                     *_as_they_are(markup))
         with _LOCK:
             held = _BUILT.get(str(root))
         if held and held[0] == signature:
@@ -163,6 +166,7 @@ def build(root: str | Path) -> dict[str, dict[str, list[Any]]]:
                     graph[target]["imported_by"].append(relative)
         add_uses(graph, {path.relative_to(root).as_posix(): parsed for path, parsed in readings.items()})
         _criteria_of_the_tests(root, graph)
+        _routes_tests_and_pages(root, graph, texts, markup)
         try:
             written, target = json.dumps(graph, indent=1), root / GRAPH_FILE
             if not target.is_file() or target.read_text(encoding="utf-8") != written:
@@ -206,9 +210,49 @@ def _criteria_of_the_tests(root: Path, graph: dict[str, dict[str, list[Any]]]) -
         pass
 
 
+def _markup(project: Path) -> list[Path]:
+    """KG.4: the project's markup files, which a page product's tests select text in."""
+    from app.analysis.routes_and_tests import markup_files
+
+    return markup_files(project)
+
+
+def _routes_tests_and_pages(root: Path, graph: dict[str, dict[str, list[Any]]], texts: dict[Path, str],
+                            markup: list[Path]) -> None:
+    """KG.4: each route and the definition that handles it, the routes and page texts each acceptance test reaches
+    and so its criteria, and what each unit test references (`app.analysis.routes_and_tests`)."""
+    try:
+        from app.analysis.routes_and_tests import attach
+
+        def text_of(relative: str) -> str | None:
+            path = root / relative
+            if path in texts:
+                return texts[path]
+            try:
+                return path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                return None
+
+        attach(root, graph, text_of, markup)
+    except Exception:  # noqa: BLE001 - the graph without them
+        logger.debug("Could not read the routes and tests into the code graph", exc_info=True)
+
+
+def _tests_of(graph: dict[str, dict[str, list[Any]]], relative: str) -> list[tuple[str, list[str]]]:
+    from app.analysis.routes_and_tests import tests_of
+
+    return tests_of(graph, relative)
+
+
 def _relative(files: Iterable[str]) -> list[str]:
     """`files` workspace-relative, each once, in order."""
     return list(dict.fromkeys(str(f).strip().removeprefix("./").lstrip("/") for f in files if str(f).strip()))
+
+
+def _criterion_order(criterion: str) -> tuple[str, int]:
+    """`AC-2` before `AC-10`."""
+    kind, _, number = criterion.partition("-")
+    return kind, int(number) if number.isdigit() else 0
 
 
 def neighbourhood(root: str | Path, files: Iterable[str], heading: str) -> str:
@@ -219,8 +263,12 @@ def neighbourhood(root: str | Path, files: Iterable[str], heading: str) -> str:
         node = graph.get(relative)
         if node is None:
             continue
-        tests = [other for other, n in graph.items() if relative in n["imports"] and n["criteria"]]
+        tests = _tests_of(graph, relative)
         parts = []
+        if node.get("routes"):
+            from app.analysis.routes_and_tests import served
+
+            parts.append(served(node))
         if node["defines"]:
             parts.append("defines " + ", ".join(node["defines"][:8]))
         if node["imports"]:
@@ -228,8 +276,10 @@ def neighbourhood(root: str | Path, files: Iterable[str], heading: str) -> str:
         if node["imported_by"]:
             parts.append("imported by " + ", ".join(f"`{p}`" for p in node["imported_by"][:6]))
         if tests:
-            criteria = sorted({c for t in tests for c in graph[t]["criteria"]})
-            parts.append("tested by " + ", ".join(f"`{t}`" for t in tests[:3]) + (f" ({', '.join(criteria[:8])})" if criteria else ""))
+            criteria = sorted({c for _, said in tests for c in said}, key=_criterion_order)
+            parts.append("tested by " + ", ".join(f"`{t}`" for t, _ in tests[:3]) + (f" ({', '.join(criteria[:8])})" if criteria else ""))
+        if node.get("unit_tests"):
+            parts.append("unit tests " + ", ".join(f"`{t}`" for t in node["unit_tests"][:3]))
         if parts:
             lines.append(f"- `{relative}`: " + "; ".join(parts))
     if not lines:
@@ -310,7 +360,7 @@ def reach(root: str | Path, files: Iterable[str]) -> dict[str, dict[str, int]]:
                 continue
             counts["held"] += 1
             counts["edges"] += len(node["imports"]) + len(node["imported_by"])
-            counts["tests"] += sum(1 for n in graph.values() if relative in n["imports"] and n["criteria"])
+            counts["tests"] += len(_tests_of(graph, relative))
     except Exception:  # noqa: BLE001 - a record never fails a request
         logger.debug("Could not read what the code graph knows of a request's files", exc_info=True)
     return found or {NO_FILE: {"files": 0, "held": 0, "edges": 0, "tests": 0}}
@@ -369,6 +419,9 @@ def effects_lines(records: Iterable[Any]) -> list[str]:
                      + ", ".join(f"{how} {n}" for how, n in localised.most_common()))
     else:
         lines.append("     -  FX.2 fixers localised, by how: not reached")
+    from app.analysis.routes_and_tests import calls_before_the_first_edit
+
+    lines.extend(calls_before_the_first_edit(records))
     return lines
 
 
@@ -395,10 +448,14 @@ def who_uses(root: str | Path, path: str) -> dict[str, Any]:
     node = graph.get(relative)
     if node is None:
         return {}
-    tests = [other for other, n in graph.items() if relative in n["imports"] and n["criteria"]]
-    answer: dict[str, Any] = {"imported_by": node["imported_by"][:12], "tests": tests[:6],
-                              "criteria": sorted({c for t in tests for c in graph[t]["criteria"]})[:12],
+    tests = _tests_of(graph, relative)
+    answer: dict[str, Any] = {"imported_by": node["imported_by"][:12], "tests": [t for t, _ in tests][:6],
+                              "criteria": sorted({c for _, said in tests for c in said}, key=_criterion_order)[:12],
                               "defines": node["defines"][:20]}
+    if node.get("routes"):
+        from app.analysis.routes_and_tests import served
+
+        answer["serves"] = served(node, most=12)
     from app.analysis.reachability import FAMILIES, family_of
 
     found = row_for(relative)

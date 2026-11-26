@@ -10,10 +10,13 @@ So, before a fixer is sent, the harness finds where the failure is handled, the 
 localise first (Agentless, AutoCodeRover):
 
 1. the requests its failing tests made (`POST /api/register` in a log line, `request.post('/api/register')` in a
-   test's code) matched to the lines of the product's code that declare a route - a quoted path beside a routing word,
-   in any language (`product_interface.declares_a_route`): the handler's file;
+   test's code) matched to the routes the code graph read when it was built (KG.4, `app.analysis.routes_and_tests`):
+   the file of the definition that handles each and the file declaring it, and the handler by name and lines; files
+   the graph does not hold are still scanned for the lines that declare a route
+   (`product_interface.declares_a_route`);
 2. the product's own files a stack trace in its evidence names (`File "x.py", line 9`, `at f (src/x.js:9:5)`);
-3. where neither gives a file and the defect names none, the one cheap localisation call the rewrite path has
+3. for a page, the product files the graph shows rendering exactly the text its failing selectors name (KG.4);
+4. where none gives a file and the defect names none, the one cheap localisation call the rewrite path has
    (`localisation.asked`: one call without reasoning, given the failure and the project's map).
 
 The files found and the modules they import (the harness's code graph, `.harness/project-graph.json`) are named in
@@ -38,22 +41,6 @@ MOST_FILES = 6
 #: The transcript record of one fixer's localisation.
 RECORD_KIND = "fixer_localised"
 
-#: A request as a runner's or a server's log prints it: `POST /api/items`, `"GET /api/items/3 HTTP/1.1"`.
-_A_LOGGED_REQUEST = re.compile(r"\b(GET|POST|PUT|PATCH|DELETE)\s+(?:https?://[^/\s\"'`]+)?(/[^\s\"'`)?#]*)")
-#: A request as a test's code makes it: `request.post('/api/items'`, `client.get("/api/items/3"`.
-_A_REQUEST_CALL = re.compile(r"\.(get|post|put|patch|delete)\(\s*f?([`'\"])(/[^`'\"?#]*)\2", re.I)
-#: A quoted path in a line of code.
-_A_QUOTED_PATH = re.compile(r"""["'`](/[\w\-{}:<>*.\[\]/$]*)["'`]""")
-#: A method word in a line of code, outside its quotes.
-_A_METHOD = re.compile(r"(?<![A-Za-z])(get|post|put|patch|delete)(?![a-z])", re.I)
-#: A path segment that stands for any value: `{id}`, `:id`, `<int:id>`, `[id]`, `*`, `${id}`.
-_A_PLACEHOLDER = re.compile(r"^(?:\{[^}]*\}|:\w+|<[^>]*>|\[[^\]]*\]|\*+|\$\{[^}]*\})$")
-#: A requested segment that is a value: a number, a long hexadecimal or dashed id.
-_A_VALUE = re.compile(r"^(?:\d+|[0-9a-f]{8,}(?:-[0-9a-f]{4,})*)$", re.I)
-#: The leading segments routes share, which say nothing about which handler answers.
-_SHARED = re.compile(r"^(?:api|v\d+)$", re.I)
-#: A path that names a file rather than a route.
-_A_FILE = re.compile(r"\.[A-Za-z0-9]{1,5}$")
 #: A stack frame: Python's `File "path", line 9`, and `path:line` as every other runtime prints it.
 _A_PYTHON_FRAME = re.compile(r"File \"([^\"]+)\", line (\d+)")
 _A_FRAME = re.compile(r"([\w.\\/-]+\.[A-Za-z]{1,5}):(\d+)")
@@ -68,76 +55,46 @@ class Localised:
     imports: list[str] = field(default_factory=list)
     how: str = ""
     requests: list[str] = field(default_factory=list)
+    #: One line per route answered: the definition that handles it and its lines (KG.4).
+    handlers: list[str] = field(default_factory=list)
 
     @property
     def files(self) -> list[str]:
         return list(dict.fromkeys([*self.found, *self.imports]))[:MOST_FILES]
 
 
-def _segments(path: str) -> list[str]:
-    return [s for s in str(path or "").split("?", 1)[0].split("#", 1)[0].split("/") if s]
-
-
 def requests_in(text: str) -> list[tuple[str, str]]:
-    """The requests `text` records or makes, as (method, path), each once, in order; method "" when only the code's
-    call is known by a word the runner does not print."""
-    found: list[tuple[str, str]] = []
-    for match in _A_LOGGED_REQUEST.finditer(str(text or "")):
-        found.append((match.group(1).upper(), match.group(2)))
-    for match in _A_REQUEST_CALL.finditer(str(text or "")):
-        found.append((match.group(1).upper(), match.group(3)))
-    kept = [(method, path) for method, path in found if _segments(path) and not _A_FILE.search(path)]
-    return list(dict.fromkeys(kept))
+    """The requests `text` records or makes, as (method, path), each once, in order."""
+    from app.analysis.routes_and_tests import requests_in as found_in
 
-
-def _quoted_removed(line: str) -> str:
-    return re.sub(r"""(["'`])(?:(?!\1).)*\1""", " ", line)
-
-
-def _matches(declared: list[str], requested: list[str]) -> int:
-    """How many named segments of `declared` match the end of `requested`; 0 for no match, or for a declared path
-    of shared and placeholder segments only (`/api`, `/{id}`), which says nothing about its handler."""
-    if not declared or len(declared) > len(requested):
-        return 0
-    named = 0
-    for want, got in zip(declared, requested[-len(declared):]):
-        if _A_PLACEHOLDER.match(want):
-            continue
-        if want.lower() != got.lower() or _A_VALUE.match(got):
-            return 0
-        if not _SHARED.match(want):
-            named += 1
-    return named
+    return found_in(text)
 
 
 def handlers_of(code: dict[str, str], requests: Iterable[tuple[str, str]]) -> list[str]:
     """The files of `code` (path -> text) that declare the route each request reaches: per request the best
-    matches, those whose line names the request's own method before those whose line names none."""
-    from app.acceptance.product_interface import declares_a_route
+    matches, those whose line names the request's own method before those whose line names none. For code the
+    graph does not hold; the graph's routes are read when it is built (`routes_and_tests`)."""
+    from app.analysis.routes_and_tests import best, routes_of
 
-    declared: list[tuple[str, list[str], str]] = []
-    for path, text in code.items():
-        for line in str(text).splitlines():
-            if not declares_a_route(line):
-                continue
-            methods = {m.upper() for m in _A_METHOD.findall(_quoted_removed(line))}
-            for quoted in _A_QUOTED_PATH.findall(line):
-                if not _A_FILE.search(quoted):
-                    declared.append((path, _segments(quoted), "|".join(sorted(methods))))
+    rows = [(path, row) for path, text in code.items() for row in routes_of(path, str(text), [], lambda *_: None)]
     found: list[str] = []
     for method, requested_path in requests:
-        requested = _segments(requested_path)
-        scored = []
-        for path, segments, methods in declared:
-            if methods and method and method not in methods.split("|"):
-                continue
-            score = _matches(segments, requested)
-            if score:
-                scored.append(((score, bool(methods and method)), path))
-        if scored:
-            best = max(key for key, _ in scored)
-            found += [path for key, path in scored if key == best]
+        found += [where for where, _ in best(rows, method, requested_path)]
     return list(dict.fromkeys(found))
+
+
+def _from_the_graph(repo_root: str | Path, code: dict[str, str], requests: list[tuple[str, str]],
+                    evidence: str) -> tuple[list[str], list[str], list[str]]:
+    """(the files answering `requests`, a line per route answered, the files rendering the evidence's selector
+    texts) from the code graph, and the routes of the code it does not hold scanned."""
+    from app.analysis import project_graph
+    from app.analysis.routes_and_tests import reached_routes, rendering, selectors_in
+
+    graph = project_graph.build(repo_root)
+    allowed = set(code)
+    files, said = reached_routes(graph, requests, allowed)
+    files += [f for f in handlers_of({p: t for p, t in code.items() if p not in graph}, requests) if f not in files]
+    return files, said, rendering(graph, selectors_in(evidence), allowed)
 
 
 def frames_in(text: str, code: Iterable[str]) -> list[str]:
@@ -196,10 +153,13 @@ def where(repo_root: str | Path, evidence: str, *, named: Iterable[str] = (), de
         if not code:
             return Localised()
         requests = requests_in(evidence)
-        found, how = handlers_of(code, requests), "route"
+        found, handlers, rendered = _from_the_graph(repo_root, code, requests, evidence)
+        how = "route"
         frames = frames_in(evidence, code)
         if frames:
             found, how = list(dict.fromkeys([*frames, *found])), ("trace" if not found else "trace and route")
+        if not found and rendered:
+            found, how = rendered, "page"
         if not found and ask and model is not None and not [f for f in named if str(f).strip()]:
             from app.graph.localisation import asked
 
@@ -208,7 +168,8 @@ def where(repo_root: str | Path, evidence: str, *, named: Iterable[str] = (), de
             return Localised(requests=[f"{m} {p}".strip() for m, p in requests])
         found = found[:MOST_FILES]
         return Localised(found=found, imports=_imports_of(repo_root, found, code), how=how,
-                         requests=[f"{m} {p}".strip() for m, p in requests])
+                         requests=[f"{m} {p}".strip() for m, p in requests],
+                         handlers=handlers if how.endswith("route") else [])
     except Exception:  # noqa: BLE001 - the request as before
         logger.debug("Could not localise a fixer's failure", exc_info=True)
         return Localised()
@@ -220,12 +181,16 @@ def section(found: Localised) -> str:
         return ""
     reached = (" reached by " + ", ".join(f"`{r}`" for r in found.requests[:3])) if found.how.endswith("route") else ""
     by = {"route": f"the route{reached}", "trace": "the stack trace", "trace and route": f"the stack trace and the route"
-          f"{reached}", "asked": "a reading of the failure against the project's map"}.get(found.how, found.how)
+          f"{reached}", "asked": "a reading of the failure against the project's map",
+          "page": "the text its failing selectors look for, rendered exactly there"}.get(found.how, found.how)
     lines = [f"\n{HEADING}", f"Found from {by}:"]
     lines += [f"- `{path}`" for path in found.found]
     if found.imports:
         lines.append("and what those import:")
         lines += [f"- `{path}`" for path in found.imports if path in found.files]
+    if found.handlers:
+        lines.append("Where each route is answered:")
+        lines += found.handlers[:MOST_FILES]
     lines.append("Start from these files: the cause is in them or in what they call.")
     return "\n".join(lines) + "\n"
 
@@ -284,7 +249,7 @@ def noted(stage: str, found: Localised, defect: Any = None) -> None:
         from app.observability.transcript import _run_id_from_config, record
 
         record(_run_id_from_config(), stage, RECORD_KIND, how=found.how or "none", files=found.files,
-               requests=found.requests[:5],
+               requests=found.requests[:5], handlers=len(found.handlers),
                named=list(getattr(defect, "affected_files", None) or [])[:5])
     except Exception:  # noqa: BLE001 - a record never fails a request
         logger.debug("Could not record a fixer's localisation", exc_info=True)

@@ -80,4 +80,4 @@ Context: [backing-services plan](backing-services-plan.md) §7 and the
   front; each sprint's tests are written and locked by QA at that sprint's start, against the running product of the earlier sprints; a sprint's
   gate runs only due tests (its own and the earlier, locked ones); the whole suite runs at release. A one-sprint product is unchanged.
 - **Rerun the medium brief once bundles 1 and 2 are deployed** (owner 2026-11-24): the same brief (`brief_medium.md`), as the proof of the scale work.
-- **Model split** (owner 2026-11-24): code builds and routine run audits on Opus 5.5; reviews, research and planning of fixes on Fable.
+- **Model split** (owner 2026-11-26, replaces 11-24): Sonnet for routine run audits and chat; Opus for code builds; Fable for research, review and planning.

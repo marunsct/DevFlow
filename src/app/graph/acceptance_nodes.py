@@ -1350,7 +1350,8 @@ def _reviewed_and_locked(state: Any, config: RunnableConfig, ctx: Context) -> di
             request = build_acceptance_review_request(
                 acceptance_requests.criteria_text([c for c in suite.criteria(root) if c.id not in later], deferred),
                 acceptance_requests.suite_text(root, earlier=earlier, held=held),
-                result.summary(),
+                # A failure of a criterion this sprint builds once its tests are locked is named as expected (LF.1532).
+                by_sprint.what_running_it_showed(root, result),
                 already_passing,
                 deferred_text,
                 brief=getattr(state.get("document"), "text", "") or "",

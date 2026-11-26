@@ -1133,8 +1133,12 @@ class AcceptanceResult:
             if result.status == "passed"
         }
 
-    def summary(self, ids: Sequence[str] | None = None) -> str:
-        """A table of criteria and their status, for briefs and reviews."""
+    def summary(self, ids: Sequence[str] | None = None, *, under_failures: dict[str, str] | None = None) -> str:
+        """A table of criteria and their status, for briefs and reviews.
+
+        `under_failures` maps a criterion id to a line said under each of its failed tests (LF.1532: in the QA lead's
+        review, the failures of a sprint not built yet are named as expected).
+        """
         if not self.ran:
             return f"The acceptance suite did not run: {self.problem or 'no report was written.'}"
         rows = []
@@ -1147,6 +1151,8 @@ class AcceptanceResult:
                 if test.get("outcome") == "failed":
                     # The error and the values it got, past the runner's heading for the test (LF.1393).
                     line += f"\n    failed: {test.get('name')} - {what_it_said(test.get('message', ''))}"
+                    if said := (under_failures or {}).get(result.id):
+                        line += f"\n      {said}"
                     page = page_it_failed_on(test.get("message", ""))
                     if page:
                         line += "\n    the page when it failed:\n" + "\n".join(

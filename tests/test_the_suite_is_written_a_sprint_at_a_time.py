@@ -422,3 +422,30 @@ class TestWhatTheModelsAreTold:
 
         assert "This review is of one sprint's addition" in asked[-1]
         assert "def test_ac1_holds" not in asked[-1] and "def test_ac3_holds" in asked[-1]
+
+    def test_the_qa_lead_reads_the_sprint_s_own_failures_as_expected_and_an_earlier_one_s_as_evidence(
+            self, thorough, monkeypatch):
+        """LF.1532: a sprint's tests are reviewed before it is built; their failures are not evidence against them."""
+        root = thorough.root
+        nodes.acceptance_author(_state(root), CONFIG, CTX)
+        _write_and_lock(root, 0)
+        asked = []
+
+        def recording(state, config, **kwargs):
+            if kwargs["output_key"] == "__acceptance_review__":
+                asked.append(kwargs["initial_request"]["messages"][-1]["content"])
+            return thorough.writers(state, config, **kwargs)
+
+        monkeypatch.setattr("app.graph.workflow._run_gated_agent", recording)
+        _write_and_lock(root, 1)
+
+        showed = asked[-1].split("--- What running it showed ---")[1].split("\n---")[0]
+        lines = showed.splitlines()
+        after = {line.strip(): lines[i + 1].strip() for i, line in enumerate(lines[:-1]) if "failed: " in line}
+        assert after["failed: test_ac3_holds - AssertionError: the product answered 404"] == (
+            "expected now: AC-3 is built by this sprint")
+        assert after["failed: test_ac4_holds - AssertionError: the product answered 404"] == (
+            "expected now: AC-4 is built by this sprint")
+        assert after["failed: test_ac1_holds - AssertionError: the product answered 404"].startswith("- AC-2 ")
+        assert "AC-1 is built" not in showed and "AC-2 is built" not in showed
+        assert not BANNED.search(showed)

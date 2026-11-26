@@ -1,0 +1,35 @@
+- AC-1 PASSED: User registration and authentication (JWT-based)
+- AC-2 FAILED: Create, read, update, delete tasks
+    failed: [AC-2] creating a task returns 201 with id - Error: expect(received).toBe(expected) // Object.is equality; Expected: 201; Received: 405
+    failed: [AC-2] getting a task by id returns matching title - Error: expect(received).toBe(expected) // Object.is equality; Expected: 201; Received: 405
+    failed: [AC-2] updating a task returns 200 with updated title - Error: expect(received).toBe(expected) // Object.is equality; Expected: 201; Received: 405
+    failed: [AC-2] deleting a task returns 200 - Error: expect(received).toBe(expected) // Object.is equality; Expected: 201; Received: 405
+    failed: [AC-2] getting a deleted task returns 404 - Error: expect(received).toBe(expected) // Object.is equality; Expected: 201; Received: 405
+    failed: [AC-2] unauthenticated POST to tasks returns 401 - Error: expect(received).toBe(expected) // Object.is equality; Expected: 401; Received: 405
+    failed: [AC-2] cross-user access returns 403 - Error: expect(received).toBe(expected) // Object.is equality; Expected: 201; Received: 405
+    failed: [AC-2] PUT with invalid If-Match format returns 422 - Error: expect(received).toBe(expected) // Object.is equality; Expected: 201; Received: 405
+    failed: [AC-2] PUT with wrong If-Match version returns 409 - Error: expect(received).toBe(expected) // Object.is equality; Expected: 201; Received: 405
+- AC-3 NOT_YET_DUE: Assign tasks to team members
+- AC-4 FAILED: Set priorities (low, medium, high, urgent)
+    failed: [AC-4] creating tasks with each valid priority returns 201 and matches on get - Error: expect(received).toBe(expected) // Object.is equality; Expected: 201; Received: 405
+    failed: [AC-4] submitting an invalid priority returns 422 with INVALID_PRIORITY error_code - Error: expect(received).toBe(expected) // Object.is equality; Expected: 422; Received: 405
+- AC-5 FAILED: Due dates and reminders
+    failed: [AC-5] creating a task with a due_date returns it in the response - Error: expect(received).toBe(expected) // Object.is equality; Expected: 201; Received: 405
+    failed: [AC-5] reading a task returns the stored due_date - Error: expect(received).toBe(expected) // Object.is equality; Expected: 201; Received: 405
+    failed: [AC-5] updating a task changes its due_date - Error: expect(received).toBe(expected) // Object.is equality; Expected: 201; Received: 405
+    failed: [AC-5] creating a task without a due_date is valid - Error: expect(received).toBe(expected) // Object.is equality; Expected: 201; Received: 405
+    failed: [AC-5] creating a task with a past due_date returns 422 - Error: expect(received).toBe(expected) // Object.is equality; Expected: 422; Received: 405
+    failed: [AC-5] creating a task with reminders stores them - Error: expect(received).toBe(expected) // Object.is equality; Expected: 201; Received: 405
+    failed: [AC-5] updating a task reminders replaces them - Error: expect(received).toBe(expected) // Object.is equality; Expected: 201; Received: 405
+- AC-6 NOT_YET_DUE: Task categories and tags
+- AC-7 NOT_YET_DUE: Search and filter functionality
+- AC-8 FAILED: Users can register, login, logout securely
+    failed: [AC-8] after logout the access token is rejected with 401 - Error: expect(received).toBe(expected) // Object.is equality; Expected: 201; Received: 405
+- AC-9 NOT_YET_DUE: Task CRUD operations work correctly
+- AC-10 NOT_YET_DUE: Team collaboration features function properly
+- AC-11 NOT_YET_DUE: Analytics dashboard shows task statistics
+- AC-12 PASSED: API documentation available (Swagger/OpenAPI)
+- AC-13 NOT_YET_DUE: All endpoints have proper error handling
+- AC-14 NOT_YET_DUE: User Interface: Modern web application with responsive design
+- AC-15 NOT_YET_DUE: Database migrations required
+- AC-16 NOT_YET_DUE: Docker containerization

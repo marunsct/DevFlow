@@ -282,6 +282,47 @@ def note(sprint: int, of: int, group: Sequence[Any], earlier: Sequence[str]) -> 
     return "\n".join(lines) + "\n\n"
 
 
+#: Said under each failed test of a criterion the sprint builds after its tests are locked (LF.1532).
+EXPECTED_NOW = "expected now: {criterion} is built by this sprint"
+
+
+def built_by_this_sprint(repo_root: str | Path | None) -> list[str]:
+    """The criteria the sprint whose tests are being written builds once they are locked: the addition open now's.
+
+    [] when no addition is open, and at the release, whose criteria the sprints before it built. Never raises.
+    """
+    adding = addition(repo_root) if is_on(repo_root) else None
+    if not adding or adding.get("at_release"):
+        return []
+    return [str(item) for item in adding.get("criteria") or []]
+
+
+def what_running_it_showed(repo_root: str | Path | None, result: Any) -> str:
+    """The suite's run as the QA lead reviews it (LF.1532): where the tests are written before their sprint is built,
+    each failure of a criterion that sprint builds is named as expected now, not evidence against the test.
+
+    Measured on a medium run, sprint 2: its new endpoints answered 405 as not built yet, and the QA lead sent the suite
+    back as faulty four times on that alone. A failure of a criterion an earlier sprint built stays as it is: that is
+    evidence. Without an addition open, the summary as before.
+    """
+    ids = built_by_this_sprint(repo_root)
+    if not ids or not getattr(result, "ran", False):
+        return result.summary()
+    summary = result.summary(under_failures={item: EXPECTED_NOW.format(criterion=item) for item in ids})
+    failing = [item for item in ids if any(
+        test.get("outcome") == "failed" for test in getattr(result.criteria.get(item), "tests", None) or ())]
+    if not failing:
+        return summary
+    named = ", ".join(failing)
+    return (
+        f"This sprint builds {', '.join(ids)} once these tests are locked; nothing of "
+        f"{'it' if len(ids) == 1 else 'them'} is built yet. A test of {named} that fails now - a feature "
+        "not there yet, an answer the product cannot give yet - is expected, and no evidence against the test; each "
+        "such failure below says so. A test of a criterion an earlier sprint built that fails is evidence, as ever.\n"
+        + summary
+    )
+
+
 def review_note(group: Sequence[str], added: Sequence[str], earlier: Sequence[str]) -> str:
     """What the QA lead is told when it reviews one sprint's addition to a locked suite."""
     if not earlier:
@@ -296,8 +337,9 @@ def review_note(group: Sequence[str], added: Sequence[str], earlier: Sequence[st
 
 
 __all__ = [
-    "ADDING", "ASKED_AT_RELEASE", "BY_SPRINT", "EARLIER_SPRINTS_BUILT", "NEVER_WRITTEN", "RUN_AN_ADDITION_ONCE",
-    "about_the_addition", "addition", "asked_at_release", "criteria_not_yet_due", "decide", "earlier_files",
-    "is_an_earlier_sprint_s", "is_on", "new_files", "note", "open_for", "put_back_what_the_addition_changed",
-    "review_note", "still_to_write", "writes_by_sprint",
+    "ADDING", "ASKED_AT_RELEASE", "BY_SPRINT", "EARLIER_SPRINTS_BUILT", "EXPECTED_NOW", "NEVER_WRITTEN",
+    "RUN_AN_ADDITION_ONCE", "about_the_addition", "addition", "asked_at_release", "built_by_this_sprint",
+    "criteria_not_yet_due", "decide", "earlier_files", "is_an_earlier_sprint_s", "is_on", "new_files", "note",
+    "open_for", "put_back_what_the_addition_changed", "review_note", "still_to_write", "what_running_it_showed",
+    "writes_by_sprint",
 ]

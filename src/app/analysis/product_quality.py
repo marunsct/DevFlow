@@ -540,8 +540,11 @@ _INDEX_DECLARED = re.compile(
     r"(?i)\bcreate\s+(?:unique\s+)?index\b|\bindex\s*[=:]\s*true\b|@@?index\b|\bhasindex\b|\b(?:add_|create)index\b|"
     r"\.index\(|\bindex\s*\(|\bIndex\(")
 _MIGRATION_PATH = re.compile(r"(?i)(?:^|/)(?:migrations?|alembic|migrate|db/migrate)(?:/|$)|(?:^|/)\d{3,}[_-][\w-]+\.sql$")
-#: A specification asking for an index on its data ("indexes on owner_id", "an index on email"), not `index.html`.
-_ASKS_FOR_AN_INDEX = r"\b(?:indexes|indexed|an index (?:on|for)|index on)\b"
+#: A specification asking for an index on its data ("indexes on owner_id", "an index on email", "notes are indexed by
+#: owner"), not `index.html`, and not a sentence about what the database engine does: measured, a specification's
+#: "SQLite provides ... indexed lookups for O(log n) access" was read as asking for one, and the product's quality
+#: lost a quarter for an index nobody asked for - the only time this check failed in 580 scored runs.
+_ASKS_FOR_AN_INDEX = r"\b(?:indexes (?:on|for)|indexed (?:on|by)|(?:is|are|be) indexed|an index (?:on|for)|index on)\b"
 #: A specification asking for schema migrations ("Alembic migrations", "a migration script"), not "JWT migration".
 _ASKS_FOR_MIGRATIONS = (r"\b(?:schema |database |db )?migrations\b|\bmigration (?:tool|script|file|path)s?\b|"
                         r"\b(?:alembic|flyway|liquibase)\b|\bmigrate\b")

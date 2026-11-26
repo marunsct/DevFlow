@@ -121,6 +121,8 @@ Report: `reports/research/2026-11-26-graphify-and-performance-features.md`. grap
 
 **Read windows sized to the room (measured 11-26 on Medium 5, sprint 2 code review):** the review's second visit made 62 reads, 55 of them distinct, almost all 50-60-line windows at 40k tokens of conversation a call - about 3M input tokens for one review. A read asking for a small window while the request has room is widened toward the read tool's 400-line default, so a file is covered in one or two calls. Efficiency, so behind a switch `READ_WINDOWS_SIZED_TO_THE_ROOM`, measured by reads and input tokens per review and per fixer.
 
+**`loop.sh effects` while HEAD is ahead of the deploy (11-26 19:33 JST):** the script runs in the worker and imports each new item's module, so a merged but undeployed item (`app.agents.ranges_chosen_first`) raised `ModuleNotFoundError` and the whole report was lost. An item whose module the worker does not have is skipped and named, never fatal (Opus build, with a test).
+
 ### 3.1d Tool review (TR, audit 2026-11-26; owner asked: are the right tools offered, withheld, used, working, adding value)
 Report: `reports/audits/2026-11-26-tool-review.md`. Building, always on: TR.1 `module_exports` cut at 60 names says "only these exist" (High) + TR.10; TR.2 withheld reads decided per file (High) + TR.3 one true withheld notice + TR.6 the last write kept at the call budget in every writing stage; TR.4 the harness's own descriptions for the four built-in readers + TR.5 `grep` regular-expression fallback + TR.9 four command slips. After measuring pairs, behind switches: TR.7 tool lists per role kind (7 tools, 9 calls in 4,260 writer requests), TR.8 run evidence overrules the research check (2,343 offers, 0 calls).
 

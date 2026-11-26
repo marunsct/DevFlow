@@ -5,9 +5,9 @@ the block below is written by `loop.sh state`. The map of all documents is `docs
 `docs/improvement-plan.md`; how the product works is `docs/PRODUCT.md`; how to run and test it is `docs/HANDOVER.md`;
 decisions in force are `docs/owner-decisions.md`; old information is found through `docs/ARCHIVE.md`.
 <!-- state:generated -->
-**As of:** 11-26 13:14 JST (written by `loop.sh state`). Harness 54bfdaf0 committed; 351ecdf6 deployed (not the same).
-**Live, and stopped in the last day:** run-e799301e running at defect_fix_1_4; run-5071b7ef running at consult_testing; run-7259e30d failed at ?; run-17098b4b failed at awaiting_approval:specialist_testing_1; run-03668d05 failed at awaiting_approval:specialist_testing_2; run-a2f91f9f failed at awaiting_approval:acceptance_author_1
-**Last scored:** run-a79c55df notes-api-go 9/9 (completed, mixed, 77 active min, handoff 1.0; scored 11-26 13:10 JST); run-6c1444a0 tasks-api 10/10 (completed, mixed, 140 active min, handoff 1.0; scored 11-26 11:19 JST); run-f4bab632 notes-api-php 9/9 (completed, handoff 1.0; scored 11-26 06:36 JST).
+**As of:** 11-26 13:54 JST (written by `loop.sh state`). Harness cd7f7a8e committed; 7948937a deployed (not the same).
+**Live, and stopped in the last day:** run-5071b7ef running at acceptance_author_2; run-e799301e running at specialist_testing_1; run-7259e30d failed at ?; run-17098b4b failed at awaiting_approval:specialist_testing_1; run-03668d05 failed at awaiting_approval:specialist_testing_2; run-a2f91f9f failed at awaiting_approval:acceptance_author_1
+**Last scored:** run-a79c55df notes-api-go 9/9 (completed, mixed, 77 active min, handoff 1.0; scored 11-26 13:54 JST); run-6c1444a0 tasks-api 10/10 (completed, mixed, 140 active min, handoff 1.0; scored 11-26 11:19 JST); run-f4bab632 notes-api-php 9/9 (completed, handoff 1.0; scored 11-26 06:36 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -15,10 +15,10 @@ decisions in force are `docs/owner-decisions.md`; old information is found throu
 |---|---|
 | Phase | **Learning runs, fixes deployed at once** (deep-review plan, owner 11-18: implement all; frozen-version measuring for Measure batches). The release-candidate count starts only when a full audit cycle finds nothing to fix. |
 | Models | olla `host.docker.internal:4001/olla/openai/v1`, model `qwen3.6-35b-a3b` (the owner's; two llama.cpp instances, 93K-token slots). Runs pinned to it. |
-| Harness | 351ecdf deployed 11-26 13:04 JST: LF.1503-1524 (latest: KG.1-KG.4 the code graph in every language with names used, routes and tests; TR.1-TR.6, TR.9, TR.10 from the tool review; LF.1511-1512 approval conditions carried; LF.1523 probes before a sprint is closed with nothing to build; LF.1524 fast delivery holds the build on product-breaking design findings, switch FAST_DESIGN_GATE_ON_PRODUCT_BREAKING on). Committed, not deployed: LF.1526 (a sentence about the database engine is not a request for an index). Next: LF.1527 (the rewrite path takes the graph's localisation), LF.1525 (one read rule for the shell). Build agents are at their weekly limit until 11-30 08:00 JST: builds done in the main session. Runtime `model_reads_images=no`. |
+| Harness | cd7f7a8 deployed 11-26 14:0x JST: LF.1503-1528 (latest: LF.1526 a sentence about the database engine is not a request for an index; LF.1527 with thinking off a first read still runs; LF.1528 rewrite fixers take the code graph's localisation). Next: LF.1525 (one read rule for the shell; its agent stopped at the weekly limit), KG.9-KG.10, TR.7-TR.8 behind switches. Build agents are at their weekly limit until 11-30 08:00 JST: builds done in the main session. Runtime `model_reads_images=no`. |
 | Switches | 53 fixes built in (always on). 29 optional switches (9 groups, `docs/measuring.md`); `WEB_LOOKUP_WHEN_STUCK` is off and set per run. Measure arms use `SWITCHES_OFF` per run. |
 | Operations | Nightly backups (`loop.sh backup --check`). **One model endpoint since 11-25 ~17:45 JST** (owner): olla `host.docker.internal:4001/olla/openai/v1` over two llama.cpp instances, model `qwen3.6-35b-a3b`, 4 requests at once; **at most 2 runs, each in parallel execution mode** (owner 17:54: test the parallel mode; `.env` `MAX_CONCURRENT_RUNS=2`). :8888 and :1234 are gone. Audit cron `0a7ebf80` every 15 minutes. |
-| Suites | both green at 22,162 passed on 351ecdf (11-26 12:50 JST), at SUITE_WORKERS=3. |
+| Suites | both green at 22,174 passed on cd7f7a8 (11-26 14:00 JST), at SUITE_WORKERS=3. |
 
 ## Off until measured
 BATCH_ACCEPTANCE_AUTHOR (web tools are on since 11-23, measured from there). Hosted-model

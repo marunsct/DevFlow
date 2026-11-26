@@ -182,6 +182,12 @@ def files_to_fix(
     described = str(getattr(defect, "description", "") or "").partition(SAME_PROBLEM_ELSEWHERE)[0]
     own_words = mentioned_in(_relative_to_the_workspace(described, root))
     found = files(own_words + mentioned_in(own) + aimed)
+    # Where nothing named or mentioned is the product's code, the code graph says where the failure is handled
+    # (LF.1528): the handler of the route a failing test requests, the files its trace names, a page's renderer.
+    # Measured on a Go notes service: its fixers used this path, the failure named only its test file, and the graph's
+    # route-to-handler links (KG.4) never reached them - no localisation was recorded in the run.
+    found = _with_where_the_graph_says_it_is_handled(root, defect, own, named, found, files,
+                                                     own_words + mentioned_in(own) + aimed)
     if last and len(found) == len(files([])):
         found = files(own_words + mentioned_in(own) + aimed + mentioned_in(last))
     owing = [name for name in _modules_missing_an_export(own, root) if may_write(name)]
@@ -196,6 +202,33 @@ def files_to_fix(
             if name not in kept:
                 refused.setdefault(name, "a manifest of an ecosystem the project does not build its product with")
     return kept
+
+
+def _with_where_the_graph_says_it_is_handled(
+    root: Path, defect: Any, evidence: str, named: list[str], found: list[str],
+    files: Callable[[list[str]], list[str]], mentioned: list[str],
+) -> list[str]:
+    """`found`, with the files the code graph localises the failure to when none of `found` is the product's code.
+
+    Chosen under the same rules as every other file here (`files`), and recorded as a fixer's localisation. Never
+    raises: `found` as it was.
+    """
+    try:
+        from app.analysis.file_kinds import classify_file
+
+        if any(classify_file(name) == "application" for name in found):
+            return found
+        from app.graph import localised_fix
+        from app.observability.transcript import _stage_from_config
+
+        located = localised_fix.where(root, evidence, named=named, defect=defect)
+        localised_fix.noted(_stage_from_config("defect_fix"), located, defect)
+        if not located.found:
+            return found
+        return files([*mentioned, *located.found])
+    except Exception:  # noqa: BLE001 - the files as the defect and its failure name them
+        logger.debug("Could not localise a rewrite's failure from the code graph", exc_info=True)
+        return found
 
 
 def _relative_to_the_workspace(text: str, root: Path) -> str:

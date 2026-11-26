@@ -3137,7 +3137,10 @@ def _the_unit_tests_fail(milestone: Any, output: str, *, beside_a_green_suite: b
     from app.agents.specialists import ReportedDefect
 
     roles = [str(getattr(t, "specialist_role", "")) for t in (getattr(milestone, "delegated_tasks", None) or [])]
-    owner = next((role for role in roles if role and role not in {"testing", "documentation"}), "testing")
+    # A plan of no work orders - a sprint closed with nothing to build, sent to a round for what the probes found
+    # (LF.1523) - names no builder: the product's is the backend's, as `engineering._owner_of` gives it.
+    owner = next((role for role in roles if role and role not in {"testing", "documentation"}),
+                 "testing" if roles else "backend")
     tail = str(output or "").strip()[-UNIT_FAILURE_TAIL_CHARACTERS:]
     # From the whole run, not its tail: measured on one gate run, the project's
     # command ran the page's tests and then the service's, the tail was the
@@ -9863,6 +9866,17 @@ def _close_a_sprint_with_nothing_to_build(state: WorkflowGraphState, why: str) -
     sprints = list(getattr(state.get("sprint_plan"), "sprints", None) or [])
     index = int(state.get("current_sprint_index") or 0)
     goal = str(getattr(sprints[index], "goal", "") or "") if index < len(sprints) else ""
+    # Not accepted before the probes a test round asks have run on the product as it stands (LF.1523): such a
+    # sprint has no round, and what they find goes to one, for a fixer. See `app.graph.probed_before_acceptance`.
+    from app.agents.technical_lead import MilestonePlanOutput
+    from app.graph import probed_before_acceptance
+
+    nothing_new = MilestonePlanOutput(selected_sprint_goal=goal)
+    found = probed_before_acceptance.what_the_probes_find(state, nothing_new)
+    if found:
+        logger.warning("Sprint %d needs no new work, but the harness's probes find %d problem(s); a test round first",
+                       index + 1, len(found))
+        return probed_before_acceptance.to_a_test_round(state, why, found, nothing_new)
     accepted: dict[str, Any] = {}
     if _no_review_has_read_the_code(state):
         # Passing the suite is evidence, not a review. Measured on one run: a
@@ -9879,8 +9893,6 @@ def _close_a_sprint_with_nothing_to_build(state: WorkflowGraphState, why: str) -
             rationale="Every criterion due already passes, but no review has read this code yet.\n" + why,
         )
         logger.info("Sprint %d needs no new work, but no review has read its code; reviewing it first", index + 1)
-        from app.agents.technical_lead import MilestonePlanOutput
-
         return _handing_on(
             **accepted,
             stage="security_review",

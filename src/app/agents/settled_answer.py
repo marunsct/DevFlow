@@ -2696,6 +2696,14 @@ def build_settled_answer_middleware(
                         )
                         notices.insert(0, _READS_DECIDED_PER_FILE_NOTICE if reads_per_file
                                        else _READ_TOOL_WITHHELD_NOTICE)
+                    # Thinking off for the stage offers only what acts (LF.1421), and took every read with it: measured
+                    # on a medium run, 17 of 19 reads refused whole came after that notice, builders and fixers that
+                    # needed a file they had never opened. Not offered, a read sent anyway is still decided per file
+                    # (LF.1527): what the conversation or the memory holds is refused, a first read runs. Stalled, on
+                    # its last calls or ignoring the notices, the stage is refused every read as before.
+                    if (acting_only is not None and not reads_per_file and not read_tool_due
+                            and not (ignored or (stalled and writers) or last_writes)):
+                        reads_per_file = True
                     # What the model has already done, when it sends the same action again (behind `AGENT_LOOP_FIX_LIMITS`).
                     from app.graph import agent_loop_fix_limits
 

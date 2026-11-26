@@ -56,6 +56,16 @@ class TreeReading:
     #: The resolver of `app.analysis.import_resolvers` that turns its imports into project files; "" when
     #: `import_graph` names the family that follows them.
     resolver: str = ""
+    #: Patterns of the names a file uses (KG.3, `app.analysis.name_references`), a node two patterns capture taking
+    #: the more specific capture (`none`, `self`, `other`, `member`, then a bare name): `@reference` a bare name, `@reference.self` a name after the object itself (`this`, `self`),
+    #: `@reference.other` a name after another receiver, `@reference.member` a name after a receiver that may be
+    #: either (a language with no word for the object itself), `@reference.none` a name that is never another
+    #: definition (a variable's).
+    references: tuple[str, ...] = ()
+    #: Which files a file uses names of without importing them: "folder" (its package is its folder), "namespace"
+    #: (the files declaring a package or namespace it declares), "required" (whatever the files it requires require,
+    #: once loaded) or "" (only those it imports).
+    sees: str = ""
 
 
 @dataclass(frozen=True)
@@ -268,9 +278,16 @@ _SCRIPT_DEFINITIONS = (
     "(method_definition name: (_) @name) @method",
     "(variable_declarator name: (identifier) @name value: [(arrow_function) (function_expression)]) @function",
 )
+_SCRIPT_REFERENCES = (
+    "(member_expression object: (this) property: (property_identifier) @reference.self)",
+    "(member_expression property: (property_identifier) @reference.other)",
+    "(identifier) @reference",
+    "(shorthand_property_identifier) @reference",
+)
 _JAVASCRIPT_TREE = TreeReading(
     grammars={".js": "javascript", ".mjs": "javascript", ".cjs": "javascript", ".jsx": "javascript"},
     definitions=_SCRIPT_DEFINITIONS,
+    references=_SCRIPT_REFERENCES,
 )
 _TYPESCRIPT_TREE = TreeReading(
     grammars={".ts": "typescript", ".mts": "typescript", ".cts": "typescript", ".tsx": "tsx"},
@@ -281,10 +298,16 @@ _TYPESCRIPT_TREE = TreeReading(
         "(type_alias_declaration name: (_) @name) @type",
         "(enum_declaration name: (_) @name) @enum",
     ),
+    references=(*_SCRIPT_REFERENCES, "(type_identifier) @reference"),
 )
 _PYTHON_TREE = TreeReading(
     grammars={".py": "python"},
     definitions=("(function_definition name: (_) @name) @function", "(class_definition name: (_) @name) @class"),
+    references=(
+        '(attribute object: (identifier) @_self (#eq? @_self "self") attribute: (identifier) @reference.self)',
+        "(attribute attribute: (identifier) @reference.other)",
+        "(identifier) @reference",
+    ),
 )
 _GO_TREE = TreeReading(
     grammars={".go": "go"},
@@ -300,6 +323,13 @@ _GO_TREE = TreeReading(
     ),
     imports=("(import_spec path: (_) @import)",),
     resolver="module_path",
+    references=(
+        "(selector_expression field: (field_identifier) @reference.member)",
+        "(qualified_type name: (type_identifier) @reference.member)",
+        "(identifier) @reference",
+        "(type_identifier) @reference",
+    ),
+    sees="folder",
 )
 _RUST_TREE = TreeReading(
     grammars={".rs": "rust"},
@@ -321,6 +351,13 @@ _RUST_TREE = TreeReading(
         "(scoped_type_identifier) @import.path",
     ),
     resolver="crate_modules",
+    references=(
+        "(field_expression value: (self) field: (field_identifier) @reference.self)",
+        "(field_expression field: (field_identifier) @reference.other)",
+        "(scoped_identifier name: (identifier) @reference.other)",
+        "(identifier) @reference",
+        "(type_identifier) @reference",
+    ),
 )
 _JAVA_TREE = TreeReading(
     grammars={".java": "java"},
@@ -336,6 +373,15 @@ _JAVA_TREE = TreeReading(
     imports=("(import_declaration) @import",),
     namespaces=("(package_declaration [(scoped_identifier) (identifier)] @namespace)",),
     resolver="declared_package",
+    references=(
+        "(method_invocation object: (this) name: (identifier) @reference.self)",
+        "(field_access object: (this) field: (identifier) @reference.self)",
+        "(method_invocation object: (_) name: (identifier) @reference.other)",
+        "(field_access field: (identifier) @reference.other)",
+        "(identifier) @reference",
+        "(type_identifier) @reference",
+    ),
+    sees="namespace",
 )
 _KOTLIN_TREE = TreeReading(
     grammars={".kt": "kotlin", ".kts": "kotlin"},
@@ -348,6 +394,13 @@ _KOTLIN_TREE = TreeReading(
     imports=("(import_header) @import",),
     namespaces=("(package_header (identifier) @namespace)",),
     resolver="declared_package",
+    references=(
+        "(navigation_expression (this_expression) (navigation_suffix (simple_identifier) @reference.self))",
+        "(navigation_suffix (simple_identifier) @reference.other)",
+        "(simple_identifier) @reference",
+        "(type_identifier) @reference",
+    ),
+    sees="namespace",
 )
 _CSHARP_TREE = TreeReading(
     grammars={".cs": "csharp"},
@@ -367,6 +420,12 @@ _CSHARP_TREE = TreeReading(
         "(file_scoped_namespace_declaration name: (_) @namespace)",
     ),
     resolver="declared_package",
+    references=(
+        '(member_access_expression expression: "this" name: (identifier) @reference.self)',
+        "(member_access_expression name: (identifier) @reference.other)",
+        "(identifier) @reference",
+    ),
+    sees="namespace",
 )
 _RUBY_TREE = TreeReading(
     grammars={".rb": "ruby"},
@@ -383,6 +442,13 @@ _RUBY_TREE = TreeReading(
         "arguments: (argument_list . (string (string_content) @import)))",
     ),
     resolver="relative_require",
+    references=(
+        "(call receiver: (self) method: (identifier) @reference.self)",
+        "(call receiver: (_) method: (identifier) @reference.other)",
+        "(identifier) @reference",
+        "(constant) @reference",
+    ),
+    sees="required",
 )
 _PHP_TREE = TreeReading(
     grammars={".php": "php"},
@@ -397,6 +463,16 @@ _PHP_TREE = TreeReading(
     imports=("(namespace_use_declaration) @import", "(qualified_name) @import.name"),
     namespaces=("(namespace_definition name: (_) @namespace)",),
     resolver="autoload_namespace",
+    references=(
+        '(member_call_expression object: (variable_name (name) @_self (#eq? @_self "this")) name: (name) @reference.self)',
+        '(member_access_expression object: (variable_name (name) @_self (#eq? @_self "this")) name: (name) @reference.self)',
+        "(member_call_expression name: (name) @reference.other)",
+        "(member_access_expression name: (name) @reference.other)",
+        "(scoped_call_expression name: (name) @reference.other)",
+        "(variable_name (name) @reference.none)",
+        "(name) @reference",
+    ),
+    sees="namespace",
 )
 
 

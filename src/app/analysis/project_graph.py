@@ -14,6 +14,10 @@ has no row for, its imports too, through its language's resolver
 (`analysis.import_resolvers`). Python and JavaScript/TypeScript keep their
 family's imports and definitions as they were.
 
+KG.3: each node also says which names it uses of which file, by name from the
+same trees (`analysis.name_references`): `uses`, `used_by`, `ambiguous`, and per
+definition `calls` and `called_by`. Data only; KG.5-KG.8 read it.
+
 Two switches, because they are two measurements: `PROJECT_GRAPH_FIXES` (a fix
 request gets its defect's files' neighbourhood, CG.2) and
 `PROJECT_GRAPH_BUILDERS` (a work order gets its files' slice, CG.3).
@@ -29,6 +33,7 @@ import threading
 from pathlib import Path
 from typing import Any, Iterable
 
+from app.analysis.name_references import add_uses
 from app.analysis.parsed_definitions import Parsed, loads, read, read_cached, row_for
 from app.stacks.languages import BUILT_BY_NAME, NOT_THE_PRODUCT, is_generated
 from app.switches import is_on
@@ -105,11 +110,12 @@ def _as_they_are(paths: Iterable[Path]) -> tuple[tuple[str, int, int], ...]:
 
 
 def build(root: str | Path) -> dict[str, dict[str, list[Any]]]:
-    """{file: {imports, imported_by, defines, criteria, definitions}} for the project's source files, workspace-relative.
-    Never raises.
+    """{file: {imports, imported_by, defines, criteria, definitions, uses, used_by, ambiguous, calls, called_by}} for the
+    project's source files, workspace-relative. Never raises.
 
     `definitions` holds `[kind, name, first line, last line, enclosing]` for each definition the file's syntax tree
-    shows (KG.2; empty where no grammar reads it). The graph built last, while no source file and no acceptance test
+    shows (KG.2; empty where no grammar reads it). The last five are the names it uses of other files' definitions
+    and theirs of its, by name (KG.3, `analysis.name_references.add_uses`). The graph built last, while no source file and no acceptance test
     file has changed since; a file unchanged since it was last parsed is not parsed again.
     """
     from app.analysis.reachability import FAMILIES, _defined
@@ -155,6 +161,7 @@ def build(root: str | Path) -> dict[str, dict[str, list[Any]]]:
             for target in node["imports"]:
                 if target in graph:
                     graph[target]["imported_by"].append(relative)
+        add_uses(graph, {path.relative_to(root).as_posix(): parsed for path, parsed in readings.items()})
         _criteria_of_the_tests(root, graph)
         try:
             written, target = json.dumps(graph, indent=1), root / GRAPH_FILE

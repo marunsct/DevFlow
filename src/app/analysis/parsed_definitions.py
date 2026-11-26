@@ -8,7 +8,9 @@ every module as imported by none.
 This reads each file's tree with the grammar `tree_sitter_language_pack` bundles (a worker dependency already, see
 `grammar_parse`), through the patterns its language's row of `app.stacks.languages` gives (`LanguageSupport.tree`):
 every definition with its kind, name, first and last line and the definition it sits in; every import statement's
-text, for the row's resolver in `app.analysis.import_resolvers`; and the package or namespace the file declares.
+text, for the row's resolver in `app.analysis.import_resolvers`; the package or namespace the file declares; and
+(KG.3) every name the file uses, with its line and how it is written - bare, after the object itself, after another
+receiver - for `app.analysis.name_references`.
 
 A tree with error nodes is still read. A grammar that mis-reads one valid file in a hundred is unfit to refuse a
 write (which is why `grammar_parse` leaves some languages out) but fit to list what a file defines: the definitions
@@ -19,6 +21,7 @@ patterns.
 from __future__ import annotations
 
 import logging
+import sys
 import threading
 from dataclasses import dataclass
 from functools import lru_cache
@@ -33,6 +36,9 @@ logger = logging.getLogger(__name__)
 _TYPE_KINDS = frozenset({"class", "interface", "struct", "trait", "impl", "object", "enum", "record"})
 #: Files whose reading is kept, at most; past it the oldest go first.
 MOST_HELD = 20_000
+#: The captures of `TreeReading.references`, the more specific first: a node two of them capture takes the first.
+_REFERENCE_FORMS = (("reference.none", ""), ("reference.self", "self"), ("reference.other", "other"),
+                    ("reference.member", "member"), ("reference", "name"))
 
 
 @dataclass(frozen=True)
@@ -59,6 +65,9 @@ class Parsed:
     #: (the capture's name - `import`, `import.relative`, ... - and the text it captured), in file order.
     imports: tuple[tuple[str, str], ...]
     namespaces: tuple[str, ...]
+    #: (how the name is written - `name`, `self`, `other`, `member` -, the name, its line) for each name the file uses
+    #: other than where it defines one, once per line; see `TreeReading.references`.
+    references: tuple[tuple[str, str, int], ...] = ()
 
     @property
     def top_names(self) -> frozenset[str]:
@@ -83,9 +92,9 @@ def _by_suffix() -> dict[str, tuple[LanguageSupport, TreeReading, str]]:
 
 
 @lru_cache(maxsize=None)
-def _compiled(language_name: str, grammar: str) -> tuple[Any, Any, Any, Any] | None:
-    """(the parser, the definitions query, the imports query, the namespaces query) for a language's grammar; None
-    when the grammar does not load or a pattern does not fit it."""
+def _compiled(language_name: str, grammar: str) -> tuple[Any, Any, Any, Any, Any] | None:
+    """(the parser, the definitions query, the imports query, the namespaces query, the references query) for a
+    language's grammar; None when the grammar does not load or a pattern does not fit it."""
     try:
         reading = next(row.tree for row in LANGUAGES if row.name == language_name)
         if not isinstance(reading, TreeReading):
@@ -98,7 +107,8 @@ def _compiled(language_name: str, grammar: str) -> tuple[Any, Any, Any, Any] | N
         definitions = Query(language, "\n".join(reading.definitions))
         imports = Query(language, "\n".join(reading.imports)) if reading.imports else None
         namespaces = Query(language, "\n".join(reading.namespaces)) if reading.namespaces else None
-        return parser, definitions, imports, namespaces
+        references = Query(language, "\n".join(reading.references)) if reading.references else None
+        return parser, definitions, imports, namespaces, references
     except Exception:  # noqa: BLE001 - no grammar is the patterns' answer
         logger.debug("No tree reading for grammar %s", grammar, exc_info=True)
         return None
@@ -127,8 +137,10 @@ def _lines(node: Any) -> tuple[int, int]:
     return first, last
 
 
-def _definitions(query: Any, root: Any) -> tuple[Definition, ...]:
+def _definitions(query: Any, root: Any) -> tuple[tuple[Definition, ...], set[int]]:
+    """The definitions, and the first byte of each one's name (a name there is defined, not used)."""
     chosen: dict[tuple[int, int], tuple[int, str, str, str, Any]] = {}
+    named: set[int] = set()
     for pattern, captures in _matches(query, root):
         kinds = [name for name in captures if name not in ("name", "owner") and not name.startswith("_")]
         if not kinds or not captures.get("name"):
@@ -139,6 +151,7 @@ def _definitions(query: Any, root: Any) -> tuple[Definition, ...]:
         if held is not None and held[0] <= pattern:
             continue  # the pattern listed first says what it is
         owner = _text(captures["owner"][0]) if captures.get("owner") else ""
+        named.add(captures["name"][0].start_byte)
         chosen[key] = (pattern, kinds[0], _text(captures["name"][0]).strip(), owner, node)
     ordered = sorted(chosen.items(), key=lambda item: (item[0][0], -item[0][1]))
     found: list[Definition] = []
@@ -154,7 +167,28 @@ def _definitions(query: Any, root: Any) -> tuple[Definition, ...]:
         if name:
             found.append(Definition(kind=kind, name=name, first=first, last=last, enclosing=enclosing))
         open_ones.append((end, name, kind))
-    return tuple(found)
+    return tuple(found), named
+
+
+def _references(query: Any, root: Any, defined_at: set[int]) -> tuple[tuple[str, str, int], ...]:
+    """Each name used, once per (how it is written, name, line), in file order; a name where it is defined is not."""
+    from tree_sitter import QueryCursor
+
+    captured = QueryCursor(query).captures(root)
+    taken = set(defined_at)
+    found: dict[tuple[str, str, int], int] = {}
+    for capture, form in _REFERENCE_FORMS:
+        for node in captured.get(capture, ()):
+            start = node.start_byte
+            if start in taken:
+                continue
+            taken.add(start)
+            if form:
+                name = sys.intern(_text(node))  # one copy of a name a codebase uses thousands of times
+                key = (form, name, node.start_point[0] + 1)
+                if key not in found or found[key] > start:
+                    found[key] = start
+    return tuple(sorted(found, key=found.__getitem__))
 
 
 def read(path: str | PurePath, text: str) -> Parsed | None:
@@ -165,7 +199,7 @@ def read(path: str | PurePath, text: str) -> Parsed | None:
     compiled = _compiled(found[0].name, found[2])
     if compiled is None:
         return None
-    parser, definitions, imports, namespaces = compiled
+    parser, definitions, imports, namespaces, references = compiled
     try:
         root = parser.parse(str(text or "").encode("utf-8", "replace")).root_node
         imported: list[tuple[int, str, str]] = []
@@ -178,10 +212,12 @@ def read(path: str | PurePath, text: str) -> Parsed | None:
         if namespaces is not None:
             for _pattern, captures in _matches(namespaces, root):
                 declared.extend("".join(_text(node).split()) for node in captures.get("namespace", ()))
+        defined, defined_at = _definitions(definitions, root)
         return Parsed(
-            definitions=_definitions(definitions, root),
+            definitions=defined,
             imports=tuple((name, said) for _start, name, said in sorted(imported)),
             namespaces=tuple(dict.fromkeys(declared)),
+            references=_references(references, root, defined_at) if references is not None else (),
         )
     except Exception:  # noqa: BLE001 - a file the grammar cannot read falls back to the patterns
         logger.debug("Could not read %s with its grammar", path, exc_info=True)

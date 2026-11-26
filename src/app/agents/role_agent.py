@@ -348,7 +348,9 @@ def _workspace_filesystem_middleware(repo_root: str, readers: list[str] | None =
     workspace's own (`allow_subdirectories` narrows *listing* depth, never read
     access).
     """
-    return FilesystemMiddleware(
+    from app.agents.reader_descriptions import DESCRIPTIONS, with_the_harness_s_arguments
+
+    middleware = FilesystemMiddleware(
         # `WorkspaceBackend`, not `FilesystemBackend`: the run's own package
         # caches live inside the workspace because container mode mounts
         # nothing else, and without this they appear in every listing an agent
@@ -366,7 +368,11 @@ def _workspace_filesystem_middleware(repo_root: str, readers: list[str] | None =
         # (one visit went from 35k to 72k tokens of context doing it). The
         # harness sizes these requests to the model's window itself.
         human_message_token_limit_before_evict=None,
+        # The harness's own words for the four readers, not the library's (TR.4): see `app.agents.reader_descriptions`.
+        custom_tool_descriptions=DESCRIPTIONS,
     )
+    with_the_harness_s_arguments(middleware.tools)
+    return middleware
 
 
 def _batch_file_claims_middleware() -> Any:

@@ -2453,10 +2453,13 @@ def validate_command(
             )
         if arg == "-m" and executable in {"python", "python3"}:
             module = argv[index + 1] if index + 1 < len(argv) else ""
-            if module not in _ALLOWED_PYTHON_MODULES and not _the_workspace_s_own_module(module, repo_root):
+            from app.stacks.languages import checking_modules
+
+            allowed = _ALLOWED_PYTHON_MODULES | checking_modules(executable)
+            if module not in allowed and not _the_workspace_s_own_module(module, repo_root):
                 raise CommandNotAllowed(
                     f"'{executable} -m {module}' is not permitted: it can execute arbitrary code. "
-                    f"Allowed modules: {', '.join(sorted(_ALLOWED_PYTHON_MODULES))}."
+                    f"Allowed modules: {', '.join(sorted(allowed))}."
                 )
 
     code_to_check = _code_given_to_node_check(argv)
@@ -3426,7 +3429,10 @@ def strip_a_doubled_working_directory(
         if bare.startswith(f"{prefix}/"):
             shortened = bare[len(prefix) + 1 :]
             try:
-                if not (base / bare).exists() and (base / shortened).exists():
+                # `lexists`: a virtualenv's `bin/python` is a link to the sandbox image's interpreter, which the
+                # worker does not have, so `exists()` called it missing and `tasks-api/.venv/bin/python` run in
+                # `tasks-api` was left doubled - exit 127 in the container, 7 calls in 3 runs (TR.9, LF.1522).
+                if not os.path.lexists(base / bare) and os.path.lexists(base / shortened):
                     rewritten.append(shortened)
                     changed.append(f"{argument} -> {shortened}")
                     continue

@@ -668,6 +668,10 @@ def build_terminal_command_tool(repo_root: str, role_name: str = "general") -> B
         )
         if moved and isinstance(result, dict):
             result = {**result, "note": moved}
+        starred = a_star_taken_as_written(command, result)
+        if starred:
+            earlier = str(result.get("note") or "")
+            result = {**result, "note": (earlier + "\n\n" if earlier else "") + starred}
         return result
 
     run_terminal_command.description = with_the_network_as_it_is(
@@ -766,6 +770,33 @@ SAVED_CODE_NOTE = (
 )
 
 
+def a_star_taken_as_written(command: Any, result: Any) -> str:
+    """Why a command that failed on an argument holding a `*` failed, or "" (TR.9, LF.1522).
+
+    There is no shell, so nothing expands `.venv/bin/python*` into the names it matches: the program is handed the
+    `*` itself. Measured over 26 runs: `["ls", "-la", ".venv/bin/python*"]` and its like failed 9 times in 9 with
+    "cannot access", and nothing said why. Said only when the command failed and its output names the argument as
+    written, which is the program saying it took the `*` literally. Captured: `["ls", "-la",
+    "/workspace/tasks-api/.venv/bin/python*"]` answered "ls: cannot access '/workspace/tasks-api/.venv/bin/python*': No
+    such file or directory".
+    """
+    if not isinstance(command, list) or not isinstance(result, dict):
+        return ""
+    if str(result.get("returncode", "")).strip() in ("", "0"):
+        return ""
+    output = f"{result.get('stdout') or ''}\n{result.get('stderr') or ''}"
+    # By the name's last part: the sandbox may have rewritten the folder before it (`workspace_rooted_arguments`).
+    starred = next((str(part) for part in command[1:]
+                    if "*" in os.path.basename(str(part)) and os.path.basename(str(part)) in output), "")
+    if not starred:
+        return ""
+    folder, _, name = starred.rpartition("/")
+    return (
+        f"`{starred}` reached the program as written: there is no shell here to expand a `*` into the names it "
+        f"matches. `{json.dumps(['find', folder or '.', '-maxdepth', '1', '-name', name])}` matches the names itself."
+    )
+
+
 #: Shell operators a `cd` may be followed by before its command.
 _AFTER_A_CD = frozenset({"&&", ";"})
 
@@ -784,6 +815,13 @@ def _a_cd_taken_as_the_working_directory(
     if not isinstance(command, list) or len(command) < 3 or os.path.basename(str(command[0])) != "cd":
         return command, working_directory, ""
     folder, rest = str(command[1]), [str(part) for part in command[2:]]
+    if folder.startswith("/") and repo_root:
+        # The sandbox's mount, `/workspace/<project>`, which every command's output shows: taken off as it is from a
+        # `working_directory` (`a_working_directory_here`). Measured on one run's fixer: `cd /workspace/tasks-api &&`
+        # was refused as "not a directory in this workspace" (TR.9, LF.1522).
+        from app.agents.workspace_paths import a_working_directory_here
+
+        folder = a_working_directory_here(folder, repo_root).lstrip("/") or "."
     if rest and rest[0] in _AFTER_A_CD:
         rest = rest[1:]
     if not rest or not folder.strip() or folder.startswith("-"):
@@ -802,13 +840,13 @@ def _a_cd_taken_as_the_working_directory(
             joined = base
     program = rest[0]
     if repo_root and base and "/" in program and not os.path.isabs(program) \
-            and not (Path(repo_root) / joined / program).exists():
+            and not os.path.lexists(Path(repo_root) / joined / program):
         # The folder the command's own program is in. Measured over 30 runs: 23 refusals of `.venv/bin/python` "not
         # installed" came from `cd bookmarks && .venv/bin/python ...` with `bookmarks` as `working_directory`, run in
         # `bookmarks/bookmarks` - a real folder, the product's package named like its project - where no `.venv` is.
         alone = os.path.normpath(folder.strip("/"))
         for candidate in (alone, base):
-            if (Path(repo_root) / candidate / program).exists():
+            if os.path.lexists(Path(repo_root) / candidate / program):
                 joined = candidate
                 break
     moved = (

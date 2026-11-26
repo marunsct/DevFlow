@@ -24,6 +24,7 @@ import logging
 import os
 import re
 import threading
+import time
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -1259,6 +1260,28 @@ def held_read_note() -> str:
     return note
 
 
+#: What the last search on this thread found out about its pattern, for `searched_note`: a thread, as `_HELD` is.
+_SEARCHED = threading.local()
+
+#: A character that makes a pattern a regular expression rather than plain text: an anchor, a wildcard, a class, a
+#: group, a repeat or an escape.
+_AN_EXPRESSION_S_CHARACTERS = re.compile(r"[\\^$.*+?()\[\]{}|]")
+
+#: How long a search as a regular expression may walk the workspace before it answers with what it found.
+_MOST_SECONDS_SEARCHING = 20
+
+
+def searched_note() -> str:
+    """Take what the last `grep` on this thread said about how it matched its pattern, or ''.
+
+    Said with the result by the path middleware (`app.agents.workspace_paths`): the library formats the matches
+    itself and has no place for a note on a search that found something.
+    """
+    note = getattr(_SEARCHED, "note", "") or ""
+    _SEARCHED.note = ""
+    return note
+
+
 class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
     """A `FilesystemBackend` that omits the run's own machinery from listings.
 
@@ -1458,9 +1481,13 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
                 from deepagents.backends.filesystem import GrepResult
                 return GrepResult(error=str(e))
             raise
+        _SEARCHED.note = ""
         matches = getattr(result, "matches", None)
         if not matches and not getattr(result, "error", None):
             result = self._each_alternative(result, *args, **kwargs)
+            matches = getattr(result, "matches", None)
+        if not matches and not getattr(result, "error", None):
+            result = self._as_an_expression(result, *args, **kwargs)
             matches = getattr(result, "matches", None)
         if not matches:
             return result
@@ -1508,6 +1535,78 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
                     found.append(match)
         return replace(result, matches=found) if found else result
 
+    def _as_an_expression(self, result: Any, *args: Any, **kwargs: Any) -> Any:
+        """A plain-text miss on a pattern written as a regular expression, matched as one (TR.5, LF.1521).
+
+        The search is literal, and a model writes `^## `, `^async fn list_` or `import.*from.*Page` meaning an
+        expression. Measured over 26 runs: 31 of 69 such patterns found nothing (45%), against 15 of 74 plain ones,
+        and one architecture review asked `^## ` of its specification seven times, each answered "No matches found".
+
+        Only after the plain-text search (and each side of a `|`) found nothing, so plain text behaves as before.
+        The result says which way it matched (`searched_note`). A pattern that is not a valid expression, such as
+        `a.b(`, stays a plain-text search and the note says so.
+        """
+        pattern = kwargs.get("pattern", args[0] if args else None)
+        if not isinstance(pattern, str) or not _AN_EXPRESSION_S_CHARACTERS.search(pattern):
+            return result
+        try:
+            expression = re.compile(pattern)
+        except re.error as error:
+            _SEARCHED.note = (
+                f"No line holds `{pattern}` as plain text, and as a regular expression it is not valid ({error}), "
+                "so it was searched as plain text only."
+            )
+            return result
+        path = kwargs.get("path", args[1] if len(args) > 1 else None)
+        glob = kwargs.get("glob", args[2] if len(args) > 2 else None)
+        most = kwargs.get("max_count")
+        try:
+            found, cut = self._lines_matching(expression, path, glob, most)
+        except Exception:  # noqa: BLE001 - the plain-text answer still stands
+            logger.debug("Could not search as a regular expression", exc_info=True)
+            return result
+        if not found:
+            _SEARCHED.note = f"No line matches `{pattern}`, searched as plain text and as a regular expression."
+            return result
+        _SEARCHED.note = (
+            f"No line holds `{pattern}` as plain text; these lines match it as a regular expression."
+        )
+        return replace(result, matches=found, truncated=cut or getattr(result, "truncated", False))
+
+    def _lines_matching(
+        self, expression: re.Pattern[str], path: str | None, glob: str | None, most: int | None,
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """Every line under `path` that `expression` matches, as the library's matches, and whether the search was cut."""
+        from deepagents.backends.utils import compile_grep_include_glob
+
+        base = self._resolve_path(path or ".")
+        if not base.exists():
+            return [], False
+        root = base if base.is_dir() else base.parent
+        files = [base] if base.is_file() else files_under(base, IGNORED_DIRECTORIES)
+        wanted = compile_grep_include_glob(glob) if glob else None
+        deadline = time.monotonic() + _MOST_SECONDS_SEARCHING
+        found: list[dict[str, Any]] = []
+        for file in files:
+            if time.monotonic() > deadline:
+                return found, True
+            if wanted is not None and not wanted(file.relative_to(root).as_posix()):
+                continue
+            try:
+                if not file.is_file() or file.stat().st_size > self.max_file_size_bytes:
+                    continue
+                shown = self._to_virtual_path(file) if self.virtual_mode else str(file)
+                with file.open(encoding="utf-8", errors="strict") as handle:
+                    for number, line in enumerate(handle, 1):
+                        if not expression.search(line):
+                            continue
+                        if len(found) >= (most if most is not None else MOST_ENTRIES_SHOWN + 1):
+                            return found, True
+                        found.append({"path": shown, "line": number, "text": line.rstrip("\n")})
+            except (OSError, UnicodeDecodeError, ValueError):
+                continue
+        return found, False
+
 
     def write(self, file_path: str, *args: Any, **kwargs: Any) -> Any:
         try:
@@ -1537,4 +1636,4 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
             raise
 
 
-__all__ = ["WorkspaceBackend", "held_read_note"]
+__all__ = ["WorkspaceBackend", "held_read_note", "searched_note"]

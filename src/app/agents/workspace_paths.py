@@ -395,6 +395,25 @@ def _with_the_note_it_held(result: Any) -> Any:
         return result
 
 
+def _with_how_it_searched(result: Any) -> Any:
+    """`result`, saying how the search matched its pattern when the backend tried it as a regular expression.
+
+    See `app.agents.workspace_backend.searched_note` (TR.5). An empty answer is replaced whole: the library's own
+    note on it says the search is plain text only, which is no longer so.
+    """
+    from app.agents.workspace_backend import searched_note
+
+    note = searched_note()
+    content = getattr(result, "content", None)
+    if not note or not isinstance(content, str):
+        return result
+    empty = content.strip().startswith("No matches found")
+    try:
+        return result.model_copy(update={"content": note if empty else note + "\n\n" + content})
+    except Exception:  # noqa: BLE001 - a Command, or some other shape
+        return result
+
+
 def _explained_if_empty(result: Any, fragment: str, path: Any) -> Any:
     """`result`, with "No files found" replaced by what that means for a name search."""
     content = getattr(result, "content", None)
@@ -435,6 +454,8 @@ def build_workspace_path_middleware(repo_root: str) -> Any:
                             )
                 if call.get("name") == "read_file":
                     return _with_the_note_it_held(handler(request))
+                if call.get("name") == "grep":
+                    return _with_how_it_searched(handler(request))
             return handler(request)
 
     return WorkspacePathMiddleware()

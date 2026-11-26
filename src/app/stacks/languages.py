@@ -148,6 +148,10 @@ class LanguageSupport:
     #: followed imports in Python and JavaScript/TypeScript only, so a Go, Java, Kotlin, C#, Rust, Ruby or PHP fixer
     #: was told no file its handler imports, and a sliced memory held none of them.
     tree: TreeReading | Gap = Gap("no grammar reading is set for this language")
+    #: Modules its interpreter runs by name (`-m`) that only check the code they are given and run none of it, so the
+    #: sandbox runs them as it runs its test runners (TR.9, LF.1522). Measured over 26 runs: `-m py_compile` was
+    #: refused three times as able to "execute arbitrary code".
+    checking_modules: tuple[str, ...] | Gap = Gap("its interpreter runs no checking module by name")
 
 
 _NODE_INSTALLED = ("node_modules",)
@@ -532,6 +536,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
             executables=("python", "python3", "pip", "pip3", "pytest", "uv", "django-admin", "alembic"),
             import_graph="python",
             tree=_PYTHON_TREE,
+            checking_modules=("py_compile",),
             development_server="python",
             package_cache=Gap(_INSTALLS_INTO_THE_PROJECT),
             resolved="python",
@@ -913,6 +918,12 @@ def is_manifest(relative_path: str) -> bool:
     """Whether a path names a manifest or build file of some language."""
     name = str(relative_path or "").replace("\\", "/").rsplit("/", 1)[-1]
     return any(fnmatch.fnmatchcase(name, glob) for glob in MANIFESTS)
+
+
+def checking_modules(executable: str) -> frozenset[str]:
+    """The modules `executable` runs by name that only check code, from each language that runs it (`checking_modules`)."""
+    return frozenset(module for row in LANGUAGES if executable in row.executables
+                     and not isinstance(row.checking_modules, Gap) for module in row.checking_modules)
 
 
 def image_of(row: LanguageSupport) -> str | None:

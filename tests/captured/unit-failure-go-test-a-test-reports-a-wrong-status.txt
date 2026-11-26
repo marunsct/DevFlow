@@ -1,0 +1,66 @@
+The unit tests fail. It says:
+Distinct causes, most failing first:
+- 4 failing, e.g. `notes-api › TestGetNoteNotFound`, `notes-api › TestUpdateNoteNotFound`: Failed
+- 1 failing, e.g. `notes-api › TestHealthEndpoint`: server_test.go:64: expected status 200, got 404
+- 1 failing, e.g. `notes-api › TestCreateNote`: server_test.go:86: expected status 201, got 404: 404 page not found
+- 1 failing, e.g. `notes-api › TestCreateNoteEmptyTitle`: server_test.go:115: expected status 400, got 404: 404 page not found
+- 1 failing, e.g. `notes-api › TestCreateNoteWhitespaceTitle`: server_test.go:137: expected status 400, got 404: 404 page not found
+- 1 failing, e.g. `notes-api › TestCreateNoteNonStringTitle`: server_test.go:159: expected status 400, got 404: 404 page not found
+ The runner's output ends:
+rom the runner's report:
+- notes-api › TestHealthEndpoint: Failed
+=== RUN   TestHealthEndpoint
+    server_test.go:64: expected status 200, got 404
+--- FAIL: TestHealthEndpoint (0.00s)
+- notes-api › TestCreateNote: Failed
+=== RUN   TestCreateNote
+    server_test.go:86: expected status 201, got 404: 404 page not found
+--- FAIL: TestCreateNote (0.00s)
+- notes-api › TestCreateNoteEmptyTitle: Failed
+=== RUN   TestCreateNoteEmptyTitle
+    server_test.go:115: expected status 400, got 404: 404 page not found
+--- FAIL: TestCreateNoteEmptyTitle (0.00s)
+- notes-api › TestCreateNoteWhitespaceTitle: Failed
+=== RUN   TestCreateNoteWhitespaceTitle
+    server_test.go:137: expected status 400, got 404: 404 page not found
+--- FAIL: TestCreateNoteWhitespaceTitle (0.00s)
+- notes-api › TestCreateNoteNonStringTitle: Failed
+=== RUN   TestCreateNoteNonStringTitle
+    server_test.go:159: expected status 400, got 404: 404 page not found
+--- FAIL: TestCreateNoteNonStringTitle (0.00s)
+- notes-api › TestCreateNoteMalformedJSON: Failed
+=== RUN   TestCreateNoteMalformedJSON
+    server_test.go:180: expected status 400, got 404: 404 page not found
+--- FAIL: TestCreateNoteMalformedJSON (0.00s)
+- notes-api › TestListNotes: Failed
+=== RUN   TestListNotes
+    server_test.go:204: expected status 200, got 404: 404 page not found
+--- FAIL: TestListNotes (0.00s)
+- notes-api › TestListNotesEmpty: Failed
+=== RUN   TestListNotesEmpty
+    server_test.go:226: expected status 200, got 404: 404 page not found
+--- FAIL: TestListNotesEmpty (0.00s)
+- notes-api › TestGetNote: Failed
+=== RUN   TestGetNote
+    server_test.go:251: expected status 200, got 404: 404 page not found
+--- FAIL: TestGetNote (0.00s)
+- notes-api › TestGetNoteNotFound: Failed
+=== RUN   TestGetNoteNotFound
+    server_test.go:275: failed to unmarshal response: invalid character 'p' after top-level value
+--- FAIL: TestGetNoteNotFound (0.00s)
+- notes-api › TestGetNoteInvalidID: Failed
+=== RUN   TestGetNoteInvalidID
+    server_test.go:288: expected status 400, got 404: 404 page not found
+--- FAIL: TestGetNoteInvalidID (0.00s)
+- notes-api › TestUpdateNote: Failed
+=== RUN   TestUpdateNote
+    server_test.go:312: expected status 200, got 404: 404 page not found
+--- FAIL: TestUpdateNote (0.00s)
+... and 8 more
+Distinct causes, most failing first:
+- 4 failing, e.g. `notes-api › TestGetNoteNotFound`, `notes-api › TestUpdateNoteNotFound`: Failed
+- 1 failing, e.g. `notes-api › TestHealthEndpoint`: server_test.go:64: expected status 200, got 404
+- 1 failing, e.g. `notes-api › TestCreateNote`: server_test.go:86: expected status 201, got 404: 404 page not found
+- 1 failing, e.g. `notes-api › TestCreateNoteEmptyTitle`: server_test.go:115: expected status 400, got 404: 404 page not found
+- 1 failing, e.g. `notes-api › TestCreateNoteWhitespaceTitle`: server_test.go:137: expected status 400, got 404: 404 page not found
+- 1 failing, e.g. `notes-api › TestCreateNoteNonStringTitle`: server_test.go:159: expected status 400, got 404: 404 page not found

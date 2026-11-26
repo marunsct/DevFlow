@@ -175,6 +175,10 @@ def effects(records: list[dict], decisions: str = "") -> list[str]:
         ("PF.2", "app.graph.candidate_fixes_when_stuck", lambda m: m.effects_lines(records)),
         ("PF.3", "app.graph.tests_reached_first", lambda m: m.effects_lines(records)),
         ("PF.4", "app.agents.ranges_chosen_first", lambda m: m.effects_lines(records)),
+        # PA.15: first fixes of a failing unit test sent to the product by their failure; PA.4: suites past their
+        # author's room written a file at a time.
+        ("PA.15", "app.analysis.unit_failure_side", lambda m: m.effects_lines(records)),
+        ("PA.4", "app.graph.suite_by_file", lambda m: m.effects_lines(records)),
         # TR.2 and TR.6: reads while reading was withheld, refused by class against run; writes at the call budget.
         ("TR.2/TR.6", "app.agents.withheld_records", lambda m: m.effects_lines(records)),
         # LF.1543: the broken batches of fixes, by how each was settled; the fixers that wrote nothing kept out of

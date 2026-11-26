@@ -1,0 +1,89 @@
+The unit tests fail. It says:
+- pytest › test_rolls_back_on_error: SystemExit: 1
+def test_rolls_back_on_error(self, mock_get_db):
+conn.execute.side_effect = Exception("DB Error")
+with pytest.raises(Exception):
+ The runner's output ends:
+auth.get_db')
+    def test_rolls_back_on_error(self, mock_get_db):
+        conn = MagicMock()
+        mock_get_db.return_value = conn
+        conn.execute.side_effect = Exception("DB Error")
+    
+        with pytest.raises(Exception):
+>           store_token(1, "token123")
+
+tests/test_auth.py:103: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tasks_api/auth.py:62: in store_token
+    conn = get_db()
+     
+- pytest › test_returns_user_id_when_found: SystemExit: 1
+self = <test_auth.TestLookupToken object at 0x7f841fe9b6b0>
+mock_get_db = <MagicMock name='get_db' id='140205448054256'>
+
+    @patch('tasks_api.auth.get_db')
+    def test_returns_user_id_when_found(self, mock_get_db):
+        conn = MagicMock()
+        mock_get_db.return_value = conn
+        row = MagicMock()
+        row.__getitem__ = lambda self, key: 42 if key == 'user_id' else None
+        conn.execute.return_value.fetchone.return_value = row
+    
+>       user_id = lookup_token("valid_token")
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_auth.py:119: 
+_ _ _ _ _ _ _
+- pytest › test_returns_none_when_not_found: SystemExit: 1
+self = <test_auth.TestLookupToken object at 0x7f841fe9b410>
+mock_get_db = <MagicMock name='get_db' id='140205446321440'>
+
+    @patch('tasks_api.auth.get_db')
+    def test_returns_none_when_not_found(self, mock_get_db):
+        conn = MagicMock()
+        mock_get_db.return_value = conn
+        conn.execute.return_value.fetchone.return_value = None
+    
+>       user_id = lookup_token("invalid_token")
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_auth.py:134: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tasks_api/auth.py:90: in look
+- pytest › test_deletes_token: SystemExit: 1
+self = <test_auth.TestDeleteToken object at 0x7f841fe9ade0>
+mock_get_db = <MagicMock name='get_db' id='140205446361312'>
+
+    @patch('tasks_api.auth.get_db')
+    def test_deletes_token(self, mock_get_db):
+        conn = MagicMock()
+        mock_get_db.return_value = conn
+    
+        token = "token_to_delete"
+    
+>       delete_token(token)
+
+tests/test_auth.py:150: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tasks_api/auth.py:113: in delete_token
+    conn = get_db()
+           ^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+- pytest › test_rolls_back_on_error: SystemExit: 1
+self = <test_auth.TestDeleteToken object at 0x7f841fe9a990>
+mock_get_db = <MagicMock name='get_db' id='140205446386832'>
+
+    @patch('tasks_api.auth.get_db')
+    def test_rolls_back_on_error(self, mock_get_db):
+        conn = MagicMock()
+        mock_get_db.return_value = conn
+        conn.execute.side_effect = Exception("DB Error")
+    
+        with pytest.raises(Exception):
+>           delete_token("bad_token")
+
+tests/test_auth.py:165: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tasks_api/auth.py:113: in delete_token
+    conn = get_db()

@@ -1,0 +1,15 @@
+The unit tests fail. It says:
+/workspace/notes-api/src/App/Program.cs(69,32): error CS1061: 'KestrelServerLimits' does not contain a definition for 'RequestEntityBodyTimeout' and no accessible extension method 'RequestEntityBodyTimeout' accepting a first argument of type 'KestrelServerLimits' could be found (are you missing a using directive or an assembly reference?) [/workspace/notes-api/src/App/App.csproj]
+ The runner's output ends:
+Determining projects to restore...
+  Restored /workspace/notes-api/src/App/App.csproj (in 67 ms).
+  1 of 2 projects are up-to-date for restore.
+/workspace/notes-api/src/App/Program.cs(69,32): error CS1061: 'KestrelServerLimits' does not contain a definition for 'RequestEntityBodyTimeout' and no accessible extension method 'RequestEntityBodyTimeout' accepting a first argument of type 'KestrelServerLimits' could be found (are you missing a using directive or an assembly reference?) [/workspace/notes-api/src/App/App.csproj]
+/workspace/notes-api/src/App/Program.cs(127,34): warning CS0168: The variable 'ex' is declared but never used [/workspace/notes-api/src/App/App.csproj]
+/workspace/notes-api/src/App/Program.cs(134,69): warning CS1998: This async method lacks 'await' operators and will run synchronously. Consider using the 'await' operator to await non-blocking API calls, or 'await Task.Run(...)' to do CPU-bound work on a background thread. [/workspace/notes-api/src/App/App.csproj]
+/workspace/notes-api/src/App/Program.cs(148,82): warning CS1998: This async method lacks 'await' operators and will run synchronously. Consider using the 'await' operator to await non-blocking API calls, or 'await Task.Run(...)' to do CPU-bound work on a background thread. [/workspace/notes-api/src/App/App.csproj]
+/workspace/notes-api/src/App/Program.cs(191,34): warning CS0168: The variable 'ex' is declared but never used [/workspace/notes-api/src/App/App.csproj]
+/workspace/notes-api/src/App/Program.cs(198,85): warning CS1998: This async method lacks 'await' operators and will run synchronously. Consider using the 'await' operator to await non-blocking API calls, or 'await Task.Run(...)' to do CPU-bound work on a background thread. [/workspace/notes-api/src/App/App.csproj]
+
+The same problem, as other checks reported it:
+- [acceptance suite] The product does not start for the acceptance suite, so no test can reach it.

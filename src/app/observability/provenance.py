@@ -137,6 +137,7 @@ SWITCHES: dict[str, str] = {
     "REASONING_KEPT_AFTER_AN_ANSWER": "app.models.reasoning_kept:reasoning_kept_switch",
     "NAMED_TEST_REWRITE": "app.graph.rewritten_tests:named_test_rewrite_switch",
     "TESTS_ONLY_WRITES": "app.tools.tests_only_writes",
+    "UNIT_TEST_FIX_BY_FAILURE": "app.analysis.unit_failure_side",
     "MUTANT_CHECK_IN_THE_FIX_STAGE": "app.acceptance.mutant_check_in_stage",
     "MUTATION_TEST_RETENTION": "app.acceptance.mutation_retention",
     "MUTATION_GAPS_BUNDLED": "app.graph.mutation_gaps_bundled",

@@ -33,7 +33,7 @@ from app.observability.degraded import degraded
 from app.acceptance import requests as acceptance_requests
 from app.acceptance import first_failing_step, start_output, suite
 from app.acceptance.criteria import number
-from app.graph import acceptance_batches
+from app.graph import acceptance_batches, suite_by_file
 from app.agents.shared_facts import with_the_facts
 from app.stacks import compiler_errors, contract, pack_named
 from app.graph.start_first import DEPENDENCIES_DO_NOT_INSTALL
@@ -558,15 +558,18 @@ def blockers_of_its_batch(blockers: list, group: list) -> list:
     return kept
 
 
-def _written_in_batches(state, config, agent, root, criteria, batches, round_, request_for):
+def _written_in_batches(state, config, agent, root, criteria, batches, round_, request_for, note_of=None):
     """The suite written a batch of criteria at a time; (the last update, every blocker), or (the pause, None).
 
     A batch is done when its criteria are covered, so a stage resumed after a pause or a deploy
     goes on at the first batch not done. Each batch has its own conversation. A criterion still
     without a test afterwards, and not set aside, is asked for once more, alone; what is still
-    missing then is left to the review, as it is when the suite is written whole.
+    missing then is left to the review, as it is when the suite is written whole. `note_of(index, total, group,
+    files)` says what each part is told (`acceptance_batches.note` when None).
     """
     from app.graph.workflow import _run_gated_agent
+
+    note_of = note_of or acceptance_batches.note
 
     blockers: list = []
     update: dict = {}
@@ -588,7 +591,7 @@ def _written_in_batches(state, config, agent, root, criteria, batches, round_, r
         if all(criterion.id in covered for criterion in group):
             continue
         files = sorted({name for name, _ in suite.declared_tests(root)})
-        paused = write(f"g{index}", group, acceptance_batches.note(index, len(batches), group, files))
+        paused = write(f"g{index}", group, note_of(index, len(batches), group, files))
         if paused is not None:
             return paused, None
     covered, set_aside = suite.coverage(root), set(suite.deferred(root)) | set(acceptance_requests.not_automatable(blockers))
@@ -596,7 +599,7 @@ def _written_in_batches(state, config, agent, root, criteria, batches, round_, r
     if missing:
         logger.info("Batched acceptance suite: %s still have no test; asked for once more", ", ".join(c.id for c in missing))
         files = sorted({name for name, _ in suite.declared_tests(root)})
-        paused = write("fill", missing, acceptance_batches.note(len(batches), len(batches) + 1, missing, files))
+        paused = write("fill", missing, note_of(len(batches), len(batches) + 1, missing, files))
         if paused is not None:
             return paused, None
     return update, blockers
@@ -658,10 +661,15 @@ def _writing_the_suite(state: Any, config: RunnableConfig, ctx: Context, root: s
         criteria = [criterion for criterion in criteria if criterion.id not in later] or criteria
     # Written by the build model in fast delivery, and reviewed by the
     # judgement model. See `app.delivery`.
+    writer_model = ctx.model if delivery.fast() else ctx.judgement_model
     agent = create_specialist_agent(
-        "testing", model=ctx.model if delivery.fast() else ctx.judgement_model, checkpointer=ctx.checkpointer,
+        "testing", model=writer_model, checkpointer=ctx.checkpointer,
         repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories, writing_the_suite=True,
     )
+    contract = getattr(state.get("technical_specification"), "interface_contract", None) or ()
+    # PA.4: a suite written a file at a time gives each part only the contract lines its criteria use.
+    by_file: list[bool] = [False]
+
     def request_for(group: list, note: str = "") -> dict:
         from app.agents.specification_rulings import with_the_rulings
 
@@ -670,7 +678,7 @@ def _writing_the_suite(state: Any, config: RunnableConfig, ctx: Context, root: s
             root, group, _stack(state), feedback=feedback, change_requests=suite.change_requests(root),
             brief=getattr(state.get("document"), "text", "") or "",
             testability=_the_testability_advice(state),
-            interface_contract=getattr(state.get("technical_specification"), "interface_contract", None) or (),
+            interface_contract=suite_by_file.contract_for(group, contract) if by_file[0] else contract,
             specification=state.get("technical_specification"),
             batch_note=sprint_note + note,
             adding=bool(adding and adding.get("base")),
@@ -682,8 +690,24 @@ def _writing_the_suite(state: Any, config: RunnableConfig, ctx: Context, root: s
                    if adding is not None else "")
     # Only a first writing, in the whole, is split: a repair is small and made against a built product.
     batches = acceptance_batches.plan(criteria) if round_ == 0 and not feedback else [criteria]
+    note_of = None
+    if len(batches) == 1 and round_ == 0 and not feedback and len(criteria) > 1:
+        # PA.4: a suite whose one request would open past its author's room is written a file at a time.
+        stage = f"acceptance_author_{round_}"
+        share = suite_by_file.past_the_room(root, writer_model, request_for(criteria)["messages"][-1]["content"], stage,
+                                            len(criteria))
+        wanted = suite_by_file.parts(criteria, writer_model) if share is not None else [criteria]
+        if len(wanted) > 1:
+            batches, by_file[0] = wanted, True
+            suite_by_file.record(stage, share, len(criteria), len(wanted))
+            logger.info("The suite and its work fill %.2f of its author's room: %d criteria written in %d files", share,
+                        len(criteria), len(wanted))
+
+            def note_of(index, total, group, files):
+                return suite_by_file.note(index, total, group, files, root)
     if len(batches) > 1:
-        update, blockers = _written_in_batches(state, config, agent, root, criteria, batches, round_, request_for)
+        update, blockers = _written_in_batches(state, config, agent, root, criteria, batches, round_, request_for,
+                                               note_of=note_of)
         if blockers is None:
             return update  # paused for approval, or retrying
     else:

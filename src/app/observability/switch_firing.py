@@ -101,6 +101,8 @@ SIGNALS: dict[str, str] = {
     # and the heading of a reading stage's chosen lines in its memory.
     "CANDIDATE_FIXES_WHEN_STUCK": "Candidate fixes for a stuck defect, each measured against its own tests and the regression set",
     "TESTS_REACHED_FIRST": "The tests that reach the files you changed ran first",
+    # PA.15: the heading of a fixer's section when its failing unit test is sent to the product by its failure.
+    "UNIT_TEST_FIX_BY_FAILURE": "The failure is raised in the product's code",
     "RANGES_CHOSEN_BEFORE_A_READING_STAGE": "lines chosen for this work before it opened",
     # Recorded by the harness once per run and role kind, and once per run it offers no web tool
     # (`app.agents.role_tool_lists`, `app.tools.research_tool`).

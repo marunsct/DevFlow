@@ -199,8 +199,9 @@ GROUPS: dict[str, tuple[str, ...]] = {
                      "SPECIALIST_DOMAIN_REVIEW", "FAST_DESIGN_GATE_ON_PRODUCT_BREAKING"),
     # Contract probes the release adds to a green round: what a product must survive that no locked test asks.
     "Contract probes": ("CONCURRENT_WRITE_PROBE", "WRONG_SHAPE_BODY_PROBE", "EDGE_PROBE", "PAGE_PROBE"),
-    # Which of the product's own unit tests may hold a run: one that keeps failing beside a green suite is set aside.
-    "Unit test signal": ("UNIT_TEST_QUARANTINE",),
+    # Which of the product's own unit tests may hold a run: one that keeps failing beside a green suite is set aside;
+    # and which side a failing one is first fixed on, read from its failure (PA.15).
+    "Unit test signal": ("UNIT_TEST_QUARANTINE", "UNIT_TEST_FIX_BY_FAILURE"),
     # The order the product's files are first written in: what each is shown of the files it depends on.
     "Drafting order": ("DRAFTING_IN_WAVES",),
     # How a cause the fixes keep missing is worked: one diagnosis call before its third fix (deep review 1.4).
@@ -306,6 +307,7 @@ EXPERIMENTS_ON: dict[str, str] = {
     "CANDIDATE_FIXES_WHEN_STUCK": "owner 2026-11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes, or its tokens per accepted criterion rise more than 5% (docs/measuring.md M-PF.2)",
     "TESTS_REACHED_FIRST": "owner 2026-11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M-PF.3)",
     "RANGES_CHOSEN_BEFORE_A_READING_STAGE": "owner 2026-11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M-PF.4)",
+    "UNIT_TEST_FIX_BY_FAILURE": "per-agent audit 2026-11-25 (PA.15): 44 failing unit tests were first worked tests-only and 1 was fixed by that attempt; on, the owner's tests-only rule kept for every failure an assertion or a stand-in shows, and off at once if a run it fires in ships a red unit test, loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M-PA.15)",
     "TOOL_LISTS_BY_ROLE_KIND": "tool review 2026-11-26 (TR.7, LF.1541): seven tools in every writer's list made 9 calls in 4,260 writer requests, about 6,200 characters of schema; on, and off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M-TR.7)",
     "READ_WINDOWS_SIZED_TO_THE_ROOM": "medium run 2026-11-26 (LF.1570): one code review made 62 reads, almost all 50-60-line windows, at about 40k tokens of conversation a call, some 3M input tokens; on, and off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes, or a review's or fixer's summaries rise (docs/measuring.md M-LF.1570)",
 }

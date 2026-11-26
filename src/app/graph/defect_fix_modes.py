@@ -4,7 +4,8 @@ One place for the modes a fix stage can run in, so `workflow` makes one call as 
 fix begins and one as it ends:
 
 - `TESTS_ONLY_WRITES` (`app.tools.tests_only_writes`): the first fix of a failing
-  unit test beside a green acceptance suite writes test files only.
+  unit test beside a green acceptance suite writes test files only; behind `UNIT_TEST_FIX_BY_FAILURE`
+  (`app.analysis.unit_failure_side`, PA.15) not when the failure is raised in the product's code before any assertion.
 - `MUTATION_TEST_RETENTION` (`app.acceptance.mutation_retention`): the unit tests'
   failures before a mutation finding's fix, so what the fix added can be judged.
 
@@ -18,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from app.acceptance import mutation_guided, mutation_retention
+from app.analysis import unit_failure_side
 from app.tools import tests_only_writes
 
 logger = logging.getLogger(__name__)
@@ -49,6 +51,7 @@ def begin(state: Any, config: Any, cycle: Any, defect_index: int, stage_name: st
         run_id, defect = _run_id(config), cycle.defects[defect_index]
         root = state["repository"].root_path
         tests_only_writes.release(run_id, stage_name)
+        unit_failure_side.release(run_id, stage_name)
         if tests_only_writes.enabled() and not mutation_guided.is_a_finding(defect):
             from app.graph import settle_when_green
 
@@ -56,9 +59,16 @@ def begin(state: Any, config: Any, cycle: Any, defect_index: int, stage_name: st
             beside_green = is_a_unit_failure and _the_suite_is_green(state, root)
             first = failed_fix_tries(cycle, defect_index) == 0
             held = beside_green and first
+            # PA.15: a failure raised in the product's code before any assertion is the product's to fix at once.
+            products = (unit_failure_side.the_product_s(str(getattr(defect, "description", "") or ""), root)
+                        if held and unit_failure_side.enabled() else [])
+            if products:
+                held = False
+                unit_failure_side.send_to_the_product(run_id, stage_name, products)
             if held:
                 tests_only_writes.hold(run_id, stage_name)
-            said = tests_only_writes.explain_mode(held, unit_failure_beside_a_green_suite=beside_green)
+            said = (unit_failure_side.MODE if products
+                    else tests_only_writes.explain_mode(held, unit_failure_beside_a_green_suite=beside_green))
             if said:
                 defect_ledger.note(
                     "mode", stage_name, defect=defect, round_=state.get("test_round", 0), index=defect_index,
@@ -73,11 +83,13 @@ def begin(state: Any, config: Any, cycle: Any, defect_index: int, stage_name: st
 def end(config: Any, stage_name: str) -> None:
     """Forget the stage's mode: its writes are over."""
     tests_only_writes.release(_run_id(config), stage_name)
+    unit_failure_side.release(_run_id(config), stage_name)
 
 
 def briefing(state: Any, config: Any, defect_index: int) -> str:
     """The section of the fixer's request that says what it may write; "" when nothing is held."""
-    return tests_only_writes.briefing(_run_id(config), f"defect_fix_{state.get('test_round', 0)}_{defect_index}")
+    stage = f"defect_fix_{state.get('test_round', 0)}_{defect_index}"
+    return tests_only_writes.briefing(_run_id(config), stage) + unit_failure_side.briefing(_run_id(config), stage)
 
 
 def may_write(state: Any, config: Any, defect: Any, root: str | Path, path: str) -> bool:

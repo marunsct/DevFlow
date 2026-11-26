@@ -1,0 +1,48 @@
+The unit tests fail. It says:
+> assert auth.verify_password(password, "") is False
+E ValueError: Invalid salt
+tasks_api/auth.py:36: ValueError
+FAILED tests/test_auth.py::TestVerifyPassword::test_returns_false_for_empty_hash
+1 failed, 46 passed in 1.40s
+- pytest › test_returns_false_for_empty_hash: ValueError: Invalid salt
+ The runner's output ends:
+.....F.........................................                          [100%]
+=================================== FAILURES ===================================
+_____________ TestVerifyPassword.test_returns_false_for_empty_hash _____________
+
+self = <test_auth.TestVerifyPassword object at 0x7f98433aa870>
+
+    def test_returns_false_for_empty_hash(self):
+        """Verify verify_password returns False for empty hash string."""
+        password = "some_password"
+    
+>       assert auth.verify_password(password, "") is False
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_auth.py:61: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+password = 'some_password', password_hash = ''
+
+    def verify_password(password: str, password_hash: str) -> bool:
+        """Verify a plaintext password against a bcrypt hash.
+    
+        Args:
+            password: The plaintext password string to verify.
+            password_hash: The bcrypt hash string to verify against.
+    
+        Returns:
+            True if the password matches the hash, False otherwise.
+        """
+>       return bcrypt.checkpw(
+            password.encode("utf-8"),
+            password_hash.encode("utf-8"),
+        )
+E       ValueError: Invalid salt
+
+tasks_api/auth.py:36: ValueError
+=========================== short test summary info ============================
+FAILED tests/test_auth.py::TestVerifyPassword::test_returns_false_for_empty_hash
+1 failed, 46 passed in 1.40s
+Failing tests, from the runner's report:
+- pytest › test_returns_false_for_empty_hash: ValueError: Invalid salt

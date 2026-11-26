@@ -1,0 +1,21 @@
+The unit tests fail. It says:
+[ERROR] /workspace/notes-api/src/test/java/app/notes_api/NoteServiceTest.java:[122,52] incompatible types: java.util.Optional<app.notes_api.NoteEntity> cannot be converted to app.notes_api.NoteEntity
+[ERROR] -> [Help 1]
+[ERROR]
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException
+ The runner's output ends:
+[ERROR] COMPILATION ERROR : 
+[ERROR] /workspace/notes-api/src/test/java/app/notes_api/NoteServiceTest.java:[122,52] incompatible types: java.util.Optional<app.notes_api.NoteEntity> cannot be converted to app.notes_api.NoteEntity
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.13.0:testCompile (default-testCompile) on project notes_api: Compilation failure
+[ERROR] /workspace/notes-api/src/test/java/app/notes_api/NoteServiceTest.java:[122,52] incompatible types: java.util.Optional<app.notes_api.NoteEntity> cannot be converted to app.notes_api.NoteEntity
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException
+Picked up JAVA_TOOL_OPTIONS: -Djava.io.tmpdir=/workspace/.agent-home/tmp

@@ -159,6 +159,10 @@ class LanguageSupport:
     #: medium run: with its reader withheld, a builder read a 593-line file five times by such code, once failing on
     #: the path, twice for the same lines.
     file_prints: tuple[str, ...] | Gap = Gap("no inline code is read as a file read in this language")
+    #: Patterns over its runners' failure output that say a test's assertion was reached and failed - the test's own
+    #: check, a stand-in's expectation, or a test's own failure report - as opposed to an error raised before any
+    #: assertion (`app.analysis.unit_failure_side`, PA.15). Each row also matches `_ANY_ASSERTION`.
+    assertion_failed: tuple[str, ...] | Gap = Gap("no runner message is read for an assertion in this language")
 
 
 _NODE_INSTALLED = ("node_modules",)
@@ -277,6 +281,76 @@ _JVM_FRESH_STORE = (
     "With JUnit 5, each test builds its store on its own folder from `@TempDir` in `@BeforeEach`; a Spring test that "
     "shares one application context points the store at a temporary folder and clears it in `@BeforeEach`, or marks "
     "the class `@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)`."
+)
+
+#: PA.15: what says an assertion was reached, whatever the runner: an assertion error by name, an assertion that
+#: "failed", and "expected ... got/received/but was" (the wording many assertion libraries share).
+_ANY_ASSERTION = (
+    r"\bAssertion(?:Error|FailedError|Exception)\b",
+    r"\bassertion\b[^\n]{0,80}?\bfailed\b",
+    r"(?i)\bexpected\b[^\n]{0,120}?(?:\bgot\b|\breceived\b|\bbut was\b|\bactual\b|\bto (?:be|equal|eq|eql|have|contain"
+    r"|match|include|raise|throw)\b)",
+)
+_JS_ASSERTION = (
+    *_ANY_ASSERTION,
+    r"\bERR_ASSERTION\b",
+    r"Expected values to be (?:strictly |loosely )?(?:deep-?)?equal",
+    r"\bexpect\((?:received|actual|\w+)?\)\.",
+    r"(?m)^\s*(?:Expected|Received)(?: length| value)?:\s",
+    r"Received (?:function did not throw|promise resolved instead of rejected)",
+    r"Missing expected (?:exception|rejection)",
+)
+_PYTHON_ASSERTION = (
+    *_ANY_ASSERTION,
+    # pytest's `E   assert ...` and its short summary's `: assert ...`; not the `>` line, which only shows where the
+    # test was when an error was raised, assertion or not.
+    r"(?m)(?:^E\s+|: )assert\s",
+    r"\bFailed: DID NOT RAISE\b",
+    # unittest's assertEqual family.
+    r"\b(?:Lists|Dicts|Tuples|Sets|Sequences) differ\b",
+)
+_GO_ASSERTION = (
+    *_ANY_ASSERTION,
+    # A test's own report through `t.Errorf` or `t.Fatalf`: `server_test.go:64: ...`.
+    r"(?m)(?:^|\s)\w+_test\.go:\d+: ",
+    # testify.
+    r"\bError Trace:",
+    r"\bError:\s+(?:Not equal|Should|Expected|Received unexpected|An error is expected)",
+)
+_RUST_ASSERTION = (
+    *_ANY_ASSERTION,
+    r"assertion `[^`\n]*` failed",
+    r"(?m)^\s*left: [^\n]*\n\s*right: ",
+)
+_JVM_ASSERTION = (
+    *_ANY_ASSERTION,
+    r"expected:\s*<[^\n]*> but was:\s*<",
+    r"\bExpecting\b",
+    r"\bComparisonFailure\b",
+    # Mockito's expectations of a stand-in.
+    r"\bWanted but not invoked\b",
+    r"\bArgument\(s\) are different!",
+)
+_CSHARP_ASSERTION = (
+    *_ANY_ASSERTION,
+    r"\bAssert\.\w+\(\) Failure\b",
+    r"\bXunit\.Sdk\.\w+Exception\b",
+    r"\bNUnit\.Framework\.\w*Exception\b",
+    r"\bExpected [^\n]{0,120}? to (?:be|equal|contain|have|start|end)\b",
+)
+_RUBY_ASSERTION = (
+    *_ANY_ASSERTION,
+    r"(?m)^\s*expected:? [^\n]*\n\s*got:? ",
+    r"\bexpected [^\n]{0,120}? to\b",
+    r"\bRSpec::Expectations::ExpectationNotMetError\b",
+    r"\bMinitest::Assertion\b",
+)
+_PHP_ASSERTION = (
+    *_ANY_ASSERTION,
+    r"\bFailed asserting\b",
+    # A stand-in's expectation (`$this->createMock(...)->expects(...)`).
+    r"\bdoes not match expected value\b",
+    r"\bExpectation failed for method\b",
 )
 
 
@@ -545,6 +619,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
         refusal_not_given=_JS_REFUSAL,
         test_starts=_JS_TEST_STARTS,
         more_than_expected=_JS_MORE_THAN_EXPECTED,
+        assertion_failed=_JS_ASSERTION,
         fresh_store=_JS_FRESH_STORE,
         file_prints=_JS_FILE_PRINTS,
     )
@@ -606,6 +681,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
                 r"Lists differ: \[[^\n]+\] != \[\]",
                 *_COUNT_EXPECTED_GOT,
             ),
+            assertion_failed=_PYTHON_ASSERTION,
             fresh_store=(
                 "With pytest, a fixture gives each test its own folder (`tmp_path`), sets the setting the store reads "
                 "to it (`monkeypatch.setenv(\"DATA_DIR\", str(tmp_path))`, or the store's own path argument) and only "
@@ -649,6 +725,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
                 r"Should be empty, but was",
                 *_COUNT_EXPECTED_GOT,
             ),
+            assertion_failed=_GO_ASSERTION,
             fresh_store=(
                 "In Go, each test makes its own folder with `t.TempDir()` and builds its store on it (or sets the "
                 "setting the store reads with `t.Setenv(\"DATA_DIR\", dir)` before building it)."
@@ -688,6 +765,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
                 r"left:\s*\[[^\n]+\]\s+right:\s*\[\]",
                 *_COUNT_EXPECTED_GOT,
             ),
+            assertion_failed=_RUST_ASSERTION,
             fresh_store=(
                 "In Rust, each test builds its store on its own folder from `tempfile::tempdir()` (a dev-dependency), "
                 "never on a fixed path that tests running side by side share."
@@ -718,6 +796,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
             refusal_not_given=_JVM_REFUSAL,
             test_starts=_JVM_TEST_STARTS,
             more_than_expected=_JVM_MORE_THAN_EXPECTED,
+            assertion_failed=_JVM_ASSERTION,
             fresh_store=_JVM_FRESH_STORE,
         ),
         LanguageSupport(
@@ -744,6 +823,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
             refusal_not_given=_JVM_REFUSAL,
             test_starts=_JVM_TEST_STARTS,
             more_than_expected=_JVM_MORE_THAN_EXPECTED,
+            assertion_failed=_JVM_ASSERTION,
             fresh_store=_JVM_FRESH_STORE,
         ),
         LanguageSupport(
@@ -794,6 +874,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
                 r"to be empty, but found",
                 *_COUNT_EXPECTED_GOT,
             ),
+            assertion_failed=_CSHARP_ASSERTION,
             fresh_store=(
                 "With xUnit, the test class's constructor (run before each test) builds the store on a fresh folder "
                 "under `Path.GetTempPath()` and `Dispose` deletes it; NUnit's `[SetUp]` and MSTest's "
@@ -846,6 +927,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
                 r"expected collection contained:",
                 *_COUNT_EXPECTED_GOT,
             ),
+            assertion_failed=_RUBY_ASSERTION,
             fresh_store=(
                 "With RSpec or Minitest, `before` (or `setup`) makes a fresh folder with `Dir.mktmpdir` and points the "
                 "store at it (`ENV[\"DATA_DIR\"]` set before the store is built), and `after` (or `teardown`) "
@@ -895,6 +977,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
                 r"expected entries count of (?P<expected>\d+)\. Entries found: (?P<got>\d+)",
                 *_COUNT_EXPECTED_GOT,
             ),
+            assertion_failed=_PHP_ASSERTION,
             fresh_store=(
                 "With PHPUnit, `setUp()` builds the store on a fresh folder under `sys_get_temp_dir()` "
                 "(`putenv(\"DATA_DIR=...\")` before it is built) and `tearDown()` removes it; with Laravel, the "

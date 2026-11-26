@@ -168,6 +168,10 @@ SCRATCH_NAME = re.compile(
     # two of. Anchored and digit-suffixed so `app.test.js` and `test.mjs` are
     # untouched: a bare `test.mjs` is a plausible entry point, `test2` is not.
     r"|^test\d+\.[cm]?js$"
+    # `diag.js`, `diag2.mjs`, `diag-filter.js`: three fixers of one run left these at the project root, and the
+    # cross-file check raised `diag.js`'s `require` under `"type": "module"` as a defect that took a fix round
+    # (LF.1529). Digits or a separator right after `diag`, so `diagram.js` and `diagnostics.ts` stay the product's.
+    r"|^diag\d*[_.-]"
     # The suffix the delete guard tells a stage to rename a throwaway probe to
     # on its way out - see `repository._somewhere_this_rule_will_let_go_of`.
     r"|\.probe$"

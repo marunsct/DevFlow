@@ -1,0 +1,1 @@
+- Error response body (400, 404, 500): {"message": "<error description string>"}. At minimum has the 'message' key.

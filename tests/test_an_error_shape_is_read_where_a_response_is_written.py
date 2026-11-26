@@ -81,3 +81,44 @@ def test_a_variant_of_a_declared_enum_naming_a_status_is_no_error_response(tmp_p
 
     assert result.counts["error responses"] == 3
     assert result.counts["status codes"] == "400 404 500"
+
+
+# LF.1592: three more misreadings the same sweep found, each a fact of one language in the language table.
+
+
+def test_docstrings_describing_the_responses_are_neither_responses_nor_shapes(tmp_path):
+    """Measured: a FastAPI service answering every error as `{detail}` lost both shape checks to its docstrings -
+    "returns HTTP 422 with {"detail": ...}" and "If exists, raises HTTPException(409)" read as responses, the last two
+    in shapes `{username}` and `{token}` taken from the code below them."""
+    result = _scored("docstrings-that-describe-the-responses", tmp_path)
+
+    one = _check(result, "one error shape")
+    assert one.passed == 1.0
+    assert _shapes(one) == ["{detail}"]
+    assert not any('"""' in evidence or "HTTP 422 with" in evidence for evidence in one.evidence)
+    assert _check(result, "the error shape the specification states").passed == 1.0
+
+
+def test_a_php_array_body_is_read_and_a_later_assignment_is_not(tmp_path):
+    """Measured: `JsonResponse::json($response, ['message' => 'Body is required'], 400)` was not read, and
+    `$title = $body['title'];` three lines below was read as a body `{title}`."""
+    result = _scored("php-array-bodies", tmp_path)
+
+    one = _check(result, "one error shape")
+    assert _shapes(one) == ["{message}"]
+    assert one.evidence[0].startswith("{message} x22, first at src/Service.php:63 ")
+    assert _check(result, "the error shape the specification states").passed == 1.0
+
+
+def test_rust_error_values_built_before_the_response_are_not_responses(tmp_path):
+    """Measured: `.map_err(|e| AppError::BadRequest(...))` and `Err(AppError::NotFound(...))` in the store were read as
+    error responses, one in a shape `{AppError}`; only the `IntoResponse` arms that give each variant its
+    `StatusCode` answer one."""
+    result = _scored("rust-error-values-built-before-the-response", tmp_path)
+
+    one = _check(result, "one error shape")
+    assert one.passed == 1.0
+    assert _shapes(one) == ["{error}"]
+    assert result.counts["error responses"] == 3
+    assert result.counts["status codes"] == "400 404 422"
+    assert _check(result, "the error shape the specification states").passed == 1.0

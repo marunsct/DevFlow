@@ -637,8 +637,6 @@ _STATUS_NAME = re.compile(
     r"(?i)(?<![a-z])(?:status_?)?(bad_?request|unauthori[sz]ed|forbid(?:den)?|not_?found|method_?not_?allowed|conflict|"
     r"unprocessable_?(?:entity|content)|too_?many_?requests|internal_?server_?error|service_?unavailable)(?:result)?\b")
 _COMMENT = re.compile(r"^\s*(?://|#|\*|/\*|--|<!--)")
-_BODY_KEYS = re.compile(r"""\{\s*["']?([A-Za-z_]\w*)["']?\s*[:=](?!=)""")
-_MORE_KEYS = re.compile(r"""[,{]\s*["']?([A-Za-z_]\w*)["']?\s*[:=](?!=)""")
 _KEYWORD_BODY = re.compile(r"\b(detail|message|error|errors|error_code|code|title)\s*=(?!=)")
 _PROBLEM = re.compile(r"\bProblem\(|ProblemDetails|application/problem\+json")
 _CLIENT_FAULT = re.compile(r"(?i)permission|forbidden|not found|duplicate|already exists|integrity|unique constraint|not allowed")
@@ -660,30 +658,69 @@ def _statuses(line: str) -> list[int]:
     return _spelled_statuses(line)
 
 
-def _literal(window: str) -> tuple[int, int] | None:
+@dataclass(frozen=True)
+class _Reading:
+    """What the service part reads a file of one language with, from its row of the language table."""
+
+    types: tuple[re.Pattern, ...] = ()
+    text_blocks: tuple[tuple[str, str], ...] = ()
+    error_values: tuple[re.Pattern, ...] = ()
+    opens: str = "{"
+    closes: str = "}"
+    first_key: re.Pattern = re.compile(r"""\{\s*["']?(?P<key>[A-Za-z_]\w*)["']?\s*[:=](?!=)""")
+    any_key: re.Pattern = re.compile(r"""[,{]\s*["']?(?P<key>[A-Za-z_]\w*)["']?\s*[:=](?!=)""")
+    nested: re.Pattern = re.compile(r"\{[^{}]*\}")
+    keywords: bool = True
+
+    def keys(self, literal: str) -> set[str]:
+        """The top-level keys of `literal`: nested literals' keys are not the shape."""
+        top = self.nested.sub("", literal[len(self.opens):])
+        return {match.group("key") for match in self.any_key.finditer(self.opens + top)}
+
+
+_BRACED = _Reading()
+
+
+@lru_cache(maxsize=None)
+def _reading(suffix: str) -> _Reading:
+    from app.stacks.languages import LANGUAGES, Gap
+
+    row = next((r for r in LANGUAGES if suffix in r.suffixes), None)
+    if row is None:
+        return _BRACED
+    form = row.keyed_literal
+    opens, closes = re.escape(form.opens), re.escape(form.closes)
+    return _Reading(
+        types=() if isinstance(row.type_declarations, Gap) else tuple(map(re.compile, row.type_declarations)),
+        text_blocks=() if isinstance(row.text_blocks, Gap) else tuple(row.text_blocks),
+        error_values=() if isinstance(row.error_values, Gap) else tuple(map(re.compile, row.error_values)),
+        opens=form.opens, closes=form.closes,
+        first_key=re.compile(rf"{opens}\s*{form.key}"), any_key=re.compile(rf"(?:,|{opens})\s*{form.key}"),
+        nested=re.compile(rf"{opens}[^{opens}{closes}]*{closes}"), keywords=form.keywords)
+
+
+def _literal(window: str, reading: _Reading = _BRACED) -> tuple[int, int] | None:
     """Where the first keyed literal of `window` opens and closes (its end the window's when it does not close)."""
-    first = _BODY_KEYS.search(window)
+    first = reading.first_key.search(window)
     if not first:
         return None
     start = first.start()
     depth, end = 0, len(window)
     for index in range(start, len(window)):
-        depth += {"{": 1, "}": -1}.get(window[index], 0)
+        depth += {reading.opens: 1, reading.closes: -1}.get(window[index], 0)
         if depth == 0:
             end = index
             break
     return start, end
 
 
-def _shape(window: str) -> tuple[str, ...] | None:
+def _shape(window: str, reading: _Reading = _BRACED) -> tuple[str, ...] | None:
     if _PROBLEM.search(window):
         return ("problem details",)
-    span = _literal(window)
+    span = _literal(window, reading)
     if span:
-        body = window[span[0]:span[1] + 1]
-        top = re.sub(r"\{[^{}]*\}", "", body[1:])  # nested objects' keys are not the shape
-        return tuple(sorted(set(_MORE_KEYS.findall("{" + top))))
-    keyword = _KEYWORD_BODY.findall(window)
+        return tuple(sorted(reading.keys(window[span[0]:span[1] + 1])))
+    keyword = _KEYWORD_BODY.findall(window) if reading.keywords else []
     return tuple(sorted(set(keyword))) if keyword else None
 
 
@@ -703,7 +740,7 @@ def _innermost_open(text: str) -> str:
     return stack[-1] if stack else ""
 
 
-def written_shape(window: str, before: str = "") -> tuple[str, ...] | None:
+def written_shape(window: str, before: str = "", reading: _Reading = _BRACED) -> tuple[str, ...] | None:
     """The error shape the response at `window`'s first line (its status line) sends, `before` the lines just above.
 
     A response is written by a call (`c.json({ error }, 400)`, `res.status(400).json({...})`) or beside its status
@@ -711,31 +748,20 @@ def written_shape(window: str, before: str = "") -> tuple[str, ...] | None:
     no call's argument is a value that only holds a status - a validation result (`return { ok: false, status: 400,
     error }`), a struct built for later - and sends no shape (LF.1591). A call's argument holding nothing but the
     status is the response's options, and the body is the argument before it, on the line above."""
-    span = _literal(window)
+    span = _literal(window, reading)
     line_end = window.find("\n") if "\n" in window else len(window)
     if not span or span[0] >= line_end:
-        return _shape(window)
+        return _shape(window, reading)
     line, (start, end) = window[:line_end], span
     literal = line[start:end + 1]
     if not _spelled_statuses(literal) or _spelled_statuses(line[:start] + line[end + 1:]):
-        return _shape(window)
+        return _shape(window, reading)
     if _innermost_open(f"{before}\n{line[:start]}") != "(":
         return None
-    top = re.sub(r"\{[^{}]*\}", "", literal[1:])
-    if not set(_MORE_KEYS.findall("{" + top)) <= _OPTION_KEYS:
-        return _shape(window)
+    if not reading.keys(literal) <= _OPTION_KEYS:
+        return _shape(window, reading)
     above = before.rsplit("\n", 1)[-1]
-    return _shape(above) if _BODY_KEYS.search(above) else None
-
-
-@lru_cache(maxsize=None)
-def _type_starts(suffix: str) -> tuple[re.Pattern, ...]:
-    from app.stacks.languages import LANGUAGES, Gap
-
-    row = next((r for r in LANGUAGES if suffix in r.suffixes), None)
-    if row is None or isinstance(row.type_declarations, Gap):
-        return ()
-    return tuple(re.compile(pattern) for pattern in row.type_declarations)
+    return _shape(above, reading) if reading.first_key.search(above) else None
 
 
 _CONTINUES = ("=", "=>", "|", "&", "{", "(", "[", ",", "<")
@@ -745,7 +771,7 @@ def type_declaration_lines(path: Path, lines: list[str]) -> set[int]:
     """The lines of `lines` (a file at `path`) inside a declaration of a type, as its language's row of the language
     table finds them (`type_declarations`): from where one begins to where its braces close and its statement ends,
     or to the end of its indented block. They say what a value may hold; no response is written there (LF.1591)."""
-    starts, inside = _type_starts(path.suffix.lower()), set()
+    starts, inside = _reading(path.suffix.lower()).types, set()
     number = 0
     while starts and number < len(lines):
         if not any(pattern.match(lines[number]) for pattern in starts):
@@ -771,6 +797,39 @@ def type_declaration_lines(path: Path, lines: list[str]) -> set[int]:
     return inside
 
 
+_STRING_PREFIX = re.compile(r"[rRbBuUfF]{0,2}")
+
+
+def text_block_lines(path: Path, lines: list[str]) -> set[int]:
+    """The lines of `lines` (a file at `path`) inside a block of text its language's row names (`text_blocks`, a
+    Python docstring): from the line it opens on to the line it closes on, and a line holding one alone. Documentation
+    says what a response is; none is written there (LF.1592)."""
+    blocks, inside, closing = _reading(path.suffix.lower()).text_blocks, set(), ""
+    for number, line in enumerate(lines if blocks else ()):
+        if closing:
+            inside.add(number)
+            closing = "" if closing in line else closing
+            continue
+        opened = [(line.find(opens), opens, closes) for opens, closes in blocks if opens in line]
+        if not opened:
+            continue
+        at, opens, closes = min(opened)
+        if closes not in line[at + len(opens):]:
+            inside.add(number)
+            closing = closes
+        elif _STRING_PREFIX.fullmatch(line[:at].strip()) and line.rstrip().endswith(closes):
+            inside.add(number)
+    return inside
+
+
+def _masked(line: str, reading: _Reading) -> str:
+    """`line` with each error value its language's row names (`error_values`, `AppError::NotFound`) blanked, so the
+    status a variant is named after is not read as a response's (LF.1592)."""
+    for pattern in reading.error_values:
+        line = pattern.sub(lambda match: "_" * len(match.group(0)), line)
+    return line
+
+
 _DEFINITION = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+|export\s+|async\s+|static\s+|private\s+|public\s+)*"
                          r"(?:fn|def|function|func)\s+([A-Za-z_]\w*)")
 
@@ -778,12 +837,12 @@ _DEFINITION = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+|export\s+|async\s+|static
 def _helpers(code: dict[Path, str]) -> dict[str, tuple[str, ...]]:
     """The error shape each small function builds, for a status passed to a helper (`error_response(404, ...)`)."""
     shapes = {}
-    for text in code.values():
-        lines = text.splitlines()
+    for path, text in code.items():
+        lines, reading = text.splitlines(), _reading(path.suffix.lower())
         for number, line in enumerate(lines):
             definition = _DEFINITION.match(line)
             if definition and re.search(r"(?i)error|problem|fail|respon|reply|abort", definition.group(1)):
-                shape = _shape("\n".join(lines[number: number + 10]))
+                shape = _shape("\n".join(lines[number: number + 10]), reading)
                 if shape:
                     shapes.setdefault(definition.group(1), shape)
     return shapes
@@ -820,16 +879,18 @@ def service_part(project: Path, sources: dict[Path, str], specification: str) ->
     for path, text in code.items():
         lines = text.splitlines()
         relative = project_relative(project, path)
-        types = type_declaration_lines(path, lines)
+        reading = _reading(path.suffix.lower())
+        skipped = type_declaration_lines(path, lines) | text_block_lines(path, lines)
+        read = [_masked(each, reading) for each in lines]
         for number, line in enumerate(lines):
-            statuses = [s for s in _statuses(line) if s >= 400] if number not in types else []
+            statuses = [s for s in _statuses(read[number]) if s >= 400] if number not in skipped else []
             if not statuses:
                 continue
             errors += 1
             codes.update(statuses)
-            window = "\n".join(lines[k] for k in range(number, min(number + 4, len(lines))) if k not in types)
-            before = "\n".join(lines[k] for k in range(max(0, number - 3), number) if k not in types)
-            shape = written_shape(window, before) or next(
+            window = "\n".join(read[k] for k in range(number, min(number + 4, len(lines))) if k not in skipped)
+            before = "\n".join(read[k] for k in range(max(0, number - 3), number) if k not in skipped)
+            shape = written_shape(window, before, reading) or next(
                 (helpers[name] for name in re.findall(r"\b([A-Za-z_]\w*)\s*\(", line) if name in helpers), None)
             if shape:
                 shapes.setdefault(shape, []).append(f"{relative}:{number + 1} {' '.join(line.split())[:100]}")

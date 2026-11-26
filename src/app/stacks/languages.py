@@ -69,6 +69,25 @@ class TreeReading:
 
 
 @dataclass(frozen=True)
+class KeyedLiteral:
+    """How a keyed literal - a map, object, dictionary or associative array - is written, which an error response's
+    body is read from (`app.analysis.product_quality`, LF.1592)."""
+
+    #: The bracket it opens with, and the one it closes with.
+    opens: str
+    closes: str
+    #: A pattern of one key as it follows the opening bracket or a comma, with a group `key`.
+    key: str
+    #: Whether a body is also passed as keyword arguments named by `=` (`HTTPException(detail="...")`); where it is
+    #: not, `name = value` is an assignment (`$title = $body['title']`).
+    keywords: bool = True
+
+
+#: `{ key: value }`, `{"key": value}`, `{ key = value }`, `{ "key" => value }`.
+BRACED = KeyedLiteral("{", "}", r"""["']?(?P<key>[A-Za-z_]\w*)["']?\s*[:=](?!=)""")
+
+
+@dataclass(frozen=True)
 class LanguageSupport:
     #: The name a pack's `language` uses.
     name: str
@@ -169,6 +188,18 @@ class LanguageSupport:
     #: TypeScript union `| { ok: false; status: 400 | 422; error: string }` was read as an error response in a shape
     #: of its own, and a service answering every error as `{error}` lost "one error shape".
     type_declarations: tuple[str, ...] | Gap = Gap("no type declaration is read in this language")
+    #: How its keyed literals are written, which an error response's body is read from (LF.1592). Measured: PHP's
+    #: `['message' => 'Body is required']` was not read, and `$title = $body['title']` on a later line was read as a
+    #: body `{title}`, so a service answering every error as the specification's `{message}` failed that check.
+    keyed_literal: KeyedLiteral = BRACED
+    #: (opening, closing) delimiters of a block of text that is not code and not a comment line - a Python
+    #: docstring - whose lines are never a response written (LF.1592). Measured: "Status 404 with
+    #: ``detail="Item not found"``" in a docstring was read as an error response and its shape.
+    text_blocks: tuple[tuple[str, str], ...] | Gap = Gap("its documentation is written in comment lines, skipped")
+    #: Patterns of a status named as a variant of an error value the code builds (`AppError::NotFound(id)`), not a
+    #: response; the statuses they name are not read (LF.1592). Measured: `Err(DatabaseError::NotFound(id))` and
+    #: `.map_err(|e| AppError::BadRequest(...))` were read as error responses in shapes of their own.
+    error_values: tuple[str, ...] | Gap = Gap("no status is spelled as an error value's variant in this language")
 
 
 _NODE_INSTALLED = ("node_modules",)
@@ -703,6 +734,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
             ),
             assertion_failed=_PYTHON_ASSERTION,
             type_declarations=_PYTHON_TYPES,
+            text_blocks=(('"""', '"""'), ("'''", "'''")),
             fresh_store=(
                 "With pytest, a fixture gives each test its own folder (`tmp_path`), sets the setting the store reads "
                 "to it (`monkeypatch.setenv(\"DATA_DIR\", str(tmp_path))`, or the store's own path argument) and only "
@@ -789,6 +821,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
             ),
             assertion_failed=_RUST_ASSERTION,
             type_declarations=_RUST_TYPES,
+            error_values=(r"\b(?:[A-Z]\w*)?Error::[A-Z]\w*",),
             fresh_store=(
                 "In Rust, each test builds its store on its own folder from `tempfile::tempdir()` (a dev-dependency), "
                 "never on a fixed path that tests running side by side share."
@@ -1006,6 +1039,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
             ),
             assertion_failed=_PHP_ASSERTION,
             type_declarations=_PHP_TYPES,
+            keyed_literal=KeyedLiteral("[", "]", r"""(["'])(?P<key>[A-Za-z_]\w*)\1\s*=>""", keywords=False),
             fresh_store=(
                 "With PHPUnit, `setUp()` builds the store on a fresh folder under `sys_get_temp_dir()` "
                 "(`putenv(\"DATA_DIR=...\")` before it is built) and `tearDown()` removes it; with Laravel, the "

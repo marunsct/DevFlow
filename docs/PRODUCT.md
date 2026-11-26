@@ -571,7 +571,10 @@ read only where a response is written - never from a declaration of a type (the 
 a TypeScript `type`/`interface`, a Go or Rust struct or enum, a Java, Kotlin, C# or PHP record, interface or enum, a
 Python `TypedDict`), nor from a literal that holds the very status its line names and is no call's argument (a
 validation result such as `return { ok: false, status: 400, error }`), and a call's options holding only the status
-(`NextResponse.json(body, { status: 401 })`) read the body beside them, LF.1591 - no 500 near a client's fault, a refusal the code raises answered 403, and no product file importing a package its
+(`NextResponse.json(body, { status: 401 })`) read the body beside them, LF.1591; nor from a block of text the row
+names (`text_blocks`: a Python docstring), nor from a status named as an error value's variant (`error_values`:
+Rust's `AppError::NotFound(...)`), and a body is read in the language's own keyed literal (`keyed_literal`: PHP's
+`['message' => ...]`, where `$title = ...` is an assignment), LF.1592 - no 500 near a client's fault, a refusal the code raises answered 403, and no product file importing a package its
 nearest manifest declares for development only - per language through the language table's `development_only` reader,
 `analysis/development_packages.py`: npm's `devDependencies` not also run-time, Python's development groups and
 `requirements-dev.txt`; in a package bundled for a page only the files its scripts start; files the stack pack keeps

@@ -1318,6 +1318,15 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
 
     def read(self, file_path: str, *args: Any, **kwargs: Any) -> Any:
         _HELD.note = ""
+        if not args and "limit" in kwargs:
+            # A narrow window widened while the request has room (`READ_WINDOWS_SIZED_TO_THE_ROOM`, off until
+            # measured): as asked outside such a read. See `app.agents.read_windows`.
+            from app.agents.read_windows import the_limit_to_read
+
+            kwargs["limit"] = the_limit_to_read(
+                kwargs.get("offset", 0), kwargs["limit"],
+                lambda: self._resolve_path(file_path).read_text(encoding="utf-8"),
+            )
         try:
             result = super().read(file_path, *args, **kwargs)
         except ValueError as e:

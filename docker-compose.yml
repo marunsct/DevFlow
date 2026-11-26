@@ -132,6 +132,7 @@ x-app-env: &app-env
   REQUEST_BUDGET_FOR_EVERY_STAGE: ${REQUEST_BUDGET_FOR_EVERY_STAGE:-off}
   # LF.1289: a whole read past the request's room left is answered with the file's outline; off until measured.
   READS_SIZED_TO_THE_ROOM: ${READS_SIZED_TO_THE_ROOM:-off}
+  READ_WINDOWS_SIZED_TO_THE_ROOM: ${READ_WINDOWS_SIZED_TO_THE_ROOM:-on}
   # Plan WS.4: a person starts the product from the run page; it runs on the preview network below.
   PRODUCT_PREVIEW: ${PRODUCT_PREVIEW:-off}
   PRODUCT_PREVIEW_NETWORK: ${PRODUCT_PREVIEW_NETWORK:-devflow-preview}

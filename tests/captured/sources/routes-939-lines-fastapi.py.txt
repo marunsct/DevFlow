@@ -1,0 +1,939 @@
+"""API route handlers for authentication and task endpoints.
+
+This module implements all API endpoints:
+- POST /api/v1/auth/register
+- POST /api/v1/auth/login
+- POST /api/v1/auth/refresh
+- POST /api/v1/auth/logout
+- POST /api/v1/tasks (create)
+- GET /api/v1/tasks (list with pagination)
+- GET /api/v1/tasks/{task_id} (get one)
+- PUT /api/v1/tasks/{task_id} (update with optimistic locking)
+- DELETE /api/v1/tasks/{task_id} (delete)
+
+Database models are imported from models.py (owned by the database specialist).
+Rate limiting uses an in-memory dict keyed by client IP, with a count
+per minute window.  The limit is read from the CLIENT_RATE_LIMIT
+environment variable (default 1000) so the acceptance suite never
+triggers it.
+
+Exports
+-------
+auth_router : APIRouter for /api/v1/auth/*
+tasks_router : APIRouter for /api/v1/tasks/*
+"""
+
+import os
+import time
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from .auth import (
+    InvalidTokenError,
+    create_access_token,
+    create_refresh_token,
+    decode_access_token,
+    hash_password,
+    hash_token,
+    verify_password,
+)
+from .models import Base, RefreshToken, RevokedToken, Task, User  # noqa: F401
+from .schemas import (
+    CreateTaskRequest,
+    LoginRequest,
+    LoginResponse,
+    LogoutRequest,
+    MessageResponse,
+    PaginatedResponse,
+    RefreshRequest,
+    RegisterRequest,
+    TaskResponse,
+    UpdateTaskRequest,
+)
+from .settings import settings
+
+# ---------------------------------------------------------------------------
+# Database engine and session factory (inline — kept for compatibility)
+# ---------------------------------------------------------------------------
+
+
+def _get_engine():
+    """Create and return the SQLAlchemy engine.
+
+    Uses DATABASE_URL from settings if set; otherwise creates a SQLite
+    engine pointing at DATA_DIR/app.db.
+
+    Returns
+    -------
+    sqlalchemy.engine.Engine
+    """
+    from sqlalchemy import create_engine
+
+    if settings.database_url:
+        url = settings.database_url
+    else:
+        os.makedirs(settings.data_dir, exist_ok=True)
+        db_path = os.path.join(settings.data_dir, "app.db")
+        url = f"sqlite:///{db_path}"
+
+    return create_engine(
+        url,
+        connect_args={"check_same_thread": False} if not settings.database_url else {},
+        poolclass=None,  # NullPool for test isolation
+    )
+
+
+_engine = _get_engine()
+
+
+def _create_tables():
+    """Create all tables if they don't exist."""
+    Base.metadata.create_all(_engine)
+
+
+# Create tables on module import so tests that import routes work.
+_create_tables()
+
+
+def _get_session():
+    """Return a new database session bound to the singleton engine."""
+    from sqlalchemy.orm import sessionmaker
+
+    factory = sessionmaker(bind=_engine)
+    return factory()
+
+
+# ---------------------------------------------------------------------------
+# Rate limiter (in-memory, keyed by IP)
+# ---------------------------------------------------------------------------
+
+_rate_limits: dict[str, list[float]] = {}
+CLIENT_RATE_LIMIT = int(os.environ.get("CLIENT_RATE_LIMIT", "1000"))
+
+
+def _check_rate_limit(ip: str) -> bool:
+    """Check if the given IP is within rate limits.
+
+    Parameters
+    ----------
+    ip : str
+        The client's IP address.
+
+    Returns
+    -------
+    bool
+        True if the request is allowed, False if rate limited.
+    """
+    now = time.time()
+    window_start = now - 60  # 1 minute window
+    if ip not in _rate_limits:
+        _rate_limits[ip] = []
+    # Remove old entries outside the window
+    _rate_limits[ip] = [t for t in _rate_limits[ip] if t > window_start]
+    if len(_rate_limits[ip]) >= CLIENT_RATE_LIMIT:
+        return False
+    _rate_limits[ip].append(now)
+    return True
+
+
+def _get_client_ip(request: Request) -> str:
+    """Extract the client's IP address from the request."""
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+# ---------------------------------------------------------------------------
+# Router instances
+# ---------------------------------------------------------------------------
+
+auth_router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
+tasks_router = APIRouter(prefix="/api/v1/tasks", tags=["tasks"])
+
+
+def get_db():
+    """FastAPI dependency: yield a database session, close on exit."""
+    session = _get_session()
+    try:
+        yield session
+    finally:
+        session.close()
+
+
+def get_current_user(
+    authorization: Optional[str] = Header(None),
+    db=Depends(get_db),
+):
+    """Decode JWT from Authorization header and return the User record.
+
+    Extracts the Bearer token from the Authorization header, decodes it,
+    checks that the jti is not in the revoked_tokens table, and returns
+    the corresponding User record.
+
+    Parameters
+    ----------
+    authorization : str or None
+        The full "Bearer <token>" string from the Authorization header,
+        or None if the header is missing.
+    db : Session
+        Database session from get_db dependency.
+
+    Returns
+    -------
+    User
+        The authenticated user record.
+
+    Raises
+    ------
+    HTTPException(401)
+        If the token is missing, malformed, expired, revoked, or the
+        user doesn't exist.
+    """
+    prefix = "Bearer "
+    if not authorization or not authorization.startswith(prefix):
+        raise HTTPException(
+            status_code=401,
+            detail="Not authenticated",
+        )
+
+    token = authorization[len(prefix):]
+
+    try:
+        payload = decode_access_token(token, settings.jwt_secret_key)
+    except InvalidTokenError as e:
+        error_msg = str(e).lower()
+        if "expired" in error_msg:
+            raise HTTPException(
+                status_code=401,
+                detail="Access token expired",
+            )
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid access token",
+        )
+
+    # Check if jti is revoked
+    jti = payload.get("jti")
+    if jti:
+        stmt = select(RevokedToken).where(RevokedToken.jti == jti)
+        result = db.execute(stmt)
+        if result.scalar_one_or_none():
+            raise HTTPException(
+                status_code=401,
+                detail="Token has been revoked",
+            )
+
+    # Look up user by sub claim (str(user_id))
+    stmt = select(User).where(User.id == payload["sub"])
+    result = db.execute(stmt)
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="Not authenticated",
+        )
+
+    return user
+
+
+# ---------------------------------------------------------------------------
+# Auth endpoints
+# ---------------------------------------------------------------------------
+
+
+@auth_router.post("/register", status_code=201)
+async def register_user(
+    request: RegisterRequest,
+    req: Request,
+    db=Depends(get_db),
+):
+    """Register a new user.
+
+    Validates the request body (Pydantic handles 422), checks for email
+    uniqueness, hashes the password, and creates a new User record.
+
+    Returns
+    -------
+    dict
+        {id, email, username} on success (201).
+        Raises HTTPException(409) if email already exists.
+    """
+    # Rate limiting
+    ip = _get_client_ip(req)
+    if not _check_rate_limit(ip):
+        raise HTTPException(
+            status_code=429,
+            detail="Rate limit exceeded",
+        )
+
+    # Check email uniqueness
+    stmt = select(User).where(User.email == request.email)
+    result = db.execute(stmt)
+    if result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=409,
+            detail="Email already registered",
+        )
+
+    # Hash password and create user
+    hashed = hash_password(request.password)
+    from uuid import uuid4
+
+    user = User(
+        id=str(uuid4()),
+        email=request.email,
+        password_hash=hashed,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    return {"id": user.id, "email": user.email, "username": request.username}
+
+
+@auth_router.post("/login", status_code=200)
+async def login_user(
+    request: LoginRequest,
+    req: Request,
+    db=Depends(get_db),
+):
+    """Authenticate a user and return tokens.
+
+    Validates credentials (Pydantic handles 422), generates access and
+    refresh tokens, stores the refresh token hash in the database, and
+    returns both tokens.
+
+    Returns
+    -------
+    dict
+        {access_token, refresh_token, token_type} on success (200).
+        Raises HTTPException(401) for invalid credentials.
+    """
+    # Rate limiting
+    ip = _get_client_ip(req)
+    if not _check_rate_limit(ip):
+        raise HTTPException(
+            status_code=429,
+            detail="Rate limit exceeded",
+        )
+
+    # Find user by email
+    stmt = select(User).where(User.email == request.email)
+    result = db.execute(stmt)
+    user = result.scalar_one_or_none()
+
+    if not user or not verify_password(request.password, user.password_hash):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid email or password",
+        )
+
+    # Create access token (sub is str(user.id))
+    access_token = create_access_token(
+        user.id,
+        settings.jwt_secret_key,
+        expire_minutes=settings.access_token_expire_minutes,
+    )
+    raw_refresh = create_refresh_token()
+
+    # Decode access token to get jti for linking refresh token
+    payload = decode_access_token(access_token, settings.jwt_secret_key)
+
+    from uuid import uuid4
+
+    refresh_record = RefreshToken(
+        id=str(uuid4()),
+        user_id=user.id,
+        token_hash=hash_token(raw_refresh),
+        expires_at=datetime.now(timezone.utc)
+        + timedelta(days=settings.refresh_token_expire_days),
+        access_jti=payload["jti"],
+    )
+
+    db.add(refresh_record)
+    db.commit()
+
+    return {
+        "access_token": access_token,
+        "refresh_token": raw_refresh,
+        "token_type": "bearer",
+    }
+
+
+@auth_router.post("/refresh", status_code=200)
+async def refresh_access_token(
+    request: RefreshRequest,
+    db=Depends(get_db),
+):
+    """Refresh an access token using a valid refresh token.
+
+    Validates the refresh token (Pydantic handles 422), checks it's not
+    expired or revoked, revokes the old access token (by inserting its
+    jti into revoked_tokens), and issues a new access token.
+
+    Returns
+    -------
+    dict
+        {access_token, token_type} on success (200).
+        Raises HTTPException(404) if token not found/expired/revoked.
+    """
+    # Hash the provided refresh token
+    token_hash = hash_token(request.refresh_token)
+
+    # Look up the refresh token (non-revoked and not expired)
+    stmt = select(RefreshToken).where(
+        RefreshToken.token_hash == token_hash,
+        RefreshToken.revoked == False,  # noqa: E712
+        RefreshToken.expires_at > datetime.now(timezone.utc),
+    )
+    result = db.execute(stmt)
+    refresh_record = result.scalar_one_or_none()
+
+    if not refresh_record:
+        raise HTTPException(
+            status_code=404,
+            detail="Refresh token not found or expired",
+        )
+
+    # Get the user from the linked record
+    stmt = select(User).where(User.id == refresh_record.user_id)
+    result = db.execute(stmt)
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="Refresh token not found or expired",
+        )
+
+    # Create new access token
+    new_access_token = create_access_token(
+        user.id,
+        settings.jwt_secret_key,
+        expire_minutes=settings.access_token_expire_minutes,
+    )
+
+    # Mark old refresh token as revoked
+    refresh_record.revoked = True
+
+    # Insert old access token's jti into revoked_tokens to invalidate it
+    if refresh_record.access_jti:
+        from uuid import uuid4
+
+        revoked = RevokedToken(
+            id=str(uuid4()),
+            jti=refresh_record.access_jti,
+        )
+        db.add(revoked)
+
+    db.commit()
+
+    return {
+        "access_token": new_access_token,
+        "token_type": "bearer",
+    }
+
+
+@auth_router.post("/logout", status_code=200)
+async def logout_user(
+    request: LogoutRequest,
+    req: Request,
+    db=Depends(get_db),
+):
+    """Logout a user by revoking their refresh token.
+
+    Authenticates via the refresh_token in the request body (no
+    Authorization header required).  Marks the refresh token as revoked
+    and inserts the associated access token's jti into revoked_tokens so
+    that any active access token is also invalidated.
+
+    Uses LogoutRequest (no length constraints) because a short or
+    unknown token is simply an unauthenticated request — not a
+    validation error.  The endpoint returns 401 when the token hash
+    does not match any stored refresh token.
+
+    Returns
+    -------
+    dict
+        {message: "logged out"} on success (200).
+        Raises HTTPException(401) if token not found or already revoked.
+    """
+    # Hash the provided refresh token
+    token_hash = hash_token(request.refresh_token)
+
+    # Look up the non-revoked refresh token
+    stmt = select(RefreshToken).where(
+        RefreshToken.token_hash == token_hash,
+        RefreshToken.revoked == False,  # noqa: E712
+    )
+    result = db.execute(stmt)
+    refresh_record = result.scalar_one_or_none()
+
+    if not refresh_record:
+        raise HTTPException(
+            status_code=401,
+            detail="Refresh token not found",
+        )
+
+    # Mark refresh token as revoked
+    refresh_record.revoked = True
+
+    # Also revoke the associated access token if it has one
+    if refresh_record.access_jti:
+        from uuid import uuid4
+
+        revoked = RevokedToken(
+            id=str(uuid4()),
+            jti=refresh_record.access_jti,
+        )
+        db.add(revoked)
+
+    db.commit()
+
+    return {"message": "logged out"}
+
+
+# ---------------------------------------------------------------------------
+# Task endpoints (Sprint 2 — full CRUD)
+# ---------------------------------------------------------------------------
+
+
+def _task_to_response(task_obj) -> dict:
+    """Convert a SQLAlchemy Task row to a TaskResponse-compatible dict.
+
+    Parameters
+    ----------
+    task_obj : Task
+        The SQLAlchemy ORM instance.
+
+    Returns
+    -------
+    dict
+        A dictionary with all TaskResponse fields.
+    """
+    return {
+        "id": str(task_obj.id),
+        "title": task_obj.title,
+        "description": task_obj.description,
+        "priority": task_obj.priority,
+        "due_date": (
+            task_obj.due_date.isoformat() if task_obj.due_date else None
+        ),
+        "status": task_obj.status,
+        "category_id": str(task_obj.category_id) if task_obj.category_id else None,
+        "assignee_id": str(task_obj.assignee_id) if task_obj.assignee_id else None,
+        "creator_id": str(task_obj.creator_id),
+        "version": task_obj.version,
+        "created_at": task_obj.created_at.isoformat(),
+        "updated_at": task_obj.updated_at.isoformat(),
+        "tags": task_obj.tags or [],
+        "reminders": task_obj.reminders or [],
+    }
+
+
+def _validate_if_match(if_match_header: str) -> int:
+    """Validate the If-Match header as a non-negative integer string.
+
+    Accepts only strings that represent a non-negative integer (digits only,
+    no decimal point, no negative sign, no whitespace).
+
+    Parameters
+    ----------
+    if_match_header : str
+        The raw If-Match header value.
+
+    Returns
+    -------
+    int
+        The parsed non-negative integer.
+
+    Raises
+    ------
+    HTTPException(422)
+        If the header is not a valid non-negative integer string.
+    """
+    stripped = if_match_header.strip()
+    # Must be digits only (non-negative integer representation)
+    if not stripped or not stripped.isdigit():
+        raise HTTPException(
+            status_code=422,
+            detail="If-Match header must be a non-negative integer",
+            error_code="INVALID_IF_MATCH",
+        )
+    return int(stripped)
+
+
+@tasks_router.post("", response_model=TaskResponse, status_code=201)
+async def create_task(
+    request: CreateTaskRequest,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Create a new task for the authenticated user.
+
+    Validates the request body (Pydantic handles 422 for title length,
+    priority literal, and due_date constraints).  Creates a Task record
+    with creator_id set to the current user's id, version=0, tags=[]
+    if not provided, and reminders=[] if not provided.
+
+    Parameters
+    ----------
+    request : CreateTaskRequest
+        The validated request body.
+    user : User
+        Authenticated user from get_current_user dependency.
+    db : Session
+        Database session from get_db dependency.
+
+    Returns
+    -------
+    TaskResponse
+        The created task with all fields populated.
+    """
+    from uuid import uuid4
+
+    tags = request.tags if request.tags is not None else []
+    reminders = request.reminders if request.reminders is not None else []
+
+    task = Task(
+        id=str(uuid4()),
+        title=request.title,
+        description=request.description,
+        priority=request.priority,
+        due_date=(
+            datetime.fromisoformat(request.due_date.replace("Z", "+00:00"))
+            if request.due_date
+            else None
+        ),
+        category_id=request.category_id,
+        creator_id=user.id,
+        status="todo",
+        tags=tags,
+        reminders=reminders,
+        version=0,
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+
+    return _task_to_response(task)
+
+
+@tasks_router.get("", response_model=PaginatedResponse)
+async def get_tasks(
+    page: int = 1,
+    page_size: int = 20,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Get all tasks for the authenticated user with pagination.
+
+    Only returns tasks where the user is either the creator or assignee.
+    Results are ordered by created_at descending.
+
+    Parameters
+    ----------
+    page : int
+        Page number (1-based). Defaults to 1.
+    page_size : int
+        Number of items per page. Defaults to 20.
+    user : User
+        Authenticated user from get_current_user dependency.
+    db : Session
+        Database session from get_db dependency.
+
+    Returns
+    -------
+    PaginatedResponse
+        {items: [TaskResponse...], total, page, page_size}
+    """
+    # Count total matching tasks
+    count_stmt = (
+        select(Task)
+        .where(
+            (Task.creator_id == user.id) | (Task.assignee_id == user.id)
+        )
+    )
+    total_result = db.execute(count_stmt)
+    total = len(total_result.all())
+
+    # Fetch paginated results ordered by created_at DESC
+    offset = (page - 1) * page_size
+    stmt = (
+        select(Task)
+        .where(
+            (Task.creator_id == user.id) | (Task.assignee_id == user.id)
+        )
+        .order_by(Task.created_at.desc())
+        .limit(page_size)
+        .offset(offset)
+    )
+    result = db.execute(stmt)
+    tasks = result.all()
+
+    return PaginatedResponse(
+        items=[_task_to_response(t) for t in tasks],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@tasks_router.get("/{task_id}", response_model=TaskResponse)
+async def get_task(
+    task_id: str,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Get a single task by ID.
+
+    Returns the task if the authenticated user is either the creator
+    or assignee.  Returns 403 FORBIDDEN if the user has no permission,
+    and 404 TASK_NOT_FOUND if no such task exists.
+
+    Parameters
+    ----------
+    task_id : str
+        The UUID string of the task to retrieve.
+    user : User
+        Authenticated user from get_current_user dependency.
+    db : Session
+        Database session from get_db dependency.
+
+    Returns
+    -------
+    TaskResponse
+        The task data.
+
+    Raises
+    ------
+    HTTPException(404)
+        If the task does not exist (TASK_NOT_FOUND).
+    HTTPException(403)
+        If the user is neither the creator nor assignee (FORBIDDEN).
+    """
+    from uuid import UUID
+
+    try:
+        task_uuid = UUID(task_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=404,
+            detail="Task not found",
+            error_code="TASK_NOT_FOUND",
+        )
+
+    stmt = select(Task).where(Task.id == str(task_uuid))
+    result = db.execute(stmt)
+    task = result.scalar_one_or_none()
+
+    if not task:
+        raise HTTPException(
+            status_code=404,
+            detail="Task not found",
+            error_code="TASK_NOT_FOUND",
+        )
+
+    # Check permission: user must be creator or assignee
+    if str(task.creator_id) != str(user.id) and (
+        task.assignee_id is None or str(task.assignee_id) != str(user.id)
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Insufficient permissions",
+            error_code="FORBIDDEN",
+        )
+
+    return _task_to_response(task)
+
+
+@tasks_router.put("/{task_id}", response_model=TaskResponse)
+async def update_task(
+    task_id: str,
+    request: UpdateTaskRequest,
+    if_match: str = Header(...),
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Update a task with optimistic locking via If-Match header.
+
+    The If-Match header must contain a string representation of a
+    non-negative integer matching the current version of the task.
+    On success, the version is incremented by 1 and all provided
+    fields are updated.
+
+    Parameters
+    ----------
+    task_id : str
+        The UUID string of the task to update.
+    request : UpdateTaskRequest
+        The validated request body with optional fields.
+    if_match : str
+        The If-Match header containing the expected version number.
+    user : User
+        Authenticated user from get_current_user dependency.
+    db : Session
+        Database session from get_db dependency.
+
+    Returns
+    -------
+    TaskResponse
+        The updated task data.
+
+    Raises
+    ------
+    HTTPException(422)
+        If the If-Match header is not a valid non-negative integer.
+    HTTPException(404)
+        If the task does not exist (TASK_NOT_FOUND).
+    HTTPException(403)
+        If the user has no permission (FORBIDDEN).
+    HTTPException(409)
+        If the version does not match (VERSION_CONFLICT).
+    """
+    from uuid import UUID
+
+    # Validate If-Match header
+    expected_version = _validate_if_match(if_match)
+
+    try:
+        task_uuid = UUID(task_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=404,
+            detail="Task not found",
+            error_code="TASK_NOT_FOUND",
+        )
+
+    stmt = select(Task).where(Task.id == str(task_uuid))
+    result = db.execute(stmt)
+    task = result.scalar_one_or_none()
+
+    if not task:
+        raise HTTPException(
+            status_code=404,
+            detail="Task not found",
+            error_code="TASK_NOT_FOUND",
+        )
+
+    # Check permission: user must be creator or assignee
+    if str(task.creator_id) != str(user.id) and (
+        task.assignee_id is None or str(task.assignee_id) != str(user.id)
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Insufficient permissions",
+            error_code="FORBIDDEN",
+        )
+
+    # Optimistic locking: check version
+    if task.version != expected_version:
+        raise HTTPException(
+            status_code=409,
+            detail="Version conflict: record has been modified",
+            error_code="VERSION_CONFLICT",
+        )
+
+    # Update provided fields
+    update_fields = request.model_dump(exclude_unset=True)
+
+    # Handle due_date: convert from ISO string to datetime
+    if "due_date" in update_fields and update_fields["due_date"] is not None:
+        update_fields["due_date"] = datetime.fromisoformat(
+            update_fields["due_date"].replace("Z", "+00:00")
+        )
+
+    # Handle category_id/assignee_id: convert from string to UUID string
+    for field in ("category_id", "assignee_id"):
+        if field in update_fields and update_fields[field] is not None:
+            try:
+                UUID(update_fields[field])
+            except ValueError:
+                pass  # Keep as-is; DB will handle validation
+
+    # Apply updates to the task object
+    for key, value in update_fields.items():
+        setattr(task, key, value)
+
+    # Increment version
+    task.version = expected_version + 1
+    task.updated_at = datetime.now(timezone.utc)
+
+    db.commit()
+    db.refresh(task)
+
+    return _task_to_response(task)
+
+
+@tasks_router.delete("/{task_id}", response_model=MessageResponse)
+async def delete_task(
+    task_id: str,
+    user=Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Delete a task by ID.
+
+    Only the creator or assignee can delete the task.  Returns 403
+    if the user has no permission, and 404 if no such task exists.
+
+    Parameters
+    ----------
+    task_id : str
+        The UUID string of the task to delete.
+    user : User
+        Authenticated user from get_current_user dependency.
+    db : Session
+        Database session from get_db dependency.
+
+    Returns
+    -------
+    MessageResponse
+        {message: "deleted"} on success (200).
+
+    Raises
+    ------
+    HTTPException(404)
+        If the task does not exist (TASK_NOT_FOUND).
+    HTTPException(403)
+        If the user has no permission (FORBIDDEN).
+    """
+    from uuid import UUID
+
+    try:
+        task_uuid = UUID(task_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=404,
+            detail="Task not found",
+            error_code="TASK_NOT_FOUND",
+        )
+
+    stmt = select(Task).where(Task.id == str(task_uuid))
+    result = db.execute(stmt)
+    task = result.scalar_one_or_none()
+
+    if not task:
+        raise HTTPException(
+            status_code=404,
+            detail="Task not found",
+            error_code="TASK_NOT_FOUND",
+        )
+
+    # Check permission: user must be creator or assignee
+    if str(task.creator_id) != str(user.id) and (
+        task.assignee_id is None or str(task.assignee_id) != str(user.id)
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Insufficient permissions",
+            error_code="FORBIDDEN",
+        )
+
+    db.delete(task)
+    db.commit()
+
+    return {"message": "deleted"}

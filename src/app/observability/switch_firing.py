@@ -76,6 +76,8 @@ SIGNALS: dict[str, str] = {
     "REQUEST_BUDGET_FOR_EVERY_STAGE": "A stage's memory was held to its request's input budget",
     # In the answer to a whole read the request had no room for (`app.agents.room_for_reads`).
     "READS_SIZED_TO_THE_ROOM": "more than this request has room left for",
+    # In the one line ahead of a narrow read widened while the request had room (`app.agents.read_windows`).
+    "READ_WINDOWS_SIZED_TO_THE_ROOM": "The read was widened to lines",
     # Recorded by the harness each time it switches thinking off for it (`app.agents.deliberated_reads`).
     "LONG_REASONING_BEFORE_A_READ": "Thinking switched off for the reply after one that reasoned at length and then only read",
     # Recorded by the harness each red thorough round it measures alone (`app.graph.measured_round`).

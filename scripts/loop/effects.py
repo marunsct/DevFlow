@@ -180,6 +180,10 @@ def effects(records: list[dict], decisions: str = "") -> list[str]:
     from app.agents.role_tool_lists import effects_lines as role_tool_list_lines
 
     lines.extend(role_tool_list_lines(records))
+    # LF.1570: narrow reads widened to the room, and reads and input tokens per review and per fixer visit.
+    from app.agents.read_windows import effects_lines as read_window_lines
+
+    lines.extend(read_window_lines(records))
     # LF.1524: fast delivery's design findings held as product-breaking, those not held, and the revisions they took.
     from app.graph.fast_design_gate import effects_lines as fast_design_gate_lines
 

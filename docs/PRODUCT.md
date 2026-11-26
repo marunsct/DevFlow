@@ -738,6 +738,18 @@ Defects that share a cause are bundled so one fixer sees all of them (`_bundle_c
   first and last line (`app.analysis.outline.entries`; the top-level definition lines without it) - and how to read the
   lines it needs by range. A range read is never changed; before the first reply the room is not known and a read is
   as before. Its answers say "more than this request has room left for", the firing signal `loop.sh effects` reads.
+- **A narrow range read widened to the room, behind `READ_WINDOWS_SIZED_TO_THE_ROOM`** (group Context and cost, off in
+  code and on in the compose file, `docs/measuring.md` M-LF.1570; `agents/read_windows.py`, through the same
+  middleware and `WorkspaceBackend.read`): a `read_file` naming a `limit` below the 400-line default, of a file holding
+  more lines past its `offset`, is given more lines from the same start - up to the default window, the file's end and
+  half the room left (the same accounting), stopping before lines whose numbered text the conversation still holds
+  (`settled_answer.reads_in_the_conversation`, LF.1517, and the windows it widened still in view, this reply's earlier
+  ones included). One line ahead of the numbered text says "The read was widened to lines a-b of n (you asked for
+  a-c)", the firing signal. The model's own arguments are not changed, so the memory's and the repeat refusals decide
+  the read as before; before the first reply, or past the room, a read is as asked. Measured before it: a medium run's
+  code review made 62 reads, almost all 50-60-line windows, at about 40k tokens of conversation a call. `loop.sh
+  effects` (LF.1570 line) gives the reads widened and, per review and per fixer visit, the median reads and input
+  tokens.
 - **Recorded**: each check is one `request_budget` transcript record (stage, target, size built and sent with its
   memory, sections cut, sections left out, `applied`; with the switch off a stage's record says what would have been
   cut, `applied` false), counted by `loop.sh effects` (cut, and apart, would be cut).

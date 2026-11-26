@@ -180,7 +180,8 @@ GROUPS: dict[str, tuple[str, ...]] = {
                          "LEAN_PROMPTS_FOR_STRONG_MODELS", "QA_PROMPT_TRIMMED", "REVIEWER_SHAPED_PLUGIN_CONTENT",
                          "LEAD_REPLAN_REQUEST_SMALLER", "REQUEST_BUDGET_FOR_EVERY_STAGE",
                          "READS_SIZED_TO_THE_ROOM", "DOCUMENTATION_EXCERPTS_BOUNDED",
-                         "OPENING_ROOM_FOR_REVIEWS", "TOOL_LISTS_BY_ROLE_KIND"),
+                         "OPENING_ROOM_FOR_REVIEWS", "TOOL_LISTS_BY_ROLE_KIND",
+                         "READ_WINDOWS_SIZED_TO_THE_ROOM"),
     # Fewer calls on mutation findings: time, not what the run proves.
     "Efficiency": ("EQUIVALENT_MUTANTS_REMEMBERED", "MUTANT_CHECK_IN_THE_FIX_STAGE", "REVIEWS_WITHOUT_REASONING",
                    "HARNESS_FINDINGS_RECHECKED", "NEAR_GREEN_REPLANNED_ONCE", "STABLE_MEMORY_ORDER",
@@ -306,6 +307,7 @@ EXPERIMENTS_ON: dict[str, str] = {
     "TESTS_REACHED_FIRST": "owner 2026-11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M-PF.3)",
     "RANGES_CHOSEN_BEFORE_A_READING_STAGE": "owner 2026-11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M-PF.4)",
     "TOOL_LISTS_BY_ROLE_KIND": "tool review 2026-11-26 (TR.7, LF.1541): seven tools in every writer's list made 9 calls in 4,260 writer requests, about 6,200 characters of schema; on, and off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M-TR.7)",
+    "READ_WINDOWS_SIZED_TO_THE_ROOM": "medium run 2026-11-26 (LF.1570): one code review made 62 reads, almost all 50-60-line windows, at about 40k tokens of conversation a call, some 3M input tokens; on, and off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes, or a review's or fixer's summaries rise (docs/measuring.md M-LF.1570)",
 }
 _GROUP_OF = {name: group for group, members in GROUPS.items() for name in members}
 

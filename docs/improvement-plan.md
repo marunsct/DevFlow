@@ -119,8 +119,6 @@ Report: `reports/research/2026-11-26-graphify-and-performance-features.md`. grap
 
 **KG next (measured 11-26 on L notes-api-go 15):** the fixers used the one-shot rewrite path (`graph/rewritten_fixes._the_files`: files the defect names, then those its failure text mentions) and made no tool calls, so KG.1-KG.4 never reached them: no `project_graph_reach` or `fixer_localised` record in the run. LF.1528 built 11-26 (the rewrite path takes the graph's localisation). Next: LF.1525 (one read rule for the shell; the agent stopped at the weekly limit, its worktree `.claude/worktrees/agent-aa876605d3e5a5f70` holds partial work).
 
-**Read windows sized to the room (measured 11-26 on Medium 5, sprint 2 code review):** the review's second visit made 62 reads, 55 of them distinct, almost all 50-60-line windows at 40k tokens of conversation a call - about 3M input tokens for one review. A read asking for a small window while the request has room is widened toward the read tool's 400-line default, so a file is covered in one or two calls. Efficiency, so behind a switch `READ_WINDOWS_SIZED_TO_THE_ROOM`, measured by reads and input tokens per review and per fixer.
-
 **`loop.sh effects` while HEAD is ahead of the deploy (11-26 19:33 JST):** the script runs in the worker and imports each new item's module, so a merged but undeployed item (`app.agents.ranges_chosen_first`) raised `ModuleNotFoundError` and the whole report was lost. An item whose module the worker does not have is skipped and named, never fatal (Opus build, with a test).
 
 ### 3.1d Tool review (TR, audit 2026-11-26; owner asked: are the right tools offered, withheld, used, working, adding value)

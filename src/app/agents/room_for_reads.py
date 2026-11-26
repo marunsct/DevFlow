@@ -228,20 +228,31 @@ def build_room_for_reads_middleware() -> Any:
         name = "RoomForReadsMiddleware"
 
         def wrap_model_call(self, request: Any, handler: Any) -> Any:
+            # A narrow read widened to the room (`READ_WINDOWS_SIZED_TO_THE_ROOM`) needs the room and what the
+            # conversation holds as much as an outlined whole read does. See `app.agents.read_windows`.
+            from app.agents import read_windows
+
+            widening = read_windows.enabled()
+            if widening:
+                read_windows.note_the_conversation(getattr(request, "messages", None))
             response = handler(request)
-            if reads_sized_switch.enabled():
+            if reads_sized_switch.enabled() or widening:
                 note_the_reply(response, getattr(request, "model", None))
             return response
 
         def wrap_tool_call(self, request: Any, handler: Any) -> Any:
-            if not reads_sized_switch.enabled():
+            from app.agents import read_windows
+
+            outlining = reads_sized_switch.enabled()
+            if not outlining and not read_windows.enabled():
                 return handler(request)
             call = getattr(request, "tool_call", None) or {}
-            whole = call.get("name") == "read_file" and asks_for_the_whole_file(call.get("args"))
+            whole = outlining and call.get("name") == "read_file" and asks_for_the_whole_file(call.get("args"))
             slot: dict = {}
             token = _A_WHOLE_READ.set(slot if whole else None)
             try:
-                result = handler(request)
+                with read_windows.around_a_read(call) as window:
+                    result = read_windows.said_in(handler(request), window)
             finally:
                 _A_WHOLE_READ.reset(token)
             if slot.get("answer"):

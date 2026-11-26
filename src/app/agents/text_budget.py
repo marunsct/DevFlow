@@ -82,6 +82,33 @@ def _sections(lines: list[str]) -> list[tuple[int, int]]:
     return [(start, starts[n + 1] if n + 1 < len(starts) else len(lines)) for n, start in enumerate(starts)]
 
 
+def _json_sections(text: str) -> list[tuple[str, str]]:
+    """(key, its lines) of each top-level key of a JSON object; [] when `text` is not one.
+
+    A stage's artifact reaches most requests as its JSON (`model_dump_json`), which has no headings. Measured on a
+    medium run: the architecture review was given a 216,420-character specification as JSON, cut to its first 41,388
+    characters at `function_contracts`. The error catalogue, the implementation order, the test cases, the
+    configuration, the library calls and the decisions were never shown, and on each of nine reviews the reviewer
+    raised that a section the specification had "does not exist" - the specification went back each time.
+    """
+    import json
+
+    stripped = text.lstrip()
+    if not stripped.startswith("{"):
+        return []
+    try:
+        loaded = json.loads(text)
+    except ValueError:
+        return []
+    if not isinstance(loaded, dict):
+        return []
+    sections = []
+    for key, value in loaded.items():
+        shown = json.dumps(value, indent=2, ensure_ascii=False).replace("\n", "\n  ")
+        sections.append((str(key), f'  "{key}": {shown}'))
+    return sections
+
+
 def _every_section_in_part(text: str, budget: int, what: str) -> str | None:
     """`text` with every section's opening kept, sharing `budget` evenly; None if it has too few sections.
 
@@ -89,14 +116,21 @@ def _every_section_in_part(text: str, budget: int, what: str) -> str | None:
     characters whole on each of the judgement stages that carried it - the
     sections at the end, on every request (Initiative O.1). Shared out, every
     section is there, the short ones whole and the long ones up to an even
-    cap, each cut at a line with the lines left out named for reading.
+    cap, each cut at a line with the lines left out named for reading. A JSON
+    object's top-level keys are its sections (`_json_sections`).
     """
     lines = text.splitlines()
     sections = _sections(lines)
+    keys: list[str] = []
     if len(sections) < 3:
-        return None
-    bodies = ["\n".join(lines[a:b]) for a, b in sections]
-    room = budget - 300 - 90 * len(sections)
+        as_json = _json_sections(text)
+        if len(as_json) < 3:
+            return None
+        keys = [key for key, _ in as_json]
+        bodies = [body for _, body in as_json]
+    else:
+        bodies = ["\n".join(lines[a:b]) for a, b in sections]
+    room = budget - 300 - 90 * len(bodies)
     if room <= 0:
         return None
     # The even cap: the largest c with sum(min(len, c)) within the room.
@@ -108,17 +142,24 @@ def _every_section_in_part(text: str, budget: int, what: str) -> str | None:
         else:
             high = cap - 1
     shown, cut = [], 0
-    for (start, end), body in zip(sections, bodies):
+    for n, body in enumerate(bodies):
         if len(body) <= low:
             shown.append(body)
             continue
         kept = body[:low].rsplit("\n", 1)[0] if "\n" in body[:low] else body[:low]
         kept_lines = kept.count("\n") + 1
         cut += 1
-        shown.append(f"{kept}\n[... lines {start + kept_lines + 1}-{end} of this section not shown: read them by line]")
-    return "\n".join(shown) + (
+        if keys:
+            left = body.count("\n") + 1 - kept_lines
+            shown.append(f"{kept}\n  [... {left} more line(s) of `{keys[n]}` not shown: read that section in the "
+                         "document itself]")
+        else:
+            start, end = sections[n]
+            shown.append(f"{kept}\n[... lines {start + kept_lines + 1}-{end} of this section not shown: read them by line]")
+    opening, closing = ("{\n", "\n}") if keys else ("", "")
+    return opening + ("\n" if not keys else ",\n").join(shown) + closing + (
         f"\n\n[Excerpt: {len(text):,} characters of {what} were fitted to {budget:,} for this request: "
-        f"every section is here, {cut} of {len(sections)} cut short where marked. Use your repository read "
+        f"every section is here, {cut} of {len(bodies)} cut short where marked. Use your repository read "
         "tools for the lines marked not shown.]"
     )
 

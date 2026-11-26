@@ -189,7 +189,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
                    "SPRINT_TIME_BUDGET", "MUTATION_GAPS_BUNDLED", "FIX_ORDER_CRITERIA_FIRST",
                    "SUMMARISE_LATER_WITH_HEADROOM", "REPLY_ROOM_SIZED_PER_ROLE", "LONG_REASONING_BEFORE_A_READ",
                    "MEASURED_ROUND_WHEN_RED", "FIXERS_HOLD_WHAT_THEY_READ", "FIX_STAGES_STUB_OLD_READS",
-                   "REASONING_BUDGET"),
+                   "REASONING_BUDGET", "STEP_SIZED_REASONING_BUDGET"),
     # What a stack's setup stage may write (docs/measuring.md M6): measured off and on before it is kept.
     "Setup scope": ("SETUP_SCOPE_GUARD",),
     # Which review findings may send a sprint back (docs/measuring.md M7).
@@ -311,6 +311,7 @@ EXPERIMENTS_ON: dict[str, str] = {
     "UNIT_TEST_FIX_BY_FAILURE": "per-agent audit 2026-11-25 (PA.15): 44 failing unit tests were first worked tests-only and 1 was fixed by that attempt; on, the owner's tests-only rule kept for every failure an assertion or a stand-in shows, and off at once if a run it fires in ships a red unit test, loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M-PA.15)",
     "TOOL_LISTS_BY_ROLE_KIND": "tool review 2026-11-26 (TR.7, LF.1541): seven tools in every writer's list made 9 calls in 4,260 writer requests, about 6,200 characters of schema; on, and off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M-TR.7)",
     "REASONING_BUDGET": "research 2026-11-27 (IK.3-IK.5, LF.1583-LF.1585): about 80% of one model's output was reasoning; one architect reply reasoned 32,000 tokens to its cap (7 minutes) and took a 12,097-token salvage (3 minutes) for a 10,000-token answer, and a helper spent 1,833 of 2,048 tokens reasoning; acts only where the model's diagnosis measured the server to enforce a budget; on, and off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M-IK.3)",
+    "STEP_SIZED_REASONING_BUDGET": "measured live 2026-11-27 (LF.1593): with a 20,000-token reasoning budget an acceptance-suite author's replies reasoned 17,427-20,755 tokens (4-5 minutes each) before one small call such as a listing; over every captured transcript 96.8% of 55,056 steps of working stages reasoned within 8,000; acts only where a budget is enforced; on, and off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes, or a step's budget hits rise without its stage's reasoning minutes falling (docs/measuring.md M-LF.1593)",
     "READ_WINDOWS_SIZED_TO_THE_ROOM": "medium run 2026-11-26 (LF.1570): one code review made 62 reads, almost all 50-60-line windows, at about 40k tokens of conversation a call, some 3M input tokens; on, and off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes, or a review's or fixer's summaries rise (docs/measuring.md M-LF.1570)",
 }
 _GROUP_OF = {name: group for group, members in GROUPS.items() for name in members}

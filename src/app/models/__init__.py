@@ -745,7 +745,11 @@ class CompatibleChatOpenAI(ChatOpenAI):
         try:
             from app.models.reasoning_budget import with_the_reasoning_budget
 
-            with_the_reasoning_budget(payload, self._served_by())
+            try:
+                conversation = self._convert_input(input_).to_messages()
+            except Exception:  # noqa: BLE001 - sized from the payload's messages
+                conversation = None
+            with_the_reasoning_budget(payload, self._served_by(), conversation)
         except Exception:  # noqa: BLE001 - the request as it was
             pass
         # The answer tool by name on a call where only the answer is allowed, where the server honours that (PA.16);

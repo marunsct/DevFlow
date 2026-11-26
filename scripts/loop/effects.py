@@ -191,6 +191,8 @@ def effects(records: list[dict], decisions: str = "") -> list[str]:
         ("LF.1570", "app.agents.read_windows", lambda m: m.effects_lines(records)),
         # IK.3: stage visits held to a reasoning budget, and the replies still cut off while reasoning.
         ("IK.3", "app.models.reasoning_budget", lambda m: m.effects_lines(records)),
+        # LF.1593: per stage kind, the steps' replies, reasoning and output tokens and budget hits, switch on or off.
+        ("LF.1593", "app.models.step_budget", lambda m: m.effects_lines(records)),
         # LF.1524: fast delivery's design findings held as product-breaking, those not held, and the revisions they
         # took.
         ("LF.1524", "app.graph.fast_design_gate", lambda m: m.effects_lines(decisions)),

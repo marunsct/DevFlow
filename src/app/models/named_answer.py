@@ -35,6 +35,11 @@ def naming(tool: str) -> Iterator[None]:
         _ANSWER.reset(token)
 
 
+def asked_for() -> str:
+    """The answer tool the model calls made here ask for by name (`naming`), or "" outside such a call."""
+    return _ANSWER.get()
+
+
 def the_answer_tool(schema: Any) -> str:
     """The name the answer tool for `schema` is offered under: the schema's own name (langchain's tool strategy)."""
     return str(getattr(schema, "__name__", "") or "")
@@ -53,4 +58,4 @@ def with_the_answer_named(payload: dict, server: tuple[str, str]) -> dict:
     return payload
 
 
-__all__ = ["HONOURED", "naming", "the_answer_tool", "with_the_answer_named"]
+__all__ = ["HONOURED", "asked_for", "naming", "the_answer_tool", "with_the_answer_named"]

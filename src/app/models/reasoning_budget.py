@@ -133,9 +133,11 @@ def is_off(extra: dict) -> bool:
     return isinstance(budget, int) and not isinstance(budget, bool) and 0 <= budget <= SMALL_BUDGET
 
 
-def with_the_reasoning_budget(payload: dict, server: tuple[str, str]) -> dict:
+def with_the_reasoning_budget(payload: dict, server: tuple[str, str], messages: list | None = None) -> dict:
     """`payload` with a reasoning budget of its cap less its answer's room, where the switch is on, `server` is
-    self-hosted and enforces one, and the call names a cap and no budget of its own; else as it was. Never raises."""
+    self-hosted and enforces one, and the call names a cap and no budget of its own; else as it was. A step of a
+    working stage's loop (`messages` its conversation) is sized to the step, behind its own switch
+    (`step_budget`, LF.1593). Never raises."""
     try:
         if not reasoning_budget_switch.enabled():
             return payload
@@ -155,8 +157,11 @@ def with_the_reasoning_budget(payload: dict, server: tuple[str, str]) -> dict:
         budget = budget_for(cap)
         if budget is None:
             return payload
-        payload["extra_body"] = {**extra, **fields(budget)}
         _note(budget, cap)
+        from app.models.step_budget import sized_to_the_step
+
+        budget = sized_to_the_step(payload, budget, messages)
+        payload["extra_body"] = {**extra, **fields(budget)}
     except Exception:  # noqa: BLE001 - the request as it was
         logger.debug("Could not add the reasoning budget", exc_info=True)
     return payload

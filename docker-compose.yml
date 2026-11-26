@@ -135,6 +135,8 @@ x-app-env: &app-env
   # LF.1289: a whole read past the request's room left is answered with the file's outline; off until measured.
   READS_SIZED_TO_THE_ROOM: ${READS_SIZED_TO_THE_ROOM:-off}
   READ_WINDOWS_SIZED_TO_THE_ROOM: ${READ_WINDOWS_SIZED_TO_THE_ROOM:-on}
+  # IK.3-IK.5 (LF.1583-LF.1585): a reasoning budget where the diagnosis measured one enforced; on, measured.
+  REASONING_BUDGET: ${REASONING_BUDGET:-on}
   # Plan WS.4: a person starts the product from the run page; it runs on the preview network below.
   PRODUCT_PREVIEW: ${PRODUCT_PREVIEW:-off}
   PRODUCT_PREVIEW_NETWORK: ${PRODUCT_PREVIEW_NETWORK:-devflow-preview}

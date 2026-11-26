@@ -52,11 +52,11 @@ def _clip(text: str) -> str:
 def publish_one(run_id: str, stage: str, event_type: str, message: str, metadata: dict[str, Any] | None = None) -> bool:
     """Put one event on a run's stream from worker code (no event loop); False when it could not. Never raises."""
     try:
+        from app.server import event_history
         from app.server.events import EventBus, redact_metadata
         from app.server.redis_client import get_redis_client
 
         client = get_redis_client()
-        key = f"run:{run_id}:history"
         sequence = client.incr(f"run:{run_id}:seq")
         body = json.dumps(
             {
@@ -70,17 +70,11 @@ def publish_one(run_id: str, stage: str, event_type: str, message: str, metadata
                 "metadata": redact_metadata(metadata or {}),
             }
         )
-        # The same pipeline `EventBus.publish` uses, for the same reason: a
+        # The same script `EventBus.publish` uses, for the same reason: a
         # bare rpush would bypass the history cap, and agent activity is by
         # far the highest-volume event type there is - exactly what the cap
         # exists to bound.
-        pipe = client.pipeline()
-        pipe.rpush(key, body)
-        pipe.ltrim(key, -EventBus.MAX_HISTORY, -1)
-        pipe.expire(key, EventBus.HISTORY_TTL_SECONDS)
-        pipe.expire(f"run:{run_id}:seq", EventBus.HISTORY_TTL_SECONDS)
-        pipe.publish(f"run:{run_id}:events", body)
-        pipe.execute()
+        event_history.append(client, run_id, body, most=EventBus.MAX_HISTORY, ttl=EventBus.HISTORY_TTL_SECONDS)
         return True
     except Exception:  # noqa: BLE001 - narration is never load-bearing
         logger.debug("Could not publish to the stream of %s", run_id, exc_info=True)

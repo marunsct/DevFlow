@@ -8,9 +8,9 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Literal
 
-import os
-
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
+
+from app.server import event_history
 
 logger = logging.getLogger(__name__)
 
@@ -126,15 +126,16 @@ def redact_metadata(meta: dict[str, Any]) -> dict[str, Any]:
 class EventBus:
     """Redis-backed event history and live fan-out for run progress.
 
-    History is a capped list rather than an unbounded one, and it is read by
-    range rather than in full. The previous implementation `RPUSH`ed forever with
+    History is a capped list rather than an unbounded one (by items and bytes, cut
+    when the run stops: `event_history`), and it is read by range rather than in
+    full. The previous implementation `RPUSH`ed forever with
     no TTL and answered every poll with `LRANGE 0 -1`, parsing the entire history
     into Pydantic models on each request - cost that grew linearly with run
     length on a path the dashboard polls continuously.
     """
 
-    MAX_HISTORY = int(os.environ.get("RUN_EVENT_HISTORY_MAX", "5000"))
-    HISTORY_TTL_SECONDS = int(os.environ.get("RUN_EVENT_TTL_SECONDS", str(30 * 24 * 3600)))
+    MAX_HISTORY = event_history.MAX_ITEMS
+    HISTORY_TTL_SECONDS = event_history.LIVE_TTL_SECONDS
 
     def __init__(self, redis_client: Any | None = None) -> None:
         self._redis_override = redis_client
@@ -163,17 +164,12 @@ class EventBus:
         return int(await self._redis.incr(self._sequence_key(run_id)))
 
     async def publish(self, run_id: str, event: RunEvent) -> None:
-        payload = event.model_dump_json()
-        key = self._history_key(run_id)
-        pipe = self._redis.pipeline()
-        pipe.rpush(key, payload)
-        # Cap the list and give it a TTL so a long-lived deployment cannot fill
-        # Redis with the history of runs nobody will ever look at again.
-        pipe.ltrim(key, -self.MAX_HISTORY, -1)
-        pipe.expire(key, self.HISTORY_TTL_SECONDS)
-        pipe.expire(self._sequence_key(run_id), self.HISTORY_TTL_SECONDS)
-        pipe.publish(self._channel(run_id), payload)
-        await pipe.execute()
+        # Capped by items and bytes, given a TTL and published in one script, so a
+        # long-lived deployment cannot fill the Redis the queue shares with the
+        # history of runs nobody will look at again (`event_history`).
+        await event_history.append_async(
+            self._redis, run_id, event.model_dump_json(), most=self.MAX_HISTORY, ttl=self.HISTORY_TTL_SECONDS
+        )
 
     @asynccontextmanager
     async def subscribe(self, run_id: str) -> AsyncIterator[AsyncIterator[RunEvent]]:
@@ -247,12 +243,22 @@ class EventBus:
         return int(await self._redis.llen(self._history_key(run_id)))
 
     async def close(self, run_id: str) -> None:
-        """Tell live subscribers the run is finished."""
+        """Tell live subscribers the run has stopped, and cut its history to what is read after a run.
+
+        Every event that is not agent activity stays (the timeline and the wizard
+        are built from them), with the last few agent-activity events, for the
+        finished TTL (`event_history.cut`). A resumed run appends again."""
         await self._redis.publish(self._channel(run_id), "CLOSE")
+        try:
+            await event_history.cut_async(self._redis, run_id)
+        except Exception:  # noqa: BLE001 - a history left whole only costs memory until it expires
+            logger.warning("Could not cut the history of %s", run_id, exc_info=True)
 
     async def purge(self, run_id: str) -> None:
-        """Delete a run's event history and sequence counter."""
-        await self._redis.delete(self._history_key(run_id), self._sequence_key(run_id))
+        """Delete a run's event history, its byte count and sequence counter."""
+        await self._redis.delete(
+            self._history_key(run_id), event_history.bytes_key(run_id), self._sequence_key(run_id)
+        )
 
 
 async def publish_stage_event(

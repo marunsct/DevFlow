@@ -231,6 +231,17 @@ def _serve_product_previews(**_kwargs) -> None:
 
 
 @worker_ready.connect
+def _cut_the_histories_of_stopped_runs(**_kwargs) -> None:
+    """Cut the event history of every run that is not live, once, in the background. See `event_history.sweep`."""
+    try:
+        from app.server.event_history import sweep_in_the_background
+
+        sweep_in_the_background()
+    except Exception:  # noqa: BLE001 - a worker that cannot sweep still takes runs
+        logger.warning("Could not start the sweep of run histories", exc_info=True)
+
+
+@worker_ready.connect
 def _stop_the_commands_a_previous_worker_left(**_kwargs) -> None:
     """Stop the command containers a restarted worker left running. See `sandbox.end_the_commands_nobody_waits_for`."""
     try:

@@ -69,6 +69,11 @@ def main() -> int:
         ]
     for line in lines:
         print(line)
+    # How much of the Redis the queue shares the run histories hold (LF.1507), beside the store's memory line.
+    from app.server import event_history
+    from app.server.redis_client import get_redis_client
+
+    print(event_history.memory_line(get_redis_client()))
     return 0
 
 

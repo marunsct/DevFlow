@@ -387,6 +387,12 @@ def _tool_result_bound_middleware(repo_root: str | None = None) -> Any:
     return build_middleware(repo_root)
 
 
+def _reads_of_the_product_middleware() -> Any:
+    from app.agents.reads_of_the_product import build_middleware
+
+    return build_middleware()
+
+
 def _verify_after_write_middleware() -> Any:
     from app.graph.verify_after_write import build_middleware
 
@@ -756,6 +762,7 @@ def create_role_agent(
     suite_folder: str | None = None,
     only_tools: frozenset[str] | None = None,
     writing_rules: str | None = None,
+    reads_the_product: bool = True,
 ) -> Any:
     """Create a narrow, safe Deep Agent for one workflow role.
 
@@ -867,6 +874,8 @@ def create_role_agent(
         # `on_tool_end` fires before any of that and sees only what the tool
         # returned. See `app.observability.transcript`.
         build_transcript_middleware(stage),
+        # A stage that judges a suite never reads the product's own code (LF.1531, `agents/reads_of_the_product`).
+        *([] if reads_the_product else [_reads_of_the_product_middleware()]),
         # Inside the transcript, so it records the line this appends: a fix
         # stage's write followed by its defect's tests (plan AY step 3, off).
         _verify_after_write_middleware(),

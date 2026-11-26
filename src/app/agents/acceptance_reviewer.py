@@ -206,6 +206,8 @@ def create_acceptance_reviewer_agent(
         repo_root=repo_root,
         allow_subdirectories=allow_subdirectories,
         can_write=False,
+        # Its prompt says never to open the product's files; the harness holds it to that (LF.1531).
+        reads_the_product=False,
     )
 
 

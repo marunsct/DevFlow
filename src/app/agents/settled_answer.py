@@ -2761,10 +2761,14 @@ def build_settled_answer_middleware(
                         notice = _the_same_call_running_notice(*repeated) if repeated is not None else ""
                     if notice:
                         notices.append(notice)
+                    # Its most reads run while withheld, reading goes whole again (LF.1577).
+                    from app.agents import reads_once_while_withheld
+
+                    reads_spent = reads_once_while_withheld.spent()
                     if read_tool_due:
                         reads_per_file = not (
                             ignored or (stalled and writers) or acting_only is not None or last_writes
-                            or (repeated is not None and repeated[0] in _READ_TOOLS)
+                            or (repeated is not None and repeated[0] in _READ_TOOLS) or reads_spent
                         )
                         notices.insert(0, _READS_DECIDED_PER_FILE_NOTICE if reads_per_file
                                        else _READ_TOOL_WITHHELD_NOTICE)
@@ -2772,9 +2776,11 @@ def build_settled_answer_middleware(
                     # on a medium run, 17 of 19 reads refused whole came after that notice, builders and fixers that
                     # needed a file they had never opened. Not offered, a read sent anyway is still decided per file
                     # (LF.1527): what the conversation or the memory holds is refused, a first read runs. Stalled, on
-                    # its last calls or ignoring the notices, the stage is refused every read as before.
+                    # its last calls or ignoring the notices, the stage is refused every read as before. Each file's
+                    # lines run once a visit, and a visit's reads are bounded (LF.1577): after a summary the same lines
+                    # counted as new again, and one builder ran 134 reads cycling three files to its step limit.
                     if (acting_only is not None and not reads_per_file and not read_tool_due
-                            and not (ignored or (stalled and writers) or last_writes)):
+                            and not (ignored or (stalled and writers) or last_writes or reads_spent)):
                         reads_per_file = True
                     # What the model has already done, when it sends the same action again (behind `AGENT_LOOP_FIX_LIMITS`).
                     from app.graph import agent_loop_fix_limits
@@ -3046,14 +3052,22 @@ def build_settled_answer_middleware(
                 # Decided for this file (TR.2): refused only when the conversation holds what it asks for. A read of a
                 # file the project memory holds is refused before it reaches here (`project_memory`).
                 read = _the_read_asked(call.get("args") or {})
-                if read not in in_conversation:
-                    withheld_records.noted_read(withheld_records.RAN, read[0], name)
-                    return handler(request)
                 from langchain_core.messages import ToolMessage
 
-                withheld_records.noted_read(withheld_records.IN_THE_CONVERSATION, read[0], name)
-                return ToolMessage(content=already_in_the_conversation(read[0]), tool_call_id=str(call.get("id") or ""),
-                                   name=name, status="error")
+                if read in in_conversation:
+                    withheld_records.noted_read(withheld_records.IN_THE_CONVERSATION, read[0], name)
+                    return ToolMessage(content=already_in_the_conversation(read[0]),
+                                       tool_call_id=str(call.get("id") or ""), name=name, status="error")
+                # Not held now, but read already in this visit while withheld, or past the bounds (LF.1577).
+                from app.agents import reads_once_while_withheld
+
+                refused = reads_once_while_withheld.refusal(*read)
+                if refused is not None:
+                    withheld_records.noted_read(refused[1], read[0], name)
+                    return ToolMessage(content=refused[0], tool_call_id=str(call.get("id") or ""), name=name,
+                                       status="error")
+                withheld_records.noted_read(withheld_records.RAN, read[0], name)
+                return handler(request)
             budget = self._budget_now() if name in _THE_WRITING_TOOLS else ""
             if name and name in self._withheld_now() and not _writes_the_stage_s_deliverable(call):
                 from langchain_core.messages import ToolMessage
@@ -3084,6 +3098,11 @@ def build_settled_answer_middleware(
                 )
             if budget == withheld_records.LAST_CALLS:
                 withheld_records.noted_write(withheld_records.RAN, name, _written_path(call))
+            if name in _WRITES_A_FILE:
+                # A file written is new to read: its lines run again while reading is withheld (LF.1577).
+                from app.agents import reads_once_while_withheld
+
+                reads_once_while_withheld.written(_written_path(call))
             return handler(request)
 
         @hook_config(can_jump_to=["end", "model"])

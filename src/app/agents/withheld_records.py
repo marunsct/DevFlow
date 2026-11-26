@@ -5,7 +5,8 @@ stage is offered, refused or told.
 
 - `read_while_withheld`: a read made while the stage's reading was withheld, and how it was decided: refused because
   the project memory holds the file whole, because the same lines are still in the conversation, because the request
-  quotes the document whole, or because another rule withheld the read tool whole on that call; or run (LF.1517).
+  quotes the document whole, because another rule withheld the read tool whole on that call, or because this stage
+  visit already ran those lines (or that file its most times) while reading was withheld (LF.1577); or run (LF.1517).
 - `write_at_the_budget`: a write made on the calls the budget keeps for the answer: run on a last call (LF.1519), or
   refused because only the answer was left.
 """
@@ -24,8 +25,9 @@ HELD_WHOLE = "held whole"
 IN_THE_CONVERSATION = "still in the conversation"
 QUOTED_WHOLE = "document quoted whole"
 WITHHELD_WHOLE = "withheld whole by another rule"
+ALREADY_READ = "already read this stage"
 RAN = "ran"
-READ_REFUSALS = (HELD_WHOLE, IN_THE_CONVERSATION, QUOTED_WHOLE, WITHHELD_WHOLE)
+READ_REFUSALS = (HELD_WHOLE, IN_THE_CONVERSATION, QUOTED_WHOLE, WITHHELD_WHOLE, ALREADY_READ)
 
 #: How a write on the budget's last calls went.
 REFUSED = "refused"
@@ -77,6 +79,6 @@ def effects_lines(records: list[dict]) -> list[str]:
 
 
 __all__ = [
-    "ANSWER_ONLY", "HELD_WHOLE", "IN_THE_CONVERSATION", "LAST_CALLS", "QUOTED_WHOLE", "RAN", "READ_KIND",
+    "ALREADY_READ", "ANSWER_ONLY", "HELD_WHOLE", "IN_THE_CONVERSATION", "LAST_CALLS", "QUOTED_WHOLE", "RAN", "READ_KIND",
     "READ_REFUSALS", "REFUSED", "WITHHELD_WHOLE", "WRITE_KIND", "effects_lines", "noted_read", "noted_write",
 ]

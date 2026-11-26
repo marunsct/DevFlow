@@ -72,7 +72,8 @@ def test_reads_decided_file_by_file_are_counted_by_class_against_reads_run(tmp_p
     stage_memory.forget_everything()
 
     assert ("   3  LF.1517 reads while reading was withheld: 1 ran, 2 refused (held whole 1, still in the "
-            "conversation 1, document quoted whole 0, withheld whole by another rule 0)") in _report()
+            "conversation 1, document quoted whole 0, withheld whole by another rule 0, already read this stage 0)"
+            ) in _report()
 
 
 def test_a_read_withheld_whole_and_a_write_on_a_last_call_are_counted(tmp_path, monkeypatch):
@@ -84,7 +85,7 @@ def test_a_read_withheld_whole_and_a_write_on_a_last_call_are_counted(tmp_path, 
 
     report = _report()
     assert ran == "done"
-    assert "withheld whole by another rule 1)" in report
+    assert "withheld whole by another rule 1," in report
     assert "   1  LF.1519 writes on the calls the budget keeps for the answer: 1 run on a last call, 0 refused" in report
 
 

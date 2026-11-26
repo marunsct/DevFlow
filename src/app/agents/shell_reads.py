@@ -16,6 +16,8 @@ LF.1527):
 - a file the project memory holds whole and unchanged, or the request quotes whole, is refused by name with where its
   text is (`project_memory.held_read_refusal`);
 - lines whose numbered text the conversation still holds are refused the same way (`already_in_the_conversation`);
+- lines this stage visit already ran while reading was withheld, or a file or a visit past its bounds, are refused as
+  `read_file`'s are (`reads_once_while_withheld`, LF.1577);
 - any other file is answered as a ranged read: the window and numbering `read_file` gives, from the file on disk.
 
 Where every read is withheld whole by another rule, it is refused as `read_file` is. Each is recorded as a
@@ -414,6 +416,14 @@ def _decided(call: dict, repo_root: str) -> Any:
     if not read.counts and read.key in _held("reads"):
         withheld_records.noted_read(withheld_records.IN_THE_CONVERSATION, read.path, COMMAND_TOOL)
         return refused(already_in_the_conversation(read.path))
+    if not read.counts:
+        # Lines this visit already ran while withheld, or past the bounds: refused whatever tool reads (LF.1577).
+        from app.agents import reads_once_while_withheld
+
+        again = reads_once_while_withheld.refusal(*read.key)
+        if again is not None:
+            withheld_records.noted_read(again[1], read.path, COMMAND_TOOL)
+            return refused(again[0])
     withheld_records.noted_read(withheld_records.RAN, read.path, COMMAND_TOOL)
     if read.counts:
         return None

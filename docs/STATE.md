@@ -5,8 +5,8 @@ the block below is written by `loop.sh state`. The map of all documents is `docs
 `docs/improvement-plan.md`; how the product works is `docs/PRODUCT.md`; how to run and test it is `docs/HANDOVER.md`;
 decisions in force are `docs/owner-decisions.md`; old information is found through `docs/ARCHIVE.md`.
 <!-- state:generated -->
-**As of:** 11-26 18:06 JST (written by `loop.sh state`). Harness c47ef011 committed; 9f8cd960 deployed (not the same).
-**Live, and stopped in the last day:** run-c13e7189 running at stack_selector; run-e799301e running at specialist_backend_1; run-7259e30d failed at ?; run-17098b4b failed at awaiting_approval:specialist_testing_1; run-03668d05 failed at awaiting_approval:specialist_testing_2; run-a2f91f9f failed at awaiting_approval:acceptance_author_1
+**As of:** 11-26 20:14 JST (written by `loop.sh state`). Harness 6f5a88e9 committed; 6f5a88e9 deployed.
+**Live, and stopped in the last day:** run-c13e7189 running at defect_fix_2_0; run-e799301e running at code_review_0_0; run-7259e30d failed at ?; run-17098b4b failed at awaiting_approval:specialist_testing_1; run-03668d05 failed at awaiting_approval:specialist_testing_2; run-a2f91f9f failed at awaiting_approval:acceptance_author_1
 **Last scored:** run-5071b7ef web-todo-react 10/10 (completed, handoff 1.0; scored 11-26 18:03 JST); run-a79c55df notes-api-go 9/9 (completed, mixed, 77 active min, handoff 1.0; scored 11-26 13:54 JST); run-6c1444a0 tasks-api 10/10 (completed, mixed, 140 active min, handoff 1.0; scored 11-26 11:19 JST).
 <!-- /state:generated -->
 
@@ -15,10 +15,10 @@ decisions in force are `docs/owner-decisions.md`; old information is found throu
 |---|---|
 | Phase | **Learning runs, fixes deployed at once** (deep-review plan, owner 11-18: implement all; frozen-version measuring for Measure batches). The release-candidate count starts only when a full audit cycle finds nothing to fix. |
 | Models | olla `host.docker.internal:4001/olla/openai/v1`, model `qwen3.6-35b-a3b` (the owner's; two llama.cpp instances, 93K-token slots). Runs pinned to it. |
-| Harness | 9f8cd96 deployed 11-26 18:0x JST: LF.1503-1532 (latest: LF.1525 a command that only reads a file is a read; LF.1529 diag* probes are scratch; LF.1530 regressions stay with their sprint; LF.1531 the QA lead never reads product code; LF.1532 a test-first suite's own criteria fail as expected). Merged, not deployed: LF.1534-1536 (KG.9 map in every language, KG.10 code_graph retired, KG.1 counts source files). Building: LF.1533 structural scratch rule, KG.5-KG.8 (switches), TR.7-TR.8 (switches). Runtime `model_reads_images=no`. |
+| Harness | 6f5a88e deployed 11-26 20:1x JST: LF.1503-1575, UX.1-UX.16b (co-development behind CO_DEVELOPMENT, off), KG.1-KG.10, PF.2-PF.4, TR.1-TR.10, wave C and PA.4/PA.15. New switches on: KG.5-KG.8, TOOL_LISTS_BY_ROLE_KIND, PF.2-PF.4, READ_WINDOWS_SIZED_TO_THE_ROOM, UNIT_TEST_FIX_BY_FAILURE, FAST_DESIGN_GATE_ON_PRODUCT_BREAKING. Left in the plan: PA.10 full-stack packs, PA.13, PA.18, PA.1/PA.5/M17 measurements, the repair half of PA.4, the supervised co-development trial (owner). Models: Sonnet audits, Opus builds, Fable research and planning. Runtime `model_reads_images=no`. |
 | Switches | 53 fixes built in (always on). 29 optional switches (9 groups, `docs/measuring.md`); `WEB_LOOKUP_WHEN_STUCK` is off and set per run. Measure arms use `SWITCHES_OFF` per run. |
 | Operations | Nightly backups (`loop.sh backup --check`). **One model endpoint since 11-25 ~17:45 JST** (owner): olla `host.docker.internal:4001/olla/openai/v1` over two llama.cpp instances, model `qwen3.6-35b-a3b`, 4 requests at once; **at most 2 runs, each in parallel execution mode** (owner 17:54: test the parallel mode; `.env` `MAX_CONCURRENT_RUNS=2`). :8888 and :1234 are gone. Audit cron `0a7ebf80` every 15 minutes. |
-| Suites | both green at 22,235 passed on 9f8cd96 (11-26 17:5x JST), at SUITE_WORKERS=3. |
+| Suites | both green at 22,646 passed on 6f5a88e (11-26 20:10 JST), at SUITE_WORKERS=3. |
 
 ## Off until measured
 BATCH_ACCEPTANCE_AUTHOR (web tools are on since 11-23, measured from there). Hosted-model

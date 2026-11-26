@@ -300,6 +300,12 @@ deploy wipes the worker's `/tmp` and `docker logs`.
   `docker info` takes over 20 s. Restarting Docker Desktop is permitted (owner 2026-11-09) after pausing every run:
   `systemctl --user restart docker-desktop`, then check the owner's other containers returned, `deploy`, resume.
   `ship-live` exit 2 (THE DEPLOY DID NOT LAND) means the old containers still run the old code.
+- **Product previews in production** (`PRODUCT_PREVIEW`, plan UX.9): `docker-compose.prod.yml` sets
+  `PRODUCT_PREVIEW_ORIGIN=https://preview.<SITE_ADDRESS>` for the app, the worker and Caddy; that name must resolve to
+  the host (`*.localhost` does by itself). For one host per run set it to `https://*.preview.<site>`: wildcard DNS, and
+  for a public name a Caddy build with a DNS-challenge module. Keep it a sub-domain of the app's site, or the framed
+  product's cookies are third-party and browsers drop them. The local loop's compose leaves it empty (app-host
+  previews, opaque origin, no storage or cookies).
 - **Never grow the Celery pool** (`pool_grow`): two slots serve one run per port; growing it made workers fork and be
   killed every few seconds.
 - **Disk full:** `loop.sh ready`/`audit` print the disk line; `ready` fails under 50 GB / 5% free (`DISK_MIN_FREE_GB`,

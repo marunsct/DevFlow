@@ -606,8 +606,9 @@ export const getPreview = async (runId: string): Promise<PreviewStatus> => {
   return response.data;
 };
 
-export const startPreview = async (runId: string, source: 'accepted' | 'live'): Promise<PreviewStatus> => {
-  const response = await api.post<PreviewStatus>(`/runs/${runId}/preview`, { source });
+/** Start the run's preview; `restart` replaces the running one (plan UX.11: a newer version is ready). */
+export const startPreview = async (runId: string, source: 'accepted' | 'live', restart = false): Promise<PreviewStatus> => {
+  const response = await api.post<PreviewStatus>(`/runs/${runId}/preview`, restart ? { source, restart } : { source });
   return response.data;
 };
 

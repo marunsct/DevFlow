@@ -181,6 +181,11 @@ def create_app(
         response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
         return response
 
+    # Outermost (added last): a separate preview origin answers a preview's paths only (plan UX.9).
+    from app.server.preview import PreviewOriginServesPreviewsOnly
+
+    application.add_middleware(PreviewOriginServesPreviewsOnly)
+
     from fastapi import Depends
 
     from app.server.auth import auth_router, get_current_active_user, require_admin, require_operator

@@ -79,13 +79,15 @@ def _kept(relative: str) -> bool:
     return bool(relative) and relative.split("/", 1)[0] not in _NOT_COPIED and ".." not in relative.split("/")
 
 
-def _the_accepted_sprint(root: Path, scratch: Path) -> None:
+def _the_accepted_sprint(root: Path, scratch: Path, commit: str = "") -> None:
+    """The sprint's files: the commit the app recorded at the start (plan UX.11, the one the status names), else the
+    last accepted sprint's."""
     from app.tools.version_control import accepted_sprints
 
     sprints = accepted_sprints(root)
     if not sprints:
         raise CannotStart("No sprint has been accepted yet.")
-    archive = _git(root, "archive", "--format=tar", f"refs/tags/sprint-{sprints[-1]}", text=False)
+    archive = _git(root, "archive", "--format=tar", commit or f"refs/tags/sprint-{sprints[-1]}", text=False)
     with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
         members = [m for m in tar.getmembers() if _kept(m.name.rstrip("/"))]
         # Fresh files, never links to the workspace's: the product may write its own files.
@@ -117,7 +119,7 @@ def _the_installed_folders(root: Path, scratch: Path) -> None:
             _link(str(source), str(target))
 
 
-def copy_the_product(repo_root: str, source: str, scratch: Path) -> None:
+def copy_the_product(repo_root: str, source: str, scratch: Path, commit: str = "") -> None:
     """The scratch copy a preview starts from, laid out as the workspace is, so its paths mean what they meant."""
     root = Path(repo_root)
     if not (root / ".git").exists():
@@ -125,7 +127,7 @@ def copy_the_product(repo_root: str, source: str, scratch: Path) -> None:
     shutil.rmtree(scratch, ignore_errors=True)
     scratch.mkdir(parents=True)
     if source == "accepted":
-        _the_accepted_sprint(root, scratch)
+        _the_accepted_sprint(root, scratch, commit)
     else:
         _the_workspace_now(root, scratch)
     _the_installed_folders(root, scratch)
@@ -238,7 +240,7 @@ def start(request: dict[str, Any], client: Any = None,
         return  # stopped, or replaced, before the worker reached it
     repo_root = str(state.get("repo_root") or "")
     try:
-        copy_the_product(repo_root, str(state.get("source")), Path(state["scratch"]))
+        copy_the_product(repo_root, str(state.get("source")), Path(state["scratch"]), str(state.get("commit") or ""))
         from app.acceptance.start_output import command_for
 
         found = command_for(state["scratch"])

@@ -12,8 +12,19 @@ to this one preview and to its expiry; it is carried in the path, so a page's re
 needs a cookie (a sandboxed frame sends none). No header of the browser's reaches the product but a short list of
 content headers: never its cookies or its credentials. A preview served from the app's own host is sandboxed by its
 response's Content-Security-Policy as well as by the frame, so the product's script never runs with the app's origin
-(where the person's sign-in is kept), however the page is opened. `PRODUCT_PREVIEW_ORIGIN` names a separate origin
-for previews; the proxy then answers only requests made to it.
+(where the person's sign-in is kept), however the page is opened.
+
+`PRODUCT_PREVIEW_ORIGIN` names a separate origin for previews (plan UX.9; the production front serves one by default):
+`https://preview.example.com`, one host for every preview, or `https://*.preview.example.com` where the deployment has
+wildcard DNS and TLS, one host per run (`origin_for`), so one product can never read another's storage. The proxy
+then answers only on the run's own host, and the page keeps an origin of its own: its storage works, and its cookies
+pass both ways, host-only and scoped to the run's previews (`passed_cookies`). On the app's own host they never do.
+Responses the proxy does not rewrite (anything but a page or a stylesheet) are relayed as they arrive, so an event
+stream works, and a WebSocket upgrade is relayed to the product under the same link check (plan UX.10). Each relayed
+chunk or message counts as use for the idle clock.
+
+The preview records the commit it runs; `observe` says when a newer accepted sprint (or, for the workspace being
+built, a newer commit) is ready, and a start with `restart` replaces the running preview with it (plan UX.11).
 
 State lives in Redis, shared by the app and the worker; the worker alone starts and stops containers.
 """
@@ -133,9 +144,78 @@ def ports() -> range:
 
 
 def separate_origin() -> str:
-    """The origin previews are served from when the deployment has one (`https://preview.example.com`); "" for the
-    app's own host under its distinct path."""
+    """The origin previews are served from when the deployment has one (`https://preview.example.com`, or
+    `https://*.preview.example.com` for one host per run); "" for the app's own host under its distinct path."""
     return str(os.environ.get("PRODUCT_PREVIEW_ORIGIN") or "").strip().rstrip("/")
+
+
+#: Where a run's own label goes in `PRODUCT_PREVIEW_ORIGIN` when the deployment has wildcard DNS.
+PER_RUN_HOST = "*"
+
+
+def origin_for(run_id: str) -> str:
+    """The origin this run's preview is served from: the separate origin, with `*` replaced by a label of this run's
+    own (the same for each preview of the run, so a restart keeps what the product stored); "" for the app's host."""
+    origin = separate_origin()
+    if PER_RUN_HOST not in origin:
+        return origin
+    return origin.replace(PER_RUN_HOST, "p" + hashlib.sha256(run_id.encode()).hexdigest()[:16], 1)
+
+
+#: A product preview's own paths, the only ones a preview origin answers.
+A_PREVIEW_PATH = re.compile(r"^/api/runs/[^/]+/preview/app/")
+
+
+def is_a_preview_host(host: str) -> bool:
+    """Whether `host` (a request's Host header) is the separate preview origin, or one run's host under it."""
+    from urllib.parse import urlsplit
+
+    origin = separate_origin()
+    if not origin:
+        return False
+    wanted, host = urlsplit(origin).netloc.lower(), str(host or "").lower()
+    if PER_RUN_HOST not in wanted:
+        return host == wanted
+    before, _, after = wanted.partition(PER_RUN_HOST)
+    label = host[len(before):len(host) - len(after)] if host.startswith(before) and host.endswith(after) else ""
+    return bool(label) and len(host) > len(before) + len(after) and re.fullmatch(r"[a-z0-9-]+", label) is not None
+
+
+class PreviewOriginServesPreviewsOnly:
+    """ASGI middleware (plan UX.9): a preview origin answers a preview's paths and nothing of the app's own. A
+    product's script runs with that origin and may ask it anything; the app's API is not there to be asked."""
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope.get("type") in ("http", "websocket") and not A_PREVIEW_PATH.match(str(scope.get("path") or "")):
+            host = next((v.decode("latin-1") for k, v in scope.get("headers") or [] if k == b"host"), "")
+            if is_a_preview_host(host):
+                if scope["type"] == "websocket":
+                    await send({"type": "websocket.close", "code": 1008})
+                    return
+                await send({"type": "http.response.start", "status": 404,
+                            "headers": [(b"content-type", b"text/plain"), (b"cache-control", b"no-store")]})
+                await send({"type": "http.response.body", "body": b"A preview origin serves previews only."})
+                return
+        await self.app(scope, receive, send)
+
+
+def opening_problem(state: dict[str, Any] | None, run_id: str, token: str, host: str) -> str:
+    """Why a request to `host` with `token` does not reach this run's preview, or "" when it does: one check for a
+    page's requests and its WebSocket upgrades."""
+    from urllib.parse import urlsplit
+
+    if not state:
+        return "This preview cannot be opened: no preview."
+    problem = token_problem(token, run_id, str(state.get("instance") or ""))
+    if problem or state.get("state") not in ACTIVE:
+        return f"This preview cannot be opened: {problem or 'it has stopped'}."
+    origin = origin_for(run_id)
+    if origin and str(host or "").lower() != urlsplit(origin).netloc.lower():
+        return "Previews are served from their own origin."
+    return ""
 
 
 # --- the signed link ------------------------------------------------------------------------------------------------
@@ -283,8 +363,41 @@ def _the_kind_has_a_page(repo_root: str) -> bool | None:
     return found[0].kind in _KINDS_WITH_A_PAGE
 
 
-def start(run_id: str, repo_root: str, source: str, *, client: Any = None, now: float | None = None) -> dict[str, Any]:
-    """Record a starting preview and ask the worker for it; `PreviewRefused` when it cannot be had."""
+def _commit_of(repo_root: str, ref: str) -> str:
+    """The full commit `ref` names in the workspace, or "" when it names none."""
+    import subprocess
+
+    from app.tools.version_control import git_safely
+
+    try:
+        done = subprocess.run([*git_safely(), "-C", str(repo_root), "rev-parse", "--verify", "-q", f"{ref}^{{commit}}"],
+                              capture_output=True, text=True, timeout=10, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return done.stdout.strip() if done.returncode == 0 else ""
+
+
+def newer_version(state: dict[str, Any]) -> str:
+    """What is newer than the preview runs, as the status names it (`sprint 3`, `commit 1a2b3c4`), or "" when it runs
+    the newest: a later accepted sprint for `accepted`, a later commit of the workspace for `live`. Commits, never
+    writes: a stage's half-written files would break the page every few seconds."""
+    repo_root = str(state.get("repo_root") or "")
+    if not repo_root or state.get("state") not in ACTIVE:
+        return ""
+    if state.get("source") == "accepted":
+        from app.tools.version_control import accepted_sprints
+
+        sprints = accepted_sprints(repo_root)
+        shown = state.get("sprint")
+        return f"sprint {sprints[-1]}" if sprints and isinstance(shown, int) and sprints[-1] > shown else ""
+    head = _commit_of(repo_root, "HEAD")
+    return f"commit {head[:7]}" if head and state.get("commit") and head != state.get("commit") else ""
+
+
+def start(run_id: str, repo_root: str, source: str, *, client: Any = None, now: float | None = None,
+          restart: bool = False) -> dict[str, Any]:
+    """Record a starting preview and ask the worker for it; `PreviewRefused` when it cannot be had. `restart` replaces
+    a running preview (plan UX.11: a newer version is ready) instead of being refused."""
     if not preview_switch.enabled():
         raise PreviewRefused(403, "Previews are off on this deployment (switch PRODUCT_PREVIEW).")
     if not network():
@@ -299,14 +412,18 @@ def start(run_id: str, repo_root: str, source: str, *, client: Any = None, now: 
     if not worker.get("contained"):
         raise PreviewRefused(409, "A preview runs the product in a container of its own, and this deployment's worker "
                                   "runs commands in itself (SANDBOX_EXECUTION_MODE is not container).")
-    label = "being built"
+    label, sprint = "being built", None
     if source == "accepted":
         from app.tools.version_control import accepted_sprints
 
         sprints = accepted_sprints(repo_root)
         if not sprints:
             raise PreviewRefused(409, "No sprint has been accepted yet; preview the workspace as it is being built.")
-        label = f"sprint {sprints[-1]}"
+        sprint = sprints[-1]
+        label = f"sprint {sprint}"
+    # The commit it runs: the sprint's own (the worker copies that one, whatever is accepted meanwhile), or the
+    # workspace's last commit for the files as they are now.
+    commit = _commit_of(repo_root, f"refs/tags/sprint-{sprint}" if sprint is not None else "HEAD")
     now = time.time() if now is None else now
     lock = LOCK_KEY.format(run_id=run_id)
     if not client.set(lock, "1", nx=True, ex=10):
@@ -314,7 +431,9 @@ def start(run_id: str, repo_root: str, source: str, *, client: Any = None, now: 
     try:
         current = read(run_id, client)
         if current and current.get("state") in ACTIVE:
-            raise PreviewRefused(409, "This run already has a preview; stop it before starting another.")
+            if not restart:
+                raise PreviewRefused(409, "This run already has a preview; stop it before starting another.")
+            stop(run_id, "replaced by a newer version", client=client, state=current)
         port = _a_free_port(client)
         if port is None:
             raise PreviewRefused(503, "Every preview port is in use; stop another preview first.")
@@ -323,7 +442,7 @@ def start(run_id: str, repo_root: str, source: str, *, client: Any = None, now: 
             "run_id": run_id, "instance": instance, "state": "starting", "source": source, "label": label,
             "port": port, "host": container_name(run_id, instance), "scratch": str(scratch_for(run_id, instance)),
             "repo_root": str(repo_root), "started_at": now, "last_used": now, "reason": "", "error": "",
-            "has_page": _the_kind_has_a_page(repo_root), "command": "",
+            "has_page": _the_kind_has_a_page(repo_root), "command": "", "sprint": sprint, "commit": commit,
         }
         write(state, client)
         ask_the_worker({"action": "start", "run_id": run_id, "instance": instance}, client)
@@ -408,7 +527,8 @@ def observe(run_id: str, *, client: Any = None, now: float | None = None,
                                 + ("; its image has no Node to forward the port, so it must listen on HOST itself"
                                    if unforwarded else ""),
                         client=client, state=state, as_state="failed", error=wrote)
-    return state
+    # What is newer than it runs (plan UX.11): said to the run page, never written, so read again on every look.
+    return {**state, "newer": newer_version(state)} if judge_the_start else state
 
 
 def public(state: dict[str, Any] | None, run_id: str, *, now: float | None = None) -> dict[str, Any]:
@@ -422,13 +542,16 @@ def public(state: dict[str, Any] | None, run_id: str, *, now: float | None = Non
         "started_at": state.get("started_at"), "reason": state.get("reason") or None,
         "error": state.get("error") or None, "has_page": state.get("has_page"), "command": state.get("command") or None,
         "idle_minutes": idle_seconds() // 60, "separate_origin": bool(separate_origin()),
+        "commit": str(state.get("commit") or "")[:12] or None, "newer": state.get("newer") or None,
+        "behind": bool(state.get("newer")),
     }
     if state.get("state") == "ready":
         expires = int(now) + token_seconds()
-        shown["url"] = f"{separate_origin()}{app_prefix(run_id, token_for(run_id, str(state['instance']), expires))}/"
+        origin = origin_for(run_id)
+        shown["url"] = f"{origin}{app_prefix(run_id, token_for(run_id, str(state['instance']), expires))}/"
         if enabled:
             pointing = token_for(run_id, str(state["instance"]), expires, pointing=True)
-            shown["pick_url"] = f"{separate_origin()}{app_prefix(run_id, pointing)}/"
+            shown["pick_url"] = f"{origin}{app_prefix(run_id, pointing)}/"
         shown["expires_at"] = expires
     return shown
 
@@ -466,8 +589,49 @@ def upstream_url(host: str, port: int, path: str, query: str) -> Any:
     return httpx.URL(scheme="http", host=host, port=int(port), path=clean, **extra)
 
 
-def forwarded_request_headers(headers: Any) -> dict[str, str]:
-    return {key: value for key, value in headers.items() if key.lower() in FORWARDED_REQUEST_HEADERS}
+def forwarded_request_headers(headers: Any, run_id: str = "") -> dict[str, str]:
+    """The browser's headers the product is given; on the run's own preview origin, its cookies too (plan UX.9): that
+    origin holds no cookie but the product's own. Never on the app's host."""
+    kept = set(FORWARDED_REQUEST_HEADERS)
+    if run_id and origin_for(run_id):
+        kept.add("cookie")
+    return {key: value for key, value in headers.items() if key.lower() in kept}
+
+
+def cookie_path(run_id: str) -> str:
+    """Where the product's cookies are sent back: the whole host when the run has one of its own; else this run's
+    previews alone (every link of the run, whatever its token), never another run's on the shared host."""
+    return "/" if PER_RUN_HOST in separate_origin() else f"/api/runs/{run_id}/{APP_PATH}/"
+
+
+def passed_cookies(upstream: Any, run_id: str) -> list[str]:
+    """The product's `Set-Cookie` headers as the browser gets them on a separate preview origin (plan UX.9): host-only
+    (any `Domain` dropped, so a cookie never reaches a parent domain the app may share) and scoped to `cookie_path`.
+    None on the app's own host, where a page has no origin to keep them."""
+    if not origin_for(run_id):
+        return []
+    scoped = []
+    for value in upstream.headers.get_list("set-cookie"):
+        pair, *attributes = [part.strip() for part in str(value).split(";")]
+        if "=" not in pair:
+            continue
+        kept = [a for a in attributes if a and a.split("=", 1)[0].strip().lower() not in ("domain", "path")]
+        scoped.append("; ".join([pair, *kept, f"Path={cookie_path(run_id)}"]))
+    return scoped
+
+
+def socket_url(host: str, port: int, path: str, query: str) -> str:
+    """The product's WebSocket address for a proxied path: its own host and port, as `upstream_url` makes them."""
+    return "ws" + str(upstream_url(host, port, path, query))[len("http"):]
+
+
+#: The browser's WebSocket headers the product is given beside the page's own (`forwarded_request_headers`).
+FORWARDED_SOCKET_HEADERS = frozenset({"accept-language", "user-agent"})
+
+
+def is_streamed(content_type: str) -> bool:
+    """Whether a response is relayed as it arrives (plan UX.10): everything the proxy does not rewrite."""
+    return content_type.split(";")[0].strip().lower() not in ("text/html", "text/css")
 
 
 def _rooted_paths_script(prefix: str) -> str:
@@ -539,7 +703,8 @@ def preflight_headers() -> dict[str, str]:
 
 __all__ = [
     "ACTIVE", "PICKER_SCRIPT", "PreviewRefused", "app_prefix", "container_name", "forwarded_request_headers",
-    "is_for_pointing", "observe",
-    "preview_switch", "public", "read", "rewritten", "response_headers", "say_the_worker_serves", "scratch_for",
+    "is_for_pointing", "observe", "A_PREVIEW_PATH", "PreviewOriginServesPreviewsOnly", "cookie_path",
+    "is_a_preview_host", "is_streamed", "newer_version", "opening_problem", "origin_for", "passed_cookies",
+    "socket_url", "preview_switch", "public", "read", "rewritten", "response_headers", "say_the_worker_serves", "scratch_for",
     "start", "stop", "the_worker_serving", "token_for", "token_problem", "touch", "upstream_url", "what_it_wrote",
 ]

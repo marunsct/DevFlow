@@ -528,6 +528,9 @@ class PreviewStartRequest(BaseModel):
     """What a preview starts from (plan WS.4): the last accepted sprint, or the workspace as it is being built."""
 
     source: Literal["accepted", "live"] = "accepted"
+    restart: bool = Field(
+        default=False, description="Replace the running preview with this one (plan UX.11: a newer version is ready).",
+    )
 
 
 class PickedBox(BaseModel):
@@ -581,6 +584,9 @@ class PreviewStatus(BaseModel):
     command: str | None = Field(default=None, description="The start command the product was started with.")
     idle_minutes: int = Field(description="Minutes without a request after which a preview is stopped.")
     separate_origin: bool = False
+    commit: str | None = Field(default=None, description="The commit the preview runs (plan UX.11).")
+    behind: bool = Field(default=False, description="A newer accepted sprint, or a newer commit for `live`, is ready.")
+    newer: str | None = Field(default=None, description="What is newer: `sprint <n>` or `commit <sha>`.")
     url: str | None = Field(default=None, description="The signed link to the product, while it is ready.")
     pick_url: str | None = Field(
         default=None, description="The same, signed for pointing at a part of the page (plan WS.5); its pages carry "

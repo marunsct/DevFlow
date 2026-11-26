@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, WebSocket
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, Response
 
@@ -1208,17 +1208,19 @@ def create_runs_router(
     async def start_preview(
         run_id: str, request: PreviewStartRequest | None = None, user: UserInDB = Depends(require_operator)
     ) -> PreviewStatus:
-        """Start the product for a person to try: the last accepted sprint (default) or the workspace being built."""
+        """Start the product for a person to try: the last accepted sprint (default) or the workspace being built;
+        with `restart`, in place of the running preview (a newer version is ready, plan UX.11)."""
         from app.server import preview
 
         root = _workspace_of(run_id, user)
-        source = (request or PreviewStartRequest()).source
+        asked = request or PreviewStartRequest()
+        source = asked.source
         try:
-            state = await asyncio.to_thread(preview.start, run_id, root, source)
+            state = await asyncio.to_thread(preview.start, run_id, root, source, restart=asked.restart)
         except preview.PreviewRefused as error:
             raise _refused(error)
         record_audit(actor=user.username, tenant_id=user.tenant_id, action="run.preview.start", subject=run_id,
-                     detail={"source": source, "label": state.get("label")})
+                     detail={"source": source, "label": state.get("label"), "restart": asked.restart})
         return PreviewStatus(**preview.public(state, run_id))
 
     @runs.get("/{run_id}/preview", response_model=PreviewStatus)
@@ -1287,51 +1289,17 @@ def create_runs_router(
     )
     async def preview_app(run_id: str, token: str, path: str, request: Request) -> Response:
         """The product, through the app: opened by the signed link alone (a frame sends no sign-in), to the preview's
-        own host and port only, with none of the browser's cookies or credentials passed on."""
-        from urllib.parse import urlsplit
+        own host and port only, with none of the browser's credentials passed on (`preview_proxy.serve`)."""
+        from app.server import preview_proxy
 
-        import httpx
+        return await preview_proxy.serve(run_id, token, path, request)
 
-        from app.server import preview
+    @runs.websocket("/{run_id}/preview/app/{token}/{path:path}")
+    async def preview_app_socket(websocket: WebSocket, run_id: str, token: str, path: str) -> None:
+        """The product's WebSocket, through the app under the same link check (plan UX.10)."""
+        from app.server import preview_proxy
 
-        state = await asyncio.to_thread(preview.read, run_id)
-        problem = preview.token_problem(token, run_id, str((state or {}).get("instance") or "")) if state else (
-            "no preview")
-        if problem or (state or {}).get("state") not in preview.ACTIVE:
-            return Response(f"This preview cannot be opened: {problem or 'it has stopped'}.", status_code=403,
-                            media_type="text/plain", headers={"cache-control": "no-store"})
-        origin = preview.separate_origin()
-        if origin and request.headers.get("host", "").lower() != urlsplit(origin).netloc.lower():
-            return Response("Previews are served from their own origin.", status_code=403, media_type="text/plain")
-        if request.method == "OPTIONS" and "access-control-request-method" in request.headers:
-            return Response(status_code=204, headers=preview.preflight_headers())
-        if state.get("state") != "ready":
-            return Response("The preview is still starting.", status_code=503, media_type="text/plain",
-                            headers={"retry-after": "2"})
-        body = await request.body()
-        if len(body) > preview.MOST_REQUEST_BYTES:
-            return Response("The request is too large for a preview.", status_code=413, media_type="text/plain")
-        prefix = preview.app_prefix(run_id, token)
-        target = preview.upstream_url(str(state["host"]), int(state["port"]), path, request.url.query)
-        try:
-            async with httpx.AsyncClient(timeout=preview.REQUEST_TIMEOUT, follow_redirects=False,
-                                         trust_env=False) as client:
-                async with client.stream(request.method, target, content=body or None,
-                                         headers=preview.forwarded_request_headers(request.headers)) as upstream:
-                    content = b""
-                    async for chunk in upstream.aiter_bytes():
-                        content += chunk
-                        if len(content) > preview.MOST_RESPONSE_BYTES:
-                            return Response("The product's answer is too large for a preview.", status_code=502,
-                                            media_type="text/plain")
-        except httpx.HTTPError as error:
-            return Response(f"The product did not answer: {type(error).__name__}.", status_code=502,
-                            media_type="text/plain")
-        await asyncio.to_thread(preview.touch, state)
-        headers = preview.response_headers(upstream, prefix)
-        content = preview.rewritten(content, headers.get("content-type", ""), prefix,
-                                    pointing=preview.is_for_pointing(token))
-        return Response(content=content, status_code=upstream.status_code, headers=headers)
+        await preview_proxy.relay_socket(websocket, run_id, token, path)
 
     @runs.get("/{run_id}/handover")
     async def download_handover(

@@ -1452,6 +1452,12 @@
    "PreviewStartRequest": {
     "description": "What a preview starts from (plan WS.4): the last accepted sprint, or the workspace as it is being built.",
     "properties": {
+     "restart": {
+      "default": false,
+      "description": "Replace the running preview with this one (plan UX.11: a newer version is ready).",
+      "title": "Restart",
+      "type": "boolean"
+     },
      "source": {
       "default": "accepted",
       "enum": [
@@ -1468,6 +1474,12 @@
    "PreviewStatus": {
     "description": "A run's product preview as the run page sees it (plan WS.4).",
     "properties": {
+     "behind": {
+      "default": false,
+      "description": "A newer accepted sprint, or a newer commit for `live`, is ready.",
+      "title": "Behind",
+      "type": "boolean"
+     },
      "command": {
       "anyOf": [
        {
@@ -1479,6 +1491,18 @@
       ],
       "description": "The start command the product was started with.",
       "title": "Command"
+     },
+     "commit": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "The commit the preview runs (plan UX.11).",
+      "title": "Commit"
      },
      "enabled": {
       "description": "Whether previews are on for this deployment (switch PRODUCT_PREVIEW).",
@@ -1537,6 +1561,18 @@
       ],
       "description": "What is shown: `sprint <n>`, or `being built`.",
       "title": "Label"
+     },
+     "newer": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "What is newer: `sprint <n>` or `commit <sha>`.",
+      "title": "Newer"
      },
      "pick_url": {
       "anyOf": [
@@ -7200,7 +7236,7 @@
     ]
    },
    "post": {
-    "description": "Start the product for a person to try: the last accepted sprint (default) or the workspace being built.",
+    "description": "Start the product for a person to try: the last accepted sprint (default) or the workspace being built;\nwith `restart`, in place of the running preview (a newer version is ready, plan UX.11).",
     "operationId": "start_preview_api_runs__run_id__preview_post",
     "parameters": [
      {

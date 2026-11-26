@@ -16,7 +16,8 @@ vi.mock('../api', () => api);
 const LINK = '/api/runs/r/preview/app/1700000000.abc.sig/';
 const status = (over: Partial<PreviewStatus>): PreviewStatus => ({
   enabled: true, state: 'none', source: null, label: null, started_at: null, reason: null, error: null,
-  has_page: null, command: null, idle_minutes: 15, separate_origin: false, url: null, pick_url: null, expires_at: null, ...over,
+  has_page: null, command: null, idle_minutes: 15, separate_origin: false, url: null, pick_url: null, expires_at: null,
+  commit: null, behind: false, newer: null, ...over,
 });
 const ready = (over: Partial<PreviewStatus> = {}) => status({
   state: 'ready', source: 'accepted', label: 'sprint 2', url: LINK, expires_at: Math.floor(Date.now() / 1000) + 1800,
@@ -104,6 +105,47 @@ describe('the preview tab', () => {
 
     expect((await screen.findByText(/Previews are off/)).textContent).toContain('PRODUCT_PREVIEW');
     expect(screen.queryByRole('button')).toBeNull();
+  });
+});
+
+describe('following the build (plan UX.11)', () => {
+  it('names the commit the preview runs', async () => {
+    api.getPreview.mockResolvedValue(ready({ commit: '1a2b3c4d5e6f' }));
+    render(<PreviewPanel runId="r" />);
+
+    await screen.findByTitle('The product');
+
+    expect(screen.getByRole('status').textContent).toContain('1a2b3c4');
+  });
+
+  it('restarts with a newer version from the same source', async () => {
+    api.getPreview.mockResolvedValue(ready({ source: 'live', label: 'being built', behind: true, newer: 'commit 9f8e7d6' }));
+    api.startPreview.mockResolvedValue(status({ state: 'starting', source: 'live', label: 'being built' }));
+    render(<PreviewPanel runId="r" />);
+
+    expect((await screen.findByRole('note')).textContent).toContain('A newer version is ready: commit 9f8e7d6');
+    await userEvent.click(screen.getByRole('button', { name: 'Restart with it' }));
+
+    expect(api.startPreview).toHaveBeenCalledWith('r', 'live', true);
+    expect(api.stopPreview).not.toHaveBeenCalled();
+  });
+
+  it('looks again while ready to learn of a newer version, keeping the page it shows', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      api.getPreview
+        .mockResolvedValueOnce(ready({ started_at: 1 }))
+        .mockResolvedValue(ready({ started_at: 1, url: '/api/runs/r/preview/app/1700000999.abc.fresh/', behind: true, newer: 'sprint 3' }));
+      render(<PreviewPanel runId="r" />);
+      await screen.findByTitle('The product');
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+
+      expect((await screen.findByRole('note')).textContent).toContain('sprint 3');
+      expect(screen.getByTitle('The product').getAttribute('src')).toBe(LINK);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

@@ -97,6 +97,23 @@ def test_the_accepted_sprint_starts_from_a_copy_of_its_files_with_the_installs(s
     assert len(docker.calls) == 1
 
 
+def test_the_worker_copies_the_sprint_the_status_names_though_a_later_one_was_accepted_meanwhile(started):
+    """Plan UX.11: the status names the commit the preview runs; a sprint accepted between the person's start and the
+    worker's copy is the newer version on offer, not what is shown."""
+    root = started.root
+    run_id = f"run-{uuid.uuid4().hex[:10]}"
+    state = preview.start(run_id, str(root), "accepted")
+    (root / "server.js").write_text("// sprint two\n")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "Sprint 2")
+    _git(root, "tag", "sprint-2")
+
+    preview_worker.start({"run_id": run_id, "instance": state["instance"]}, run=_Docker())
+
+    assert (Path(state["scratch"]) / "server.js").read_text() == "// sprint one\n"
+    assert preview.newer_version(preview.read(run_id)) == "sprint 2"
+
+
 def test_the_live_source_starts_from_the_files_as_they_are_now(started):
     state, _ = started("live")
 

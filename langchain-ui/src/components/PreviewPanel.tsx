@@ -9,6 +9,10 @@
  * Point and say (plan WS.5): while a person points at the page, the frame opens the link signed for pointing, whose
  * pages carry the server's picker; the element they choose arrives as a message, taken only from this frame's own
  * window and only in its exact shape (`pickedFrom`), and fills the form beside the page.
+ *
+ * Following the build (plan UX.11): the status names the commit the preview runs; a ready preview is looked at again
+ * every `FOLLOW_MS`, keeping its link (`keepTheLink`), and when a newer version is ready one action restarts the
+ * preview with it, from the same source.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { getPreview, sendPreviewRequest, startPreview, stopPreview, type PreviewAnswer } from '../api';
@@ -18,6 +22,7 @@ import { PointAndSay } from './PointAndSay';
 import { Crosshair, ShieldAlert, Square } from 'lucide-react';
 import { frameBox, PreviewToolbar, ToolbarDivider, type FrameSize } from './PreviewToolbar';
 import { underLink } from '../lib/previewPath';
+import { FOLLOW_MS, keepTheLink } from '../lib/previewFollow';
 
 type Preview = PreviewStatus;
 
@@ -125,7 +130,8 @@ export const PreviewPanel: React.FC<{
 
   const load = useCallback(async () => {
     try {
-      setPreview(await getPreview(runId));
+      const found = await getPreview(runId);
+      setPreview((previous) => keepTheLink(previous, found));
     } catch (error) {
       setProblem(detailOf(error));
     }
@@ -133,14 +139,16 @@ export const PreviewPanel: React.FC<{
 
   useEffect(() => { void load(); }, [load]);
 
-  // A starting preview is looked at until it is ready or has failed; a link is renewed before it expires.
+  // A starting preview is looked at until it is ready or has failed; a ready one is looked at again to follow the
+  // build, and its link is renewed before it expires.
   useEffect(() => {
     if (preview?.state === 'starting') {
       const timer = setTimeout(() => void load(), POLL_MS);
       return () => clearTimeout(timer);
     }
     if (preview?.state === 'ready' && preview.expires_at) {
-      const timer = setTimeout(() => void load(), Math.max(5_000, preview.expires_at * 1000 - Date.now() - 60_000));
+      const renewal = Math.max(5_000, preview.expires_at * 1000 - Date.now() - 60_000);
+      const timer = setTimeout(() => void load(), Math.min(FOLLOW_MS, renewal));
       return () => clearTimeout(timer);
     }
     return undefined;
@@ -236,10 +244,20 @@ export const PreviewPanel: React.FC<{
       <p role="status" className="ml-auto min-w-0 truncate pl-2 text-[13px] text-text-secondary">
         {preview.state === 'none' && 'No preview yet.'}
         {preview.state === 'starting' && `Starting ${preview.label ?? 'the product'}…`}
-        {preview.state === 'ready' && <>Showing {preview.label}{preview.source === 'live' && <span className="ml-1 text-warning">(being built: it may change or break)</span>}</>}
+        {preview.state === 'ready' && <>Showing {preview.label}{preview.commit && <span className="ml-1 font-mono text-[12px] text-text-muted" title={`Commit ${preview.commit}`}>· {preview.commit.slice(0, 7)}</span>}{preview.source === 'live' && <span className="ml-1 text-warning">(being built: it may change or break)</span>}</>}
         {preview.state === 'failed' && `The preview failed: ${preview.reason ?? 'the product did not start'}.`}
         {preview.state === 'stopped' && `The preview stopped: ${preview.reason ?? 'stopped'}.`}
       </p>
+      {active && preview.behind && (
+        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-accent bg-accent-soft px-2 py-0.5 text-[12px] text-text-primary">
+          <span role="note">A newer version is ready{preview.newer ? `: ${preview.newer}` : ''}.</span>
+          <button type="button" disabled={busy}
+            onClick={() => act(() => startPreview(runId, preview.source ?? 'accepted', true))}
+            className="font-medium underline underline-offset-2 hover:no-underline disabled:opacity-50">
+            Restart with it
+          </button>
+        </span>
+      )}
       {/* Plan UX.4: on the app's own host the frame has no origin of its own, so the product cannot keep anything. */}
       {ready && !preview.separate_origin && (
         <span

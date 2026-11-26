@@ -315,13 +315,19 @@ export interface PreviewCriterion {
 
 /** What a preview starts from (plan WS.4): the last accepted sprint, or the workspace as it is being built. */
 export interface PreviewStartRequest {
+  /** Replace the running preview with this one (plan UX.11: a newer version is ready). */
+  restart?: boolean;
   source?: "accepted" | "live";
 }
 
 /** A run's product preview as the run page sees it (plan WS.4). */
 export interface PreviewStatus {
+  /** A newer accepted sprint, or a newer commit for `live`, is ready. */
+  behind: boolean;
   /** The start command the product was started with. */
   command: string | null;
+  /** The commit the preview runs (plan UX.11). */
+  commit: string | null;
   /** Whether previews are on for this deployment (switch PRODUCT_PREVIEW). */
   enabled: boolean;
   /** The product's own error lines and the end of its output. */
@@ -334,6 +340,8 @@ export interface PreviewStatus {
   idle_minutes: number;
   /** What is shown: `sprint <n>`, or `being built`. */
   label: string | null;
+  /** What is newer: `sprint <n>` or `commit <sha>`. */
+  newer: string | null;
   /** The same, signed for pointing at a part of the page (plan WS.5); its pages carry the picker. */
   pick_url: string | null;
   /** Why it stopped or failed. */

@@ -6,8 +6,6 @@ off until measured.
 """
 from __future__ import annotations
 
-import re
-
 import json
 import os
 from pathlib import Path
@@ -81,11 +79,3 @@ def test_the_fix_request_carries_the_neighbourhood(tmp_path, monkeypatch):
 
     assert neighbours == [((str(tmp_path), ["app/store.js"]), {})]
     assert "[the neighbourhood]" in seen.request["messages"][-1]["content"]
-
-
-def test_a_name_the_graph_does_not_show_is_not_said_to_be_defined_nowhere(tmp_path):
-    """The graph reads some languages only; an empty answer read as absent invited a second definition."""
-    _project(tmp_path)
-    answer = project_graph.build_tool(tmp_path).invoke({"where_is_name": "NotInTheGraph"})
-    assert answer["defined_in"] == [] and "Search the files" in answer["note"]
-    assert not re.search(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", answer["note"], re.I)

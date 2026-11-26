@@ -85,8 +85,22 @@ def test_a_request_the_graph_says_nothing_of_is_recorded_without_firing_its_swit
 
     [record] = _reach()
     assert sent["messages"][-1]["content"] == "Fix it."
-    assert record["carried"] is False and record["languages"]["md"]["held"] == 0
+    assert record["carried"] is False and record["languages"] == {
+        project_graph.NO_FILE: {"files": 0, "held": 0, "edges": 0, "tests": 0}}
     assert "PROJECT_GRAPH_FIXES" not in switch_firing.fired(_reach())
+
+
+def test_files_of_no_language_are_not_counted_by_language(a_run):
+    """LF.1536: the effects line read "txt 7 of 7" and "json 2 of 2" beside the languages the graph reads - files no
+    language reads, counted as if the graph had failed them."""
+    for name in ("notes.txt", "data.json"):
+        (a_run / "notes-api" / name).write_text("{}\n")
+    with asked_for("defect_fix_1_0", RUN):
+        project_graph.with_the_neighbourhood(_request(), a_run, ["notes-api/notes_api/store.py", "notes-api/notes.txt",
+                                                                "notes-api/data.json"])
+
+    [record] = _reach()
+    assert set(record["languages"]) == {"python"}
 
 
 def test_a_request_built_again_on_a_resume_is_recorded_once(a_run):

@@ -156,7 +156,7 @@ BUNDLES: dict[str, tuple[str, ...]] = {
     # What every stage knows of the project: shared facts, memory, the code graph, lessons from earlier runs.
     "PREMIUM_PROJECT_INTELLIGENCE": (
         "SHARED_FACTS", "CANONICAL_MEMORY", "WHERE_THINGS_STAND", "STATE_AT_DISPATCH", "PROJECT_GRAPH_FIXES",
-        "PROJECT_GRAPH_BUILDERS", "CODE_GRAPH_TOOL", "BUILDER_FACTS", "LESSON_DISTILLER", "DECISION_LEDGER",
+        "PROJECT_GRAPH_BUILDERS", "BUILDER_FACTS", "LESSON_DISTILLER", "DECISION_LEDGER",
         "NAMING_STANDARD",
     ),
     # Verification beyond the acceptance suite: mutation-guided tests, page scoring, release audits and documents,

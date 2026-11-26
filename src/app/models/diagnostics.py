@@ -205,7 +205,7 @@ def _reasoning_cost(model: Any) -> dict[str, int | None]:
 #: Tools by the names a stage is offered, so "the right one of many" is asked the way a stage is.
 _STAGE_TOOL_NAMES = ("ls", "read_file", "glob", "grep", "write_artifact", "edit_artifact", "replace_lines",
                      "delete_artifact", "move_artifact", "run_terminal_command", "read_command_output",
-                     "code_graph", "ask_specification", "read_specification", "web_search", "fetch_url")
+                     "ask_specification", "read_specification", "web_search", "fetch_url")
 
 
 def _stage_tools() -> list[dict]:

@@ -1592,12 +1592,6 @@ def create_specialist_agent(
 
     if role == "testing":
         extra_tools.append(build_validation_tool(resolved_repo_root))
-    # Where a name is defined and what uses a file, from the harness's code
-    # graph (plan CG.4, off until measured).
-    from app.analysis import project_graph
-
-    if project_graph.tool_enabled():
-        extra_tools.append(project_graph.build_tool(resolved_repo_root))
     # A bounded question to the specification, the architect on a miss (plan CM.4, off).
     from app.agents import ask_specification
 

@@ -76,7 +76,7 @@ _ELSEWHERE_SUFFIXES = (".go", ".rs", ".java", ".kt", ".cs", ".rb", ".php", ".swi
 _LOCK = threading.Lock()
 #: root -> (the source files as they were when it was built, the graph). Built
 #: afresh on every `neighbourhood`, `where_is` and `who_uses` - each fix request
-#: and each `code_graph` call - the graph read every source file of the project
+#: and each graph question - the graph read every source file of the project
 #: each time: nothing on a ten-file product, a full read of a large codebase
 #: per call.
 _BUILT: dict[str, tuple[tuple[tuple[str, int, int], ...], dict[str, dict[str, list[Any]]]]] = {}
@@ -331,8 +331,8 @@ RECORD_KIND = "project_graph_reach"
 #: (`PROJECT_GRAPH_BUILDERS`) that carried one.
 SAID = {"fix": "A fix request carried its files' neighbours from the code graph",
         "build": "A work order's request carried its files' neighbours from the code graph"}
-#: The record's language for a file with no suffix, and for a request naming no file.
-NO_LANGUAGE, NO_FILE = "other", "no file"
+#: The record's language for a file with no suffix, and for a request naming no source file.
+NO_LANGUAGE, NO_FILE = "other", "no source file"
 _NOTED: set[tuple] = set()
 _MOST_NOTED = 4_096
 
@@ -346,13 +346,20 @@ def _language_of(relative: str) -> str:
 
 
 def reach(root: str | Path, files: Iterable[str]) -> dict[str, dict[str, int]]:
-    """What the code graph knows of `files`, by language: {language: {files, held, edges, tests}} - the files named,
-    those the graph holds, their import edges both ways, and the acceptance test files with criteria that import them;
-    {NO_FILE: zeros} for no file. Never raises."""
+    """What the code graph knows of `files`, by language: {language: {files, held, edges, tests}} - the source files
+    named, those the graph holds, their import edges both ways, and the acceptance test files with criteria that
+    import them; {NO_FILE: zeros} for no source file. A file of no language the table or the graph knows (a `.txt`,
+    a `.json`) is not counted: it read as "txt 7 of 7 with no edge", noise beside the languages the graph reads
+    (LF.1536). Never raises."""
+    from app.stacks.languages import LANGUAGES
+
+    suffixes = {suffix for row in LANGUAGES for suffix in row.suffixes}
     found: dict[str, dict[str, int]] = {}
     try:
         graph = build(root)
         for relative in _relative(files):
+            if relative not in graph and Path(relative).suffix.lower() not in suffixes:
+                continue
             counts = found.setdefault(_language_of(relative), {"files": 0, "held": 0, "edges": 0, "tests": 0})
             counts["files"] += 1
             node = graph.get(relative)
@@ -425,14 +432,6 @@ def effects_lines(records: Iterable[Any]) -> list[str]:
     return lines
 
 
-def tool_enabled() -> bool:
-    """CG.4: the `code_graph` tool is offered to builders and fixers (`CODE_GRAPH_TOOL`); off where `LEAN_TOOL_LISTS`
-    leaves the tool out of every stage, since the switch then acts nowhere (`stage_tools.leaves_out`)."""
-    from app.agents import stage_tools
-
-    return is_on("CODE_GRAPH_TOOL", False) and not stage_tools.leaves_out("code_graph")
-
-
 def where_is(root: str | Path, name: str) -> list[str]:
     """The files that define `name` - exactly, else by a part of the name - at most 8."""
     graph, wanted = build(root), str(name).strip()
@@ -467,36 +466,6 @@ def who_uses(root: str | Path, path: str) -> dict[str, Any]:
     return answer
 
 
-def build_tool(repo_root: str | Path) -> Any:
-    """The read-only `code_graph` tool (plan CG.4), answered from the harness's graph of the project."""
-    from langchain_core.tools import tool
-
-    @tool
-    def code_graph(where_is_name: str = "", who_uses_path: str = "") -> dict[str, Any]:
-        """Ask the harness's code graph instead of searching: where a name is defined, or what uses a file.
-
-        Args:
-            where_is_name: a function, class or type; answers the files that define it.
-            who_uses_path: a workspace-relative file; answers what imports it, what it defines, and the
-                acceptance tests and criteria that reach it.
-
-        Give one of the two. Returns `{"defined_in": [...]}` or `{"imported_by", "defines", "tests", "criteria"}`.
-        """
-        if where_is_name.strip():
-            found = where_is(repo_root, where_is_name)
-            if not found:
-                # Not "defined nowhere": the graph reads only some languages, and
-                # an empty answer read as absent invited a second definition.
-                return {"defined_in": [], "note": f"The code graph does not show `{where_is_name}`: it reads "
-                        "only some languages and kinds of definition. Search the files before you define it."}
-            return {"defined_in": found}
-        if who_uses_path.strip():
-            return who_uses(repo_root, who_uses_path) or {"error": f"The code graph holds no file `{who_uses_path}`."}
-        return {"error": "Give `where_is_name` or `who_uses_path`."}
-
-    return code_graph
-
-
 class _Switch:
     """One switch of this module, for `provenance.SWITCHES`."""
 
@@ -507,7 +476,6 @@ class _Switch:
 
 fixes_switch = _Switch(fixes_enabled)
 builders_switch = _Switch(builders_enabled)
-tool_switch = _Switch(tool_enabled)
 
-__all__ = ["BUILD_HEADING", "FIX_HEADING", "GRAPH_FILE", "RECORD_KIND", "SAID", "build", "build_tool",
-           "builders_enabled", "effects_lines", "fixes_enabled", "neighbourhood", "noted", "reach", "tool_enabled", "where_is", "who_uses", "with_the_neighbourhood", "with_the_slice"]
+__all__ = ["BUILD_HEADING", "FIX_HEADING", "GRAPH_FILE", "RECORD_KIND", "SAID", "build",
+           "builders_enabled", "effects_lines", "fixes_enabled", "neighbourhood", "noted", "reach", "where_is", "who_uses", "with_the_neighbourhood", "with_the_slice"]

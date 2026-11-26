@@ -119,7 +119,6 @@ Written by `loop.sh measuring` from 505 scored runs in the ledger. On and off co
 | `THINKING_OFF_REPLY_CAP` | bundle PREMIUM_MODEL_TUNING | on | 231 | no signal | 0 | not measured: needs 0 more on and 2 more off |
 | `BUILDER_FACTS` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 451 | no signal | 0 | not measured: needs 0 more on and 2 more off |
 | `CANONICAL_MEMORY` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 495 | no signal | 2 | measured: hidden 0.92 on / 0.70 off; minutes 90.41 / 206.75 |
-| `CODE_GRAPH_TOOL` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 495 | no signal | 2 | measured: hidden 0.92 on / 0.70 off; minutes 90.41 / 206.75 |
 | `DECISION_LEDGER` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 495 | no signal | 2 | measured: hidden 0.92 on / 0.70 off; minutes 90.41 / 206.75 |
 | `LESSON_DISTILLER` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 496 | 277 | 1 | not measured: needs 0 more on and 1 more off |
 | `NAMING_STANDARD` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 471 | no signal | 0 | not measured: needs 0 more on and 2 more off |

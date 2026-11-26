@@ -6,7 +6,7 @@ which reads the pages `search_the_web` finds, three times. Every tool's schema i
 3,300 characters for those five), and a small model choosing among tools that do one job is a choice it can get
 wrong. With the switch on:
 
-- those five are not offered, except where a stage's own request asks for one (`use_runtime` in the setup of a stack
+- those five are not offered (the code graph's tool, a sixth, was removed outright: KG.10, LF.1535), except where a stage's own request asks for one (`use_runtime` in the setup of a stack
   no pack covers); their code and their own switches stay as they were;
 - `changed_since_sprint` is offered only once a sprint has been accepted: before that it can only answer that there
   is nothing to compare against;
@@ -31,7 +31,7 @@ ON_BY_DEFAULT = False
 
 #: Never or almost never called in about 3,500 offers each (30 runs): not offered with the switch on.
 SELDOM_CALLED: frozenset[str] = frozenset({
-    "search_the_web", "read_web_page", "use_runtime", "code_graph", "ask_specification",
+    "search_the_web", "read_web_page", "use_runtime", "ask_specification",
 })
 #: The built-in readers of the workspace.
 WORKSPACE_READERS: tuple[str, ...] = ("ls", "read_file", "glob", "grep")
@@ -53,8 +53,8 @@ class _LeanToolLists:
 
     ON_BY_DEFAULT = ON_BY_DEFAULT
     #: What the admin page says this switch does.
-    explanation = ("Each stage is offered only the tools it can use: the five tools almost never called in 30 runs "
-                   "(web search and page reading, runtime install, code graph, specification questions) are left out, "
+    explanation = ("Each stage is offered only the tools it can use: the tools almost never called in 30 runs "
+                   "(web search and page reading, runtime install, specification questions) are left out, "
                    "the sprint history tool waits for an accepted sprint, and a read-only role on an empty workspace "
                    "gets no file listing or search. Smaller requests, fewer wrong choices.")
 
@@ -91,8 +91,8 @@ def without_the_seldom_called(tools: Iterable[Any], keep: Iterable[str] = ()) ->
 def leaves_out(tool_name: str) -> bool:
     """Whether every stage is offered `tool_name` never: the switch is on, the tool is seldom called, and nothing keeps
     it - only the setup of a stack no pack covers keeps `use_runtime`, and the run's Internet lookups choice the web
-    pair. A switch whose only effect is such a tool acts nowhere, so it reads as off (`ask_specification.enabled`,
-    `project_graph.tool_enabled`): measured, two were recorded on in 29 of 29 runs while their tools were offered in none
+    pair. A switch whose only effect is such a tool acts nowhere, so it reads as off (`ask_specification.enabled`):
+    measured, it and the code graph's tool switch (since removed, KG.10) were recorded on in 29 of 29 runs while their tools were offered in none
     of 9,567 requests, and every comparison by the switches on counted them as active."""
     if not enabled() or tool_name not in SELDOM_CALLED or tool_name == "use_runtime":
         return False

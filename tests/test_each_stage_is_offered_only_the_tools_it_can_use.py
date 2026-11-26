@@ -94,7 +94,7 @@ def test_the_setup_of_a_stack_no_pack_covers_keeps_the_runtime_tool_its_request_
         lambda **kw: create_specialist_agent("testing", setting_up_the_stack=True, **kw), _seeded(tmp_path))
 
     assert "use_runtime" in offered
-    assert not {"search_the_web", "read_web_page", "code_graph", "ask_specification"} & set(offered)
+    assert not {"search_the_web", "read_web_page", "ask_specification"} & set(offered)
 
 
 def test_the_sprint_history_tool_is_offered_once_a_sprint_is_accepted(lean, tmp_path):
@@ -141,7 +141,7 @@ def test_with_the_switch_off_every_tool_is_offered_as_before(lean, tmp_path):
     lean.setenv("WEB_TOOLS_OFFERED", "on")
     offered, _ = _offered(lambda **kw: create_specialist_agent("backend", **kw), _seeded(tmp_path))
 
-    assert {"changed_since_sprint", "search_the_web", "read_web_page", "use_runtime", "code_graph",
+    assert {"changed_since_sprint", "search_the_web", "read_web_page", "use_runtime",
             "ask_specification"} <= set(offered)
 
 

@@ -223,6 +223,45 @@ def _source_of(root: Path, repository_path: str) -> Path:
     return root / repository_path
 
 
+def _the_people_s_commits(root: Path, base: str) -> str:
+    """Each change a person handed back during the run (plan UX.16a) as a commit of its own on `base`, authored by
+    them, in the repository's layout; the tip. A change that does not apply to the base on its own - it builds on lines
+    a stage wrote - is left to the run's commit, which holds the product as it ships either way. Never raises."""
+    from app.stacks.seeded_product import MOVE_RECORD
+
+    tip = base
+    try:
+        from app.server.edit_session import hand_backs, person_s_identity
+
+        try:
+            project = str(json.loads((root / MOVE_RECORD).read_text(encoding="utf-8")).get("project") or "")
+        except (OSError, ValueError, AttributeError):
+            project = ""
+        for entry in hand_backs(root):
+            commit = str(entry.get("commit") or "")
+            if entry.get("kind") != "hand_back" or not commit:
+                continue
+            relative = [f"--relative={project}"] if project else []
+            patch = _git(root, "diff", "--binary", *relative, f"{commit}^", commit).stdout
+            if not patch.strip():
+                continue
+            with tempfile.TemporaryDirectory(prefix="delivery-person-") as scratch:
+                index = {"GIT_INDEX_FILE": str(Path(scratch) / "index")}
+                if _git(root, "read-tree", tip, env=index).returncode != 0:
+                    continue
+                if _git(root, "apply", "--cached", "--binary", "-", stdin=patch, env=index).returncode != 0:
+                    continue
+                tree = _git(root, "write-tree", env=index).stdout.strip()
+            name, email = person_s_identity(str(entry.get("by") or ""))
+            made = _git(root, "commit-tree", tree, "-p", tip, stdin=f"By {name}: {entry.get('reason') or ''}\n",
+                        env={"GIT_AUTHOR_NAME": name, "GIT_AUTHOR_EMAIL": email})
+            if made.returncode == 0 and made.stdout.strip():
+                tip = made.stdout.strip()
+    except Exception:  # noqa: BLE001 - the run's one commit still delivers everything
+        logger.warning("The people's commits could not be kept apart in the delivery", exc_info=True)
+    return tip
+
+
 def delivered_commit(root: str | Path, base: str, message: str) -> str:
     """One commit on `base` holding the product as it ships, made in a separate index; its id. Raises DeliveryError."""
     root = Path(root)
@@ -246,7 +285,10 @@ def delivered_commit(root: str | Path, base: str, message: str) -> str:
         if _git(root, "update-index", "-z", "--index-info", stdin="\0".join(lines) + "\0", env=index).returncode != 0:
             raise DeliveryError("The delivered tree could not be assembled.")
         tree = _git(root, "write-tree", env=index).stdout.strip()
-    made = _git(root, "commit-tree", tree, "-p", base, stdin=message)
+    tip = _the_people_s_commits(root, base)
+    if tip != base and _value(root, "rev-parse", f"{tip}^{{tree}}") == tree:
+        return tip
+    made = _git(root, "commit-tree", tree, "-p", tip, stdin=message)
     if made.returncode != 0 or not made.stdout.strip():
         raise DeliveryError("The delivered commit could not be made.")
     return made.stdout.strip()
@@ -371,7 +413,7 @@ def _for_download(root: Path, commit: str, base: str, branch: str, why: str) -> 
     _git(root, "update-ref", f"refs/heads/{branch}", commit)
     bundle, patch = folder / f"{stem}.bundle", folder / f"{stem}.patch"
     _git(root, "bundle", "create", str(bundle), f"{base}..{branch}", timeout=PUSH_TIMEOUT_SECONDS)
-    patched = _git(root, "format-patch", "-1", "--binary", "--stdout", commit, timeout=PUSH_TIMEOUT_SECONDS)
+    patched = _git(root, "format-patch", "--binary", "--stdout", f"{base}..{commit}", timeout=PUSH_TIMEOUT_SECONDS)
     if patched.returncode == 0:
         patch.write_text(patched.stdout, encoding="utf-8")
     files = tuple(path.relative_to(root).as_posix() for path in (bundle, patch) if path.is_file())

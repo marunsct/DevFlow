@@ -105,6 +105,7 @@ SWITCHES: dict[str, str] = {
     "FAST_DESIGN_GATE_ON_PRODUCT_BREAKING": "app.graph.fast_design_gate",
     "WEB_TOOLS_OFFERED": "app.tools.web_search:web_tools_offered_switch",
     "PRODUCT_PREVIEW": "app.server.preview:preview_switch",
+    "CO_DEVELOPMENT": "app.server.edit_session:co_development_switch",
     "WEB_TOOLS_AFTER_TWO_FAILED_FIXES": "app.graph.web_tools_after_two_failed_fixes:web_tools_after_two_failed_fixes_switch",
     "STABLE_MEMORY_ORDER": "app.agents.stable_memory_order",
     "NEAR_GREEN_REPAIR_TO_ROUND": "app.graph.near_green_repair",

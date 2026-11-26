@@ -829,6 +829,13 @@ def execute_workflow_run(
             _record_a_cancellation_nothing_else_will(runner, run_id, record.status)
             return
 
+        # A person handed the turn back (plan UX.15): the unit and locked acceptance checks run once now, before any
+        # stage works, so a test the person's change broke is recorded as theirs.
+        if resume and record.repo_root:
+            from app.server.edit_session import take_the_pending_checks
+
+            take_the_pending_checks(run_id, record.repo_root)
+
         if decision_payload:
             record.pending_decision_payload = decision_payload
 

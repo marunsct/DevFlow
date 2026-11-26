@@ -267,6 +267,25 @@
     "title": "BriefPreviewRequest",
     "type": "object"
    },
+   "BringIn": {
+    "description": "An access token that reads the source repository, when it is private; used once, never kept.",
+    "properties": {
+     "token": {
+      "anyOf": [
+       {
+        "maxLength": 500,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Token"
+     }
+    },
+    "title": "BringIn",
+    "type": "object"
+   },
    "CallUsage": {
     "additionalProperties": false,
     "description": "One model call: when it ended, which stage made it, its tokens, and how long it took (plan BG.15).",
@@ -452,6 +471,59 @@
     "title": "EventPage",
     "type": "object"
    },
+   "FileMove": {
+    "properties": {
+     "confirm_baseline": {
+      "default": false,
+      "title": "Confirm Baseline",
+      "type": "boolean"
+     },
+     "path": {
+      "maxLength": 1024,
+      "minLength": 1,
+      "title": "Path",
+      "type": "string"
+     },
+     "to": {
+      "maxLength": 1024,
+      "minLength": 1,
+      "title": "To",
+      "type": "string"
+     }
+    },
+    "required": [
+     "path",
+     "to"
+    ],
+    "title": "FileMove",
+    "type": "object"
+   },
+   "FileWrite": {
+    "description": "A file's new text; `confirm_baseline` writes a test of the seeded product knowingly (UX.16a).",
+    "properties": {
+     "confirm_baseline": {
+      "default": false,
+      "title": "Confirm Baseline",
+      "type": "boolean"
+     },
+     "content": {
+      "default": "",
+      "title": "Content",
+      "type": "string"
+     },
+     "path": {
+      "maxLength": 1024,
+      "minLength": 1,
+      "title": "Path",
+      "type": "string"
+     }
+    },
+    "required": [
+     "path"
+    ],
+    "title": "FileWrite",
+    "type": "object"
+   },
    "FrontierModelSettingsPayload": {
     "description": "Save the frontier judgement model configuration specifically, or select No Model.",
     "properties": {
@@ -574,6 +646,21 @@
      }
     },
     "title": "HTTPValidationError",
+    "type": "object"
+   },
+   "HandBack": {
+    "properties": {
+     "reason": {
+      "maxLength": 2000,
+      "minLength": 1,
+      "title": "Reason",
+      "type": "string"
+     }
+    },
+    "required": [
+     "reason"
+    ],
+    "title": "HandBack",
     "type": "object"
    },
    "LocalModelSettingsPayload": {
@@ -6258,6 +6345,378 @@
     ]
    }
   },
+  "/api/runs/{run_id}/edit-session": {
+   "delete": {
+    "description": "End a session that changed nothing.",
+    "operationId": "close_edit_session_api_runs__run_id__edit_session_delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "title": "Run Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Close Edit Session Api Runs  Run Id  Edit Session Delete",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Close Edit Session",
+    "tags": [
+     "runs"
+    ]
+   },
+   "get": {
+    "description": "Whether co-development is on, and who holds the turn on this run.",
+    "operationId": "get_edit_session_api_runs__run_id__edit_session_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "title": "Run Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Get Edit Session Api Runs  Run Id  Edit Session Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Get Edit Session",
+    "tags": [
+     "runs"
+    ]
+   },
+   "post": {
+    "description": "Take the turn on a stopped run.",
+    "operationId": "open_edit_session_api_runs__run_id__edit_session_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "title": "Run Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Open Edit Session Api Runs  Run Id  Edit Session Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Open Edit Session",
+    "tags": [
+     "runs"
+    ]
+   }
+  },
+  "/api/runs/{run_id}/edit-session/bring-in": {
+   "post": {
+    "description": "Merge what was pushed to the repository the run was seeded from; a conflict changes nothing.",
+    "operationId": "bring_in_from_the_source_api_runs__run_id__edit_session_bring_in_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "title": "Run Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "anyOf": [
+         {
+          "$ref": "#/components/schemas/BringIn"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "title": "Body"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Bring In From The Source Api Runs  Run Id  Edit Session Bring In Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Bring In From The Source",
+    "tags": [
+     "runs"
+    ]
+   }
+  },
+  "/api/runs/{run_id}/edit-session/discard": {
+   "post": {
+    "description": "Put the session's files back as they were before it changed them.",
+    "operationId": "discard_edit_session_api_runs__run_id__edit_session_discard_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "title": "Run Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Discard Edit Session Api Runs  Run Id  Edit Session Discard Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Discard Edit Session",
+    "tags": [
+     "runs"
+    ]
+   }
+  },
+  "/api/runs/{run_id}/edit-session/hand-back": {
+   "post": {
+    "description": "Hand the turn back: the person's commit, the note to the next stage, the checks queued; resume is allowed\nagain.",
+    "operationId": "hand_back_edit_session_api_runs__run_id__edit_session_hand_back_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "title": "Run Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HandBack"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Hand Back Edit Session Api Runs  Run Id  Edit Session Hand Back Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Hand Back Edit Session",
+    "tags": [
+     "runs"
+    ]
+   }
+  },
+  "/api/runs/{run_id}/edit-session/heartbeat": {
+   "post": {
+    "operationId": "beat_edit_session_api_runs__run_id__edit_session_heartbeat_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "title": "Run Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Beat Edit Session Api Runs  Run Id  Edit Session Heartbeat Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Beat Edit Session",
+    "tags": [
+     "runs"
+    ]
+   }
+  },
   "/api/runs/{run_id}/events": {
    "get": {
     "description": "Polling fallback: events after a cursor.",
@@ -6422,6 +6881,88 @@
    }
   },
   "/api/runs/{run_id}/files": {
+   "delete": {
+    "operationId": "delete_workspace_file_api_runs__run_id__files_delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "title": "Run Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "path",
+      "required": true,
+      "schema": {
+       "title": "Path",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "confirm_baseline",
+      "required": false,
+      "schema": {
+       "default": false,
+       "title": "Confirm Baseline",
+       "type": "boolean"
+      }
+     },
+     {
+      "in": "header",
+      "name": "if-match",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "If-Match"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Delete Workspace File Api Runs  Run Id  Files Delete",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Delete Workspace File",
+    "tags": [
+     "runs"
+    ]
+   },
    "get": {
     "description": "The workspace's files with their sizes, and which changed since the last accepted sprint.",
     "operationId": "get_workspace_files_api_runs__run_id__files_get",
@@ -6466,6 +7007,63 @@
      }
     ],
     "summary": "Get Workspace Files",
+    "tags": [
+     "runs"
+    ]
+   },
+   "post": {
+    "operationId": "create_workspace_file_api_runs__run_id__files_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "title": "Run Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/FileWrite"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Create Workspace File Api Runs  Run Id  Files Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Create Workspace File",
     "tags": [
      "runs"
     ]
@@ -6545,6 +7143,80 @@
     "tags": [
      "runs"
     ]
+   },
+   "put": {
+    "description": "Write a file's new text: the editor names the hash it loaded in `If-Match`; a file that moved on since is\nrefused with its text now, so both versions can be compared.",
+    "operationId": "save_workspace_file_api_runs__run_id__files_content_put",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "title": "Run Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "if-match",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "If-Match"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/FileWrite"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Save Workspace File Api Runs  Run Id  Files Content Put",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Save Workspace File",
+    "tags": [
+     "runs"
+    ]
    }
   },
   "/api/runs/{run_id}/files/diff": {
@@ -6601,6 +7273,81 @@
      }
     ],
     "summary": "Get Workspace File Diff",
+    "tags": [
+     "runs"
+    ]
+   }
+  },
+  "/api/runs/{run_id}/files/rename": {
+   "post": {
+    "operationId": "rename_workspace_file_api_runs__run_id__files_rename_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "title": "Run Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "if-match",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "If-Match"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/FileMove"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Rename Workspace File Api Runs  Run Id  Files Rename Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Rename Workspace File",
     "tags": [
      "runs"
     ]

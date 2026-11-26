@@ -685,6 +685,64 @@ export const getWorkspaceFileAccepted = async (runId: string, path: string): Pro
   return response.data;
 };
 
+/** Who holds the turn on a run (plans UX.12-UX.15, switch CO_DEVELOPMENT); null when nobody does. */
+export interface EditSession {
+  holder: string;
+  yours: boolean;
+  opened_at: string | null;
+  heartbeat_at: string | null;
+  lease_seconds: number;
+  lapsed: boolean;
+  base_commit: string;
+  files: string[];
+  baseline_tests: string[];
+}
+export interface EditSessionState { enabled: boolean; run_status: string; editable_statuses: string[]; session: EditSession | null }
+
+export const getEditSession = async (runId: string): Promise<EditSessionState> => {
+  const response = await api.get<EditSessionState>(`/runs/${runId}/edit-session`);
+  return response.data;
+};
+
+export const openEditSession = async (runId: string): Promise<{ session: EditSession }> => {
+  const response = await api.post(`/runs/${runId}/edit-session`);
+  return response.data;
+};
+
+export const beatEditSession = async (runId: string): Promise<{ session: EditSession }> => {
+  const response = await api.post(`/runs/${runId}/edit-session/heartbeat`);
+  return response.data;
+};
+
+/** Write a file's new text; `hash` is the hash of the text the editor loaded, sent as `If-Match`. */
+export const saveWorkspaceFile = async (
+  runId: string, path: string, content: string, hash: string, confirmBaseline = false,
+): Promise<{ path: string; hash: string }> => {
+  const response = await api.put(`/runs/${runId}/files/content`, { path, content, confirm_baseline: confirmBaseline },
+    { headers: { 'If-Match': hash } });
+  return response.data;
+};
+
+export interface HandBackAnswer {
+  commit: string;
+  files: string[];
+  restored_suite?: string[];
+  rewind_offered: boolean;
+  documents?: string[];
+  checks?: string;
+  message?: string;
+}
+
+export const handBackEditSession = async (runId: string, reason: string): Promise<HandBackAnswer> => {
+  const response = await api.post<HandBackAnswer>(`/runs/${runId}/edit-session/hand-back`, { reason });
+  return response.data;
+};
+
+export const discardEditSession = async (runId: string): Promise<{ restored: string[] }> => {
+  const response = await api.post(`/runs/${runId}/edit-session/discard`);
+  return response.data;
+};
+
 /** One line of a listed file that holds the searched text (plan UX.7). */
 export interface SearchHit { path: string; line: number; column: number; text: string }
 export interface SearchAnswer { query: string; hits: SearchHit[]; truncated: boolean; timed_out: boolean; files_searched: number }

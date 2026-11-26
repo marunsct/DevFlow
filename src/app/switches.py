@@ -230,6 +230,10 @@ GROUPS: dict[str, tuple[str, ...]] = {
     # Where a changed existing product goes at the end (plan WS.7): a pull request to the repository it was seeded
     # from, else a bundle and a patch for download. Off until measured: it writes to the owner's repository.
     "Existing projects": ("PULL_REQUEST_DELIVERY",),
+    # A person takes the turn on a paused run, edits its files through guarded writes and hands back with a commit of
+    # their own and a note the next stage reads (plans UX.12-UX.16b). It changes resume and adds a commit path, so it
+    # is off until one supervised brownfield run loses no edit.
+    "Co-development": ("CO_DEVELOPMENT",),
     # A page's empty, busy and failed states named in the specification as lines a test can find (plan PQ.8):
     # presentation only, off until measured on two runs per family.
     "Interface design": ("INTERFACE_STATES_AS_CRITERIA",),

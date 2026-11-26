@@ -408,6 +408,31 @@ def is_listed(repo_root: str | Path, relative_path: str) -> bool:
     return _is_listed_file(parent / parts[-1])
 
 
+def would_be_listed(repo_root: str | Path, relative_path: str) -> bool:
+    """Whether the listing would name this path with a file there: `is_listed`'s rules, the file not needed yet.
+
+    For a person's write in a paused run (plan UX.13): a new file beside the product's own, or in a new folder, is
+    allowed; one under `.git`, the harness's records, an installed or build folder, or a credential file's name is not.
+    """
+    root = Path(repo_root).expanduser().resolve()
+    parts = PurePosixPath(str(relative_path or "")).parts
+    if not parts or any(part in {"/", ".", ".."} for part in parts):
+        return False
+    parent = root
+    for name in parts[:-1]:
+        try:
+            siblings = [entry.name for entry in os.scandir(parent) if entry.is_file()]
+        except FileNotFoundError:
+            siblings = []  # a folder the write makes
+        except OSError:
+            return False
+        if not _descends_into(root, parent, name, siblings):
+            return False
+        parent = parent / name
+    leaf = parent / parts[-1]
+    return not is_secret_path(leaf) and not is_harness_bookkeeping(leaf) and not leaf.is_dir()
+
+
 def list_repository_files(repo_root: str | Path, allow_subdirectories: bool = True) -> list[str]:
     """List repository files within the project boundary.
 

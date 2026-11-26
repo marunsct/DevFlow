@@ -380,6 +380,7 @@ def render_sprint_summary(
         findings=list(latest.get("findings") or ()),
         carried_forward=list(latest.get("carried_forward") or ()),
         lessons=list(latest.get("lessons") or ()),
+        hand_backs=list(latest.get("hand_backs") or ()),
     )
 
 

@@ -1832,6 +1832,10 @@ def create_runs_router(
         )
         return {"message": f"Review decision '{action}' recorded for run {run_id}."}
 
+    # Co-development (plans UX.12-UX.16b, switch CO_DEVELOPMENT): a person takes the turn on a stopped run.
+    from app.server.edit_session import add_routes as add_the_edit_session_routes
+
+    add_the_edit_session_routes(runs, runner, _require_run)
     return runs
 
 

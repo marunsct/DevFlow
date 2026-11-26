@@ -1,7 +1,8 @@
 /**
  * The workspace's file view (plan UX.6): Monaco as the reader and the side-by-side diff, loaded only when a file is
  * opened, from the app's own bundle. On a touch screen (Monaco does not support phones), while it loads, or if it
- * fails to load, the present highlighter shows the file, so the text is always there.
+ * fails to load, the present highlighter shows the file, so the text is always there. While the person holds the
+ * turn (plan UX.14) the file can be changed: in Monaco, or in a plain text area where Monaco does not run.
  */
 import React, { Suspense, useMemo } from 'react';
 import { Code } from '../WorkspacePanel';
@@ -13,6 +14,9 @@ export interface EditorViewProps {
   diff?: { base: string; since: string } | null;
   /** A line to bring into view and select (a search hit). */
   line?: number;
+  /** The person holds the turn (plan UX.14): the text can be changed, and each change is passed on. */
+  editable?: boolean;
+  onEdit?: (text: string) => void;
 }
 
 const MonacoView = React.lazy(() => import('./monaco'));
@@ -23,8 +27,11 @@ function touchFirst(): boolean {
 }
 
 /** The highlighter: the file, or the two versions side by side when a change is asked for. */
-export const PlainView: React.FC<EditorViewProps> = ({ path, text, diff }) => (
-  diff ? (
+export const PlainView: React.FC<EditorViewProps> = ({ path, text, diff, editable, onEdit }) => (
+  editable && !diff ? (
+    <textarea aria-label={`The text of ${path}`} value={text} spellCheck={false} onChange={(event) => onEdit?.(event.target.value)}
+      className="h-full w-full resize-none bg-code p-3 font-mono text-[13px] leading-5 text-text-primary focus-visible:outline-none" />
+  ) : diff ? (
     <div className="grid h-full min-h-0 grid-cols-2 divide-x divide-border">
       <div className="min-h-0 overflow-auto" aria-label={`${path} at ${diff.since}`} tabIndex={0}>
         <p className="sticky top-0 border-b border-border bg-surface px-3 py-1 text-xs text-text-muted">At {diff.since}</p>

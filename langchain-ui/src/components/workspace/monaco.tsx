@@ -4,7 +4,7 @@
  * Bundled with the app, never fetched from a CDN: the editor core, the contributions a reader uses (find, folding,
  * bracket matching, word highlight, go to line, sticky scroll, the diff editor) and every language's colouring, each
  * language its own small chunk loaded when a file of it opens. No language service or its worker: only the editor's
- * own worker, which the diff needs. Everything is read-only.
+ * own worker, which the diff needs. Read-only, but for the file shown while the person holds the turn (plan UX.14).
  */
 import { useEffect, useRef } from 'react';
 import * as monaco from 'monaco-editor/editor/editor.api';
@@ -113,13 +113,16 @@ function useTheme(): void {
 // Where each file was scrolled to, so a tab opened again comes back where it was.
 const viewStates = new Map<string, monaco.editor.ICodeEditorViewState | null>();
 
-export default function MonacoView({ path, text, diff, line }: EditorViewProps) {
+export default function MonacoView({ path, text, diff, line, editable, onEdit }: EditorViewProps) {
   const host = useRef<HTMLDivElement>(null);
   const reader = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const differ = useRef<monaco.editor.IStandaloneDiffEditor | null>(null);
   const shownPath = useRef<string | null>(null);
   const diffing = !!diff;
   const base = diff?.base ?? '';
+  const edited = useRef(onEdit);
+  useEffect(() => { edited.current = onEdit; }, [onEdit]);
+  const fromOutside = useRef(false);
   useTheme();
 
   // The reader: one editor, one model per file shown.
@@ -127,7 +130,12 @@ export default function MonacoView({ path, text, diff, line }: EditorViewProps) 
     if (diffing || !host.current) return undefined;
     const editor = monaco.editor.create(host.current, { ...OPTIONS, theme: 'devflow' });
     reader.current = editor;
+    // Each change the person makes, passed on (plan UX.14); a model set from outside is not one.
+    const changes = editor.onDidChangeModelContent(() => {
+      if (!fromOutside.current) edited.current?.(editor.getValue());
+    });
     return () => {
+      changes.dispose();
       if (shownPath.current) viewStates.set(shownPath.current, editor.saveViewState());
       shownPath.current = null;
       editor.getModel()?.dispose();
@@ -140,14 +148,22 @@ export default function MonacoView({ path, text, diff, line }: EditorViewProps) 
     const editor = reader.current;
     if (!editor || diffing) return;
     const sameFile = shownPath.current === path;
+    // The person's own typing comes back as `text`: the model already holds it, and the cursor stays where it is.
+    if (sameFile && editor.getModel()?.getValue() === text) return;
     if (shownPath.current && !sameFile) viewStates.set(shownPath.current, editor.saveViewState());
     const kept = sameFile ? editor.saveViewState() : viewStates.get(path);
     const before = editor.getModel();
+    fromOutside.current = true;
     editor.setModel(modelOf(text, path));
+    fromOutside.current = false;
     before?.dispose();
     shownPath.current = path;
     if (kept) editor.restoreViewState(kept);
   }, [path, text, diffing]);
+
+  useEffect(() => {
+    reader.current?.updateOptions({ readOnly: !editable, domReadOnly: !editable });
+  }, [editable, diffing]);
 
   useEffect(() => {
     const editor = reader.current;

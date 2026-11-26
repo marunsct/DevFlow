@@ -6641,6 +6641,10 @@ def _record_sprint_summary(
                 read_transcript(run_id, {"tool_call", "tool_result"}) if run_id else [], since=since
             ),
         }
+        from app.server.edit_session import for_the_sprint_record
+
+        # What a person changed between stages (plan UX.15), by name, beside what the stages did.
+        record["hand_backs"] = for_the_sprint_record(state["repository"].root_path, since)
     except Exception as error:  # noqa: BLE001 - a summary without the record beats no summary
         degraded("sprint_record", error)
 

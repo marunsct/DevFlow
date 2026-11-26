@@ -66,6 +66,11 @@ export interface BriefPreviewRequest {
   brief: string;
 }
 
+/** An access token that reads the source repository, when it is private; used once, never kept. */
+export interface BringIn {
+  token?: string | null;
+}
+
 /** One model call: when it ended, which stage made it, its tokens, and how long it took (plan BG.15). */
 export interface CallUsage {
   /** When the reply arrived. */
@@ -128,6 +133,19 @@ export interface EventPage {
   total: number;
 }
 
+export interface FileMove {
+  confirm_baseline?: boolean;
+  path: string;
+  to: string;
+}
+
+/** A file's new text; `confirm_baseline` writes a test of the seeded product knowingly (UX.16a). */
+export interface FileWrite {
+  confirm_baseline?: boolean;
+  content?: string;
+  path: string;
+}
+
 /** Save the frontier judgement model configuration specifically, or select No Model. */
 export interface FrontierModelSettingsPayload {
   anthropic_workspace_id?: string | null;
@@ -150,6 +168,10 @@ export interface GuideOverride {
 
 export interface HTTPValidationError {
   detail: ValidationError[];
+}
+
+export interface HandBack {
+  reason: string;
 }
 
 /** Save the local build model configuration specifically. */

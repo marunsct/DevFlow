@@ -36,6 +36,7 @@ Written by `loop.sh measuring` from 505 scored runs in the ledger. On and off co
 | `PREMIUM_DEEP_VERIFICATION` | Bundles | on | 0 | no signal | 0 | not measured: needs 2 more on and 2 more off |
 | `PREMIUM_MODEL_TUNING` | Bundles | on | 0 | no signal | 0 | not measured: needs 2 more on and 2 more off |
 | `PREMIUM_PROJECT_INTELLIGENCE` | Bundles | on | 0 | no signal | 0 | not measured: needs 2 more on and 2 more off |
+| `CO_DEVELOPMENT` | Co-development | off | 0 | 0 | 0 | not measured: needs 2 more on and 2 more off |
 | `DEFINITIONS_BEFORE_FILES` | Code graph answers | on | 0 | 0 | 0 | not measured: needs 2 more on and 2 more off |
 | `GRAPH_IN_SEARCH_ANSWERS` | Code graph answers | on | 0 | 0 | 0 | not measured: needs 2 more on and 2 more off |
 | `REVIEWS_HOLD_THE_CHANGE_AND_ITS_USES` | Code graph answers | on | 0 | 0 | 0 | not measured: needs 2 more on and 2 more off |

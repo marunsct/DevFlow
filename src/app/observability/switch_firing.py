@@ -58,6 +58,7 @@ SIGNALS: dict[str, str] = {
     "USAGE_NOTES_FROM_THE_INSTALLED_PACKAGE": "How the installed libraries define the names this code calls",
     "SPECIALIST_DOMAIN_REVIEW": "Your own domain: defects in this sprint's changed files",
     "PULL_REQUEST_DELIVERY": "Delivered to the seeded repository",
+    "CO_DEVELOPMENT": "The person who owns this run changed its files between stages",
     "DOMAIN_CRAFT_CHECKLISTS": "Craft checklist for your files",
     "ADVICE_SIZED_TO_THE_BRIEF": "Advice sized to the brief",
     "FAST_DESIGN_GATE_ON_PRODUCT_BREAKING": "held as product-breaking",

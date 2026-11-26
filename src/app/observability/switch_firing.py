@@ -84,6 +84,9 @@ SIGNALS: dict[str, str] = {
     # Recorded by the harness once per fix-stage visit whose old reads it kept as one-line notes
     # (`app.agents.old_reads_stubbed`).
     "FIX_STAGES_STUB_OLD_READS": "A fix stage's earlier reads kept as one-line notes",
+    # Recorded by the harness once per request that carried its files' neighbours (`app.analysis.project_graph`, KG.1).
+    "PROJECT_GRAPH_FIXES": "A fix request carried its files' neighbours from the code graph",
+    "PROJECT_GRAPH_BUILDERS": "A work order's request carried its files' neighbours from the code graph",
 }
 #: Transcript records the harness writes of what it did itself, with no model reading it: kind -> the field whose
 #: text a switch's signal is looked for in.
@@ -92,6 +95,7 @@ HARNESS_RECORDS: dict[str, str] = {"repository_delivery": "message", "prompt_sha
                                    "reply_room": "message", "thinking_off_after_a_read": "message",
                                    "time_budget": "message", "request_budget": "message",
                                    "measured_round": "message", "fixer_memory_chosen_again": "message",
+                                   "project_graph_reach": "message",
                                    # Each decision the run took, with its rationale (`app.decisions.record_decision`):
                                    # switches whose acts are decisions say so only there.
                                    "decision": "text"}

@@ -646,7 +646,13 @@ Defects that share a cause are bundled so one fixer sees all of them (`_bundle_c
   are named in the evidence under "Where the failure is handled"; the memory holds them whole first, and a sliced
   fixer memory no longer holds the locked suite's files its tests' output alone named (`held_whole`); past the target,
   the memory keeps room for them, at most `MOST_SHARE_HELD` = 0.6 of the target. One `fixer_localised` record a fixer
-  (how: route, trace, asked or none).
+  (how: route, trace, asked or none). What the code graph says (KG.1, LF.1509, a record, no behaviour): each fix
+  request and work order's request that asks the graph (`PROJECT_GRAPH_FIXES`, `PROJECT_GRAPH_BUILDERS`) leaves one
+  `project_graph_reach` record - its files, and by language how many the graph holds, their import edges both ways and
+  the acceptance test files that reach them, and whether a neighbourhood was carried - once per stage, files and
+  neighbourhood, not on each resume. A carried one is the two switches' firing signal (`switch_firing.SIGNALS`), and
+  `loop.sh effects` reports per purpose the share of requests whose files the graph named no edge and no test for, by
+  language, and the fixers localised by how.
 - **A lean fixer** (FX.3, LF.1417-LF.1418, always on, `agents/lean_fixer.py`): a fixer is its own agent
   (`create_specialist_agent(fixing=True)`), not its owner's builder: a short prompt (how to find the cause, read by
   range, change by exact passage, run the test again, answer once; the owner's product rules, no logic removed, no

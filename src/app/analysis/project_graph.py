@@ -163,11 +163,16 @@ def _criteria_of_the_tests(root: Path, graph: dict[str, dict[str, list[str]]]) -
         pass
 
 
+def _relative(files: Iterable[str]) -> list[str]:
+    """`files` workspace-relative, each once, in order."""
+    return list(dict.fromkeys(str(f).strip().removeprefix("./").lstrip("/") for f in files if str(f).strip()))
+
+
 def neighbourhood(root: str | Path, files: Iterable[str], heading: str) -> str:
     """The one-hop neighbourhood of `files`: what each defines and imports, what imports it and which tests reach it; "" when none."""
     graph = build(root)
     lines: list[str] = []
-    for relative in dict.fromkeys(str(f).strip().removeprefix("./").lstrip("/") for f in files if str(f).strip()):
+    for relative in _relative(files):
         node = graph.get(relative)
         if node is None:
             continue
@@ -205,7 +210,10 @@ def with_the_neighbourhood(request: dict[str, Any], root: str | Path, files: Ite
     if not fixes_enabled():
         return request
     try:
-        return _appended(request, neighbourhood(root, files, FIX_HEADING))
+        files = _relative(files)
+        text = neighbourhood(root, files, FIX_HEADING)
+        noted("fix", root, files, text)
+        return _appended(request, text)
     except Exception:  # noqa: BLE001
         return request
 
@@ -215,9 +223,110 @@ def with_the_slice(request: dict[str, Any], root: str | Path, files: Iterable[st
     if not builders_enabled():
         return request
     try:
-        return _appended(request, neighbourhood(root, files, BUILD_HEADING))
+        files = _relative(files)
+        text = neighbourhood(root, files, BUILD_HEADING)
+        noted("build", root, files, text)
+        return _appended(request, text)
     except Exception:  # noqa: BLE001
         return request
+
+
+#: KG.1: the transcript record of what the code graph named for one request that asked it; `switch_firing` reads its
+#: `message`, which says the switch acted only when the request carried a neighbourhood.
+RECORD_KIND = "project_graph_reach"
+#: What that record's message says for a fix request (`PROJECT_GRAPH_FIXES`) and a work order's request
+#: (`PROJECT_GRAPH_BUILDERS`) that carried one.
+SAID = {"fix": "A fix request carried its files' neighbours from the code graph",
+        "build": "A work order's request carried its files' neighbours from the code graph"}
+#: The record's language for a file with no suffix, and for a request naming no file.
+NO_LANGUAGE, NO_FILE = "other", "no file"
+_NOTED: set[tuple] = set()
+_MOST_NOTED = 4_096
+
+
+def _language_of(relative: str) -> str:
+    """The language table's name for a file's suffix; the suffix itself where the table has no row for it."""
+    from app.stacks.languages import LANGUAGES
+
+    suffix = Path(relative).suffix.lower()
+    return next((row.name for row in LANGUAGES if suffix in row.suffixes), suffix.lstrip(".") or NO_LANGUAGE)
+
+
+def reach(root: str | Path, files: Iterable[str]) -> dict[str, dict[str, int]]:
+    """What the code graph knows of `files`, by language: {language: {files, held, edges, tests}} - the files named,
+    those the graph holds, their import edges both ways, and the acceptance test files with criteria that import them;
+    {NO_FILE: zeros} for no file. Never raises."""
+    found: dict[str, dict[str, int]] = {}
+    try:
+        graph = build(root)
+        for relative in _relative(files):
+            counts = found.setdefault(_language_of(relative), {"files": 0, "held": 0, "edges": 0, "tests": 0})
+            counts["files"] += 1
+            node = graph.get(relative)
+            if node is None:
+                continue
+            counts["held"] += 1
+            counts["edges"] += len(node["imports"]) + len(node["imported_by"])
+            counts["tests"] += sum(1 for n in graph.values() if relative in n["imports"] and n["criteria"])
+    except Exception:  # noqa: BLE001 - a record never fails a request
+        logger.debug("Could not read what the code graph knows of a request's files", exc_info=True)
+    return found or {NO_FILE: {"files": 0, "held": 0, "edges": 0, "tests": 0}}
+
+
+def noted(purpose: str, root: str | Path, files: Iterable[str], text: str) -> None:
+    """One `RECORD_KIND` record for a request that asked the graph (`purpose` "fix" or "build"): what the graph knows of
+    its files by language, and whether the request carried a neighbourhood (`text`); once for the same stage, files and
+    neighbourhood, not on each resume of a stage. Never raises."""
+    try:
+        from app.observability.transcript import _run_id_from_config, _stage_from_config, record
+
+        run_id, stage, files = _run_id_from_config(), _stage_from_config(purpose), _relative(files)
+        if not run_id:
+            return
+        key = (run_id, str(root), stage, purpose, tuple(files), hash(text))
+        with _LOCK:
+            if key in _NOTED:
+                return
+            if len(_NOTED) >= _MOST_NOTED:
+                _NOTED.clear()
+            _NOTED.add(key)
+        record(run_id, stage, RECORD_KIND, purpose=purpose, message=SAID[purpose] if text else "",
+               carried=bool(text), files=files[:12], languages=reach(root, files))
+    except Exception:  # noqa: BLE001 - a record never fails a request
+        logger.debug("Could not record what the code graph named", exc_info=True)
+
+
+def effects_lines(records: Iterable[Any]) -> list[str]:
+    """`loop.sh effects` (KG.1): per purpose, the requests that asked the code graph, how many carried a neighbourhood,
+    and the share whose files it named no import edge and no test for, by language; and how each fixer was localised
+    (FX.2's `fixer_localised` records: route, trace, asked or none)."""
+    from collections import Counter
+
+    records = [r for r in records if isinstance(r, dict)]
+    lines = []
+    for purpose, label in (("fix", "fix requests"), ("build", "work orders' requests")):
+        head = f"KG.1 {label} that asked the code graph"
+        asked = [r for r in records if r.get("kind") == RECORD_KIND and r.get("purpose") == purpose]
+        if not asked:
+            lines.append(f"     -  {head}: not reached")
+            continue
+        languages: Counter = Counter()
+        empty: Counter = Counter()
+        for r in asked:
+            for language, counts in (r.get("languages") or {}).items():
+                languages[language] += 1
+                empty[language] += not (int((counts or {}).get("edges") or 0) or int((counts or {}).get("tests") or 0))
+        by_language = ", ".join(f"{language} {empty[language]} of {n} ({100 * empty[language] // n}%)"
+                                for language, n in languages.most_common())
+        lines.append(f"  {len(asked):>4}  {head}, {sum(1 for r in asked if r.get('carried'))} carrying a neighbourhood;"
+                     f" with no import edge and no test named, by language: {by_language}")
+    localised = Counter(str(r.get("how") or "none") for r in records if r.get("kind") == "fixer_localised")
+    if localised:
+        lines.append(f"  {sum(localised.values()):>4}  FX.2 fixers localised, by how: "
+                     + ", ".join(f"{how} {n}" for how, n in localised.most_common()))
+    else:
+        lines.append("     -  FX.2 fixers localised, by how: not reached")
+    return lines
 
 
 def tool_enabled() -> bool:
@@ -299,5 +408,5 @@ fixes_switch = _Switch(fixes_enabled)
 builders_switch = _Switch(builders_enabled)
 tool_switch = _Switch(tool_enabled)
 
-__all__ = ["BUILD_HEADING", "FIX_HEADING", "GRAPH_FILE", "build", "build_tool", "builders_enabled", "fixes_enabled",
-           "neighbourhood", "tool_enabled", "where_is", "who_uses", "with_the_neighbourhood", "with_the_slice"]
+__all__ = ["BUILD_HEADING", "FIX_HEADING", "GRAPH_FILE", "RECORD_KIND", "SAID", "build", "build_tool",
+           "builders_enabled", "effects_lines", "fixes_enabled", "neighbourhood", "noted", "reach", "tool_enabled", "where_is", "who_uses", "with_the_neighbourhood", "with_the_slice"]

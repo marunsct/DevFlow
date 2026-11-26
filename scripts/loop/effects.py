@@ -141,6 +141,11 @@ def effects(records: list[dict], decisions: str = "") -> list[str]:
     # FX.11: for every fixer shown, whether its error was looked up or which gate stopped it.
     lines.extend(gate_lines(records))
     lines.extend(review_reading_lines(records))
+    # KG.1: what the code graph named for each request that asked it, empty shares by language, and how fixers were
+    # localised.
+    from app.analysis.project_graph import effects_lines as code_graph_lines
+
+    lines.extend(code_graph_lines(records))
     # Beside what fired: a switch that was on, had its chance and did nothing (`CHANCES`).
     from app.observability.switch_firing import chance_lines, no_signal_line
 

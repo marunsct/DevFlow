@@ -609,11 +609,12 @@ def schema_differences(state: Any, root: str) -> list[Any]:
                 document.read_text(encoding="utf-8", errors="replace") if document.is_file() else "")
         scope, last = _sprint_scope_text(state)
         owner = "database" if any(str(t.specialist_role) == "database" for t in _tasks(state)) else _owner_of(state, "")
-        found = schema_conformance.sprint_defects(project, lines, scope, last, owner)
-        # Not raised again: a finding set aside as doubtful after its fix broke a test that passed (LF.1547).
+        # Not raised again, and taking no place among those raised: a finding set aside as doubtful after its fix
+        # broke a test that passed (LF.1547).
         from app.graph import what_a_revert_broke
 
-        found = what_a_revert_broke.not_doubtful(root, found)
+        found = schema_conformance.sprint_defects(project, lines, scope, last, owner,
+                                                  keep=lambda finding: not what_a_revert_broke.doubtful(root, finding))
     except Exception as error:  # noqa: BLE001 - a check that cannot run finds nothing
         degraded("check.schema_conformance", error)
         return []

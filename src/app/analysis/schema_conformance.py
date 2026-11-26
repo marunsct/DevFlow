@@ -22,7 +22,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Any, Callable, Iterable, Sequence
 
 from app.stacks.languages import BUILT_BY_NAME, LANGUAGES, NOT_THE_PRODUCT
 
@@ -40,7 +40,8 @@ _TYPE_WORD = (
     r"iso|url|email|hash|hashed|long|short|byte|any|null)\b|[A-Z][A-Za-z0-9_]*)"
 )
 #: `name (type, ...)`: a field and what its parentheses say of it.
-_PAREN_FIELD = re.compile(r"(?<![.\w'\"`])([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*(" + _TYPE_WORD + r"[^)]*)\)")
+#: The name may be in backticks (`` `username` (unique string) ``); a name a backtick closes on its left is not one.
+_PAREN_FIELD = re.compile(r"(?<![.\w'\"`])`?([A-Za-z_][A-Za-z0-9_]*)`?\s*\(\s*(" + _TYPE_WORD + r"[^)]*)\)")
 #: `name: Type` - a struct-like spelling (`Note { id: u64, title: String }`).
 _COLON_FIELD = re.compile(r"(?<![.\w'\"`])([a-z_][A-Za-z0-9_]*)\s*:\s*(" + _TYPE_WORD + r"[^,;}]*)")
 #: A record's line: an optional bullet, the record's name, then `:`, `{`, `(` or a dash.
@@ -454,12 +455,16 @@ EXPECTED = (
 )
 
 
-def defects(conformance: Conformance, owner: str, most: int = MOST_SCHEMA_DEFECTS) -> list:
-    """One major defect per record that differs, with the specification's line and the code's quoted; at most `most`."""
+def defects(conformance: Conformance, owner: str, most: int = MOST_SCHEMA_DEFECTS,
+            keep: Callable[[Any], bool] | None = None) -> list:
+    """One major defect per record that differs, with the specification's line and the code's quoted; at most `most`
+    of those `keep` keeps, so a finding left out never takes the place of one raised."""
     from app.agents.specialists import ReportedDefect
 
     found = []
-    for difference in conformance.differences[:most]:
+    for difference in conformance.differences:
+        if len(found) >= most:
+            break
         named = list(difference.missing[:MOST_FIELDS_NAMED])
         more = len(difference.missing) - len(named)
         lacks = []
@@ -481,12 +486,16 @@ def defects(conformance: Conformance, owner: str, most: int = MOST_SCHEMA_DEFECT
             owner=owner,
             regression_test_required=False,
         ))
+        if keep is not None and not keep(found[-1]):
+            found.pop()
     return found
 
 
-def sprint_defects(project: Path, domain_model: Sequence[str], scope_text: str, last_sprint: bool, owner: str) -> list:
-    """The schema-conformance defects for one sprint: its due records compared with the code (PQ.2)."""
+def sprint_defects(project: Path, domain_model: Sequence[str], scope_text: str, last_sprint: bool, owner: str,
+                   keep: Callable[[Any], bool] | None = None) -> list:
+    """The schema-conformance defects for one sprint: its due records compared with the code (PQ.2); `keep` leaves
+    out a finding before the cap (`defects`)."""
     records = due_records([r for r in records_in(domain_model) if r.stored], scope_text, last_sprint)
     if not records or not project.is_dir():
         return []
-    return defects(compare(project, records), owner)
+    return defects(compare(project, records), owner, keep=keep)

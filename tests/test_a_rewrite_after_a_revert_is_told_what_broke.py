@@ -170,7 +170,7 @@ def test_a_schema_finding_whose_fix_broke_a_passing_test_is_set_aside_as_doubtfu
     root = _the_tasks_api_workspace(tmp_path)
     gate = {"repository": SimpleNamespace(root_path=str(root))}
     raised = [d.description for d in engineering.schema_differences(gate, str(root))]
-    assert len(raised) >= 2 and raised[0].startswith("Schema conformance: ")
+    assert len(raised) == 4 and raised[0].startswith("Schema conformance: "), "the gate's cap, with more to raise"
     finding = a_defect(raised[0], source="schema conformance", owner="database",
                        affected_files=["tasks-api/tasks_api/database.py"])
 
@@ -183,7 +183,9 @@ def test_a_schema_finding_whose_fix_broke_a_passing_test_is_set_aside_as_doubtfu
     assert "test_init_db_creates_tables" in after.accepted_risk_reason
     assert any(row["check"] == "schema conformance, contradicted by a passing test"
                for row in check_findings.read(root))
-    assert [d.description for d in engineering.schema_differences(gate, str(root))] == raised[1:], "not raised again"
+    again = [d.description for d in engineering.schema_differences(gate, str(root))]
+    assert raised[0] not in again, "not raised again"
+    assert again[:3] == raised[1:] and len(again) == 4, "and it takes no place among the four the gate raises"
 
 
 def test_what_a_fixer_is_told_after_a_revert_holds_no_product_word(tmp_path):

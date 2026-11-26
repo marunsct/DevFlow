@@ -8,7 +8,9 @@ the defect went to a person. Read over 146 stored specifications, 13 such words 
 """
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
+from types import SimpleNamespace
 
 from app.analysis.schema_conformance import domain_model_lines, records_in
 
@@ -45,3 +47,24 @@ def test_fields_listed_in_braces_still_are_fields():
     assert found["Product"] == ["id", "vendorId", "name", "description", "price", "stock", "category", "images", "slug",
                                 "createdAt", "updatedAt"]
     assert found["OrderItem"] == ["id", "orderId", "productId", "quantity", "priceAtPurchase"]
+
+
+def test_a_field_named_in_backticks_before_its_parentheses_is_a_field():
+    found = _fields("technical-specification-a-token-generated-on-signin.md")
+
+    assert found["Account"] == ["username", "password_hash"], "`username` (unique string, non-empty), ..."
+    assert found["Item"] == ["title", "done", "account_id"]
+    assert "signin" not in found.get("Token", []), "prose is still not read"
+
+
+def test_the_measured_product_declares_every_field_its_specification_lists(tmp_path):
+    from app.graph import engineering
+
+    shutil.copytree(CAPTURED / "projects" / "python-tasks-api", tmp_path, dirs_exist_ok=True)
+    (tmp_path / "docs").mkdir()
+    shutil.copy(CAPTURED / "technical-specification-a-token-generated-on-signin.md",
+                tmp_path / "docs" / "technical_specification.md")
+
+    raised = engineering.schema_differences({"repository": SimpleNamespace(root_path=str(tmp_path))}, str(tmp_path))
+
+    assert raised == [], "its accounts and items tables hold every listed field; the Token line lists none"

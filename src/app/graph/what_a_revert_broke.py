@@ -20,7 +20,7 @@ in front of it. On the other, a fix of two files broke one criterion's tests, an
 - `set_aside_if_doubtful`: a schema-conformance finding whose fix was reverted for breaking a test that passed is
   doubtful - a check's reading of the specification against a test that ran. It is recorded in the check findings,
   noted in the ledger as a suspected false finding, accepted as a risk with that reason, and not raised again
-  (`not_doubtful`), as the language service's contradicted findings are (`analysis.checker_contradicted`).
+  (`doubtful`, read by the gate before its cap), as the language service's contradicted findings are (`analysis.checker_contradicted`).
 
 Nothing here names a language or a framework. Every function never raises.
 """
@@ -300,13 +300,12 @@ def set_aside_if_doubtful(root: str | Path, cycle: Any, index: int, broken: Sequ
         return cycle
 
 
-def not_doubtful(root: str | Path, found: Sequence[Any]) -> list[Any]:
-    """`found` without the schema findings set aside as doubtful in this workspace. Never raises."""
+def doubtful(root: str | Path, finding: Any) -> bool:
+    """Whether `finding` is a schema finding set aside as doubtful in this workspace. Never raises."""
     try:
-        doubtful = set(_read(root).get("doubtful") or [])
-        return [item for item in found if _wording(item) not in doubtful] if doubtful else list(found)
+        return _wording(finding) in set(_read(root).get("doubtful") or [])
     except Exception:  # noqa: BLE001
-        return list(found)
+        return False
 
 
 def effects_lines(records: Sequence[dict]) -> list[str]:
@@ -340,5 +339,5 @@ def effects_lines(records: Sequence[dict]) -> list[str]:
     ]
 
 
-__all__ = ["CHECK", "DOUBTFUL", "FILE", "HEADING", "STOPPED", "effects_lines", "not_doubtful", "record", "repeated",
+__all__ = ["CHECK", "DOUBTFUL", "FILE", "HEADING", "STOPPED", "doubtful", "effects_lines", "record", "repeated",
            "set_aside_if_doubtful", "told"]

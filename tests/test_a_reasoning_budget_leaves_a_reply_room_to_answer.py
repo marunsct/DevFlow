@@ -46,21 +46,24 @@ def _client(base: str = SELF_HOSTED, cap: int = 32_000) -> CompatibleChatOpenAI:
 
 
 class _Server:
-    """A model server answering the diagnosis's reasoning question: 900 tokens as served, held to a budget where it
-    enforces one; a zero budget answers right or wrong; the template's thinking switch read or not."""
+    """A model server answering the diagnosis's reasoning and budget questions: 900 tokens as served, held to a
+    budget where it enforces one; a zero budget answers right or wrong; the template's thinking switch read or not."""
 
     def __init__(self, *, budget: bool, zero_answers: bool, template_switch: bool):
         self.budget, self.zero_answers, self.template_switch = budget, zero_answers, template_switch
 
     def create(self, **payload):
         extra = payload.get("extra_body") or {}
-        tokens, answer = 900, "18"
+        right = "330" if "from 1 to 50" in payload["messages"][-1]["content"] else "18"
+        tokens, answer, reasoning = 900, right, "x" * 3_600
         if self.budget and "reasoning_budget_tokens" in extra:
-            tokens = extra["reasoning_budget_tokens"] + 20
-            answer = "18" if extra["reasoning_budget_tokens"] or self.zero_answers else "27"
+            budget = extra["reasoning_budget_tokens"]
+            # As llama.cpp's budget sampler: the reasoning ends at the budget with the request's words for it.
+            tokens, reasoning = budget + 20, "x" * 4 * budget + extra.get("reasoning_budget_message", "")
+            answer = right if budget or self.zero_answers else "27"
         elif self.template_switch and (extra.get("chat_template_kwargs") or {}).get("enable_thinking") is False:
             tokens = 30
-        return {"choices": [{"finish_reason": "stop", "message": {"content": answer}}],
+        return {"choices": [{"finish_reason": "stop", "message": {"content": answer, "reasoning_content": reasoning}}],
                 "usage": {"completion_tokens": tokens}}
 
 

@@ -6,10 +6,12 @@ a 12,097-token salvage (3 minutes), for an answer of about 10,000. Some model se
 `reasoning_budget_tokens`) end the thinking at a number of tokens the request names and make the model answer, so a
 reply always has room to answer in the same request.
 
-What a server does is measured by the model's diagnosis (`diagnostics`, "budget 64" and "budget 0") and kept with
-the model; `diagnostics.apply` hands it here. Then, with the switch on:
+What a server does is measured by the model's diagnosis (`diagnostics._budget_probe`: a question that reasons past
+the bound, unbounded, at 64 tokens, at 0 and at the share of the cap a real call gives reasoning) and kept with the
+model; `diagnostics.apply` hands it here. Enforced (the reasoning stopped at the bound) and usable (a reply cut to
+that share still answered right) are kept apart (LF.1588). Then, with the switch on:
 
-- a stage call capped at N tokens on a self-hosted server that enforces a budget is sent a budget of N less the room
+- a stage call capped at N tokens on a self-hosted server that enforces a usable budget is sent a budget of N less the room
   an answer needs (`answer_room`), and `reply_salvage.ENOUGH` as the words written where the reasoning was ended -
   not a small budget: 74 good replies of an earlier model finished between 16,000 and 32,768 tokens, so the budget
   only removes the case where nothing is left to answer with. The budget is per thinking block, so a reply can
@@ -78,7 +80,12 @@ def learnt(server: tuple[str, str], settings: Any) -> None:
     try:
         with _LOCK:
             if getattr(settings, "reasoning_budget", False):
-                ENFORCED.add(server)
+                # A stage call's budget only where a reply cut to its share of the cap still answered right; the
+                # budget that turns thinking off is for calls meant to answer without reasoning (LF.1588).
+                if getattr(settings, "reasoning_budget_usable", False):
+                    ENFORCED.add(server)
+                else:
+                    ENFORCED.discard(server)
                 if not getattr(settings, "template_thinking_switch", False):
                     OFF_BUDGETS[server] = 0 if getattr(settings, "zero_budget_answers", False) else SMALL_BUDGET
                 else:

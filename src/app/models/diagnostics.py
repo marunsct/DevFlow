@@ -17,9 +17,12 @@ measurements (`registry.fitness_dir`) under its served name:
 - a name that was never offered, when the request invites one;
 - the reasoning switch: how many tokens a small puzzle costs with no
   switch, with `reasoning_effort` "none" and "low" (and each level the
-  server lists below "low"), with the chat template's thinking off, with the
-  effort given as the chat template's own argument, and with a per-request
-  reasoning budget of 64 tokens and of none;
+  server lists below "low"), with the chat template's thinking off, and with
+  the effort given as the chat template's own argument;
+- a per-request reasoning budget, on a question that reasons longer than the
+  bound: unbounded, at 64 tokens and at none, and at the share of the cap a
+  real call gives reasoning - whether the reasoning stops at the bound, and,
+  apart from that, whether a cut reply still answers right;
 - reply salvage (`app.models.reply_salvage`).
 
 From those, the settings the harness uses for that model (`Settings`):
@@ -76,10 +79,25 @@ _ANSWER = "18"
 MEASURABLE_FROM_TOKENS = 200
 #: A switch is honoured when the question costs under this share of what it costs as served.
 HONOURED_BELOW = 0.7
-#: The reasoning budget the probe sends, and the longest reply (reasoning and answer) that counts as held to it: the
-#: budget is per thinking block, so a reply of two or three blocks may spend two or three budgets (IK.3).
+#: The reasoning budget the probe sends, and the most reasoning (in tokens) that counts as held to it: the budget is
+#: per thinking block, so a reply of two or three blocks may spend two or three budgets (IK.3).
 BUDGET_PROBE_TOKENS = 64
 BUDGET_HELD_AT_MOST = 256
+#: The budget probe's question: one a reasoning model thinks about for some hundreds of tokens, well past the bound,
+#: so an enforced budget shows as reasoning ended there (LF.1588). Measured: the puzzle above cost one model 155
+#: tokens as served and 95 at a budget of 64 - a bound so near what a question reasons shows nothing either way.
+_LONG_QUESTION = (
+    "Add up the digits of every whole number from 1 to 50 (for 23, add 2 and 3). "
+    "What is the total? Reply with the number only."
+)
+_LONG_ANSWER = "330"
+#: The budget probe's reply cap: each of its replies is cut here, whatever the server does with a budget.
+BUDGET_PROBE_CAP = REPLY_TOKENS
+#: Characters a reasoning token is counted as, where a server reports no reasoning tokens (llama.cpp reports none):
+#: a reply's reasoning is measured by its reasoning text.
+CHARS_PER_TOKEN = 4
+#: The labels of the budget probe's replies.
+UNBOUNDED = "unbounded"
 #: The effort names chat templates use, least first: a level the server lists below "low" is tried too (IK.2).
 EFFORT_LEVELS_IN_ORDER = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
 #: The check that names a tool the request does not fit: answered with it only where a named choice is enforced (IK.6).
@@ -120,10 +138,13 @@ class Settings:
     #: Where the least effort is sent: "field" - the request's `reasoning_effort`; "template" - the chat template's
     #: own `reasoning_effort` argument, for a server that lets a top-level value overwrite or erase it (IK.2).
     effort_route: str = "field"
-    #: Whether the server ends reasoning at a per-request budget (`reasoning_budget_tokens`) and the model answers.
+    #: Whether the server ends reasoning at a per-request budget (`reasoning_budget_tokens`): the reasoning stopped at
+    #: the bound on a question that reasons past it. Whether a cut reply was right is `reasoning_budget_usable`.
     reasoning_budget: bool = False
-    #: Whether a budget of zero still gets the right answer.
+    #: Whether a budget of zero still gets the right answer, for no more tokens than reasoning freely.
     zero_budget_answers: bool = False
+    #: Whether a reply held to the share of its cap a real call gives reasoning still answers right (LF.1588).
+    reasoning_budget_usable: bool = False
     #: The effort the chat template reasons at when a request sends none, as the template writes it; "" unread.
     template_default_effort: str = ""
 
@@ -137,6 +158,9 @@ class Diagnosis:
     settings: Settings = Settings()
     #: Whether each way of asking the reasoning question got its right answer.
     reasoning_answered: dict[str, bool] = field(default_factory=dict)
+    #: The budget probe's replies by label (`UNBOUNDED`, "budget N"): what each reasoned and answered, None where
+    #: the server refused the request (`budget_reading`).
+    reasoning_budget_probe: dict[str, dict | None] = field(default_factory=dict)
 
 
 def speaks_chat_completions(model: Any) -> bool:
@@ -234,11 +258,9 @@ def _reasoning_ways(levels: tuple[str, ...] = ()) -> list[tuple[str, dict]]:
 
     The effort is tried as the request's field and as the chat template's own argument: on llama.cpp a top-level
     "none" sets the template's thinking flag and erases the effort, so a template that reads only the effort falls
-    back to its own default - "none" then reasons as much as "high" (IK.2). A per-request reasoning budget is tried
-    at 64 tokens and at none: a server that enforces one ends the thinking there and the model must answer (IK.3).
+    back to its own default - "none" then reasons as much as "high" (IK.2). A reasoning budget is measured apart, on
+    a question that reasons longer (`_budget_probe`).
     """
-    from app.models.reply_salvage import ENOUGH
-
     ways: list[tuple[str, dict]] = [
         ("as served", {}), ("effort none", {"reasoning_effort": "none"}), ("effort low", {"reasoning_effort": "low"}),
         ("template thinking off", _THINKING_OFF), ("template effort none", _template_argument("none")),
@@ -248,11 +270,6 @@ def _reasoning_ways(levels: tuple[str, ...] = ()) -> list[tuple[str, dict]]:
         if level in EFFORT_LEVELS_IN_ORDER[1:low]:
             ways += [(f"effort {level}", {"reasoning_effort": level}),
                      (f"template effort {level}", _template_argument(level))]
-    ways += [
-        (f"budget {BUDGET_PROBE_TOKENS}", {"extra_body": {"reasoning_budget_tokens": BUDGET_PROBE_TOKENS,
-                                                          "reasoning_budget_message": ENOUGH}}),
-        ("budget 0", {"extra_body": {"reasoning_budget_tokens": 0}}),
-    ]
     return ways
 
 
@@ -272,6 +289,129 @@ def _reasoning_cost(model: Any, levels: tuple[str, ...] = ()) -> tuple[dict[str,
             out[label] = None
             answered[label] = False
     return out, answered
+
+
+def moderate_budget(cap: int = BUDGET_PROBE_CAP) -> int:
+    """The budget a reply capped at `cap` gets for its reasoning where a real call keeps its answer's share
+    (`reasoning_budget.ANSWER_SHARE`): 1,280 of the probe's 2,048."""
+    from app.models.reasoning_budget import ANSWER_SHARE
+
+    return int(cap) - int(int(cap) * ANSWER_SHARE)
+
+
+def budget_reading(message: dict, finish: str, usage: dict, answer: str = _LONG_ANSWER) -> dict:
+    """What one reply of the budget probe reasoned and answered: its output tokens, the reasoning tokens the server
+    reports (None where it reports none), the characters of its reasoning and of its answer, whether the words a
+    server writes where it ends the reasoning (`reply_salvage.ENOUGH`) are in it, and whether it answered right."""
+    from app.models.reply_salvage import ENOUGH
+
+    reasoning = str(message.get("reasoning_content") or message.get("reasoning") or "")
+    content = str(message.get("content") or "")
+    details = usage.get("completion_tokens_details") or {}
+    reported = details.get("reasoning_tokens") if isinstance(details, dict) else None
+    said = ENOUGH.split(".")[0]
+    return {"completion_tokens": int(usage.get("completion_tokens") or 0) or None,
+            "reasoning_tokens": int(reported) if isinstance(reported, int) and reported > 0 else None,
+            "reasoning_chars": len(reasoning), "content_chars": len(content),
+            "message_seen": said in reasoning or said in content,
+            "answered": answer in content, "finish": str(finish or "")}
+
+
+def _budget_probe(model: Any) -> dict[str, dict | None]:
+    """The budget probe's replies (LF.1588): the long question unbounded and at `BUDGET_PROBE_TOKENS`; where that
+    bound was enforced, at none, and at the moderate budget where the unbounded reply reasoned past it; each capped
+    at `BUDGET_PROBE_CAP`. Two to four requests. Never raises."""
+    from app.models.reasoning_budget import fields
+
+    def ask(extra: dict) -> dict | None:
+        try:
+            return budget_reading(*_message(_create(model)(
+                model=model.model_name, messages=[{"role": "user", "content": _LONG_QUESTION}],
+                max_tokens=BUDGET_PROBE_CAP, stream=False, **extra)))
+        except Exception:  # noqa: BLE001 - refused: the finding
+            return None
+
+    bounded = f"budget {BUDGET_PROBE_TOKENS}"
+    out: dict[str, dict | None] = {UNBOUNDED: ask({}), bounded: ask({"extra_body": fields(BUDGET_PROBE_TOKENS)})}
+    if not _budget_judged(out)["reasoning_budget"]:
+        # Refused, ignored or not shown: what a zero or a moderate budget does is then never used.
+        return out
+    # As a call meant to answer without reasoning sends it (`reasoning_budget.fields`).
+    out["budget 0"] = ask({"extra_body": fields(0)})
+    moderate = moderate_budget()
+    unbounded = out[UNBOUNDED]
+    if unbounded is not None and _reasoned(unbounded, unbounded) > moderate:
+        out[f"budget {moderate}"] = ask({"extra_body": fields(moderate)})
+    return out
+
+
+def _reasoned(reply: dict, unbounded: dict) -> int:
+    """The tokens `reply` reasoned: as the server reports them, else by its reasoning text where the server keeps
+    reasoning apart (the unbounded reply has some), else all its output tokens."""
+    if reply.get("reasoning_tokens"):
+        return int(reply["reasoning_tokens"])
+    if unbounded.get("reasoning_chars"):
+        return int(reply.get("reasoning_chars") or 0) // CHARS_PER_TOKEN
+    return int(reply.get("completion_tokens") or 0)
+
+
+def _budget_judged(probe: dict[str, dict | None]) -> dict:
+    """Whether the probe's bounded reply was held to its budget (`reasoning_budget`), and why.
+
+    Enforced when the words the server writes where it ends the reasoning are in the bounded reply, or when the
+    unbounded reply reasoned past `BUDGET_HELD_AT_MOST` and the bounded one at most that. "not shown" - neither
+    enforced nor not - when the question reasoned too little unbounded for a bound to show. Whether the answer was
+    right is no part of this: a reasoning cut at 64 tokens may well answer wrong (LF.1588)."""
+    unbounded, bound = probe.get(UNBOUNDED), probe.get(f"budget {BUDGET_PROBE_TOKENS}")
+    if bound is None:
+        return {"reasoning_budget": False, "why": "refused" if probe else "not asked"}
+    if bound.get("message_seen"):
+        return {"reasoning_budget": True, "why": "ended"}
+    if unbounded is None or _reasoned(unbounded, unbounded) <= BUDGET_HELD_AT_MOST:
+        return {"reasoning_budget": False, "why": "not shown"}
+    held = _reasoned(bound, unbounded) <= BUDGET_HELD_AT_MOST
+    return {"reasoning_budget": held, "why": "held" if held else "ignored"}
+
+
+def _budget_settled(probe: dict[str, dict | None]) -> dict:
+    """The budget settings the budget probe calls for, and why, in words: enforced, usable, a zero budget answers."""
+    judged = _budget_judged(probe)
+    enforced = judged["reasoning_budget"]
+    unbounded = probe.get(UNBOUNDED) or {}
+    tokens = _reasoned(unbounded, unbounded)
+    advice: list[str] = []
+    if judged["why"] == "refused":
+        advice.append("a per-request reasoning budget is refused by the server")
+    elif judged["why"] == "not shown":
+        advice.append(f"a per-request reasoning budget not measurable: the budget question reasoned {tokens} tokens "
+                      f"unbounded, at most {BUDGET_HELD_AT_MOST}, and the server's words for an ended reasoning "
+                      "did not appear")
+    elif judged["why"] == "ignored":
+        bound = probe.get(f"budget {BUDGET_PROBE_TOKENS}") or {}
+        advice.append(f"a per-request reasoning budget is not enforced: held to {BUDGET_PROBE_TOKENS} tokens the "
+                      f"budget question still reasoned {_reasoned(bound, unbounded)} (unbounded {tokens})")
+    usable = zero = False
+    if enforced:
+        moderate = moderate_budget()
+        cut = probe.get(f"budget {moderate}")
+        # A reply the moderate budget did not cut answers as the unbounded one did; a model that answers wrong
+        # unbounded loses nothing to a budget.
+        usable = bool(cut.get("answered") or not unbounded.get("answered")) if cut else True
+        zeroed = probe.get("budget 0") or {}
+        spent, free = zeroed.get("completion_tokens") or 0, unbounded.get("completion_tokens") or 0
+        zero = bool(zeroed.get("answered") and spent and spent <= free)
+        advice.append("a per-request reasoning budget is enforced"
+                      + ("; a zero budget still answers" if zero else "")
+                      + (f"; a reply held to {moderate:,} of {BUDGET_PROBE_CAP:,} tokens answers right" if usable
+                         else f"; but a reply held to {moderate:,} of {BUDGET_PROBE_CAP:,} tokens answered wrong, "
+                              "so no stage call is sent one"))
+        if spent > free:
+            moved = (zeroed.get("content_chars") or 0) > (zeroed.get("reasoning_chars") or 0)
+            advice.append(f"a zero budget cost {spent} output tokens, more than unbounded ({free}): "
+                          + (f"{zeroed.get('content_chars')} characters in its answer, the reasoning moved there"
+                             if moved else "it reasoned in new thinking blocks"))
+    return {"reasoning_budget": enforced, "zero_budget_answers": zero, "reasoning_budget_usable": usable,
+            "advice": advice}
 
 
 def _served_reasoning(model: Any) -> tuple[tuple[str, ...], str]:
@@ -468,17 +608,18 @@ def diagnose(model: Any, name: str = "") -> Diagnosis:
     checks += probed
     levels, template_default = _served_reasoning(model)
     cost, answered = _reasoning_cost(model, levels)
-    settings = settled(checks, cost, answered, template_default=template_default)
+    budget = _budget_probe(model)
+    settings = settled(checks, cost, answered, template_default=template_default, budget=budget)
     if probe_advice:
         settings = Settings(**{**asdict(settings), "advice": (*settings.advice, *probe_advice)})
     diagnosis = Diagnosis(name, datetime.now(timezone.utc).isoformat(timespec="seconds"), tuple(checks), cost, settings,
-                          answered)
+                          answered, budget)
     logger.info("Diagnosed %s in %.0f s: %s", name, time.monotonic() - started, "; ".join(settings.advice))
     return diagnosis
 
 
 def settled(checks: list[Check], cost: dict[str, int | None], answered: dict[str, bool] | None = None, *,
-            template_default: str = "") -> Settings:
+            template_default: str = "", budget: dict[str, dict | None] | None = None) -> Settings:
     """The settings the checks call for, and why, in words."""
     by = {c.name: c for c in checks}
     advice: list[str] = []
@@ -545,7 +686,10 @@ def settled(checks: list[Check], cost: dict[str, int | None], answered: dict[str
                       "memory, a large specification) are unreliable on this build")
     reasoning = _reasoning_settled(cost, answered or {}, template_default)
     advice += reasoning.pop("advice")
-    return Settings(structured, only_off, advice=tuple(advice), **reasoning)
+    # Apart from the effort switches: a question that cost too little to show a switch says nothing of a budget.
+    held = _budget_settled(budget or {})
+    advice += held.pop("advice")
+    return Settings(structured, only_off, advice=tuple(advice), **reasoning, **held)
 
 
 def _reasoning_settled(cost: dict[str, int | None], answered: dict[str, bool], template_default: str) -> dict:
@@ -553,8 +697,7 @@ def _reasoning_settled(cost: dict[str, int | None], answered: dict[str, bool], t
     served = cost.get("as served")
     advice: list[str] = []
     out = {"least_reasoning_effort": "", "template_thinking_switch": False, "reasoning_measurable": True,
-           "effort_route": "field", "reasoning_budget": False, "zero_budget_answers": False,
-           "template_default_effort": template_default}
+           "effort_route": "field", "template_default_effort": template_default}
     if template_default:
         advice.append(f"with nothing sent, the chat template reasons at its own default ({template_default})")
     if not served or served < MEASURABLE_FROM_TOKENS:
@@ -577,18 +720,11 @@ def _reasoning_settled(cost: dict[str, int | None], answered: dict[str, bool], t
         _tokens, template, effort = candidates[0]
         out["least_reasoning_effort"], out["effort_route"] = effort, "template" if template else "field"
     out["template_thinking_switch"] = honoured(cost.get("template thinking off"))
-    held = cost.get(f"budget {BUDGET_PROBE_TOKENS}")
-    out["reasoning_budget"] = bool(honoured(held) and held <= BUDGET_HELD_AT_MOST
-                                   and answered.get(f"budget {BUDGET_PROBE_TOKENS}"))
-    out["zero_budget_answers"] = bool(out["reasoning_budget"] and cost.get("budget 0") and answered.get("budget 0"))
     effort = out["least_reasoning_effort"]
     named = (f"reasoning_effort={effort}" + (" as the chat template's argument" if out["effort_route"] == "template"
                                              else "")) if effort else "reasoning_effort not honoured"
     advice.append(f"reasoning switch: {named}; template thinking switch "
                   f"{'honoured' if out['template_thinking_switch'] else 'not honoured'}")
-    advice.append("a per-request reasoning budget is enforced"
-                  + ("; a zero budget still answers" if out["zero_budget_answers"] else "")
-                  if out["reasoning_budget"] else "a per-request reasoning budget is not enforced")
     return {**out, "advice": advice}
 
 
@@ -605,9 +741,12 @@ def recorded(name: str) -> Diagnosis | None:
     try:
         found = json.loads((fitness_dir() / f"{_slug(name)}.json").read_text(encoding="utf-8")).get(RECORD_KEY)
         checks = tuple(Check(**{**c, "notes": tuple(c.get("notes") or ())}) for c in found.get("checks") or ())
-        settings = Settings(**{**found.get("settings", {}), "advice": tuple((found.get("settings") or {}).get("advice") or ())})
+        kept = dict(found.get("settings") or {})
+        # Kept before LF.1588: a budget was enforced only where its 64-token reply answered right.
+        kept.setdefault("reasoning_budget_usable", bool(kept.get("reasoning_budget")))
+        settings = Settings(**{**kept, "advice": tuple(kept.get("advice") or ())})
         return Diagnosis(found["model"], found["measured_at"], checks, dict(found.get("reasoning_tokens") or {}), settings,
-                         dict(found.get("reasoning_answered") or {}))
+                         dict(found.get("reasoning_answered") or {}), dict(found.get("reasoning_budget_probe") or {}))
     except Exception:  # noqa: BLE001 - never diagnosed, or kept by an older harness
         return None
 
@@ -714,6 +853,12 @@ def report(diagnosis: Diagnosis) -> str:
             lines.append(f"  {'':<30} - {note}")
     lines.append("  reasoning output tokens for the reasoning question: "
                  + ", ".join(f"{k} {v if v is not None else 'refused'}" for k, v in diagnosis.reasoning_tokens.items()))
+    for label, reply in diagnosis.reasoning_budget_probe.items():
+        lines.append(f"  budget question {label}: " + ("refused" if reply is None else
+                     f"{reply.get('completion_tokens')} output tokens, {reply.get('reasoning_chars')} characters of "
+                     f"reasoning, {reply.get('content_chars')} of answer"
+                     + (", ended by the server" if reply.get("message_seen") else "")
+                     + (", right" if reply.get("answered") else ", wrong")))
     lines.append(f"  settings: structured answers {diagnosis.settings.structured_answers}"
                  + (" (thinking off)" if diagnosis.settings.force_only_without_thinking else ""))
     lines += [f"  - {line}" for line in diagnosis.settings.advice]

@@ -99,6 +99,7 @@ SWITCHES: dict[str, str] = {
     "FIXERS_HOLD_WHAT_THEY_READ": "app.agents.fixers_hold_what_they_read",
     "FIX_STAGES_STUB_OLD_READS": "app.agents.old_reads_stubbed",
     "SPECIALIST_DOMAIN_REVIEW": "app.agents.specialist_domain_review",
+    "FAST_DESIGN_GATE_ON_PRODUCT_BREAKING": "app.graph.fast_design_gate",
     "WEB_TOOLS_OFFERED": "app.tools.web_search:web_tools_offered_switch",
     "PRODUCT_PREVIEW": "app.server.preview:preview_switch",
     "WEB_TOOLS_AFTER_TWO_FAILED_FIXES": "app.graph.web_tools_after_two_failed_fixes:web_tools_after_two_failed_fixes_switch",

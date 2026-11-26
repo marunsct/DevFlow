@@ -192,8 +192,10 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "Setup scope": ("SETUP_SCOPE_GUARD",),
     # Which review findings may send a sprint back (docs/measuring.md M7).
     # Each consulted specialist also reviews its own domain in the sprint's changed files (plan SP.3): off until measured.
+    # Fast delivery holds the build on a design finding only when it says the product cannot work, for one revision
+    # more (LF.1524).
     "Review gates": ("MILESTONE_EVIDENCE_GATE", "DESIGN_REVISION_CROSS_CHECKED", "INTAKE_ASKS_FIRST",
-                     "SPECIALIST_DOMAIN_REVIEW"),
+                     "SPECIALIST_DOMAIN_REVIEW", "FAST_DESIGN_GATE_ON_PRODUCT_BREAKING"),
     # Contract probes the release adds to a green round: what a product must survive that no locked test asks.
     "Contract probes": ("CONCURRENT_WRITE_PROBE", "WRONG_SHAPE_BODY_PROBE", "EDGE_PROBE", "PAGE_PROBE"),
     # Which of the product's own unit tests may hold a run: one that keeps failing beside a green suite is set aside.
@@ -282,6 +284,7 @@ EXPERIMENTS_ON: dict[str, str] = {
     "WEB_LOOKUP_WHEN_STUCK": "owner 2026-11-23: web tools on for every run and measured from here, the medium and high briefs not counted (docs/measuring.md)",
     "WEB_TOOLS_OFFERED": "owner 2026-11-23: web tools on for every run and measured from here, the medium and high briefs not counted (docs/measuring.md)",
     "WEB_TOOLS_AFTER_TWO_FAILED_FIXES": "owner 2026-11-23: web tools on for every run and measured from here, the medium and high briefs not counted (docs/measuring.md)",
+    "FAST_DESIGN_GATE_ON_PRODUCT_BREAKING": "owner 2026-11-26 (LF.1524): fast delivery built with blocking design findings open; on, holding only the product-breaking ones, and off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M-LF.1524)",
 }
 _GROUP_OF = {name: group for group, members in GROUPS.items() for name in members}
 

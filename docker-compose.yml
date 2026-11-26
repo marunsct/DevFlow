@@ -92,6 +92,8 @@ x-app-env: &app-env
   SPECIALIST_DOMAIN_REVIEW: ${SPECIALIST_DOMAIN_REVIEW:-off}
   # Plan PA.9: advice sized to the brief, items beyond it declined unless the brief line is quoted (off until measured).
   ADVICE_SIZED_TO_THE_BRIEF: ${ADVICE_SIZED_TO_THE_BRIEF:-off}
+  # LF.1524: fast delivery holds the build on a design finding only when it says the product cannot work.
+  FAST_DESIGN_GATE_ON_PRODUCT_BREAKING: ${FAST_DESIGN_GATE_ON_PRODUCT_BREAKING:-on}
   # LF.1395: in thorough delivery a red test round takes the harness's own round (off until measured).
   MEASURED_ROUND_WHEN_RED: ${MEASURED_ROUND_WHEN_RED:-off}
   # LF.1406: fix stages keep the files they were reading after a summary (off until measured).

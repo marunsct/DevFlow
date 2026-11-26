@@ -527,6 +527,8 @@ class WorkflowGraphState(TypedDict, total=False):
     approved_but_for_the_harness: list[str]
     # Thorough delivery's ledger of gating design findings and how each ended. See `app.graph.design_gate`.
     design_gate: dict[str, Any]
+    # Fast delivery's ledger of the design findings held as product-breaking. See `app.graph.fast_design_gate`.
+    fast_design_gate: dict[str, Any]
     # Thorough delivery's ledger of gating findings about the acceptance suite. See `app.graph.suite_gate`.
     suite_gate: dict[str, Any]
     specification_repair_count: int
@@ -5933,6 +5935,11 @@ def _approved_once_the_harness_s_findings_are_settled(state: Any, spec_text: str
     # Thorough delivery: a gating finding the reviewer raised is settled only by a review (`app.graph.design_gate`).
     if design_gate.a_finding_the_reviewer_raised_is_open(state):
         return None
+    from app.graph import fast_design_gate
+
+    # Fast delivery: a product-breaking finding the reviewer raised is settled only by a review (LF.1524).
+    if fast_design_gate.a_held_finding_the_reviewer_raised_is_open(state):
+        return None
     if _the_harness_findings_still_open(state, spec_text, overturned):
         return None
     from app.agents.design_review_conditions import approval_keeping_what_the_reviewer_said, what_is_carried
@@ -5944,6 +5951,8 @@ def _approved_once_the_harness_s_findings_are_settled(state: Any, spec_text: str
     approved = approval_keeping_what_the_reviewer_said(state.get("architecture_review"))
     update: dict[str, Any] = {"architecture_review": approved, "approved_but_for_the_harness": []}
     design_gate.settled_by_the_checks(state, update, f"the workflow's checks ({', '.join(overturned)}) no longer find it")
+    fast_design_gate.settled_by_the_checks(state, update,
+                                           f"the workflow's checks ({', '.join(overturned)}) no longer find it")
     _record_document(state, "docs/architecture_review.md", render_architecture_review(approved))
     record_decision(
         state, update, point="technical_specification",
@@ -5968,6 +5977,11 @@ def _decided_after_one_revision(state: Any, spec_text: str) -> dict[str, Any] | 
     # Thorough delivery reviews every revision again (`app.graph.design_gate`): the gates below would send what they
     # leave open to an escalation that builds with it.
     if design_gate.applies() or not one_design_review.applies(state.get("architecture_revision_count", 0)):
+        return None
+    from app.graph import fast_design_gate
+
+    # A finding held as product-breaking is open: only a review says whether the revision resolved it (LF.1524).
+    if fast_design_gate.a_held_finding_is_open(state):
         return None
     still = _the_harness_findings_still_open(state, spec_text, list(_THE_HARNESS_S_DESIGN_CHECKS))
     open_points = [

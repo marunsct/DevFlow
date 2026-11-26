@@ -1,0 +1,77 @@
+{
+ "about": "Gating findings of stored architecture reviews (docs/architecture_review.md of worker workspaces), copied word for word; `class` is the product-breaking class each must be given, \"\" for none, and `source` the workflow's check that raises one of its kind, or the reviewer (`review`).",
+ "findings": [
+  {
+   "class": "start",
+   "source": "review",
+   "severity": "major",
+   "evidence": "Deployment section: \"start.sh creates the DATA_DIR directory\"; Security and Privacy: \"DATA_DIR is validated at startup... the service refuses to start if these conditions are not met\"; harness setup: \"put whatever else the product must do ... with its data directory - in the product's own files\"; harness-provided start.sh does not include mkdir.",
+   "description": "DATA_DIR creation is placed in start.sh (Deployment section: \"start.sh creates the DATA_DIR directory (using mkdir -p) if it does not exist\") but the harness requires all data-directory setup logic to be in product files, not start.sh. The actual harness-provided start.sh (`cd \"$(dirname \"$0\")\" && go build -o bin/server . && exec ./bin/server`) does not create DATA_DIR. Combined with the spec stating NewNoteStore \"refuses to start if these conditions are not met\", following the spec literally would cause the service to fail at startup because DATA_DIR is never created. The specification must move DATA_DIR creation into the Go product code (NewNoteStore or main.go) and change the startup flow from 'refuse to start' to 'create if missing, then validate writable'.",
+   "required_remediation": "Move DATA_DIR creation from the Deployment section into the startup flow (data_flows) and NewNoteStore function contract. The spec should say: on startup, if DATA_DIR does not exist, create it with mkdir -p, then validate it is a writable directory. Remove the statement that start.sh creates DATA_DIR."
+  },
+  {
+   "class": "brief",
+   "source": "review",
+   "severity": "blocking",
+   "evidence": "Brief: 'Wishlist and product comparison' under Core Features → Specification: 'Wishlist and product comparison features — deferred per intake' (product_scope)",
+   "description": "The specification explicitly defers 'Wishlist and product comparison features' (product_scope, line 5) despite the brief listing it as a Core Feature requirement. Per the operator's brief: 'Each of these is an acceptance criterion in the operator's brief. Narrowing, reinterpreting or deferring one is the operator's decision, not the run's.'",
+   "required_remediation": "Remove wishlist and product comparison from the deferred scope. Add a domain model, API endpoint(s), and UI specification for these features to the in-scope sections."
+  },
+  {
+   "class": "brief",
+   "source": "deferrals",
+   "severity": "major",
+   "evidence": "Compared by the workflow against the operator's brief, word for word.",
+   "description": "The specification defers a feature the operator's brief requires: `reminders` (the brief: \"- Due dates and reminders\"; the specification: \"- Reminder delivery mechanism (the brief states \\\"reminders\\\" but does not specify email, in-app, or other channels — deferred per product_intake.md).\"); `medium` (the brief: \"- Set priorities (low, medium, high, urgent)\"; the specification: \"\"Task: id (UUID), title (str, required, max 255 chars), description (str, nullable), status (TaskStatus enum: 'pending', 'in_progress', 'done'), priority (TaskPriority enum: 'low', 'medium', 'high', '\"); `high` (the brief: \"- Set priorities (low, medium, high, urgent)\"; the specification: \"\"Task: id (UUID), title (str, required, max 255 chars), description (str, nullable), status (TaskStatus enum: 'pending', 'in_progress', 'done'), priority (TaskPriority enum: 'low', 'medium', 'high', '\"); `urgent` (the brief: \"- Set priorities (low, medium, high, urgent)\"; the specification: \"\"Task: id (UUID), title (str, required, max 255 chars), description (str, nullable), status (TaskStatus enum: 'pending', 'in_progress', 'done'), priority (TaskPriority enum: 'low', 'medium', 'high', '\"). Deferring a requirement is the operator's decision, not the run's.",
+   "required_remediation": "Specify each one as the other features are specified - its data, the functions or endpoints that carry it, the interface that shows it, and an acceptance criterion that verifies it - or, where the specification builds it under another name, say where."
+  },
+  {
+   "class": "contract",
+   "source": "review",
+   "severity": "blocking",
+   "evidence": "API Contracts: 'if title is missing, null, or empty/whitespace-only after trimming, return 400 Unprocessable Entity' vs data_flows POST /notes: 'returns 422 Unprocessable Entity' and error_catalogue: '422 Unprocessable Entity: POST /notes request body has a missing title field'",
+   "description": "HTTP status code for body validation errors is contradictory across specification sections. The API Contracts section says 'return 400 Unprocessable Entity' (mixing status 400 with phrase 'Unprocessable Entity' which belongs to 422), while data_flows and the error_catalogue consistently say '422 Unprocessable Entity'. An implementer following the API Contracts section would use the wrong status code.",
+   "required_remediation": "Choose one consistent status code (400 or 422) for body validation errors and apply it uniformly across api_and_event_contracts, data_flows, error_catalogue, function_contracts, and acceptance_criteria sections."
+  },
+  {
+   "class": "",
+   "source": "review",
+   "severity": "major",
+   "evidence": "Section `interface_contract` contains: `AC-6 command python -c \"from textkit import slugify; print(slugify('Hello, World!'))\" -> stdout 'hello-world' exit 0`, `AC-7 command python -c \"from textkit import word_count; print(word_count('a  b\\nc'))\" -> stdout '3' exit 0`, `AC-7 command python -c \"from textkit import word_count; print(word_count(''))\" -> stdout '0' exit 0`, `AC-8 command python -c \"from textkit import truncate; print(truncate('Hello, World!', 5))\" -> stdout 'He...' exit 0`, `AC-9 command python -c \"from textkit import title_case; print(title_case('hello world'))\" -> stdout 'Hello World' exit 0`, `AC-9 command python -c \"from textkit import title_case; print(repr(title_case('a  b')))\" -> stdout \"'A B'\" exit 0`, `AC-11 command python -c \"from textkit import truncate; truncate('hello', 2)\" -> stderr 'ValueError: limit (2) cannot be smaller than suffix length (3)' exit 1`",
+   "description": "Seven lines in the `interface_contract` section follow none of the three accepted AC formats (`AC-3 GET /api/notes -> 200`, `AC-1 page /login textbox \"Email\"`, `AC-5 command notes add milk -> exit 0`). The lines use an inline Python `-c` invocation format that no stage can parse or verify against. This leaves seven acceptance criteria without a defined checking mechanism.",
+   "required_remediation": "Rewrite each of the seven lines into one of the three accepted AC forms, or place the command examples within a test case section where they are expressed as steps and assertions rather than interface contract definitions."
+  },
+  {
+   "class": "",
+   "source": "review",
+   "severity": "major",
+   "evidence": "api_and_event_contracts: 'AC-6 page empty list -> text \\\"No tasks\\\"' vs acceptance_criteria: 'AC-6: Submission of a new task without a title is blocked, and inline error feedback is shown.' vs test_cases: 'AC-6 Add task blocked without title'",
+   "description": "AC-6 numbering conflict between api_and_event_contracts and acceptance_criteria/test_cases. In api_and_event_contracts, AC-6 is defined as 'page empty list -> text \"No tasks\"' (empty state display). In acceptance_criteria and test_cases, AC-6 is 'Submission of a new task without a title is blocked' (validation). The empty state behavior is correctly numbered as AC-8 in both acceptance_criteria and test_cases. An implementer cross-referencing sections encounters contradictory definitions of what AC-6 means.",
+   "required_remediation": "Remove or renumber the AC-6 entry in api_and_event_contracts to match AC-8 (empty state), so that AC-6 consistently refers only to validation blocking across all sections."
+  },
+  {
+   "class": "",
+   "source": "review",
+   "severity": "major",
+   "evidence": "Function Contracts: get_connection — 'Creates directory if missing. Creates database/table if missing.' init_db — 'Startup event handler that ensures schema exists by calling get_connection() and running schema creation logic.'",
+   "description": "get_connection() and init_db() have overlapping responsibilities. get_connection creates the DB, table, WAL mode, and tag migration. init_db is described as 'calling get_connection() and running schema creation logic.' This is circular and ambiguous about which function actually runs at startup and whether schema creation happens once or potentially twice.",
+   "required_remediation": "Clarify the startup sequence. Either: (a) get_connection is a pure connection getter and init_db is the startup handler performing all schema creation, or (b) get_connection handles all schema creation and init_db is removed or documented as a no-op wrapper."
+  },
+  {
+   "class": "",
+   "source": "review",
+   "severity": "major",
+   "evidence": "Brief: 'PATCH /items/{id} ... answers 200 with the item, or 404 when it is not one of the signed-in person's items.' Spec Error Catalogue: 'Body validation runs before the ownership check, so this 400 is returned even when the id is not the user's item'; AC-16; test_ac16.",
+   "description": "The brief says 'Mark one of your items done or not done' and 'PATCH /items/{id} with {\"done\": true\\|false}'. The specification adds a further refusal: a PATCH body whose done is missing or not a JSON boolean answers 400, and body validation runs before the ownership check, so a non-boolean done on another user's id gets 400, not 404. The brief says nothing about the order of the body check against ownership. This rule is observable and is beyond what the brief states.",
+   "required_remediation": "The brief's plain reading is 404 when the item is not the person's. Either order the checks so that ownership is answered first for PATCH, or record the body-before-ownership order as a design choice and say that it is not addressed by the brief. The brief's own words on 404 must not be contradicted without explicit justification in the decision record."
+  },
+  {
+   "class": "",
+   "source": "contract",
+   "severity": "major",
+   "evidence": "Read by the workflow with the same reader the suite's lock and the release use.",
+   "description": "12 line(s) of the interface contract follow none of its forms, so nothing can check them: `AC-3 GET /notes/{id} -> 404 for an id no note has`; `AC-4 PUT /notes/{id} -> 404 for an id no note has`; `AC-5 DELETE /notes/{id} -> 404 for an id no note has`; `AC-7 POST /notes -> 422 for a missing or empty title`; `AC-7 PUT /notes/{id} -> 422 for a missing or empty title`; `AC-8 POST /notes -> 400 for malformed JSON`; `AC-8 PUT /notes/{id} -> 400 for malformed JSON`; `AC-10 POST /notes -> 413 for a body over the limit in AC-10`; and 4 more.",
+   "required_remediation": "Rewrite each in one of the three forms: `AC-3 GET /api/orders -> 200`, `AC-1 page /login textbox \"Email\"`, `AC-5 command ledger add 12.50 -> exit 0`. What a line is for goes before its arrow or in the other sections."
+  }
+ ]
+}

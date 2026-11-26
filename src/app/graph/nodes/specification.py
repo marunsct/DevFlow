@@ -457,9 +457,19 @@ def architecture_review_node(state: WorkflowGraphState, config: RunnableConfig, 
             review = review.model_copy(update={"findings": [*review.findings, found], "status": "changes_required"})
             raised_by_checks[name] = found
             fired.append(name)
+    from app.graph import fast_design_gate
+
+    # Fast delivery: the checks that raised a finding held as product-breaking are asked again (LF.1524).
+    for name, found in _the_harness_s_findings_now(state, spec_text, fast_design_gate.checks_to_ask_again(state, fired)):
+        review = review.model_copy(update={"findings": [*review.findings, found], "status": "changes_required"})
+        raised_by_checks[name] = found
+        fired.append(name)
     review = _a_pass_over_its_own_findings(
         review, state["repository"].root_path, "approved", "architecture_review"
     )
+    # Fast delivery: which gating findings say the product cannot work, and which held ones this review settled.
+    fast_design_gate.after_a_review(
+        state, update, review, raised_by_checks, _findings_that_block(review, state["repository"].root_path))
     if design_gate.applies():
         review = design_gate.after_a_review(
             state, update, review, raised_by_checks, _findings_that_block(review, state["repository"].root_path))
@@ -506,7 +516,9 @@ def architecture_review_node(state: WorkflowGraphState, config: RunnableConfig, 
         # Fast delivery revises once: blocking findings still open after
         # that are decided as risks, as they are after the full count.
         limit = _the_revision_limit()
-        if revision_count >= limit:
+        # A finding held as product-breaking gets one revision more in fast delivery (LF.1524); never a loop.
+        extra = fast_design_gate.another_revision(state, update, revision_count, limit)
+        if revision_count >= limit and not extra:
             # Decided, not stopped: see `app.graph.escalation`. The run used
             # to fail here - one stored run after six revisions - although
             # the acceptance suite, written from the brief, is what decides

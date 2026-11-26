@@ -100,6 +100,14 @@ x-app-env: &app-env
   FIXERS_HOLD_WHAT_THEY_READ: ${FIXERS_HOLD_WHAT_THEY_READ:-off}
   # LF.1420: fix stages keep old reads as one-line notes, not a model summary (off until measured).
   FIX_STAGES_STUB_OLD_READS: ${FIX_STAGES_STUB_OLD_READS:-off}
+  # KG.5-KG.8: the code graph's answers - definitions past a memory's room, the graph in search and read answers, the
+  # files still using what a write changed, a review's changed definitions with their uses (owner 11-17: on).
+  DEFINITIONS_BEFORE_FILES: ${DEFINITIONS_BEFORE_FILES:-on}
+  GRAPH_IN_SEARCH_ANSWERS: ${GRAPH_IN_SEARCH_ANSWERS:-on}
+  USES_NAMED_AT_THE_WRITE: ${USES_NAMED_AT_THE_WRITE:-on}
+  REVIEWS_HOLD_THE_CHANGE_AND_ITS_USES: ${REVIEWS_HOLD_THE_CHANGE_AND_ITS_USES:-on}
+  # TR.7: a writer is offered its role kind's tool list (tool review 2026-11-26).
+  TOOL_LISTS_BY_ROLE_KIND: ${TOOL_LISTS_BY_ROLE_KIND:-on}
   # FX.9 / FX.10: a library's error looked up when first seen; usage notes from the installed package (off until measured).
   LOOKUP_AT_FIRST_SIGHT: ${LOOKUP_AT_FIRST_SIGHT:-off}
   USAGE_NOTES_FROM_THE_INSTALLED_PACKAGE: ${USAGE_NOTES_FROM_THE_INSTALLED_PACKAGE:-off}

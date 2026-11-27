@@ -220,17 +220,231 @@ _DENIED_AFTER = (r"(?:is|are|was|will\s+be)?\s*(?:not\s+(?:supported|implemented
                  r"out\s+of\s+scope|deferred)\b")
 
 
+#: Between a denying word and what it denies of the product: "does not support any X". Not a copula ("must not be the
+#: empty string" is a rule on a value) and not an act done to something the product has ("does not log X").
+_BETWEEN_A_DENIAL = (r"(?:(?:support|implement|handle|provide|use|need|require|include|offer|perform|apply|enable|accept)"
+                     r"(?:s|d|ed|es)?|any|a|an|the)")
+
+
 @functools.lru_cache(maxsize=4096)
 def _denying(subject: str) -> tuple[re.Pattern[str], re.Pattern[str]]:
     pattern = _pattern_of(subject)
-    return (re.compile(rf"(?i:\b{_NEGATOR}(?:\s+{_BETWEEN}){{0,2}})\s+{pattern}"),
+    return (re.compile(rf"(?i:\b{_NEGATOR}(?:\s+{_BETWEEN_A_DENIAL}){{0,2}})\s+{pattern}"),
             re.compile(rf"{pattern}(?i:[\s:,-]+{_DENIED_AFTER})"))
 
 
-def denies(statement: str, subject: str) -> bool:
-    """Whether `statement` says `subject` is not there: "no X", "does not support X", "X is not supported"."""
+#: After "no X": what is done to X or what happens, not whether the product has X - "No request body is logged",
+#: "No database access occurs", "No other table exists". Words that say the product has no X stay a denial ("No
+#: external dependencies are required").
+_AN_ACT_ON_IT = re.compile(
+    r"(?i)^[^,;:]*?\b(?:(?:is|are|was|were|gets?|being)\s+(?:ever\s+|never\s+|not\s+)?(?!(?:required|needed|used|"
+    r"supported|implemented|provided|available|included|offered|added|shipped|planned|built|installed|configured|"
+    r"bundled|present|allowed|enabled|exposed)\b)(?:\w+ed|written|sent|shown|kept|given|taken|done|seen|read|"
+    r"thrown|returned)|occurs?|happens?|exists?|takes\s+place|here|in\s+this\s+(?:file|module|class|component|layer))\b")
+#: A list's first item opening with one of these is a rule on a value or an act on something the product has, not a
+#: list of what it leaves out: "must not be null, empty string ...", "does not log request bodies, titles ...".
+_NOT_A_LIST_OF_PARTS = frozenset("""
+be is are was were been log logs emit emits read reads write writes store stores persist persists return returns
+print prints send sends show shows expose exposes leak leaks contain contains change changes modify modifies
+""".split())
+
+
+# A denial is about the product only when it is said of the product, not of one case of it (LF.1633). Measured over the
+# 147 design escalations of 143 stored runs: 989 pairs found by the plain "no X" against "X", and none of the hundreds
+# read in full was a contradiction that mattered - "returns 204 with no response body" against "the response body is an
+# array", "if no note exists" against "the note exists", "without I/O side effects" against "without side effects", a
+# decision's rejected alternative ("No graceful shutdown") against the decision it led to. With the rules below: 99.
+_CLAUSES = re.compile(r"(?<=[.;!?])\s+|\n+|\s+[\u2014\u2013]\s+|\s+--?\s+")
+_WORDS = re.compile(r"[\w'/{}<>-]+|[()]")
+#: Words that make what follows one case of the product: a condition, a route's or a call's outcome, a test's step.
+_A_CASE = frozenset("""
+if when whenever unless where while once after before until upon during on for with given returns return returned
+responds respond answers answer gives sends send then else otherwise ensure ensures assert asserts verify verifies
+expect expects check checks test tests even only except
+""".split())
+#: Words opening a clause that lists what the product leaves out.
+_LEFT_OUT = re.compile(
+    r"(?i)^\W*(?:[\w-]+\s+){0,3}?(?:deferred|defers?|out\s+of\s+scope|not\s+in\s+scope|excluded|excludes?|"
+    r"explicitly\s+excluded|non-goals?|not\s+included|left\s+out|declined|rejected)\b")
+#: Words anywhere in a clause that keep it from stating its subject as part of the product: a denial, a deferral, an
+#: option, a hypothesis.
+_NOT_A_STATEMENT_OF_IT = re.compile(
+    r"(?i)\b(?:no|not|never|without|cannot|nor|neither|none|zero|lack(?:s|ing)?|absent|absence|n't|"
+    r"defer(?:s|red)?|exclud(?:e|es|ed|ing)|out\s+of\s+scope|reject(?:s|ed)?|declined?|avoid(?:s|ed)?|"
+    r"instead\s+of|rather\s+than|beyond|disabled?|omit(?:s|ted)?|unsupported|unused|would|could|might|optional(?:ly)?|"
+    r"alternatives?)\b")
+#: Words that may stand between a denying word and the subject it denies: "does not support any X".
+_MOST_WORDS_BETWEEN = 3
+#: Words a clause may say before its denying word and still deny of the product: "The service does not ...".
+_MOST_WORDS_BEFORE = 6
+#: Fields of a decision record that are not what was decided: the options turned down, the reasons and the evidence.
+DECIDED_FIELDS = ("title", "decision")
+
+
+def claims(value: Any) -> list[str]:
+    """A section's value as the statements it makes of the product: as `statements`, but a decision record is its
+    title and its decision, not the alternatives it turned down or the context it weighed."""
+    if isinstance(value, (list, tuple)):
+        found: list[str] = []
+        for item in value:
+            found.extend(claims(item))
+        return found
+    if isinstance(value, dict) and "decision" in value:
+        said = [str(value.get(field) or "").strip() for field in DECIDED_FIELDS]
+        return [": ".join(part for part in said if part)] if any(said) else []
+    return statements(value)
+
+
+def _clauses(statement: str) -> list[str]:
+    return [clause for clause in _CLAUSES.split(statement or "") if clause.strip()]
+
+
+def _a_denial_of_the_product(clause: str, start: int, end: int) -> bool:
+    """Whether the denying words at `clause[start:end]` deny what follows them of the whole product: said near the
+    clause's opening, with no condition, outcome or test step before them, and not inside brackets."""
+    before = _WORDS.findall(clause[:start])
+    if len(before) > _MOST_WORDS_BEFORE or before.count("(") > before.count(")"):
+        return False
+    return not any(word.lower() in _A_CASE for word in before)
+
+
+#: What follows a condition: an arrow to its outcome, a status code, a reply. "Without the header -> 401" and "No note
+#: has that id. Returns 404" state what happens in one case, not what the product leaves out.
+_AN_OUTCOME = re.compile(r"->|\u2192|=>|\b[1-5]\d\d\b|(?i:\b(?:returns?|responds?|answers?)\b)")
+#: Words in one item of a left-out list that keep the item's other words in the product: "any feature beyond X".
+_KEPT_IN_A_LIST = re.compile(r"(?i)\b(?:beyond|except|other\s+than|besides|apart\s+from|only|instead\s+of|rather\s+than)\b")
+_LIST_SEPARATOR = re.compile(r",|;|\bor\b|\band\b|\bnor\b")
+#: Words that may stand between a list's separator and the item: "no TLS, no rate limiting", "A, or any X".
+_BEFORE_AN_ITEM = re.compile(rf"(?i)^\s*(?:(?:{_NEGATOR}|{_BETWEEN}|other|extra|additional)\s+)*$")
+
+
+def _left_out_item(clause: str, subject: str) -> int:
+    """Where `subject` ends in a clause listing what the product leaves out, or -1: named as an item of the list, not
+    inside brackets and not in an item that keeps it ("beyond X", "X only")."""
+    named = _mentioning(subject).search(clause)
+    if not named:
+        return -1
+    opening = clause[:named.start()]
+    if opening.count("(") > opening.count(")"):
+        return -1
+    item_start = max([0, *(m.end() for m in _LIST_SEPARATOR.finditer(opening))])
+    item_end = _LIST_SEPARATOR.search(clause, named.end())
+    item = clause[item_start:item_end.start() if item_end else len(clause)]
+    return -1 if _KEPT_IN_A_LIST.search(item) else named.end()
+
+
+def _denial_end(clause: str, subject: str) -> int:
+    """Where a denial of `subject` of the whole product ends in `clause`, or -1 when the clause denies it of no more
+    than one case."""
+    pattern = _mentioning(subject)
+    if _LEFT_OUT.match(clause):
+        return _left_out_item(clause, subject)
     before, after = _denying(subject)
-    return bool(before.search(statement or "") or after.search(statement or ""))
+    for found in before.finditer(clause):
+        if _a_denial_of_the_product(clause, found.start(), found.end()) and not _AN_ACT_ON_IT.match(clause[found.end():]):
+            return found.end()
+    for found in after.finditer(clause):
+        if _a_denial_of_the_product(clause, found.start(), found.start()):
+            return found.end()
+    # A list after the denying word: "does not implement authentication, search, rate limiting", "no TLS, no X".
+    for word in re.finditer(r"(?i)\b(?:no|not|never|without|nor)\b", clause):
+        if not _a_denial_of_the_product(clause, word.start(), word.end()):
+            continue
+        rest = clause[word.end():]
+        named = pattern.search(rest)
+        if not named:
+            continue
+        items = _LIST_SEPARATOR.split(rest[:named.start()])
+        opening = _WORDS.findall(items[0])
+        if opening and opening[0].lower() in _NOT_A_LIST_OF_PARTS:
+            continue
+        if (len(items) > 1 and _BEFORE_AN_ITEM.match(items[-1])
+                and all(len(_WORDS.findall(item)) <= _MOST_WORDS_BETWEEN for item in items[:-1])):
+            return word.end() + named.end()
+    return -1
+
+
+def denies(statement: str, subject: str) -> bool:
+    """Whether `statement` says the product has no `subject`: "No X", "The service does not support X", "X is not
+    supported", "Deferred: ..., X" - a clause about the product, not one case of it ("returns 204 with no X", "if no
+    X exists", "without X -> 401")."""
+    clauses = _clauses(statement)
+    for n, clause in enumerate(clauses):
+        end = _denial_end(clause, subject)
+        if end >= 0 and not _AN_OUTCOME.search(" ".join([clause[end:], *clauses[n + 1:]])):
+            return True
+    return False
+
+
+def states(statement: str, subject: str) -> bool:
+    """Whether `statement` says `subject` is part of the product: it names it in a clause with nothing that denies,
+    defers or only weighs it."""
+    pattern = _mentioning(subject)
+    return any(pattern.search(clause) and not _NOT_A_STATEMENT_OF_IT.search(clause) for clause in _clauses(statement))
+
+
+#: A route as a statement names it, with its method when it has one: `DELETE /notes/{id}`, `/health`.
+_A_ROUTE = re.compile(r"(?:\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+)?(?<![\w.])(/[A-Za-z][\w\-/{}:<>]*)")
+
+
+def _routes(text: str) -> set[str]:
+    found = set()
+    for method, route in _A_ROUTE.findall(text or ""):
+        # A colon after the route ends a heading ("DELETE /notes/{id}: ..."); one inside it names a parameter.
+        route = re.sub(r"\{[^}]*\}|<[^>]*>|:[\w-]+", "{}", route.rstrip(":")).rstrip("/.,;:)")
+        found.add(f"{method} {route}".strip())
+    return found
+
+
+def _same_route(denied: set[str], stated: set[str]) -> bool:
+    """Whether a route the denial names is one the other statement names: the same method and path, or the same path
+    where either names no method."""
+    for one in denied:
+        for other in stated:
+            method, _, path = one.rpartition(" ")
+            their_method, _, their_path = other.rpartition(" ")
+            if path == their_path and (method == their_method or not method or not their_method):
+                return True
+    return False
+
+
+#: A statement's heading: the words before its first colon or dash, when they are few.
+_A_HEADING = re.compile(r"^\W*(.{1,100}?)\s*(?::\s|\s[\u2014\u2013-]\s|\s\|\s)")
+_MOST_HEADING_WORDS = 6
+
+
+def _named_in_the_heading(statement: str) -> set[str]:
+    """The names a statement's heading gives it (`Note.java: ...`, `tasks_api/db.py - ...`): the part it is about."""
+    heading = _A_HEADING.match(statement or "")
+    if not heading or len(_WORDS.findall(heading.group(1))) > _MOST_HEADING_WORDS:
+        return set()
+    return {name for name in identifiers(heading.group(1)) if not _A_PLAIN_WORD.fullmatch(name)}
+
+
+def _opposite(statement: str, their: str, subject: str) -> bool:
+    """Whether one of the two denies `subject` of the product and the other states it. A denial said of a route is
+    said of that route, and one said under a part's name (`Note.java: ... No business logic`) of that part: each is
+    opposite only to a statement about the same route or a statement not headed by another part's name."""
+    for denying, stating in ((statement, their), (their, statement)):
+        if denies(denying, subject) and states(stating, subject) and not denies(stating, subject):
+            routes = _routes(denying)
+            if routes and not _same_route(routes, _routes(stating)):
+                continue
+            part, their_part = _named_in_the_heading(denying), _named_in_the_heading(stating)
+            if part and their_part and not part & their_part:
+                continue
+            return True
+    return False
+
+
+#: A subject that is one plain lower-case word is a word of the language however it is quoted (`limit`, `text`,
+#: `create`): a name is a path, a file, a setting or a name with a capital, a dot or an underscore in it.
+_A_PLAIN_WORD = re.compile(r"[a-z]+")
+
+
+def _subjects(statement: str, sections: list[str]) -> list[str]:
+    return sorted(subject for subject in identifiers(statement) | phrases(statement, section_names=sections)
+                  if not _A_PLAIN_WORD.fullmatch(subject))
 
 
 def opposite_statements(
@@ -238,27 +452,26 @@ def opposite_statements(
 ) -> list[tuple[str, str, str, str, str]]:
     """(subject, rewritten section, its statement, unchanged section, its statement) for each pair saying opposite things.
 
-    Subjects are the names and two-word phrases both statements mention; one statement denies the subject, the other
-    mentions it without denying it.
+    Subjects are the names and two-word phrases both statements mention; one statement denies the subject of the
+    product (`denies`), the other states it as part of the product (`states`).
     """
     sections = [*rewritten, *unchanged]
     pairs: list[tuple[str, str, str, str, str]] = []
     for section, said in rewritten.items():
         for statement in said:
-            subjects = sorted(identifiers(statement) | phrases(statement, section_names=sections))
-            denied = {subject for subject in subjects if denies(statement, subject)}
+            subjects = _subjects(statement, sections)
             for other, theirs in unchanged.items():
                 for their in theirs:
                     for subject in subjects:
-                        if mentions(their, subject) and (subject in denied) != denies(their, subject):
+                        if mentions(their, subject) and _opposite(statement, their, subject):
                             pairs.append((subject, section, statement, other, their))
                             break
     return pairs
 
 
 def _added(before: Any, after: Any) -> list[str]:
-    old = set(statements(before))
-    return [statement for statement in statements(after) if statement not in old]
+    old = set(claims(before))
+    return [statement for statement in claims(after) if statement not in old]
 
 
 def _rewritten_statements(previous: Any, revised: Any, chosen: list[str]) -> dict[str, list[str]]:
@@ -281,7 +494,7 @@ def brought_into_line(
 
     chosen = list(chosen)
     after = _dumped(revised)
-    unchanged = {name: statements(value) for name, value in after.items() if name not in chosen}
+    unchanged = {name: claims(value) for name, value in after.items() if name not in chosen}
     pairs = opposite_statements(_rewritten_statements(previous, revised, chosen), unchanged)
     if not pairs:
         return revised
@@ -324,6 +537,6 @@ def brought_into_line(
 
 
 __all__ = [
-    "ON_BY_DEFAULT", "SAID", "brought_into_line", "denies", "enabled", "identifiers", "opposite_statements",
-    "phrases", "related_block", "related_statements", "statements",
+    "DECIDED_FIELDS", "ON_BY_DEFAULT", "SAID", "brought_into_line", "claims", "denies", "enabled", "identifiers",
+    "opposite_statements", "phrases", "related_block", "related_statements", "states", "statements",
 ]

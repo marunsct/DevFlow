@@ -56,11 +56,11 @@ def contradictions(specification: Any) -> list[str]:
     Every section is checked against every other, both ways; a pair is named once. Never raises.
     """
     try:
-        from app.graph.design_revision_cross_checked import _dumped, denies, opposite_statements, statements
+        from app.graph.design_revision_cross_checked import _dumped, claims, denies, opposite_statements
 
         if specification is None:
             return []
-        sections = {name: statements(value) for name, value in _dumped(specification).items()
+        sections = {name: claims(value) for name, value in _dumped(specification).items()
                     if name not in NOT_STATEMENTS}
         sections = {name: said for name, said in sections.items() if said}
         found: list[str] = []

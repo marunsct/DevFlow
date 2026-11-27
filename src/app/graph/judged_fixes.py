@@ -299,14 +299,28 @@ def the_new_step(tests: Sequence[dict], broken: Sequence[str]) -> str:
             f"{_the_end_of(first.get('message'), MOST_FAILURE)}")
 
 
-def _the_unit_run_said(root: str | Path) -> str:
+def _the_unit_run_output(root: str | Path) -> str:
     try:
         from app.ci import UNIT_RUN_FILE
 
         saved = json.loads((Path(root) / UNIT_RUN_FILE).read_text(encoding="utf-8"))
-        return _the_end_of(saved.get("output") if isinstance(saved, dict) else "", MOST_FAILURE)
+        return _plain(saved.get("output") if isinstance(saved, dict) else "")
     except (OSError, ValueError):
         return ""
+
+
+def _with_its_known_causes(root: str | Path, said: str, *whole: Any) -> str:
+    """`said`, then the cause of each error the project's pack knows that the whole failure carries - read before it is
+    cut to its end, so an error stated early in a long build is not lost - each once (`known_errors.known_causes_of`).
+
+    Measured on a Rust run: the repair was handed the build's E0308 "expected `()`, found `AppState`" without the
+    cause the pack names for it, and rewrote the file back to the two errors the rewrite before it had been told the
+    causes of and had begun to remove.
+    """
+    from app.stacks.known_errors import known_causes_of
+
+    causes = known_causes_of(root, "\n".join(_plain(part) for part in whole))
+    return said + (f"\n{causes}" if causes else "")
 
 
 def what_a_repair_is_given(root: str | Path, before: Any, after: Any, broken: Sequence[str]) -> str:
@@ -324,24 +338,28 @@ def what_a_repair_is_given(root: str | Path, before: Any, after: Any, broken: Se
             return ""
         # Only a result of the product as it is now: a split of the fix measured since is of another product.
         result = _the_result_of_the_product_as_it_is(root) or {}
-        log = _the_end_of(result.get("server_log"), LOG_TAIL)
+        whole_log = _plain(result.get("server_log"))
+        log = _the_end_of(whole_log, LOG_TAIL)
         logged = f"\nThe end of the server's log:\n{log}" if log else ""
         if after.problem and not before.problem:
-            return ("The product no longer starts, or no longer builds, after your change; it did before it. What the "
-                    f"start said:\n{_the_end_of(after.problem, MOST_FAILURE)}{logged}")
+            return _with_its_known_causes(
+                root, "The product no longer starts, or no longer builds, after your change; it did before it. What "
+                      f"the start said:\n{_the_end_of(after.problem, MOST_FAILURE)}{logged}", after.problem, whole_log)
         if after.problem:
             return ""
         unit_broke = (after.unit.get(UNIT_TESTS_DID_NOT_RUN) == "failed" and before.unit_ran
                       and before.unit.get(UNIT_TESTS_DID_NOT_RUN) != "failed")
         if unit_broke:
-            said = _the_unit_run_said(root)
-            return ("The project's unit tests no longer build or start after your change; they did before it."
-                    + (f" What their run said:\n{said}" if said else ""))
+            output = _the_unit_run_output(root)
+            said = _the_end_of(output, MOST_FAILURE)
+            return _with_its_known_causes(
+                root, "The project's unit tests no longer build or start after your change; they did before it."
+                      + (f" What their run said:\n{said}" if said else ""), output)
         if all(str(item).startswith("acceptance: ") for item in broken):
             criteria = list((result.get("criteria") or {}).keys()) + list((result.get("change_requests") or {}).keys())
             step = the_new_step(_the_tests(result, criteria), [str(item) for item in broken])
             if step:
-                return step + logged
+                return _with_its_known_causes(root, step + logged, step, whole_log)
         return ""
     except Exception:  # noqa: BLE001 - reverted as before
         logger.debug("Could not read what a forward repair is given", exc_info=True)

@@ -1,0 +1,79 @@
+The product did not start for the acceptance suite: no test could reach it. Its output:
+Error: Process from config.webServer was not able to start. Exit code: 101
+[WebServer]    Compiling notes-api v0.1.0 (/workspace/notes-api)
+[WebServer] warning: unused imports: `Json`, `delete`, `extract::State`, `get`, `post`, and `put`
+...
+[WebServer]   --> src/lib.rs:47:9
+[WebServer]    |
+[WebServer]   --> src/lib.rs:11:46
+[WebServer]    |
+[WebServer]  --> src/routes.rs:1:21
+[WebServer]   |
+[WebServer] error[E0308]: mismatched types
+[WebServer]    --> src/lib.rs:43:21
+[WebServer]     |
+...
+[WebServer]    --> /workspace/.agent-home/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/axum-0.8.9/src/routing/mod.rs:408:12
+[WebServer]     |
+[WebServer] 408 |     pub fn with_state<S2>(self, state: S) -> Router<S2> {
+[WebServer]     |            ^^^^^^^^^^
+[WebServer]
+[WebServer] For more information about this error, try `rustc --explain E0308`.
+[WebServer] warning: `notes-api` (lib) generated 8 warnings
+[WebServer] error: could not compile `notes-api` (lib) due to 1 previous error; 8 warnings emitted
+The end of the server's log:
+...-export
+  --> src/lib.rs:11:40
+   |
+11 | use crate::models::{CreateNoteRequest, Note, UpdateNoteRequest};
+   |                                        ^^^^
+   |
+note: the name `Note` in the type namespace is supposed to be publicly re-exported here
+  --> src/lib.rs:47:9
+   |
+47 | pub use crate::models::*;
+   |         ^^^^^^^^^^^^^^^^
+note: but the private item here shadows it
+  --> src/lib.rs:11:40
+   |
+11 | use crate::models::{CreateNoteRequest, Note, UpdateNoteRequest};
+   |                                        ^^^^
+
+warning: private item shadows public glob re-export
+  --> src/lib.rs:11:46
+   |
+11 | use crate::models::{CreateNoteRequest, Note, UpdateNoteRequest};
+   |                                              ^^^^^^^^^^^^^^^^^
+   |
+note: the name `UpdateNoteRequest` in the type namespace is supposed to be publicly re-exported here
+  --> src/lib.rs:47:9
+   |
+47 | pub use crate::models::*;
+   |         ^^^^^^^^^^^^^^^^
+note: but the private item here shadows it
+  --> src/lib.rs:11:46
+   |
+11 | use crate::models::{CreateNoteRequest, Note, UpdateNoteRequest};
+   |                                              ^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `delete` and `put`
+ --> src/routes.rs:1:21
+  |
+1 | use axum::routing::{delete, get, post, put};
+  |                     ^^^^^^             ^^^
+
+error[E0308]: mismatched types
+   --> src/lib.rs:43:21
+    |
+43  |         .with_state(state)
+    |          ---------- ^^^^^ expected `()`, found `AppState`
+    |          |
+    |          arguments to this method are incorrect
+    |
+note: method defined here
+   --> /workspace/.agent-home/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/axum-0.8.9/src/routing/mod.rs:408:12
+    |
+408 |     pub fn with_state<S2>(self, state: S) -> Router<S2> {
+    |            ^^^^^^^^^^
+
+For more information about this error, try `rustc --explain E0308`.

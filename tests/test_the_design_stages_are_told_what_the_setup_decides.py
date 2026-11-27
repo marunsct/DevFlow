@@ -104,8 +104,9 @@ def test_every_pack_says_it_from_its_own_data(pack, tmp_path, monkeypatch):
     # test client axum does not have); it measured about 1,350. 1,600 since it says sqlx's compile-time query macros
     # need a database at build time (a Rust run never built on them); it measured about 1,510. 1,750 since it names
     # axum 0.8's body limit and extractor forms (a Rust specification named a `tower::Limit` that does not exist); it
-    # measured about 1,690.
-    assert len(told) - len("\n".join(layout_facts(pack, "demo", "demo"))) < 1_750
+    # measured about 1,690. 2,000 since it says how a rusqlite pragma is set (a Rust specification decided
+    # `conn.execute("PRAGMA journal_mode=WAL")`, and every request failed at run time); it measured about 1,890.
+    assert len(told) - len("\n".join(layout_facts(pack, "demo", "demo"))) < 2_000
 
 
 def test_the_builders_requests_do_not_grow(state, monkeypatch):

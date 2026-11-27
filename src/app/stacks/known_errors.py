@@ -90,6 +90,22 @@ def with_known_causes(repo_root: str | Path, defects: list[Any]) -> list[Any]:
     return out
 
 
+def known_causes_of(repo_root: str | Path, text: str) -> str:
+    """A line `Known cause on this stack: <cause>` for each error the project's pack knows that `text` carries, each
+    once and in the pack's order; "" when it carries none. Never raises.
+
+    Measured on a Rust run: a fix's forward repair was handed the build failure its fix caused (E0308 "expected `()`,
+    found `AppState`", a phrase the pack names) with no cause; the rewrite before it had been told the cause and had
+    dropped one of the two errors, and the repair put both back.
+    """
+    try:
+        known = _known(repo_root)
+        causes = _causes(known, str(text or ""), "") if known else []
+    except Exception:  # noqa: BLE001 - the text as it is
+        return ""
+    return "\n".join(f"{KNOWN_CAUSE} {cause}" for cause in causes)
+
+
 #: How many causes one command's output is given at most: a build failing on many errors stays readable.
 MOST_CAUSES_FOR_A_COMMAND = 4
 #: How the causes open in the note of a command that failed.
@@ -118,4 +134,5 @@ def known_causes_of_a_command(repo_root: str | Path, result: Any) -> str:
     return COMMAND_OPENING + "".join(f"\n{KNOWN_CAUSE} {cause}" for cause in causes[:MOST_CAUSES_FOR_A_COMMAND])
 
 
-__all__ = ["KNOWN_CAUSE", "known_causes_of_a_command", "with_known_causes", "with_known_causes_in_lines"]
+__all__ = ["KNOWN_CAUSE", "known_causes_of", "known_causes_of_a_command", "with_known_causes",
+           "with_known_causes_in_lines"]

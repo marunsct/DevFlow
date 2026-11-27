@@ -84,7 +84,10 @@ give the state to is declared `-> Router<AppState>`; only `app()` returns a plai
 extractor implements `FromRequestParts<S>` with a plain `async fn from_request_parts(parts: &mut Parts, state: &S)`,
 never under `#[async_trait]` (axum 0.7's form, which 0.8 rejects), and needs no `async-trait` crate; a request body's
 size is limited with `.layer(axum::extract::DefaultBodyLimit::max(bytes))` - tower has no `Limit`; and a path
-parameter is written `/items/{id}`, since 0.8 refuses `/:id` when it builds the router. Run them with `cargo nextest
+parameter is written `/items/{id}`, since 0.8 refuses `/:id` when it builds the router. With rusqlite, `execute` is
+only for a statement that returns no row: a pragma that answers one (`journal_mode`, `busy_timeout`) is set with
+`conn.pragma_update(None, "journal_mode", "WAL")?` and the wait with `conn.busy_timeout(...)`, never
+`conn.execute("PRAGMA ...")`, which fails at run time with "Execute returned results". Run them with `cargo nextest
 run` (or `cargo test`). Add a crate with `cargo add <name>`."""
 
 DOCKERFILE = """# {{title}}: build with `docker build -t {{project}} .`, run with
@@ -238,6 +241,23 @@ AXUM_KNOWN_ERRORS = {
         "`.layer(axum::extract::DefaultBodyLimit::max(<bytes>))` - its default is 2 MB - and `Json` then answers 413 "
         "to a larger body; no other crate is needed."
     ) for phrase in ("`tower::Limit`", "could not find `limit` in `tower`")},
+    # Measured on a Rust run (rusqlite 0.40.2): the specification decided `conn.execute("PRAGMA journal_mode=WAL", [])`;
+    # every request then answered 503 "sqlite error: Execute returned results - did you mean to call query?", and a
+    # builder reached for a `batch_execute` rusqlite does not have. From rusqlite 0.31 to 0.43 `execute` refuses a
+    # statement that returns a row, while `execute_batch` (and `pragma_update`, built on it) steps past the row.
+    "Execute returned results": (
+        "rusqlite's `execute` is for a statement that returns no row, and answers `ExecuteReturnedResults` "
+        "(\"Execute returned results - did you mean to call query?\") when one does - as `PRAGMA journal_mode=WAL` "
+        "does (it answers the new mode) and `PRAGMA busy_timeout = <ms>`. Set a pragma with "
+        "`conn.pragma_update(None, \"journal_mode\", \"WAL\")?` or `conn.execute_batch(\"PRAGMA journal_mode=WAL;\")?`, "
+        "both of which step past the row; give the wait with `conn.busy_timeout(std::time::Duration::from_secs(5))?`; "
+        "and read rows with `query_row` or `prepare(...)?.query_map(...)`. Look for every `execute(\"PRAGMA` in the "
+        "file that opens the database."
+    ),
+    "no method named `batch_execute`": (
+        "rusqlite's method is `execute_batch` (`conn.execute_batch(\"...;\")?`), which runs one or more statements "
+        "and steps past a row a `PRAGMA` returns; there is no `batch_execute`."
+    ),
 }
 
 #: The pack's golden example (`StackPack.golden_example`), in axum 0.8: state applied inside `app()` with
@@ -403,7 +423,11 @@ PACK = service_pack(
     unit_report="target/nextest/ci/junit.xml",
     unit_dir="tests",
     unit_pattern="*.rs",
-    start="cargo build && exec ./target/debug/{{package}}",
+    # Measured on a Rust run: a draft of `Cargo.toml` renamed the package `notes_api` to `notes-api`; cargo then built
+    # `target/debug/notes-api` while the start ran the `target/debug/notes_api` an earlier build had left, so for the
+    # last sprint attempt and the hidden tests every request was answered by code the sources no longer held.
+    # `cargo run` runs the binary just built, whatever the package is called, and execs it in cargo's place.
+    start="cargo build && exec cargo run --quiet",
     server_timeout_ms=600_000,
     smoke_unit=("tests/scaffold_smoke.rs", SMOKE_UNIT),
     guide=GUIDE,
@@ -422,6 +446,10 @@ PACK = service_pack(
         # and the builders wrote a custom extractor in axum 0.7's `#[async_trait]` form, which 0.8 rejects.
         "axum 0.8: a body size limit is `.layer(axum::extract::DefaultBodyLimit::max(bytes))` (tower has no "
         "`Limit`); an extractor's `from_request_parts` is a plain `async fn`, never under `#[async_trait]`.",
+        # Measured on a Rust run: the specification decided `conn.execute("PRAGMA journal_mode=WAL", [])`, and the
+        # product answered every request 503 "Execute returned results" at run time.
+        "With rusqlite, a pragma is set with `conn.pragma_update(None, \"journal_mode\", \"WAL\")?`, never "
+        "`conn.execute(\"PRAGMA ...\")`: `execute` refuses a statement that returns a row.",
     ),
     stack={
         "language": "Rust",

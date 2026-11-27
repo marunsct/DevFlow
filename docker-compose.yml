@@ -139,6 +139,8 @@ x-app-env: &app-env
   REASONING_BUDGET: ${REASONING_BUDGET:-on}
   # LF.1593: a smaller reasoning budget for a working stage's steps after tool results; measured.
   STEP_SIZED_REASONING_BUDGET: ${STEP_SIZED_REASONING_BUDGET:-on}
+  # LF.1602-1603: the model's measured profile sets parallel cap, session scope, effort, budget and reply cap.
+  PROFILE_FROM_DIAGNOSIS: ${PROFILE_FROM_DIAGNOSIS:-on}
   # Plan WS.4: a person starts the product from the run page; it runs on the preview network below.
   PRODUCT_PREVIEW: ${PRODUCT_PREVIEW:-off}
   PRODUCT_PREVIEW_NETWORK: ${PRODUCT_PREVIEW_NETWORK:-devflow-preview}

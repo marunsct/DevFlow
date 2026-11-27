@@ -323,6 +323,15 @@ def _answer_in(message: Any, schema: Any) -> Any | None:
             return None
     if not isinstance(payload, dict):
         return None
+    from app.models.tool_arguments import cut_at_the_cap, with_the_runaway_tail_cut
+
+    if cut_at_the_cap(message):
+        # What a reply cut at its cap wrote past its answer is not part of it, as for a call's (LF.1607).
+        try:
+            parameters = schema.model_json_schema()
+        except Exception:  # noqa: BLE001 - cut without the list limits
+            parameters = None
+        payload = with_the_runaway_tail_cut(payload, parameters)
     from app.agents.wrapped_answer import unwrapped
 
     try:

@@ -337,14 +337,40 @@ def repeating(text: str) -> bool:
     `"never-issued-token-000000..."` to the cap, and continuing it wrote more
     zeros twice. Such a reply has nothing to continue.
     """
+    return bool(_the_repeated_unit(text, _LONGEST_REPEATED_UNIT))
+
+
+#: The longest unit a value's looping tail is cut by: three of them still fill the judged tail.
+_LONGEST_UNIT_CUT = _TAIL_CHARACTERS // 3
+
+
+def _the_repeated_unit(text: str, longest: int) -> str:
+    """The shortest unit, at most `longest` characters, that `text`'s last `_TAIL_CHARACTERS` repeat over and over; ""."""
     tail = text[-_TAIL_CHARACTERS:]
     if len(tail) < _TAIL_CHARACTERS:
-        return False
-    for size in range(1, _LONGEST_REPEATED_UNIT + 1):
+        return ""
+    for size in range(1, longest + 1):
         unit = tail[-size:]
         if (unit * (_TAIL_CHARACTERS // size + 1)).endswith(tail):
-            return True
-    return False
+            return unit
+    return ""
+
+
+def before_the_repetition(text: str) -> str | None:
+    """`text` up to where the unit it ends in over and over began; None when it does not end in one (`repeating`).
+
+    For a value a reply cut at its cap stopped in. Measured on one run: an advisor's answer call wrote its last
+    recommendation, ran several more into the same string, then wrote ` } ]` about 6,700 times to the 16,000-token
+    cap; the call was closed and taken whole, and the next stage was handed all 29,732 characters of that string.
+    A unit up to a third of the judged tail is cut, so a looping sentence goes as a looping bracket does.
+    """
+    unit = _the_repeated_unit(text, _LONGEST_UNIT_CUT)
+    if not unit:
+        return None
+    end, size = len(text), len(unit)
+    while end >= size and text.startswith(unit, end - size):
+        end -= size
+    return text[:end]
 
 
 def _lost(message: Any) -> bool:
@@ -651,5 +677,5 @@ def _summed(one: Any, two: Any) -> Any:
 
 
 __all__ = ["ENOUGH", "MOST_CONTINUATIONS", "MOST_REASONING_CHARACTERS", "ON_BY_DEFAULT", "RECORD_KEY", "SALVAGED",
-           "SHAPES", "Support", "begun_reply", "describe", "enabled", "forget", "keep", "measure", "measure_if_new",
+           "SHAPES", "Support", "before_the_repetition", "begun_reply", "describe", "enabled", "forget", "keep", "measure", "measure_if_new",
            "recorded", "remember_reasoning", "repeating", "salvaged", "served_name"]

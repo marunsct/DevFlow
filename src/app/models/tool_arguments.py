@@ -641,6 +641,172 @@ def _the_answer_in_the_text(message: Any, name: str, schema: dict[str, Any]) -> 
     return taken if taken and len(taken) * 2 >= len(found) else {}
 
 
+#: A call's own markup, written into a value: the value ended where it begins (`with_the_runaway_tail_cut`).
+_CALL_MARKUP = re.compile(r"</?(?:tool_call|function|parameter)\b[^>]*>|<(?:function|parameter)=", re.IGNORECASE)
+#: An entry that opens with a numbered label - `AC-3:`, `R12.`, `4)` - and the parts it is read by.
+_NUMBERED = re.compile(r"^\s*(?P<label>[^\W\d_]{0,12}[-_ ]?)(?P<number>\d{1,3})(?P<mark>[.:)\]-]?)(?=\s)")
+#: What a cut-off answer is recorded as, in the transcript's `salvaged`, when its runaway tail was cut.
+RUNAWAY_TAIL_CUT = "runaway_tail_cut"
+
+
+def cut_at_the_cap(holder: Any) -> bool:
+    """Whether a generation, or its message, ended at the reply's length cap."""
+    places = (getattr(holder, "generation_info", None), getattr(holder, "response_metadata", None),
+              getattr(getattr(holder, "message", None), "response_metadata", None))
+    return any(isinstance(place, dict) and str(place.get("finish_reason") or "") == "length" for place in places)
+
+
+def _without_dangling_closers(text: str) -> str:
+    """`text` without the brackets, quotes and commas it ends in that close nothing it opened."""
+    text = text.rstrip()
+    while text:
+        last = text[-1]
+        if last in ",;" or (last == '"' and text.count('"') % 2) \
+                or (last in "]}" and text.count(last) > text.count("[" if last == "]" else "{")):
+            text = text[:-1].rstrip()
+            continue
+        break
+    return text
+
+
+def _without_the_runaway(text: str) -> str:
+    """`text` without what a reply cut at its cap wrote past the value's end: its own call markup and all after it
+    (unless that holds a field in tag form, `with_the_written_parameters_apart`), and a looping tail."""
+    from app.models.reply_salvage import before_the_repetition
+
+    cut = text
+    marked = _CALL_MARKUP.search(cut)
+    if marked and "<parameter=" not in cut[marked.start():]:
+        cut = cut[:marked.start()]
+    before = before_the_repetition(cut)
+    if before is not None:
+        cut = before
+    return text if cut == text else _without_dangling_closers(cut)
+
+
+def _the_last_text(value: Any) -> list[Any] | None:
+    """The keys to the last text in `value`, the one a reply cut at its cap stopped in; None if it ends otherwise."""
+    path: list[Any] = []
+    for _ in range(_MOST_DEPTH):
+        if isinstance(value, dict) and value:
+            key = list(value)[-1]
+        elif isinstance(value, list) and value:
+            key = len(value) - 1
+        else:
+            return None
+        path.append(key)
+        if isinstance(value[key], str):
+            return path
+        value = value[key]
+    return None
+
+
+def _most_items(schema: Any, path: list[Any]) -> int | None:
+    """The most entries the schema allows the list at `path`; None when it sets no limit or is not known."""
+    if not isinstance(schema, dict):
+        return None
+    definitions = {**(schema.get("definitions") or {}), **(schema.get("$defs") or {})}
+    for step in path:
+        options = _alternatives(schema, definitions)
+        nxt = None
+        for option in options:
+            nxt = (option.get("properties") or {}).get(step) if isinstance(step, str) else option.get("items")
+            if nxt is not None:
+                break
+        if not isinstance(nxt, dict):
+            return None
+        schema = nxt
+    limits = [o.get("maxItems") for o in _alternatives(schema, definitions) if isinstance(o.get("maxItems"), int)]
+    return max(limits) if limits else None
+
+
+def _entries_apart(entry: str, earlier: list[Any]) -> list[str]:
+    """`entry` taken apart into the numbered entries it runs together, numbered on from its own; `[entry]` otherwise.
+
+    Only where it and at least two entries before it open with the same label (`AC-9:`, `AC-10:`), and only at a
+    comma or semicolon followed by the next number in turn: nothing else in a text is read as a boundary.
+    """
+    own = _NUMBERED.match(entry)
+    if not own or len(earlier) < 2:
+        return [entry]
+    for item in earlier:
+        theirs = _NUMBERED.match(item) if isinstance(item, str) else None
+        if not theirs or (theirs["label"], theirs["mark"]) != (own["label"], own["mark"]):
+            return [entry]
+    parts, rest, number = [], entry, int(own["number"])
+    while True:
+        number += 1
+        boundary = re.search(r"[,;]\s*(?=" + re.escape(own["label"]) + str(number) + re.escape(own["mark"]) + r"\s)",
+                             rest)
+        if not boundary:
+            break
+        parts.append(rest[:boundary.start()].rstrip(" ,;"))
+        rest = rest[boundary.end():]
+    parts.append(rest.strip())
+    return [part for part in parts if part]
+
+
+def with_the_runaway_tail_cut(arguments: Any, schema: Any = None) -> Any:
+    """A cut-off answer's arguments, the text it stopped in without what ran on past its end; `arguments` itself if none.
+
+    Measured on one run: an advisor's answer call, cut at its 16,000-token cap, was closed by the lenient reading and
+    taken whole. Its tenth recommendation held the eighteenth's text run together after it, the model's own call
+    markup, then ` } ]` to the cap - 29,732 characters, all of it in the architect's next request. Here the text the
+    reply stopped in is cut at its own call markup and before a looping tail, and the entries it ran together are taken
+    apart where they are numbered on from it like the ones before - those past the most the `schema` allows the list
+    stay joined in its last entry, so nothing written is lost. A text that is nothing but runaway is dropped from its
+    list, or, as a field of its own, asked for again as a cut-off field is (`CUT_OFF`).
+    """
+    if not isinstance(arguments, dict) or CUT_OFF in arguments:
+        return arguments
+    path = _the_last_text(arguments)
+    if path is None:
+        return arguments
+    import copy
+
+    cleaned = copy.deepcopy(arguments)
+    container = cleaned
+    for step in path[:-1]:
+        container = container[step]
+    key = path[-1]
+    text = container[key]
+    kept = _without_the_runaway(text)
+    if kept == text:
+        return arguments
+    entries = 1
+    if isinstance(container, list):
+        apart = _entries_apart(kept, container[:key]) if kept else []
+        most = _most_items(schema, path[:-1])
+        if most is not None and len(apart) > max(1, most - key):
+            room = max(1, most - key)
+            apart = [*apart[:room - 1], "; ".join(apart[room - 1:])]
+        container[key:key + 1] = apart
+        entries = len(apart)
+    elif kept:
+        container[key] = kept
+    elif container is cleaned:
+        del cleaned[key]
+        cleaned[CUT_OFF] = key
+        entries = 0
+    else:
+        container[key] = ""
+        entries = 0
+    logger.warning("A reply cut at its cap ran on past its answer: %d of %d characters of its last text cut, %d entr%s "
+                   "kept from it", len(text) - len(kept), len(text), entries, "y" if entries == 1 else "ies")
+    return cleaned
+
+
+def _marked_tail_cut(generation: Any) -> None:
+    from app.models.reply_salvage import SALVAGED
+
+    try:
+        generation.generation_info = {**(generation.generation_info or {}), SALVAGED: RUNAWAY_TAIL_CUT}
+        message = generation.message
+        message.response_metadata = {**(message.response_metadata or {}), SALVAGED: RUNAWAY_TAIL_CUT}
+    except Exception:  # noqa: BLE001 - the record is an aid
+        pass
+
+
 def decode_structured_arguments(result: Any, tools: Any) -> Any:
     """Each tool call in a chat result, its arguments decoded where its tool's schema wants structure."""
     parameters = _parameters_by_tool(tools)
@@ -648,6 +814,7 @@ def decode_structured_arguments(result: Any, tools: Any) -> Any:
         return result
     for generation in getattr(result, "generations", None) or []:
         message = getattr(generation, "message", None)
+        capped = cut_at_the_cap(generation)
         try:
             _recovered_calls(message, parameters)
         except Exception:  # noqa: BLE001 - a recovery that cannot run changes nothing
@@ -668,6 +835,11 @@ def decode_structured_arguments(result: Any, tools: Any) -> Any:
                     call["args"] = written
             if schema is not None:
                 call["args"] = with_the_written_parameters_apart(call.get("args"), schema)
+                if capped:
+                    cut = with_the_runaway_tail_cut(call["args"], schema)
+                    if cut is not call["args"]:
+                        call["args"] = cut
+                        _marked_tail_cut(generation)
                 if isinstance(call["args"], dict) and CUT_OFF in call["args"]:
                     # Kept like any cut-off answer's whole fields: the stage is
                     # told what arrived and asked for the rest (`cut_off_notice`).

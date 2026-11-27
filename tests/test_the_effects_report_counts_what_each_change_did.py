@@ -31,11 +31,13 @@ def test_a_salvaged_reply_is_counted_as_salvaged_not_lost():
     records = [
         {"kind": "model_response", "usage": {"output_tokens": 33_100}, "salvaged": "reasoning"},
         {"kind": "model_response", "usage": {"output_tokens": 9_000}, "salvaged": "continuation"},
+        {"kind": "model_response", "usage": {"output_tokens": 16_000}, "salvaged": "runaway_tail_cut"},
         {"kind": "model_response", "usage": {"output_tokens": 32_768}},
     ]
     lines = "\n".join(effects(records, ""))
     assert "   1  replies lost to the output cap" in lines
     assert "   1  RS.1 replies cut off while reasoning" in lines and "   1  RS.1 replies cut off part way" in lines
+    assert "   1  answers cut at the cap, read without the loop" in lines
 
 
 def test_a_long_reply_that_answered_is_not_lost():

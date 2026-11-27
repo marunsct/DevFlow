@@ -138,6 +138,8 @@ def effects(records: list[dict], decisions: str = "") -> list[str]:
     lines.append(f"  {int(lost):>4}  replies lost to the output cap (the cost the reasoning work targets)")
     lines.append(f"  {salvaged['reasoning']:>4}  RS.1 replies cut off while reasoning, answered from their reasoning")
     lines.append(f"  {salvaged['continuation']:>4}  RS.1 replies cut off part way through their text, continued")
+    lines.append(f"  {salvaged['runaway_tail_cut']:>4}  answers cut at the cap, read without the loop or markup "
+                 "they ran on into (LF.1607)")
     if defects:
         lines.append("  defects: " + ", ".join(f"{event} {n}" for event, n in sorted(defects.items())))
     lines.extend(budget_lines(records))

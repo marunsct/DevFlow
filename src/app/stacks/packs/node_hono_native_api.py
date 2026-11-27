@@ -27,7 +27,7 @@ def enabled() -> bool:
 UNIT_FILES = "'test/**/*.test.ts'"
 
 UNIT_SCRIPT = (
-    f"mkdir -p test-results && node --test {js.TEST_TIMEOUT} --test-reporter=spec --test-reporter-destination=stdout "
+    f"mkdir -p test-results && node --test {js.TEST_LIMITS} --test-reporter=spec --test-reporter-destination=stdout "
     f"--test-reporter=junit --test-reporter-destination=test-results/unit.xml {UNIT_FILES}"
 )
 

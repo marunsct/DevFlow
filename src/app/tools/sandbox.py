@@ -861,6 +861,45 @@ def after_a_run_that_never_finished(
     return timeout
 
 
+#: How many times the longest finished run of a test command the harness gives it after its last run was ended at the
+#: limit (`after_a_measurement_that_never_finished`).
+TIMES_ITS_LONGEST_FINISHED_RUN = 3
+
+
+def after_a_measurement_that_never_finished(
+    repo_root: str | Path | None, argv: Sequence[str], working_directory: str | None, timeout: int
+) -> int:
+    """The limit for the harness's own run of a test command: `timeout`, or a shorter one while the last run of the same
+    command, by anyone, was ended at its limit and an earlier one finished. Never raises (LF.1643).
+
+    Measured on a service run: the harness ran the unit tests four times on four versions of the product, each to the
+    300-second limit, after the same command had finished in a second five times; twenty minutes in which neither the
+    model nor anything else was busy. The shorter limit is three times the longest that command ever took to finish,
+    and never under `SHORTEST_RETRY_TIMEOUT_SECONDS`: a product whose tests now end is measured whole, one whose tests
+    still hang is not waited on for the full limit again. A command that has never finished keeps the full limit: how
+    long it needs is not known.
+    """
+    try:
+        wanted = [str(part) for part in argv]
+        same = [entry for entry in read_execution_ledger(str(repo_root), limit=400)
+                if isinstance(entry, dict) and not entry.get("reused_from")
+                and _same_invocation(entry, wanted, working_directory)]
+        if not same or not held_to_its_time_limit(same[-1]):
+            return timeout
+        finished = [entry["duration_seconds"] for entry in same
+                    if not held_to_its_time_limit(entry) and entry.get("returncode") is not None
+                    and isinstance(entry.get("duration_seconds"), (int, float))]
+        if not finished:
+            return timeout
+        shorter = min(timeout, max(SHORTEST_RETRY_TIMEOUT_SECONDS, int(max(finished) * TIMES_ITS_LONGEST_FINISHED_RUN) + 1))
+        if shorter < timeout:
+            logger.info("The last run of %s was ended at its time limit; this measurement is held to %d seconds",
+                        " ".join(wanted)[:200], shorter)
+        return shorter
+    except Exception:  # noqa: BLE001 - a timeout must not fail the command
+        return timeout
+
+
 # Resource ceilings. A fork bomb or a runaway build hits these instead of the host.
 MEMORY_LIMIT = os.environ.get("SANDBOX_MEMORY_LIMIT", "1g")
 CPU_LIMIT = os.environ.get("SANDBOX_CPU_LIMIT", "2")
@@ -3171,6 +3210,82 @@ _INSTALL_TIMEOUT_ADVICE = (
     "the part that did not finish."
 )
 
+#: For a test run that drives no browser (LF.1641). Measured on a service run: `npm test` ran Node's own unit runner,
+#: was ended at the limit five times, and each time was told about browser projects, `--project=` and a `webServer`,
+#: none of which that run had. What held it: a test helper that declared a request body and never sent it, so each
+#: test that posted waited out the runner's limit for one test, twenty-five of them one after another.
+_TIMEOUT_ADVICE_FOR_A_TEST_RUN = (
+    " This was a test run that drives no browser. A test run that does not end is one of two things. Tests that each "
+    "wait on something that never comes - the reply to a request whose body was never sent, a promise nothing "
+    "settles - each held to the runner's own limit for one test, one after another, until this limit. Or a server, "
+    "timer or open connection that a test, or a module it imports, starts and never closes, which keeps the runner "
+    "alive after its last test. Have each test close what it opens, do not start a server or open a database when a "
+    "module is merely imported, and give the runner its option to exit once its tests have ended. To find the file "
+    "that does not end, run one test file on its own."
+)
+
+#: A failing test's line with how long it took, as test runners print it: `✖ name (20004.7ms)`, `✕ name (5003 ms)`,
+#: `× name 5003ms`. Only failing marks: a slow test that passed is not what held a run.
+_A_FAILED_TEST_AND_ITS_TIME = re.compile(
+    r"^\s*[✖✗✕×✘]\s+(?P<name>\S.*?)\s+\(?(?P<took>\d+(?:\.\d+)?)\s*(?P<unit>ms|s)\)?\s*$"
+)
+#: Seconds a failing test ran before it reads as held to a limit of its own: under the 5 seconds runners give a test.
+SLOW_FAILING_TEST_SECONDS = 4.0
+#: Tests and test files a timeout's note names at most.
+MOST_SLOW_TESTS_NAMED = 5
+#: Test files read for where a slow test is declared, at most.
+_MOST_TEST_FILES_READ = 400
+
+
+def _tests_that_ran_to_a_limit(output: str, repo_root: str, working_directory: str | None) -> str:
+    """A note naming the failing tests the output so far shows running for seconds each, and the files that declare
+    them; "" when it shows none. Never raises (LF.1641).
+
+    A run ended at the sandbox's limit writes no report, so what it printed before is all there is to say which tests
+    held it; the files are found by the tests' names, so a fixer is pointed at a file rather than at the whole suite.
+    """
+    try:
+        slow: dict[str, float] = {}
+        for line in str(output or "").splitlines():
+            found = _A_FAILED_TEST_AND_ITS_TIME.match(line)
+            if not found:
+                continue
+            took = float(found["took"]) / (1000 if found["unit"] == "ms" else 1)
+            if took >= SLOW_FAILING_TEST_SECONDS:
+                slow.setdefault(found["name"].strip(), took)
+        if not slow:
+            return ""
+        root = Path(repo_root)
+        project = root / (working_directory or "")
+        files: list[str] = []
+        read = 0
+        for candidate in files_under(project, NOT_SEARCHED_FOR_A_STAGE):
+            if read >= _MOST_TEST_FILES_READ or len(files) >= MOST_SLOW_TESTS_NAMED:
+                break
+            if not re.search(r"test|spec", candidate.name, re.I) or not candidate.is_file():
+                continue
+            read += 1
+            try:
+                text = candidate.read_text(encoding="utf-8", errors="replace")[:500_000]
+            except OSError:
+                continue
+            if any(name in text for name in slow):
+                files.append(candidate.resolve().relative_to(root.resolve()).as_posix())
+        least = int(min(slow.values()))
+        named = ", ".join(f"`{name}`" for name in list(slow)[:MOST_SLOW_TESTS_NAMED])
+        more = f" and {len(slow) - MOST_SLOW_TESTS_NAMED} more" if len(slow) > MOST_SLOW_TESTS_NAMED else ""
+        where = (" They are declared in " + ", ".join(f"`{file}`" for file in files) + ".") if files else ""
+        return (f" In the output so far, {len(slow)} test(s) failed after running {least} seconds or more each, most "
+                f"likely at the runner's limit for one test, each waiting on something that never came: {named}{more}."
+                f"{where} Read what each of them waits on first.")
+    except Exception:  # noqa: BLE001 - a note must never fail a command
+        return ""
+
+
+def held_to_its_time_limit(outcome: Any) -> bool:
+    """Whether a sandbox answer is a command ended at its time limit, wherever it ran."""
+    return isinstance(outcome, dict) and str(outcome.get("error") or "").lstrip().startswith("Command timed out")
+
 
 #: How runtimes report a program or file as missing, each capturing the path.
 #: `spawn /bin/sh ENOENT` is how Node reports a child whose working directory
@@ -3286,7 +3401,7 @@ def _a_relative_path_missing_from_where_it_ran(
 
 
 def _timeout_advice(
-    repo_root: str, working_directory: str | None, command: Sequence[str] = ()
+    repo_root: str, working_directory: str | None, command: Sequence[str] = (), output: str = ""
 ) -> str:
     """Which of the advice above this command and workspace have earned.
 
@@ -3294,15 +3409,32 @@ def _timeout_advice(
     or a `webServer` that never came up" - so it goes only to a command that
     runs tests. One run's testing specialist started its own `node server.js`,
     which never exits, and was told "the likely causes are different" from the
-    server its command was.
+    server its command was. And only to a test run that drives a browser: a
+    project with a browser runner installed also has unit tests, and its `npm
+    test` running Node's own runner was told about browser projects five times
+    (LF.1641); that run gets the advice for a test run, with the failing tests
+    `output` (what it printed before the limit) shows running for seconds each.
     """
     if command and _fetches_dependencies(command):
         return _INSTALL_TIMEOUT_ADVICE
+    if command and _runs_tests(command) and _drives_a_browser(repo_root, working_directory, command) is False:
+        return _TIMEOUT_ADVICE_FOR_A_TEST_RUN + _tests_that_ran_to_a_limit(output, repo_root, working_directory)
     if (not command or _runs_tests(command)) and _a_browser_runner_is_installed(
         repo_root, working_directory
     ):
         return _TIMEOUT_ADVICE_WITH_A_BROWSER
     return _TIMEOUT_ADVICE
+
+
+def _drives_a_browser(repo_root: str, working_directory: str | None, command: Sequence[str]) -> bool | None:
+    """Whether this test command runs a browser runner of `app.stacks.test_runners`, read through a manifest script;
+    None when it names a script that cannot be read. Never raises."""
+    try:
+        from app.stacks import test_runners
+
+        return test_runners.runs_in_a_browser(command, Path(repo_root) / (working_directory or ""))
+    except Exception:  # noqa: BLE001 - unknown, so the advice stays as it was
+        return None
 
 
 def strip_a_redundant_cd(
@@ -4047,6 +4179,13 @@ def _the_counts_a_test_run_reported(result: dict) -> dict:
 _COUNTS_OF_THE_WHOLE_OUTPUT: contextvars.ContextVar[tuple[Any, Any, dict] | None] = contextvars.ContextVar(
     "counts_of_the_whole_output", default=None
 )
+
+
+def _as_text(printed: Any) -> str:
+    """What a command printed, as text: `subprocess.TimeoutExpired` holds bytes even when the run was asked for text."""
+    if isinstance(printed, bytes):
+        return printed.decode("utf-8", errors="replace")
+    return printed if isinstance(printed, str) else ""
 
 
 def _counted_whole(stdout: Any, stderr: Any, outcome: dict) -> dict:
@@ -5522,8 +5661,9 @@ class SandboxExecutor:
                 ends_at_its_summary=_runs_tests(argv),
             )
         except subprocess.TimeoutExpired as expired:
+            printed = _as_text(expired.stdout) + "\n" + _as_text(expired.stderr)
             return _counted_whole(expired.stdout, expired.stderr, {
-                "error": f"Command timed out after {timeout} seconds; it was ended at the time limit. Its output so far is in stdout and stderr." + _timeout_advice(workspace, run_in, argv),
+                "error": f"Command timed out after {timeout} seconds; it was ended at the time limit. Its output so far is in stdout and stderr." + _timeout_advice(workspace, run_in, argv, printed),
                 "stdout": _as_workspace_relative(_truncate(expired.stdout or "" if isinstance(expired.stdout, str) else "", f"{role_name}-{argv[0]}-stdout", workspace), workspace),
                 "stderr": _as_workspace_relative(_truncate(expired.stderr or "" if isinstance(expired.stderr, str) else "", f"{role_name}-{argv[0]}-stderr", workspace), workspace),
                 "returncode": "124",
@@ -5781,7 +5921,7 @@ class SandboxExecutor:
                     f"Not running this again: it has already timed out "
                     f"{already_timed_out} time(s) in this run and would time out "
                     "again, which costs the run the whole timeout a second time."
-                    + _timeout_advice(repo_root, working_directory)
+                    + _timeout_advice(repo_root, working_directory, command)
                 )
             }
         elif same_tests:
@@ -5923,6 +6063,8 @@ class SandboxExecutor:
         timeout = timeout_for(category, repo_root)
         if not running_for_the_harness():
             timeout = after_a_run_that_never_finished(repo_root, argv, working_directory, timeout)
+        elif category == "test":
+            timeout = after_a_measurement_that_never_finished(repo_root, argv, working_directory, timeout)
 
         if execution_mode() == IN_CONTAINER_MODE:
             return cls._execute_here(
@@ -5977,11 +6119,19 @@ class SandboxExecutor:
         )
         try:
             result = subprocess.run(docker_cmd, capture_output=True, text=True, errors="replace", timeout=timeout)
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as expired:
             subprocess.run([docker, "kill", container], capture_output=True, check=False)
-            return {
-                "error": f"Command timed out after {timeout} seconds." + _timeout_advice(workspace, run_in, argv)
-            }
+            # What it printed before the limit, as the in-container path keeps it (LF.1641). Measured on a service
+            # run: five unit runs ended at the limit each answered `"stdout": ""`, so neither the stage nor the
+            # defect could see the tests that had each run twenty seconds and failed.
+            stdout, stderr = _as_text(expired.stdout), _as_text(expired.stderr)
+            return _counted_whole(stdout, stderr, {
+                "error": f"Command timed out after {timeout} seconds; it was ended at the time limit. Its output so "
+                         "far is in stdout and stderr."
+                         + _timeout_advice(workspace, run_in, argv, stdout + "\n" + stderr),
+                "stdout": _as_workspace_relative(_truncate(stdout, f"{role_name}-{argv[0]}-stdout", repo_root), repo_root),
+                "stderr": _as_workspace_relative(_truncate(stderr, f"{role_name}-{argv[0]}-stderr", repo_root), repo_root),
+            })
         except OSError as exc:
             return {"error": f"Could not start the sandbox: {exc}"}
         finally:

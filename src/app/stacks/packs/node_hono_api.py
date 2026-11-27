@@ -7,7 +7,7 @@ from app.stacks.packs._hono import HONO_KNOWN_ERRORS
 from app.stacks.packs._service import FACTORY_GUIDE, service_pack
 from app.stacks.packs import _sandbox as sandbox
 
-UNIT_SCRIPT = "jest --ci --reporters=default --reporters=jest-junit"
+UNIT_SCRIPT = "jest --ci --forceExit --reporters=default --reporters=jest-junit"
 
 PACKAGE_JSON = """{
   "name": "{{project}}",

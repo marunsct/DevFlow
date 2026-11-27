@@ -3285,6 +3285,12 @@ def _the_failing_unit_tests(root: str) -> list[str]:
             return []
         outcomes, found = read
         if not found:
+            # A run ended at its time limit wrote no report either; it did not fail to compile (LF.1642).
+            from app.stacks import contract
+
+            kept = ci.the_unit_run_kept(root, list((contract.read(root) or {}).get("unit_test") or []))
+            if (kept or {}).get("unit", {}).get(ci.UNIT_TESTS_DID_NOT_FINISH) == "failed":
+                return [ci.UNIT_TESTS_DID_NOT_FINISH]
             return [ci.UNIT_TESTS_DID_NOT_RUN]
         return sorted(name for name, outcome in outcomes.items() if outcome not in ("passed", "skipped"))
     except Exception:  # noqa: BLE001 - a defect without evidence is compared by its words, as before
@@ -3295,7 +3301,7 @@ def _the_unit_run_s_evidence(output: str, failing: Sequence[str]) -> dict[str, A
     """The kind and evidence of a failing unit run: each failing test it names, else the error its output ends on."""
     from app import ci
 
-    named = [str(name) for name in failing or () if str(name).strip() and str(name) != ci.UNIT_TESTS_DID_NOT_RUN]
+    named = [str(name) for name in failing or () if str(name).strip() and str(name) not in ci.UNIT_RUNS_WITHOUT_A_REPORT]
     if named:
         return {"kind": cause.FAILING_TEST, "evidence": [cause.a_failing_test(name) for name in named][:cause.MOST_EVIDENCE]}
     said = cause.an_error_line(output)
@@ -4447,12 +4453,13 @@ def _the_unit_run_kept(repo_root: str, command: list[Any]) -> tuple[bool, str] |
 
 
 def _keep_the_unit_run(repo_root: str, command: list[Any], passed: bool, output: str,
-                       failed_with_a_code: bool = False) -> None:
+                       failed_with_a_code: bool = False, timed_out: bool = False) -> None:
     """Keep this unit run with the product's fingerprint, for `_the_unit_run_kept` and CI's snapshots. Never raises.
 
     Each test's outcome in the pack's report goes with it, so the next snapshot of the same product reads it
     instead of running the unit tests again. `failed_with_a_code`: the runner ran and exited non-zero; with no report
-    written, the run is kept as tests that did not compile or start, as a snapshot's own run is (LF.1619).
+    written, the run is kept as tests that did not compile or start, as a snapshot's own run is (LF.1619);
+    `timed_out`: the run was ended at its time limit, kept as tests that did not finish (LF.1642).
     """
     from app import ci
 
@@ -4462,7 +4469,7 @@ def _keep_the_unit_run(repo_root: str, command: list[Any], passed: bool, output:
         outcomes = None
     unit, found = outcomes if outcomes is not None else (None, False)
     if outcomes is not None:
-        unit = ci.unit_outcomes_of_a_run(unit, found, failed_with_a_code)
+        unit = ci.unit_outcomes_of_a_run(unit, found, failed_with_a_code, timed_out)
     ci.keep_the_unit_run(repo_root, command, passed, output, unit, found)
 
 
@@ -4525,7 +4532,10 @@ def _run_unit_tests_procedurally(repo_root: str) -> tuple[bool | None, str]:
         if rc != 0:
             output = (output.rstrip() + "\n" + _what_the_unit_reports_say(reports)).strip()
         passed, output = _not_a_pass_on_no_test(repo_root, reports, rc == 0, output)
-        _keep_the_unit_run(repo_root, cmd, passed, output, failed_with_a_code="returncode" in outcome and rc != 0)
+        from app.tools.sandbox import held_to_its_time_limit
+
+        _keep_the_unit_run(repo_root, cmd, passed, output, failed_with_a_code="returncode" in outcome and rc != 0,
+                           timed_out=held_to_its_time_limit(outcome))
         return passed, output
     except Exception as error:  # noqa: BLE001 - procedural test failure falls back to agent triage
         return False, f"The harness could not run the unit tests: {error}"

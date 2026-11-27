@@ -18,9 +18,9 @@ TYPESCRIPT = "~6.0.2"
 TYPES_NODE = "^24.0.0"
 
 
-def _script(directory: str, report: str, extension: str) -> str:
+def _script(directory: str, report: str, extension: str, limits: str) -> str:
     return (
-        f"mkdir -p test-results && node --test {js.TEST_TIMEOUT} --test-reporter=spec --test-reporter-destination=stdout "
+        f"mkdir -p test-results && node --test {limits} --test-reporter=spec --test-reporter-destination=stdout "
         f"--test-reporter=junit --test-reporter-destination=test-results/{report} "
         f"'{directory}/**/*.test.{extension}'"
     )
@@ -160,7 +160,8 @@ constructor parameter properties (use a union of literals and plain fields)."""
 
 def _package_json(kind: str, typescript: bool) -> str:
     ext = "ts" if typescript else "js"
-    unit, acceptance = _script("tests", "unit.xml", ext), _script("acceptance", "acceptance.xml", ext)
+    unit = _script("tests", "unit.xml", ext, js.TEST_LIMITS)
+    acceptance = _script("acceptance", "acceptance.xml", ext, js.ACCEPTANCE_TEST_LIMITS)
     entry = (
         f'  "bin": {{ "{{{{project}}}}": "bin/{{{{project}}}}.{ext}" }},\n' if kind == "cli"
         else f'  "exports": "./src/index.{ext}",\n'

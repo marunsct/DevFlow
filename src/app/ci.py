@@ -346,16 +346,25 @@ def unit_outcomes_in_the_pack_s_report(root: str | Path) -> tuple[dict[str, str]
 
 #: The one name a unit run that failed without writing its report is recorded under.
 UNIT_TESTS_DID_NOT_RUN = "the project's unit tests did not compile or start (their runner failed and wrote no report)"
+#: The one name a unit run ended at the sandbox's time limit, its report unwritten, is recorded under (LF.1642).
+UNIT_TESTS_DID_NOT_FINISH = "the project's unit tests did not finish (their run was ended at its time limit)"
+#: Both names a unit run that reported no test of its own is recorded under.
+UNIT_RUNS_WITHOUT_A_REPORT = (UNIT_TESTS_DID_NOT_RUN, UNIT_TESTS_DID_NOT_FINISH)
 
 
-def unit_outcomes_of_a_run(unit: dict[str, str] | None, found: bool, failed_with_a_code: bool) -> dict[str, str] | None:
+def unit_outcomes_of_a_run(unit: dict[str, str] | None, found: bool, failed_with_a_code: bool,
+                           timed_out: bool = False) -> dict[str, str] | None:
     """The outcomes a unit run is recorded with: `unit` as its report read, or `UNIT_TESTS_DID_NOT_RUN` failed when the
-    runner ran, failed with an exit code of its own and wrote no report - the tests did not compile or could not start.
+    runner ran, failed with an exit code of its own and wrote no report - the tests did not compile or could not start
+    - or `UNIT_TESTS_DID_NOT_FINISH` failed when the run was ended at its time limit before writing one.
 
     One rule for every path that runs the unit tests (LF.1619). Measured on a C# run: the test round's own run kept a
     build that failed as no outcomes at all, every snapshot after it read that, and three fixes whose test file did not
-    compile were each reverted as "broke 17 tests", the compiler's words nowhere.
+    compile were each reverted as "broke 17 tests", the compiler's words nowhere. Measured on a service run (LF.1642):
+    four unit runs ended at the 300-second limit were kept as no outcomes, which `unit_failures` read as none failing.
     """
+    if not found and timed_out:
+        return {UNIT_TESTS_DID_NOT_FINISH: "failed"}
     if not found and failed_with_a_code:
         return {UNIT_TESTS_DID_NOT_RUN: "failed"}
     return unit
@@ -431,8 +440,11 @@ def _run_unit(root: str | Path, runner: Runner | None) -> tuple[dict[str, str], 
     # The runner ran, failed, and wrote no report: the tests did not compile or could not start. Before, that read
     # as none failing, and a release shipped unit tests that did not compile without a word (found on a language
     # sweep). One stable name, so an escalation's acceptance and the release compare it like any test.
+    from app.tools.sandbox import held_to_its_time_limit
+
     unit = unit_outcomes_of_a_run(
-        unit, parsed.found, isinstance(outcome, dict) and "returncode" in outcome and not passed) or {}
+        unit, parsed.found, isinstance(outcome, dict) and "returncode" in outcome and not passed,
+        timed_out=held_to_its_time_limit(outcome)) or {}
     if isinstance(outcome, dict) and outcome.get("error"):
         # What the sandbox said when the command ended without a code of its own (a run held to its time limit): the
         # test round reads the kept record, and kept without this a unit run that never finished said "(no output)"
@@ -456,7 +468,7 @@ def unit_failures(root: str | Path, runner: Runner | None = None) -> list[str]:
     except NotMeasured:
         return []
     if not ran:
-        return [UNIT_TESTS_DID_NOT_RUN] if unit.get(UNIT_TESTS_DID_NOT_RUN) == "failed" else []
+        return [name for name in UNIT_RUNS_WITHOUT_A_REPORT if unit.get(name) == "failed"]
     return sorted(name for name, outcome in unit.items() if outcome != "passed")
 
 

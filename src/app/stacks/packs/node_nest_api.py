@@ -9,7 +9,7 @@ from app.stacks.packs import _javascript as js
 from app.stacks.packs._service import service_pack
 from app.stacks.packs import _sandbox as sandbox
 
-UNIT_SCRIPT = "jest --ci --reporters=default --reporters=jest-junit"
+UNIT_SCRIPT = "jest --ci --forceExit --reporters=default --reporters=jest-junit"
 
 PACKAGE_JSON = """{
   "name": "{{project}}",

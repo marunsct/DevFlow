@@ -281,7 +281,11 @@ _JAVASCRIPT_TESTING = """Testing JavaScript and TypeScript:
 - A TEST SCRIPT MUST EXIT. `vitest` on its own starts watch mode and never
   returns; the script is `vitest run`. Likewise `jest --watch` is for a
   terminal, not for `npm test`. A command that never exits is killed at the
-  time limit and reports nothing.
+  time limit and reports nothing. It must also end when its tests do: a
+  server, timer or connection a test leaves open keeps the runner alive after
+  its last test, so the unit script gives Node's runner `--test-force-exit`
+  and Jest `--forceExit` (Vitest ends on its own), and gives each test a
+  limit of its own (`--test-timeout=5000` for Node's runner).
 - IF YOU USE `export`, DECLARE IT. A `.js` file is CommonJS unless something says
   otherwise, so a test importing it gets "does not provide an export named ...".
   Ship a `package.json` containing `{"type": "module"}` beside it, or name the

@@ -169,6 +169,23 @@ def read(argv: Sequence[str], project_dir: str | Path) -> RunnerCall | None:
     return None
 
 
+def runs_in_a_browser(argv: Sequence[str], project_dir: str | Path) -> bool | None:
+    """Whether this command runs a runner of the table whose tests run in a browser, directly, through a launcher or
+    through a manifest script; None when it names a manifest script that cannot be read. Never raises."""
+    try:
+        words = [str(part) for part in argv]
+        call = read(words, project_dir)
+        if call is not None:
+            return call.runner.browser
+        head = os.path.basename(words[0]) if words else ""
+        if head in _SCRIPT_RUNNERS and _past_a_launcher(words) == words and _through_a_script(
+                words, Path(project_dir)) is None:
+            return None  # `npm test` with no script there to read: what it runs is not known
+        return False
+    except Exception:  # noqa: BLE001 - unknown
+        return None
+
+
 def selection(call: RunnerCall) -> frozenset[str]:
     """The words of a run that choose which of its tests run, each option with its value (`--grep=AC-6`)."""
     runner = call.runner

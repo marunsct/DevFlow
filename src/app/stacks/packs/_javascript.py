@@ -21,12 +21,24 @@ AXE_CORE = "4.14.0"
 #: test runs, so `tests/` itself cannot be named the way Node 20 allowed.
 UNIT_FILES = "'tests/**/{test,test-*,*[._-]test}.{js,mjs,cjs}'"
 
-#: Every test of Node's own runner fails at 20 seconds: measured on one run, a unit test whose promise never
-#: settled held `node --test` until the sandbox's five-minute limit, on every unit run the harness made.
-TEST_TIMEOUT = "--test-timeout=20000"
+#: Every test of Node's own runner fails at 5 seconds, the limit Jest and Vitest give a unit test: measured on one run,
+#: a unit test whose promise never settled held `node --test` until the sandbox's five-minute limit, on every unit run
+#: the harness made. It was 20 seconds until a service run's test helper declared a request body and never sent it
+#: (LF.1640): twenty-five tests that posted each waited out the 20 seconds, one after another, and every unit run
+#: was ended at the five-minute limit with no report written.
+TEST_TIMEOUT = "--test-timeout=5000"
+#: The run ends once its tests have, whatever they left open (LF.1640): without it, a server a test started and never
+#: closed kept `node --test` running after its last test until the sandbox's limit, and its report was never written.
+#: Node 22 and later; the report is written whole first.
+UNTIL_ITS_TESTS_END = "--test-force-exit"
+#: Both, as each pack's `node --test` unit script names them.
+TEST_LIMITS = f"{TEST_TIMEOUT} {UNTIL_ITS_TESTS_END}"
+#: An acceptance test meets the product as its user does - a program started as its own process - and keeps the
+#: 20 seconds; it ends with its tests too.
+ACCEPTANCE_TEST_LIMITS = f"--test-timeout=20000 {UNTIL_ITS_TESTS_END}"
 
 UNIT_SCRIPT = (
-    f"mkdir -p test-results && node --test {TEST_TIMEOUT} --test-reporter=spec --test-reporter-destination=stdout "
+    f"mkdir -p test-results && node --test {TEST_LIMITS} --test-reporter=spec --test-reporter-destination=stdout "
     f"--test-reporter=junit --test-reporter-destination=test-results/unit.xml {UNIT_FILES}"
 )
 

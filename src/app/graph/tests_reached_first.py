@@ -136,7 +136,7 @@ def _measured(root: str | Path, base: str, defect: Any,
     if unit and before.unit_ran and any(outcome == "passed" for outcome in before.unit.values()):
         ran_any = True
         broken += [f"`{name}` (a unit test)" for name in ci.unit_failures(root)
-                   if before.unit.get(name) == "passed" or (name == ci.UNIT_TESTS_DID_NOT_RUN)]
+                   if before.unit.get(name) == "passed" or (name in ci.UNIT_RUNS_WITHOUT_A_REPORT)]
     return broken, ran_any
 
 

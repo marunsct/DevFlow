@@ -429,6 +429,17 @@
     "title": "DetectedWindow",
     "type": "object"
    },
+   "DiagnosisRequest": {
+    "properties": {
+     "full": {
+      "default": false,
+      "title": "Full",
+      "type": "boolean"
+     }
+    },
+    "title": "DiagnosisRequest",
+    "type": "object"
+   },
    "EventPage": {
     "additionalProperties": false,
     "description": "A page of a run's events, oldest first: the same events the live stream sends.",
@@ -1748,6 +1759,29 @@
      "idle_minutes"
     ],
     "title": "PreviewStatus",
+    "type": "object"
+   },
+   "ProfileOverride": {
+    "properties": {
+     "value": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "number"
+       },
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Value"
+     }
+    },
+    "title": "ProfileOverride",
     "type": "object"
    },
    "RefreshRequest": {
@@ -9888,6 +9922,23 @@
    "post": {
     "description": "Diagnose the serving model afresh and save the guidance it needs against it; refused while a run is live.",
     "operationId": "diagnose_the_model_api_settings_model_steering_diagnose_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "anyOf": [
+         {
+          "$ref": "#/components/schemas/DiagnosisRequest"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "title": "Payload"
+       }
+      }
+     }
+    },
     "responses": {
      "202": {
       "content": {
@@ -9900,6 +9951,16 @@
        }
       },
       "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
      }
     },
     "security": [
@@ -9968,6 +10029,66 @@
      }
     ],
     "summary": "Set Guide Override",
+    "tags": [
+     "settings"
+    ]
+   }
+  },
+  "/api/settings/model/steering/profile/{field_id}": {
+   "put": {
+    "description": "The owner's value for one field the diagnosis measures (DX.6, DX.7), or back to what it measured; the owner's\nvalue always wins and applies with `PROFILE_FROM_DIAGNOSIS` on or off.",
+    "operationId": "set_profile_override_api_settings_model_steering_profile__field_id__put",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "field_id",
+      "required": true,
+      "schema": {
+       "title": "Field Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProfileOverride"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Set Profile Override Api Settings Model Steering Profile  Field Id  Put",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Set Profile Override",
     "tags": [
      "settings"
     ]

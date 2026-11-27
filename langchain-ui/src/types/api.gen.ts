@@ -119,6 +119,10 @@ export interface DetectedWindow {
   explanation: string;
 }
 
+export interface DiagnosisRequest {
+  full?: boolean;
+}
+
 /** A page of a run's events, oldest first: the same events the live stream sends. */
 export interface EventPage {
   /** The most this page holds. */
@@ -374,6 +378,10 @@ export interface PreviewStatus {
   state: "off" | "none" | "starting" | "ready" | "failed" | "stopped";
   /** The signed link to the product, while it is ready. */
   url: string | null;
+}
+
+export interface ProfileOverride {
+  value?: number | string | null;
 }
 
 export interface RefreshRequest {

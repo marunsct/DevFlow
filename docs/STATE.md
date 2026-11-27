@@ -5,8 +5,8 @@ the block below is written by `loop.sh state`. The map of all documents is `docs
 `docs/improvement-plan.md`; how the product works is `docs/PRODUCT.md`; how to run and test it is `docs/HANDOVER.md`;
 decisions in force are `docs/owner-decisions.md`; old information is found through `docs/ARCHIVE.md`.
 <!-- state:generated -->
-**As of:** 11-27 09:38 JST (written by `loop.sh state`). Harness 103274ba committed; 60061dac deployed (not the same).
-**Live, and stopped in the last day:** run-970c2cb6 running at tools_models; run-af51e4c9 running at technical_lead; run-4d1f3829 failed at failed; run-c13e7189 paused at awaiting_approval:defect_fix_2_2; run-e799301e failed at failed; run-7259e30d failed at ?
+**As of:** 11-27 09:48 JST (written by `loop.sh state`). Harness ceb98f53 committed; 60061dac deployed (not the same).
+**Live, and stopped in the last day:** run-970c2cb6 running at principal_architect; run-af51e4c9 running at security_review; run-4d1f3829 failed at failed; run-c13e7189 paused at awaiting_approval:defect_fix_2_2; run-e799301e failed at failed
 **Last scored:** run-4d1f3829 textkit-lib 0/1 (failed, mixed, 92 active min, handoff 0.333; scored 11-27 09:37 JST); run-f6502d06 notes-api-hono 9/9 (completed, mixed, 293 active min, handoff 1.0; scored 11-27 07:51 JST); run-e3acafda web-todo 7/10 (completed, FALSE ACCEPTANCE, mixed, 218 active min, handoff 1.0; scored 11-27 07:04 JST).
 <!-- /state:generated -->
 

@@ -4446,11 +4446,13 @@ def _the_unit_run_kept(repo_root: str, command: list[Any]) -> tuple[bool, str] |
     return bool(saved.get("passed")), str(saved.get("output") or "")
 
 
-def _keep_the_unit_run(repo_root: str, command: list[Any], passed: bool, output: str) -> None:
+def _keep_the_unit_run(repo_root: str, command: list[Any], passed: bool, output: str,
+                       failed_with_a_code: bool = False) -> None:
     """Keep this unit run with the product's fingerprint, for `_the_unit_run_kept` and CI's snapshots. Never raises.
 
     Each test's outcome in the pack's report goes with it, so the next snapshot of the same product reads it
-    instead of running the unit tests again.
+    instead of running the unit tests again. `failed_with_a_code`: the runner ran and exited non-zero; with no report
+    written, the run is kept as tests that did not compile or start, as a snapshot's own run is (LF.1619).
     """
     from app import ci
 
@@ -4459,6 +4461,8 @@ def _keep_the_unit_run(repo_root: str, command: list[Any], passed: bool, output:
     except Exception:  # noqa: BLE001 - kept without outcomes, a snapshot runs them again
         outcomes = None
     unit, found = outcomes if outcomes is not None else (None, False)
+    if outcomes is not None:
+        unit = ci.unit_outcomes_of_a_run(unit, found, failed_with_a_code)
     ci.keep_the_unit_run(repo_root, command, passed, output, unit, found)
 
 
@@ -4521,7 +4525,7 @@ def _run_unit_tests_procedurally(repo_root: str) -> tuple[bool | None, str]:
         if rc != 0:
             output = (output.rstrip() + "\n" + _what_the_unit_reports_say(reports)).strip()
         passed, output = _not_a_pass_on_no_test(repo_root, reports, rc == 0, output)
-        _keep_the_unit_run(repo_root, cmd, passed, output)
+        _keep_the_unit_run(repo_root, cmd, passed, output, failed_with_a_code="returncode" in outcome and rc != 0)
         return passed, output
     except Exception as error:  # noqa: BLE001 - procedural test failure falls back to agent triage
         return False, f"The harness could not run the unit tests: {error}"

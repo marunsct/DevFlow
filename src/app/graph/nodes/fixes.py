@@ -674,6 +674,23 @@ def _fix_one(state: Any, config: RunnableConfig, defect_index: int, ctx: GraphCo
             sprint=state.get("current_sprint_index", 0), detail=spent_out,
         )
         return {"defect_cursor": defect_index + 1}
+    # A mutation finding whose file's last two fixes this sprint broke the same thing is a completion gap (LF.1622).
+    from app.graph import what_a_revert_broke
+
+    same_twice = "" if state.get("pending_inner_thread_id") else what_a_revert_broke.the_same_break_twice(
+        state["repository"].root_path, defect, state.get("current_sprint_index", 0))
+    if same_twice:
+        from app.acceptance import mutation_guided
+        from app.observability import defect_ledger
+        from app.sprint import accept_risk
+
+        defect_ledger.note(
+            "closed", stage_name, defect=defect, round_=state.get("test_round", 0), index=defect_index,
+            sprint=state.get("current_sprint_index", 0), detail="a completion gap: " + same_twice,
+        )
+        return _handing_on(
+            stage="defect_remediation", defect_cursor=defect_index + 1, fix_base_commit="",
+            remediation=accept_risk(cycle, defect_index, reason=f"{mutation_guided.A_GAP}{same_twice}."))
     # Carried across an approval pause, as the commit it starts from is:
     # taken again on resume, the calls before the pause were not counted.
     started = (str(state.get("fix_started") or "") if state.get("pending_inner_thread_id") else "") or defect_budget.now()
@@ -744,7 +761,7 @@ def _fix_one(state: Any, config: RunnableConfig, defect_index: int, ctx: GraphCo
         # A fix alone keeps the version its own tests passed at (A3, `best_checkpoint`); not a mutation finding's,
         # whose check is of its own change.
         # Still failing, the write's reply says how, and what the server printed (FX.7).
-        how_after_a_write = mutant_check_in_stage.how_for(defect)
+        how_after_a_write = mutant_check_in_stage.how_for(defect, root)
         if not how_after_a_write:
             # The tests that reach the files a write changed run before the defect's own (PF.3, `TESTS_REACHED_FIRST`).
             from app.graph import tests_reached_first
@@ -787,7 +804,8 @@ def _fix_one(state: Any, config: RunnableConfig, defect_index: int, ctx: GraphCo
         contested=_a_contested_test_past_repair(state, cycle),
         on_revert=lambda lost: (
             # What it broke and its change, kept for the next fixer of this defect (LF.1547), before it is reverted.
-            what_a_revert_broke.record(repo, fix_base, defect, stage_name, lost, made_by),
+            what_a_revert_broke.record(repo, fix_base, defect, stage_name, lost, made_by,
+                                       sprint=state.get("current_sprint_index", 0)),
             kept_fix_candidates.keep(
                 repo, fix_base, defect, stage_name, lambda: _the_defect_s_tests_pass(repo, defect), lost))[-1],
         repair_forward=repair.attempt,

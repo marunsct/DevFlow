@@ -54,13 +54,14 @@ def enabled() -> bool:
 @contextmanager
 def watching(
     run_id: str | None, stage: str, check: Callable[[], bool | None], *,
-    says: tuple[str, str] | None = None, most: int | None = None, checkpoints_in: str | Path | None = None,
+    says: tuple[str, ...] | None = None, most: int | None = None, checkpoints_in: str | Path | None = None,
     then: Callable[[], str] | None = None,
 ) -> Iterator[None]:
     """While inside, a write in `stage` of `run_id` runs `check`. Nothing when off.
 
     `says` is the line appended when the check passes and when it does not, for a check that is not the defect's
-    tests (a deliberate change the new tests must notice); `most` is the checks the stage gets, for one that costs more.
+    tests (a deliberate change the new tests must notice), and a third, when given, for a check that could not say;
+    `most` is the checks the stage gets, for one that costs more.
     `checkpoints_in`, a fix made alone's workspace: a write the check passes is kept there as the fix's best so far
     (`best_checkpoint`).
     `then`, after a check that does not pass: what the tests do now - their first failure and the server's error
@@ -80,7 +81,7 @@ def watching(
 
 def _the_check(
     run_id: str | None, stage: str,
-) -> tuple[Callable[[], bool | None], tuple[str, str], str | Path | None, Callable[[], str] | None] | None:
+) -> tuple[Callable[[], bool | None], tuple[str, ...], str | Path | None, Callable[[], str] | None] | None:
     with _lock:
         entry = _watched.get((str(run_id or ""), stage))
         if entry is None or entry[1] >= entry[3]:
@@ -106,13 +107,13 @@ def after_a_write(tool: str, result: Any, run_id: str | None, stage: str) -> Any
     except Exception as failure:  # noqa: BLE001 - the write stands as it was
         degraded("verify_after_write", failure)
         return result
-    if outcome is None:
+    if outcome is None and len(says) < 3:
         return result
     if outcome and checkpoints_in is not None:
         from app.graph import best_checkpoint
 
         best_checkpoint.record(checkpoints_in, run_id, stage)
-    said = says[0] if outcome else says[1]
+    said = says[2] if outcome is None else says[0] if outcome else says[1]
     if not outcome and then is not None:
         try:
             now = then()

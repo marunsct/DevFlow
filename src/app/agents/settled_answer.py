@@ -682,6 +682,27 @@ def _it_is_not_json_at_all(text: str) -> str:
     )
 
 
+def _at_work_not_answering(message: Any, history: list[Any]) -> bool:
+    """Whether `message` called a tool whose result came back as a result, not a refusal: a reply at work, whatever
+    its prose says.
+
+    Measured on a C# run (LF.1624): replies that explained a code fence's worth of the product before reading a file or
+    running the tests were read as Markdown "where the schema was expected", and each was asked again with no tools and
+    only the schema allowed - a model call of 40 seconds to 4 minutes the transcript did not show, four times in two fix
+    stages (about eleven minutes the timing read as neither model nor tool busy); none the log kept gave an answer.
+    A Markdown answer written to a file is still read as one: that write is refused.
+    """
+    calls = getattr(message, "tool_calls", None) or []
+    if not calls:
+        return False
+    results = _results_by_call_id(history)
+    for call in calls:
+        call_id = str((call.get("id") if isinstance(call, dict) else getattr(call, "id", "")) or "")
+        if call_id in results and not _REFUSED.match(results[call_id]):
+            return True
+    return False
+
+
 def _why_it_was_not_accepted(message: Any, schema: Any) -> str:
     """Why the JSON in this message is not a valid answer, or "" if it is.
 
@@ -2551,6 +2572,9 @@ def build_settled_answer_middleware(
                 if last_ai is None:
                     return handler(request)
                 correction = _why_it_was_not_accepted(last_ai, schema)
+                if correction and _LAST_FAILURE_KIND == "no-json" and _at_work_not_answering(last_ai, messages):
+                    # Prose beside a tool call that ran is the stage at work, not its answer in prose (LF.1624).
+                    correction = ""
                 if correction and _LAST_FAILURE_KIND == "no-json":
                     logger.info(
                         "Stage %s answered with no JSON object at all - prose or "

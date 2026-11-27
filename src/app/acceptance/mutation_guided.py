@@ -395,6 +395,10 @@ def settled(
     with_the_change, without_it = _passing(with_the_change), _passing(without_it)
     if with_the_change is None or without_it is None:
         return None
+    if not without_it:
+        # No unit test passes on the product as it is - they do not compile, start, or pass: none can notice the change,
+        # and that is not "every one still passes with it" (LF.1623).
+        return None
     # A unit test that passes without the change and fails with it, whatever else fails.
     return bool(without_it - with_the_change)
 

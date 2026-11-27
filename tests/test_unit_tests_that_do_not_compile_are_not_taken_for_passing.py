@@ -56,3 +56,22 @@ def test_the_accepted_state_holds_it_open_too(workspace, monkeypatch):
 def test_a_passing_run_and_a_run_that_cannot_start_are_as_before(workspace):
     assert ci.unit_failures(workspace.root, Runner(workspace.root)) == []
     assert ci.unit_failures(workspace.root, lambda *args: None) == []
+
+
+def test_the_test_round_s_kept_run_of_tests_that_do_not_compile_is_read_as_not_running(workspace, monkeypatch):
+    """LF.1619: measured on a C# run, the test round's own unit run of a test file that did not compile was kept as no
+    outcomes, every snapshot of that product read it, and three fixes were reverted as "broke 17 tests" with no word of
+    the build."""
+    from app.graph.workflow import _run_unit_tests_procedurally
+    from app.stacks import scaffold as scaffolding
+
+    monkeypatch.setenv("MEASURE_ONCE", "on")
+    monkeypatch.setattr(scaffolding, "sandbox_runner", lambda root: Runner(workspace.root, unit_compiles=False))
+    _run_unit_tests_procedurally(str(workspace.root))
+
+    def nothing_runs_again(argv, category, working_directory):
+        if category == "test":
+            raise AssertionError("the kept run stands for the same product")
+        return {"returncode": "0", "stdout": "", "stderr": ""}
+
+    assert ci.unit_failures(workspace.root, nothing_runs_again) == [ci.UNIT_TESTS_DID_NOT_RUN]

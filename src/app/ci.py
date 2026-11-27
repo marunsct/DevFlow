@@ -348,6 +348,42 @@ def unit_outcomes_in_the_pack_s_report(root: str | Path) -> tuple[dict[str, str]
 UNIT_TESTS_DID_NOT_RUN = "the project's unit tests did not compile or start (their runner failed and wrote no report)"
 
 
+def unit_outcomes_of_a_run(unit: dict[str, str] | None, found: bool, failed_with_a_code: bool) -> dict[str, str] | None:
+    """The outcomes a unit run is recorded with: `unit` as its report read, or `UNIT_TESTS_DID_NOT_RUN` failed when the
+    runner ran, failed with an exit code of its own and wrote no report - the tests did not compile or could not start.
+
+    One rule for every path that runs the unit tests (LF.1619). Measured on a C# run: the test round's own run kept a
+    build that failed as no outcomes at all, every snapshot after it read that, and three fixes whose test file did not
+    compile were each reverted as "broke 17 tests", the compiler's words nowhere.
+    """
+    if not found and failed_with_a_code:
+        return {UNIT_TESTS_DID_NOT_RUN: "failed"}
+    return unit
+
+
+#: Characters of the last unit run's own words a fixer is shown when the unit tests did not run.
+MOST_UNIT_RUN_SAID = 1_200
+
+
+def what_the_unit_run_said(root: str | Path) -> str:
+    """What the last unit run kept said when it failed: the compiler's errors in it, one a line, else the end of its
+    output; "" when the run kept passed or none is kept. Never raises (LF.1620)."""
+    try:
+        saved = json.loads((Path(root) / UNIT_RUN_FILE).read_text(encoding="utf-8"))
+        if not isinstance(saved, dict) or saved.get("passed"):
+            return ""
+        output = str(saved.get("output") or "")
+        from app.analysis.compiler_check import errors_in
+
+        project = Path(root) / str((contract.read(root) or {}).get("project") or "")
+        errors = errors_in(output, project, Path(root))
+        if errors:
+            return "\n".join(f"`{e['file']}` line {e['line']}: {e['message']}" for e in errors)[:MOST_UNIT_RUN_SAID]
+        return output.strip()[-MOST_UNIT_RUN_SAID:]
+    except Exception:  # noqa: BLE001 - said nothing
+        return ""
+
+
 def _run_unit(root: str | Path, runner: Runner | None) -> tuple[dict[str, str], bool]:
     """Each unit test's outcome now, and whether the runner's report was found.
 
@@ -392,11 +428,11 @@ def _run_unit(root: str | Path, runner: Runner | None) -> tuple[dict[str, str], 
 
     passed = _exit_code(outcome) == 0 if isinstance(outcome, dict) else False
     said = (str(outcome.get("stdout") or "") + str(outcome.get("stderr") or "")) if isinstance(outcome, dict) else ""
-    if not parsed.found and isinstance(outcome, dict) and "returncode" in outcome and not passed:
-        # The runner ran, failed, and wrote no report: the tests did not compile or could not start. Before, that read
-        # as none failing, and a release shipped unit tests that did not compile without a word (found on a language
-        # sweep). One stable name, so an escalation's acceptance and the release compare it like any test.
-        unit = {UNIT_TESTS_DID_NOT_RUN: "failed"}
+    # The runner ran, failed, and wrote no report: the tests did not compile or could not start. Before, that read
+    # as none failing, and a release shipped unit tests that did not compile without a word (found on a language
+    # sweep). One stable name, so an escalation's acceptance and the release compare it like any test.
+    unit = unit_outcomes_of_a_run(
+        unit, parsed.found, isinstance(outcome, dict) and "returncode" in outcome and not passed) or {}
     if isinstance(outcome, dict) and outcome.get("error"):
         # What the sandbox said when the command ended without a code of its own (a run held to its time limit): the
         # test round reads the kept record, and kept without this a unit run that never finished said "(no output)"

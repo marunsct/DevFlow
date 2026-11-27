@@ -1186,6 +1186,26 @@ def the_start_and_end_of(problem: str, limit: int = 600) -> str:
     return text[:head].rstrip() + " ... " + text[-(limit - head - 5):].lstrip()
 
 
+#: What a revert puts first when the unit tests stopped compiling or starting and no compiler line is the fix's own.
+UNIT_TESTS_STOPPED = "the project's unit tests no longer compile or start after it"
+
+
+def _the_unit_tests_stopped_running(before: ci.Snapshot | None, after: ci.Snapshot) -> bool:
+    """Whether the unit tests ran before the fix and did not compile or start after it."""
+    was, now = getattr(before, "unit", None) or {}, getattr(after, "unit", None) or {}
+    return (bool(getattr(before, "unit_ran", False)) and was.get(ci.UNIT_TESTS_DID_NOT_RUN) != "failed"
+            and now.get(ci.UNIT_TESTS_DID_NOT_RUN) == "failed")
+
+
+def _why_the_unit_tests_stopped(root: str, base: str) -> str:
+    """The compiler's errors on lines the fix wrote, else what the unit run said, as the first thing a revert broke."""
+    compiled = what_the_fix_made_the_compiler_report(root, base)
+    if compiled:
+        return "it wrote code the compiler rejects: " + "; ".join(compiled[:3])
+    said = " ".join(ci.what_the_unit_run_said(root).split())
+    return f"{UNIT_TESTS_STOPPED} ({said[:500]})" if said else UNIT_TESTS_STOPPED
+
+
 def after_a_fix(
     root: str, base: str, stage_name: str, description: str, contested: str = "",
     on_revert: Callable[[list[str]], Any] | None = None,
@@ -1232,6 +1252,12 @@ def after_a_fix(
         # Every test still passes the suite's way, and the user's way no longer starts: a regression all the same.
         broken = ["the product no longer starts the way its user starts it after this fix ("
                   + the_start_and_end_of(after.problem) + ")"]
+    if broken and not after.problem and _the_unit_tests_stopped_running(before, after):
+        # Every unit test "broke" because the unit tests no longer compile or start: the cause goes first, as a build
+        # the product's start stops on does above (LF.1620). Measured on a C# run: three test files that did not
+        # compile were each reverted as "broke 17 tests", the next fixers were told seventeen names and no error, and
+        # two of them wrote the same subclass of a class whose methods cannot be overridden.
+        broken = [_why_the_unit_tests_stopped(root, base), *broken]
     if broken:
         # A fix that gains more than it loses on a product that starts is weighed whole below (kept on its net gain,
         # repaired forward, or reverted with the lost tests named), never split silently first (LF.1447): measured, a

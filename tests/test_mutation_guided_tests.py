@@ -148,7 +148,8 @@ def test_settled_only_when_the_unit_tests_fail_with_the_change_and_pass_without_
 
     assert mutation_guided.settled(product, finding, run_unit=_unit_tests_that_notice(product)) is True
     assert mutation_guided.settled(product, finding, run_unit=lambda: True) is False
-    assert mutation_guided.settled(product, finding, run_unit=lambda: False) is False
+    # No unit test passing either way (they do not compile, or all fail) cannot say whether one notices it (LF.1623).
+    assert mutation_guided.settled(product, finding, run_unit=lambda: False) is None
     assert (product / "src" / "calc.py").read_text(encoding="utf-8") == SOURCE
 
 

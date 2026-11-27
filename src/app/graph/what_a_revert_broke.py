@@ -60,6 +60,8 @@ _SCHEMA_SOURCE = "schema conformance"
 _SCHEMA_WORDS = "Schema conformance:"
 
 _A_TEST = ("unit: ", "acceptance: ")
+#: How the key of a mutation finding's file begins.
+_A_FINDING_IN = "mutation finding in:"
 _WHERE = " › "
 _VARYING = re.compile(r"\"[^\"]*\"|'[^']*'|\d+")
 _WRITING = threading.Lock()
@@ -70,8 +72,21 @@ def _wording(defect: Any) -> str:
     return "wording:" + " ".join(_VARYING.sub("_", text).split()).lower()[:300]
 
 
+def _the_finding_s_file(defect: Any) -> str:
+    """The key of the file a mutation finding's change is in; "" for any other defect."""
+    try:
+        from app.acceptance import mutation_guided
+
+        site = mutation_guided.site_of(defect) if mutation_guided.is_a_finding(defect) else None
+        return f"{_A_FINDING_IN}{site['file']}" if site else ""
+    except Exception:  # noqa: BLE001 - its wording alone
+        return ""
+
+
 def _keys(defect: Any) -> set[str]:
-    """The keys one defect is found under: its cause key where it has one, and its wording."""
+    """The keys one defect is found under: its cause key where it has one, its wording, and for a mutation finding
+    the file its change is in - every finding there is a test of the same file's code, written into the same test
+    files (LF.1621)."""
     keys = {_wording(defect)}
     try:
         from app.sprint.cause import key_of
@@ -81,6 +96,8 @@ def _keys(defect: Any) -> set[str]:
             keys.add("cause:" + cause)
     except Exception:  # noqa: BLE001 - its wording alone
         pass
+    if _the_finding_s_file(defect):
+        keys.add(_the_finding_s_file(defect))
     return keys
 
 
@@ -196,11 +213,12 @@ def _the_change(root: Path, base: str, failures: str) -> tuple[str, list[str]]:
     return "\n".join(pieces).strip(), files
 
 
-def record(root: str | Path, base: str, defect: Any, stage: str, broken: Sequence[str], made_by: str = "") -> None:
+def record(root: str | Path, base: str, defect: Any, stage: str, broken: Sequence[str], made_by: str = "",
+           sprint: Any = None) -> None:
     """Keep what the fix of `stage` broke while it is still in the workspace, about to be reverted.
 
     `made_by`: "rewrite" for the harness's one-shot rewrite (`repeated` counts only these), else how the change was
-    made. Never raises.
+    made. `sprint`: the sprint the fix ran in (`the_same_break_twice` reads one sprint's). Never raises.
     """
     try:
         if not root or not base or not broken:
@@ -212,6 +230,8 @@ def record(root: str | Path, base: str, defect: Any, stage: str, broken: Sequenc
         diff, files = _the_change(root, base, failures)
         entry = {"keys": sorted(_keys(defect)), "stage": str(stage), "made_by": str(made_by or ""),
                  "tests": tests, "other": other, "files": files[:12], "diff": diff}
+        if sprint is not None:
+            entry["sprint"] = sprint
         with _WRITING:
             data = _read(root)
             data["reverts"] = [*(data.get("reverts") or []), entry][-200:]
@@ -282,6 +302,37 @@ def repeated(root: str | Path, defect: Any) -> str:
         return ""
 
 
+#: How the reason a mutation finding is not fixed again begins; the effects report counts it.
+SAME_BREAK_TWICE = "not fixed again: two fixes of findings in its file were reverted for the same break"
+
+
+def the_same_break_twice(root: str | Path, defect: Any, sprint: Any) -> str:
+    """Why mutation finding `defect` is not given a fix stage: the last two fixes of findings in its file this sprint
+    were each reverted for breaking the same thing - a test, or the same line of the compiler's (LF.1622); "" when it
+    may be fixed. Never raises.
+
+    Measured on a C# run: three findings in one file had a fix stage each, about fifteen minutes apiece; each wrote a
+    test subclassing a class whose methods cannot be overridden, and each was reverted for the same build failure.
+    A finding asks for a stronger test, not a product change: once the same break has come back twice, a further
+    stage spends its calls on the same wall, and the finding is a completion gap like one whose tries are spent.
+    """
+    try:
+        file_key = _the_finding_s_file(defect)
+        if not file_key:
+            return ""
+        reverts = [entry for entry in _read(root).get("reverts") or [] if isinstance(entry, dict)
+                   and file_key in (entry.get("keys") or []) and entry.get("sprint") == sprint]
+        if len(reverts) < 2:
+            return ""
+        before, last = reverts[-2], reverts[-1]
+        same = [name for name in _breaks(last) if name in _breaks(before)]
+        if not same:
+            return ""
+        return (f"{SAME_BREAK_TWICE}: `{before.get('stage')}` and `{last.get('stage')}` each broke `{same[0][:300]}`")
+    except Exception:  # noqa: BLE001 - fixed as before
+        return ""
+
+
 def _a_schema_finding(defect: Any) -> bool:
     return (str(getattr(defect, "source", "") or "") == _SCHEMA_SOURCE
             or str(getattr(defect, "description", "") or "").startswith(_SCHEMA_WORDS))
@@ -330,7 +381,7 @@ def effects_lines(records: Sequence[dict]) -> list[str]:
     from app.graph.anchored_edits import SYSTEM as EDITS_SYSTEM
     from app.graph.rewritten_fixes import WHOLE_FILE_SYSTEM
 
-    told_rewrites = told_others = stopped = set_aside = 0
+    told_rewrites = told_others = stopped = set_aside = same_twice = 0
     for record in records:
         if not isinstance(record, dict):
             continue
@@ -347,13 +398,16 @@ def effects_lines(records: Sequence[dict]) -> list[str]:
                 stopped += 1
             elif DOUBTFUL[:40] in detail:
                 set_aside += 1
+            elif SAME_BREAK_TWICE in detail:
+                same_twice += 1
     return [
         f"  {told_rewrites:>4}  LF.1547 rewrites after a revert, told what broke (and {told_others} other fixer "
         "requests)",
         f"  {stopped:>4}  LF.1547 repeats stopped: a rewrite reverted twice for one test not asked a third time",
         f"  {set_aside:>4}  LF.1547 schema findings set aside as doubtful after a fix that broke a passing test",
+        f"  {same_twice:>4}  LF.1622 mutation findings closed as gaps: two fixes in their file reverted for one break",
     ]
 
 
-__all__ = ["CHECK", "DOUBTFUL", "FILE", "HEADING", "STOPPED", "doubtful", "effects_lines", "record", "repeated",
-           "set_aside_if_doubtful", "told"]
+__all__ = ["CHECK", "DOUBTFUL", "FILE", "HEADING", "SAME_BREAK_TWICE", "STOPPED", "doubtful", "effects_lines", "record",
+           "repeated", "set_aside_if_doubtful", "the_same_break_twice", "told"]

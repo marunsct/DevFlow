@@ -73,6 +73,43 @@ def test_a_write_is_answered_with_whether_the_change_is_now_noticed(product, mon
         assert not BANNED.search(line), line
 
 
+def _answered_when_nothing_compiles(product, monkeypatch, *how_args):
+    import json
+
+    from app import ci
+
+    monkeypatch.setenv("MUTANT_CHECK_IN_THE_FIX_STAGE", "on")
+    record = product / ci.UNIT_RUN_FILE
+    record.parent.mkdir(parents=True, exist_ok=True)
+    record.write_text(json.dumps({"passed": False, "output": f"tests/CalcTests.cs(12,30): {CS0506}\nBuild FAILED.\n"}))
+    finding = _finding()
+    with patch.object(mutation_guided, "_run_the_unit_tests", lambda root: False), \
+         verify_after_write.watching(
+             RUN, STAGE, mutant_check_in_stage.check_for(product, finding, lambda: None),
+             **mutant_check_in_stage.how_for(finding, *how_args)):
+        return verify_after_write.after_a_write("write_artifact", _a_write(), RUN, STAGE).content
+
+
+CS0506 = ("error CS0506: 'Failing.Add()': cannot override inherited member 'Store.Add()' because it is not marked "
+          "virtual")
+
+
+def test_a_write_after_which_no_unit_test_passes_is_not_told_that_none_notices_the_change(product, monkeypatch):
+    """LF.1623: measured on a C# run, a write that left the test file not compiling was answered "every one that passes
+    without it still passes with it, so no test notices it yet" - none passed either way - and its fix was reverted for
+    the build it never heard of."""
+    answered = _answered_when_nothing_compiles(product, monkeypatch)
+
+    assert "no test notices it yet" not in answered and "no unit test passes" in answered
+    assert (product / "src" / "calc.py").read_text(encoding="utf-8") == SOURCE
+
+
+def test_the_fix_stage_s_check_carries_the_compiler_s_words(product, monkeypatch):
+    answered = _answered_when_nothing_compiles(product, monkeypatch, product)
+
+    assert "cannot override inherited member" in answered and "tests/CalcTests.cs" in answered
+
+
 def test_a_stage_gets_only_a_few_checks_since_each_is_two_runs_of_the_unit_tests(product, monkeypatch):
     monkeypatch.setenv("MUTANT_CHECK_IN_THE_FIX_STAGE", "on")
     finding = _finding()
@@ -119,7 +156,8 @@ def test_the_fix_stage_asks_the_finding_s_own_check(tmp_path, monkeypatch):
 
     monkeypatch.setattr(mutant_check_in_stage, "check_for", finding_s_own)
     monkeypatch.setattr(mutant_check_in_stage, "how_for",
-                        lambda defect: {"says": ("noticed", "not noticed"), "most": 1} if isinstance(defect, Defect) else {})
+                        lambda defect, *root: {"says": ("noticed", "not noticed"), "most": 1}
+                        if isinstance(defect, Defect) else {})
     cycle = one_defect()
 
     seen = run_a_fixer(monkeypatch, tmp_path, cycle=cycle)

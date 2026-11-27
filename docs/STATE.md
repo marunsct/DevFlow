@@ -5,9 +5,9 @@ the block below is written by `loop.sh state`. The map of all documents is `docs
 `docs/improvement-plan.md`; how the product works is `docs/PRODUCT.md`; how to run and test it is `docs/HANDOVER.md`;
 decisions in force are `docs/owner-decisions.md`; old information is found through `docs/ARCHIVE.md`.
 <!-- state:generated -->
-**As of:** 11-27 07:56 JST (written by `loop.sh state`). Harness 8faf9bec committed; f56bc514 deployed (not the same).
-**Live, and stopped in the last day:** run-4d1f3829 running at ?; run-af51e4c9 running at acceptance_author_0; run-c13e7189 paused at awaiting_approval:defect_fix_2_2; run-e799301e failed at failed; run-7259e30d failed at ?; run-17098b4b failed at awaiting_approval:specialist_testing_1
-**Last scored:** run-f6502d06 notes-api-hono 9/9 (completed, mixed, 293 active min, handoff 1.0; scored 11-27 07:51 JST); run-e3acafda web-todo 7/10 (completed, FALSE ACCEPTANCE, mixed, 218 active min, handoff 1.0; scored 11-27 07:04 JST); run-5071b7ef web-todo-react 10/10 (completed, handoff 1.0; scored 11-26 18:03 JST).
+**As of:** 11-27 09:38 JST (written by `loop.sh state`). Harness 103274ba committed; 60061dac deployed (not the same).
+**Live, and stopped in the last day:** run-970c2cb6 running at tools_models; run-af51e4c9 running at technical_lead; run-4d1f3829 failed at failed; run-c13e7189 paused at awaiting_approval:defect_fix_2_2; run-e799301e failed at failed; run-7259e30d failed at ?
+**Last scored:** run-4d1f3829 textkit-lib 0/1 (failed, mixed, 92 active min, handoff 0.333; scored 11-27 09:37 JST); run-f6502d06 notes-api-hono 9/9 (completed, mixed, 293 active min, handoff 1.0; scored 11-27 07:51 JST); run-e3acafda web-todo 7/10 (completed, FALSE ACCEPTANCE, mixed, 218 active min, handoff 1.0; scored 11-27 07:04 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -15,7 +15,7 @@ decisions in force are `docs/owner-decisions.md`; old information is found throu
 |---|---|
 | Phase | **Learning runs, fixes deployed at once** (deep-review plan, owner 11-18: implement all; frozen-version measuring for Measure batches). The release-candidate count starts only when a full audit cycle finds nothing to fix. |
 | Models | olla `host.docker.internal:4001/olla/openai/v1`, model `inkling-2-mini` (the owner's, under test since 11-27; two llama.cpp servers, 1 slot each, 231k context). Runs pinned to it; per-request sessions (`.env` MODEL_SESSION_SCOPE=request). Re-diagnose after a reasoning or diagnosis change. |
-| Harness | 60061da deployed 11-27 08:53 JST: LF.1503-1593 (details `docs/archive/plans/fix-log.md`); latest LF.1591-1592 quality scorer false findings, LF.1593 a step-sized reasoning budget (switch on, measured). Scored on inkling: notes-api-hono 17 9/9, quality 1.0 re-scored; web-todo 1 7/10 (silent loss, fixed by LF.1590). Runs: L wordstats-cli (inkling) 1 (run-af51e4c9), L textkit-lib (inkling) 1 (run-4d1f3829). Medium 5 (Qwen) not resumed; the bookmarks run paused by the owner. Left in the plan: PA.10, PA.13, PA.18, PA.4 repair, measurements. |
+| Harness | 60061da deployed 11-27 08:53 JST: LF.1503-1593 (details `docs/archive/plans/fix-log.md`); latest LF.1591-1592 quality scorer false findings, LF.1593 a step-sized reasoning budget (switch on, measured). Scored on inkling: notes-api-hono 17 9/9, quality 1.0 re-scored; web-todo 1 7/10 (silent loss, fixed by LF.1590). Runs: L wordstats-cli (inkling) 1 (run-af51e4c9), L notes-api-go (inkling) 1 (run-970c2cb6, 09:35 JST). L textkit-lib (inkling) 1 failed 09:31: the replayed setup's test runner crashes on any failing test (LF.1594 building). Medium 5 (Qwen) not resumed; the bookmarks run paused by the owner. Left in the plan: PA.10, PA.13, PA.18, PA.4 repair, measurements. |
 | Switches | 53 fixes built in (always on). 29 optional switches (9 groups, `docs/measuring.md`); `WEB_LOOKUP_WHEN_STUCK` is off and set per run. Measure arms use `SWITCHES_OFF` per run. |
 | Operations | Nightly backups (`loop.sh backup --check`). At most 2 runs, parallel execution mode (`.env` `MAX_CONCURRENT_RUNS=2`). Suites at SUITE_WORKERS=2 while inkling is loaded (memory). Audit cron every 15 minutes. |
 | Suites | both green at 22,800 passed on 60061da (11-27 08:50 JST), at SUITE_WORKERS=2. |

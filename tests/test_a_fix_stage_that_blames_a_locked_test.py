@@ -101,6 +101,19 @@ class TestWhenADisputeMayBeHeld:
         assert not _a_dispute_may_be_held_now(_state(locked))
 
 
+def _until_the_dispute_is_held(held: list[int]) -> Any:
+    """Due until this attempt's dispute is held, as the real check is: it only reads the state, so the fix
+    stage may ask it more than once before it routes there (LF.1616). `held` notes that it was found due."""
+
+    def due(state: Any, also: Any = None) -> bool:
+        if state.get("disputed_sprints"):
+            return False
+        held[:] = [1]
+        return True
+
+    return due
+
+
 def test_a_change_that_left_it_open_and_a_decision_naming_the_test(
     agents: ScriptedAgents, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -113,10 +126,7 @@ def test_a_change_that_left_it_open_and_a_decision_naming_the_test(
         "app.graph.workflow._blames_a_locked_test",
         lambda state, said, **kw: seen.append(list(said)) or any("views.spec.js" in s for s in said),
     )
-    monkeypatch.setattr(
-        "app.graph.workflow._a_dispute_may_be_held_now",
-        lambda state: not held and (held.append(1) or True),
-    )
+    monkeypatch.setattr("app.graph.workflow._a_dispute_may_be_held_now", _until_the_dispute_is_held(held))
     monkeypatch.setattr("app.graph.workflow._the_locked_tests_still_failing", lambda state: [])
     _script_through_architecture(agents, _approved_review())
     agents.script("scrum_master", [responds_with(_sprint_plan())])
@@ -151,10 +161,7 @@ def test_the_round_goes_on_after_a_dispute_that_finds_nothing(
     """Blamed, judged once, nothing to repair: remediation carries on and the run completes."""
     held: list[int] = []
     monkeypatch.setattr("app.graph.workflow._blames_a_locked_test", lambda state, blockers, **kw: True)
-    monkeypatch.setattr(
-        "app.graph.workflow._a_dispute_may_be_held_now",
-        lambda state: not held and (held.append(1) or True),
-    )
+    monkeypatch.setattr("app.graph.workflow._a_dispute_may_be_held_now", _until_the_dispute_is_held(held))
     monkeypatch.setattr("app.graph.workflow._the_locked_tests_still_failing", lambda state: [])
     _script_through_architecture(agents, _approved_review())
     agents.script("scrum_master", [responds_with(_sprint_plan())])

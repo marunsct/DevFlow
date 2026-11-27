@@ -118,6 +118,8 @@ def _run() -> None:
     try:
         from app.models import build_default_chat_model, deep_diagnosis, diagnostics, reply_salvage, server_profile
 
+        from app.models import diagnosis_pool
+
         set_status("running", "asking the model the tool questions")
         server_profile.record()
         model = build_default_chat_model()
@@ -125,15 +127,25 @@ def _run() -> None:
         if not diagnostics.the_model_answers(model):
             set_status("failed", "the model server does not answer a request - load the model, then diagnose it")
             return
-        tools = diagnostics.diagnose(model, name)
+        # One handle for every part: each request its own session, a hosted model's spend counted across the parts.
+        model = diagnosis_pool.handle(model)
+        phase = ["asking the model the tool questions"]
+
+        def progress(answered: int, of: int) -> None:
+            set_status("running", f"{phase[0]} ({answered} of {of} answered, up to {diagnosis_pool.width(model)} "
+                                  "at once)")
+
+        with diagnosis_pool.reporting(progress):
+            tools = diagnostics.diagnose(model, name)
         if _gone(model):
             return
         diagnostics.keep(tools)
         set_status("running", "measuring whether a cut-off reply can be finished")
         reply_salvage.measure(model, name)
-        set_status("running", "asking the stage-shaped questions, with and without each guide")
-        workers = (server_profile.current().slots if server_profile.current() is not None else None) or 1
-        deep = deep_diagnosis.diagnose(model, name, workers=workers)
+        phase[0] = "asking the stage-shaped questions, with and without each guide"
+        set_status("running", phase[0])
+        with diagnosis_pool.reporting(progress):
+            deep = deep_diagnosis.diagnose(model, name)
         if _gone(model):
             return
         deep_diagnosis.keep(deep)

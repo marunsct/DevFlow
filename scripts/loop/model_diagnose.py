@@ -33,8 +33,7 @@ if "--deep" in sys.argv:
     deep = None if "--again" in sys.argv else deep_diagnosis.recorded(name)
     if deep is None:
         print(f"deep diagnosis of {name} ...", flush=True)
-        slots = (server_profile.current().slots if server_profile.current() is not None else None) or 1
-        made = deep_diagnosis.diagnose(model, name, workers=slots)
+        made = deep_diagnosis.diagnose(model, name)  # side by side up to the server's free slots
         deep_diagnosis.keep(made)
         print(deep_diagnosis.report(made))
     else:

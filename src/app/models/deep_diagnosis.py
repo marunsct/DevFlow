@@ -42,7 +42,6 @@ import json
 import logging
 import math
 import time
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable
@@ -468,17 +467,16 @@ def _one_try(model: Any, name: str, guidance: str) -> tuple[bool | None, str]:
         return False, f"error: {type(error).__name__}: {str(error)[:80]}"
 
 
-def _measure_many(model: Any, groups: list[tuple[str, str, list[str]]], workers: int) -> dict[str, tuple[Result, ...]]:
-    """Each (label, guidance, checks) of `groups` measured, all their tries asked together: results by label, each
-    in its checks' order with its notes in try order."""
+def _measure_many(model: Any, groups: list[tuple[str, str, list[str]]],
+                  workers: int | None) -> dict[str, tuple[Result, ...]]:
+    """Each (label, guidance, checks) of `groups` measured, all their tries asked together, side by side up to
+    `workers` (what the server serves at once when None, `diagnosis_pool.width`): results by label, each in its
+    checks' order with its notes in try order, as a serial run would give them."""
+    from app.models.diagnosis_pool import side_by_side
+
     jobs = [(label, guidance, name) for label, guidance, names in groups for name in names for _ in range(TRIES)]
-
-    def one(job: tuple[str, str, str]) -> tuple[bool | None, str]:
-        _label, guidance, name = job
-        return _one_try(model, name, guidance)
-
-    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-        outcomes = list(pool.map(one, jobs))
+    answers = side_by_side([lambda job=job: _one_try(model, job[2], job[1]) for job in jobs], workers, model)
+    outcomes = [answer if isinstance(answer, tuple) else (False, f"error: {answer}") for answer in answers]
     out: dict[str, tuple[Result, ...]] = {}
     for label, _guidance, names in groups:
         results = []
@@ -491,7 +489,7 @@ def _measure_many(model: Any, groups: list[tuple[str, str, list[str]]], workers:
     return out
 
 
-def _measure(model: Any, guidance: str, names: list[str], workers: int) -> tuple[Result, ...]:
+def _measure(model: Any, guidance: str, names: list[str], workers: int | None) -> tuple[Result, ...]:
     return _measure_many(model, [("", guidance, names)], workers)[""]
 
 
@@ -509,12 +507,14 @@ def falls(before: dict[str, Result], after: tuple[Result, ...]) -> list[str]:
             and before[r.check].passed - r.passed >= HARM_AT]
 
 
-def diagnose(model: Any, name: str, workers: int = 3) -> Diagnosis:
+def diagnose(model: Any, name: str, workers: int | None = None) -> Diagnosis:
     """Measure the model, try each candidate line where it fell short, keep the lines that helped and harmed nothing.
-    Never raises."""
-    from app.models import diagnosis_fingerprint
+    Asked side by side up to `workers`, or what the server serves at once now (`diagnosis_pool.width`). Never
+    raises."""
+    from app.models import diagnosis_fingerprint, diagnosis_pool
     from app.models import guidance as catalogue
 
+    model = diagnosis_pool.handle(model)
     started = time.monotonic()
     baseline = _measure(model, "", list(CHECKS), workers)
     before = {r.check: r for r in baseline}

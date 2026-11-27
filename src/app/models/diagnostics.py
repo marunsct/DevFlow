@@ -298,22 +298,16 @@ def _reasoning_ways(levels: tuple[str, ...] = ()) -> list[tuple[str, dict]]:
     return ways
 
 
-def _reasoning_cost(model: Any, levels: tuple[str, ...] = ()) -> tuple[dict[str, int | None], dict[str, bool]]:
-    """Output tokens the reasoning question costs each way (None where the server refused it), and whether each way
-    got the right answer."""
-    out: dict[str, int | None] = {}
-    answered: dict[str, bool] = {}
-    for label, extra in _reasoning_ways(levels):
-        try:
-            message, _finish, usage = _message(_create(model)(
-                model=model.model_name, messages=[{"role": "user", "content": _QUESTION}],
-                max_tokens=REPLY_TOKENS, stream=False, **extra))
-            out[label] = int(usage.get("completion_tokens") or 0) or None
-            answered[label] = _ANSWER in str(message.get("content") or "")
-        except Exception:  # noqa: BLE001
-            out[label] = None
-            answered[label] = False
-    return out, answered
+def _one_way(model: Any, extra: dict) -> tuple[int | None, bool]:
+    """Output tokens the reasoning question costs asked with `extra` (None where the server refused it), and whether
+    it got the right answer."""
+    try:
+        message, _finish, usage = _message(_create(model)(
+            model=model.model_name, messages=[{"role": "user", "content": _QUESTION}],
+            max_tokens=REPLY_TOKENS, stream=False, **extra))
+        return int(usage.get("completion_tokens") or 0) or None, _ANSWER in str(message.get("content") or "")
+    except Exception:  # noqa: BLE001
+        return None, False
 
 
 def moderate_budget(cap: int = BUDGET_PROBE_CAP) -> int:
@@ -618,51 +612,68 @@ def _reported(schema: Any) -> Any:
 
 
 def diagnose(model: Any, name: str = "") -> Diagnosis:
-    """Ask `model` the diagnostic questions; uses the model's server for a few minutes. Never raises."""
+    """Ask `model` the diagnostic questions; uses the model's server for a few minutes. Never raises.
+
+    The checks, the reasoning question's ways and the budget probe are independent of one another, so they are asked
+    side by side, as many at once as the server serves (`diagnosis_pool`); each keeps its place in the result, so it
+    reads as a serial run's. The budget probe's own requests stay in order: each depends on the one before."""
+    from app.models import diagnosis_pool
     from app.models.reply_salvage import served_name
 
     name = name or served_name(model)
+    model = diagnosis_pool.handle(model)
     started = time.monotonic()
-    checks = [
-        _tool_check(model, "tools offered", tools=[_WEATHER], ask=_ASK_WEATHER, wanted="get_weather", args_ok=_paris),
-        _tool_check(model, "a tool required", tools=[_WEATHER], ask=_ASK_WEATHER, wanted="get_weather", args_ok=_paris,
-                    extra={"tool_choice": "required"}),
-        _tool_check(model, "one tool named", tools=[_WEATHER, _READ], ask=_ASK_WEATHER, wanted="get_weather",
-                    args_ok=_paris, extra=_named(_WEATHER)),
+    jobs: list[Any] = [
+        lambda: _tool_check(model, "tools offered", tools=[_WEATHER], ask=_ASK_WEATHER, wanted="get_weather",
+                            args_ok=_paris),
+        lambda: _tool_check(model, "a tool required", tools=[_WEATHER], ask=_ASK_WEATHER, wanted="get_weather",
+                            args_ok=_paris, extra={"tool_choice": "required"}),
+        lambda: _tool_check(model, "one tool named", tools=[_WEATHER, _READ], ask=_ASK_WEATHER, wanted="get_weather",
+                            args_ok=_paris, extra=_named(_WEATHER)),
         # The tool the request fits is not the one named: answered with the named one only where the name is enforced.
         # A server that reads a named choice as `auto` passes "one tool named" by the model's own choice (IK.6).
-        _tool_check(model, NAMED_AGAINST_THE_REQUEST, tools=[_WEATHER, _READ], ask=_ASK_WEATHER, wanted="read_file",
-                    args_ok=lambda a: True, extra=_named(_READ)),
-        _tool_check(model, "one tool named, thinking off", tools=[_WEATHER, _READ], ask=_ASK_WEATHER,
-                    wanted="get_weather", args_ok=_paris, extra={**_named(_WEATHER), **_THINKING_OFF}),
-        _tool_check(model, "only offered names", tools=[_READ, _WRITE], ask=_ASK_EDIT, wanted="write_artifact",
-                    args_ok=_the_edit, only_offered_names=True),
-        _tool_check(model, "the right one of many tools", tools=_stage_tools(), ask=_ASK_READ, wanted="read_file",
-                    args_ok=lambda a: str(a.get("file_path", "")).endswith("app/main.py")),
+        lambda: _tool_check(model, NAMED_AGAINST_THE_REQUEST, tools=[_WEATHER, _READ], ask=_ASK_WEATHER,
+                            wanted="read_file", args_ok=lambda a: True, extra=_named(_READ)),
+        lambda: _tool_check(model, "one tool named, thinking off", tools=[_WEATHER, _READ], ask=_ASK_WEATHER,
+                            wanted="get_weather", args_ok=_paris, extra={**_named(_WEATHER), **_THINKING_OFF}),
+        lambda: _tool_check(model, "only offered names", tools=[_READ, _WRITE], ask=_ASK_EDIT, wanted="write_artifact",
+                            args_ok=_the_edit, only_offered_names=True),
+        lambda: _tool_check(model, "the right one of many tools", tools=_stage_tools(), ask=_ASK_READ,
+                            wanted="read_file", args_ok=lambda a: str(a.get("file_path", "")).endswith("app/main.py")),
     ]
     try:
         answer, schema = _answer_tool()
         named = {"tool_choice": {"type": "function", "function": {"name": answer["function"]["name"]}}}
-        checks += [
-            _tool_check(model, "a structured answer forced", tools=[*_stage_tools(), answer], ask=_a_stage_s_work(),
-                        wanted=answer["function"]["name"], args_ok=_reported(schema), extra=named),
-            _tool_check(model, "a structured answer, offered", tools=[*_stage_tools(), answer], ask=_a_stage_s_work(),
-                        wanted=answer["function"]["name"], args_ok=_reported(schema)),
-            _tool_check(model, "a structured answer, required", tools=[*_stage_tools(), answer], ask=_a_stage_s_work(),
-                        wanted=answer["function"]["name"], args_ok=_reported(schema), only_offered_names=True,
-                        extra={"tool_choice": "required"}),
-            _tool_check(model, "forced after a long request", tools=[*_stage_tools(), answer],
-                        ask=_a_stage_s_work(_A_LONG_PROJECT + "\n"), wanted=answer["function"]["name"],
-                        args_ok=_reported(schema), extra=named, tries=2),
+        wanted, tools = answer["function"]["name"], [*_stage_tools(), answer]
+        jobs += [
+            lambda: _tool_check(model, "a structured answer forced", tools=tools, ask=_a_stage_s_work(), wanted=wanted,
+                                args_ok=_reported(schema), extra=named),
+            lambda: _tool_check(model, "a structured answer, offered", tools=tools, ask=_a_stage_s_work(),
+                                wanted=wanted, args_ok=_reported(schema)),
+            lambda: _tool_check(model, "a structured answer, required", tools=tools, ask=_a_stage_s_work(),
+                                wanted=wanted, args_ok=_reported(schema), only_offered_names=True,
+                                extra={"tool_choice": "required"}),
+            lambda: _tool_check(model, "forced after a long request", tools=tools,
+                                ask=_a_stage_s_work(_A_LONG_PROJECT + "\n"), wanted=wanted, args_ok=_reported(schema),
+                                extra=named, tries=2),
         ]
     except Exception:  # noqa: BLE001 - the stage schemas could not be loaded: the small checks stand
         logger.debug("Could not ask the stage-shaped questions", exc_info=True)
-    checks += [_parallel_check(model), _recall_check(model)]
-    probed, probe_advice = _existing_probes(model, name)
-    checks += probed
+    jobs += [lambda: _parallel_check(model), lambda: _recall_check(model)]
+    checks_asked = len(jobs)
+    jobs.append(lambda: _existing_probes(model, name))
     levels, template_default = _served_reasoning(model)
-    cost, answered = _reasoning_cost(model, levels)
-    budget = _budget_probe(model)
+    ways = _reasoning_ways(levels)
+    jobs += [lambda extra=extra: _one_way(model, extra) for _label, extra in ways]
+    jobs.append(lambda: _budget_probe(model))
+    done = diagnosis_pool.side_by_side(jobs, model=model)
+    checks = [check for check in done[:checks_asked] if isinstance(check, Check)]
+    probed, probe_advice = done[checks_asked] if isinstance(done[checks_asked], tuple) else ([], [])
+    checks += probed
+    reasoning = [d if isinstance(d, tuple) else (None, False) for d in done[checks_asked + 1:checks_asked + 1 + len(ways)]]
+    cost = {label: tokens for (label, _extra), (tokens, _right) in zip(ways, reasoning)}
+    answered = {label: right for (label, _extra), (_tokens, right) in zip(ways, reasoning)}
+    budget = done[-1] if isinstance(done[-1], dict) else {}
     settings = settled(checks, cost, answered, template_default=template_default, budget=budget)
     if probe_advice:
         settings = Settings(**{**asdict(settings), "advice": (*settings.advice, *probe_advice)})

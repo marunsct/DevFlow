@@ -23,7 +23,7 @@ words, "if the model supports more parallel request run the diagnosis parallely"
 | 2 | The full calibration tier starts only from the settings page, never by itself. | Deferred | Built with DX.7. |
 | 3 | Only benchmark runs' transcripts may become probes - never the owner's own runs, never hidden tests. | Deferred | Built with DX.8 (the replay set's builder and its guard). |
 | 4 | The model under test is diagnosed again after the first step (Phase 0), before runs resume. | Waiting | The main session does it once Phase 0 is deployed. |
-| 5 | The diagnosis runs its independent requests side by side, up to what the server really serves at once, never above it. | Deferred | Built after Phase 0 in this bundle (`models/diagnosis_pool.py`). |
+| 5 | The diagnosis runs its independent requests side by side, up to what the server really serves at once, never above it. | Built (LF.1601); live with the bundle's deploy | `models/diagnosis_pool.py`: the slots less live runs' calls in flight; a hosted model 2 at once and `DIAGNOSIS_MAX_COST_USD`. |
 
 ## 2026-11-18 (owner, about 16:25 JST: "implement all the improvement plans as per the recent review findings")
 Context: [Harness Deep Review 2026-11-18](https://claude.ai/artifact/9nhWdxAtiiatDkDiLR5Wwx), its plan (Phases 0-3) and

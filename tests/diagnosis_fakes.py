@@ -55,7 +55,7 @@ def check_of(payload: dict) -> str:
         return "a role kept"
     if last.get("role") == "tool" and "is not permitted here" in _text(last):
         return "a refusal heeded"
-    if last.get("role") == "tool" and "SpecialistOutput" in names:
+    if last.get("role") == "tool" and "SpecialistOutput" in names and "5 passed" in _text(last):
         return "stopping when its tests pass"
     if "Write the acceptance test for creating an item" in asked:
         return "a role kept while building"
@@ -139,6 +139,45 @@ def told(system: str, guide_id: str) -> bool:
     from app.models.guidance import BY_ID
 
     return BY_ID[guide_id].line in system
+
+
+class Everything:
+    """The deep diagnosis's requests to `stage` (a `StageChecks`), every other request to `tools` (a `ToolChecks`)."""
+
+    def __init__(self, stage: Any = None, tools: Any = None):
+        self.stage, self.tools = stage or StageChecks(), tools or ToolChecks()
+
+    def create(self, **payload: Any) -> dict:
+        try:
+            check_of(payload)
+        except (AssertionError, KeyError, IndexError):
+            return self.tools.create(**payload)
+        return self.stage.create(**payload)
+
+
+class Overlapping:
+    """`server` answering after `hold` seconds a request, counting how many requests it held at once at most and the
+    session header each carried."""
+
+    def __init__(self, server: Any, hold: float = 0.03, header: str = "X-Olla-Session-ID"):
+        self.server, self.hold, self.header = server, hold, header
+        self.now = self.most = 0
+        self.sessions: list[str | None] = []
+        self._lock = threading.Lock()
+
+    def create(self, **payload: Any) -> dict:
+        import time
+
+        with self._lock:
+            self.now += 1
+            self.most = max(self.most, self.now)
+            self.sessions.append((payload.get("extra_headers") or {}).get(self.header))
+        try:
+            time.sleep(self.hold)
+            return self.server.create(**payload)
+        finally:
+            with self._lock:
+                self.now -= 1
 
 
 class ToolChecks:

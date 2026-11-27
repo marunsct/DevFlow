@@ -112,13 +112,8 @@ def deep_if_new(model: Any) -> None:
 
         if not the_model_answers(model):
             return
-        try:
-            from app.models.server_profile import current
-
-            workers = (current().slots if current() is not None else None) or 1
-        except Exception:  # noqa: BLE001
-            workers = 1
-        deep_diagnosis.keep(deep_diagnosis.diagnose(model, name, workers=workers))
+        # Side by side up to what the server serves now, live runs' calls counted (`diagnosis_pool.width`).
+        deep_diagnosis.keep(deep_diagnosis.diagnose(model, name))
     except Exception:  # noqa: BLE001
         logger.debug("Could not make the deep diagnosis", exc_info=True)
 

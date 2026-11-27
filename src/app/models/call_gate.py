@@ -137,6 +137,12 @@ def _runs_on(server_key: str, besides: str) -> set[str]:
     return runs
 
 
+def in_flight_on(server: str) -> int:
+    """How many model calls of any run are in flight on `server` now (its address), from the gate's markers."""
+    key = _server_key(server)
+    return sum(1 for name in in_flight() if name.partition("__")[2].startswith(f"{key}__"))
+
+
 def _tell_the_run(run: str, stage: str, text: str) -> None:
     try:
         from app.server.agent_stream import AgentActivityStream

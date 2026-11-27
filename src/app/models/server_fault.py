@@ -30,6 +30,10 @@ def _status(error: BaseException) -> int | None:
 
 def server_fault(error: BaseException) -> str:
     """Why `error` is the server's and not the model's, in a few words; "" when it is a finding about the model."""
+    said = getattr(error, "not_measured", "")
+    if isinstance(said, str) and said:
+        # The diagnosis did not send the request (`diagnosis_pool.CeilingReached`).
+        return said
     status = _status(error)
     if status is not None and (status >= 500 or status in _SERVER_STATUSES):
         return f"the server answered {status}"

@@ -691,7 +691,9 @@ def build_terminal_command_tool(repo_root: str, role_name: str = "general") -> B
 
         known_causes = known_causes_of_a_command(repo_root, result)
         if moved and isinstance(result, dict):
-            result = {**result, "note": moved}
+            # Beside the sandbox's own notes (what it installed first, what it put back), never in their place.
+            earlier = str(result.get("note") or "")
+            result = {**result, "note": moved + ("\n\n" + earlier if earlier else "")}
         if piped is not None:
             result = piped_commands.filtered(result, command, piped[1], piped[2])
         starred = a_star_taken_as_written(command, result)

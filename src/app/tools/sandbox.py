@@ -203,7 +203,9 @@ _RESOLVE_SUBCOMMANDS: dict[str, frozenset[str]] = {
     "pip3": frozenset({"download"}),
     "uv": frozenset({"sync", "pip"}),
     "poetry": frozenset({"install"}),
-    "cargo": frozenset({"fetch"}),
+    # `update` and `generate-lockfile` resolve the manifest against the registry to write the lock file. Measured
+    # across stored runs: 11 of them, sent with no category, ran without a network and could not reach crates.io.
+    "cargo": frozenset({"fetch", "update", "generate-lockfile"}),
     "dotnet": frozenset({"restore"}),
     "bundle": frozenset({"install"}),
     "composer": frozenset({"install"}),
@@ -235,8 +237,8 @@ def _fetches_dependencies(command: Sequence[str]) -> bool:
         return True
     if first in _RESOLVE_SUBCOMMANDS.get(manager, frozenset()):
         return True
-    # `go mod download` - the one resolve step that is two words.
-    return manager == "go" and words[:2] == ["mod", "download"]
+    # `go mod download` and `go mod tidy` - the resolve steps that are two words.
+    return manager == "go" and words[:1] == ["mod"] and words[1:2] in (["download"], ["tidy"])
 
 
 def _runs_tests(command: Sequence[str]) -> bool:
@@ -5736,11 +5738,21 @@ class SandboxExecutor:
         # A command that carries its own `working_directory` or `--prefix` is
         # left alone either way: it has said where it means, including when
         # that is the root.
-        started = time.monotonic()
-        if category == "default" and _fetches_dependencies(command):
+        # An install sent as a build or a test too: only an install is given the network, and through its gates.
+        # Measured on stored runs: `npm install` sent as a build ran without a network and failed reaching npm.
+        if category in ("default", "build", "test") and _fetches_dependencies(command):
             category = "install"
         elif category == "default" and _runs_tests(command):
             category = "test"
+        # What the manifest names is installed, with the network, before a stage's own build or test command, as it is
+        # before the harness's measurements - and before the files it may not change are noted, so what the install
+        # writes is not put back after the command (see `installed_before_a_command`).
+        installed_first = ""
+        if not for_the_harness and category not in NETWORK_CATEGORIES:
+            from app.stacks.installed_before_a_command import before as _install_first
+
+            installed_first = _install_first(repo_root, command)
+        started = time.monotonic()
         token = _FOR_THE_HARNESS.set(bool(for_the_harness))
         begun = time.time()
         # A command is held to the line the stage's file tools are (see
@@ -5792,6 +5804,14 @@ class SandboxExecutor:
         if put_right and isinstance(outcome, dict):
             earlier = str(outcome.get("note") or "")
             outcome = {**outcome, "note": (earlier + "\n\n" if earlier else "") + put_right}
+        if not for_the_harness and isinstance(outcome, dict):
+            from app.stacks.installed_before_a_command import why_it_could_not_reach_a_registry
+
+            offline = why_it_could_not_reach_a_registry(repo_root, outcome, install_said=bool(installed_first))
+            said = "\n\n".join(part for part in (installed_first, offline) if part)
+            if said:
+                earlier = str(outcome.get("note") or "")
+                outcome = {**outcome, "note": (earlier + "\n\n" if earlier else "") + said}
         return outcome
 
     @classmethod

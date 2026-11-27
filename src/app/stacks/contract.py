@@ -108,6 +108,20 @@ _NESTED_MANIFESTS = ("*.csproj", "*.fsproj", "Directory.Packages.props", "packag
                      "build.gradle", "build.gradle.kts", "go.mod", "composer.json", "Gemfile", "pyproject.toml")
 
 
+def the_manifests_now(repo_root: str | Path) -> str:
+    """A digest of the recorded project's dependency manifests as they are now; "" for a run no pack scaffolded."""
+    record = read(repo_root)
+    return "" if record is None else _the_manifests(repo_root, str(record.get("project") or ""))
+
+
+def the_manifests_installed(repo_root: str | Path) -> str:
+    """The digest of the manifests the last install that succeeded installed; "" when none is recorded."""
+    try:
+        return str(json.loads((Path(repo_root) / INSTALLED_FILE).read_text(encoding="utf-8")).get("manifests") or "")
+    except (OSError, ValueError, AttributeError):
+        return ""
+
+
 def _manifests_below(folder: Path) -> list[Path]:
     """The dependency manifests under `folder`'s subfolders, outside installed, built and harness folders."""
     import fnmatch

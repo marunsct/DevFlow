@@ -149,6 +149,41 @@ def test_two_rewrites_that_broke_different_tests_do_not_stop_the_third(tmp_path)
     assert "rewrite" in seen.events
 
 
+#: The fix guard's words for two of the measured Java run's reverts (LF.1612): the same import rejected, at another line.
+REJECTED_FIRST = ("it wrote code the compiler rejects: `notes-api/src/test/java/app/notes_api/NoteControllerTest.java` "
+                  "line 38: package org.springframework.boot.test.mock.bean does not exist")
+REJECTED_AGAIN = ("it wrote code the compiler rejects: `notes-api/src/test/java/app/notes_api/NoteControllerTest.java` "
+                  "line 22: package org.springframework.boot.test.mock.bean does not exist; "
+                  "`notes-api/src/test/java/app/notes_api/NoteControllerTest.java` line 39: cannot find symbol "
+                  "(symbol: class MockBean)")
+
+
+def test_two_rewrites_the_compiler_rejected_the_same_way_stop_the_third(tmp_path):
+    """Measured on one Java run: three rewrites were each reverted for the same import the compiler rejected - no
+    test named, the compiler's words only - and the third was asked all the same."""
+    root = _a_workspace(tmp_path)
+    state = a_state(root, a_defect(WRITES_AT_ONCE, affected_files=["notes-api/handlers.go"]))
+    first, _ = _a_round(root, state, 1, [REJECTED_FIRST])
+    second, _ = _a_round(root, {**state, "remediation": first["remediation"]}, 2, [REJECTED_AGAIN])
+
+    _, seen = _a_round(root, {**state, "remediation": second["remediation"]}, 3, [REJECTED_FIRST])
+
+    assert "rewrite" not in seen.events, "not rewritten a third time"
+    assert "agent loop" in seen.events
+
+
+def test_two_rewrites_the_compiler_rejected_for_different_lines_do_not_stop_the_third(tmp_path):
+    root = _a_workspace(tmp_path)
+    state = a_state(root, a_defect(WRITES_AT_ONCE, affected_files=["notes-api/handlers.go"]))
+    first, _ = _a_round(root, state, 1, [REJECTED_FIRST])
+    second, _ = _a_round(root, {**state, "remediation": first["remediation"]}, 2, [
+        "it wrote code the compiler rejects: `notes-api/handlers.go` line 7: undefined: store"])
+
+    _, seen = _a_round(root, {**state, "remediation": second["remediation"]}, 3, [REJECTED_FIRST])
+
+    assert "rewrite" in seen.events
+
+
 def _the_tasks_api_workspace(root: Path) -> Path:
     """The measured run's product, held to a stored specification whose records it does not declare: the gate raises
     real schema findings on it. (The measured finding itself is no longer raised: LF.1549 reads no field from prose.)"""

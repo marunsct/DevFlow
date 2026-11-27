@@ -249,15 +249,31 @@ def _names(entry: dict[str, Any]) -> list[str]:
     return [str(test.get("name") or "") for test in entry.get("tests") or [] if test.get("name")]
 
 
+#: What opens a broken item that is not a test: "it wrote code the compiler rejects: ".
+_WHAT_IT_DID = re.compile(r"^[a-z][a-z ]*: ")
+
+
+def _breaks(entry: dict[str, Any]) -> list[str]:
+    """What one revert broke: its tests' names, then each thing it broke that is not a test - the compiler's or the
+    language service's line on a file, the start - its numbers and quoted words aside (LF.1612)."""
+    said = [" ".join(_VARYING.sub("_", piece).split())
+            for item in entry.get("other") or [] for piece in str(item).split("; ")]
+    return [*_names(entry), *dict.fromkeys(_WHAT_IT_DID.sub("", piece) for piece in said if piece)]
+
+
 def repeated(root: str | Path, defect: Any) -> str:
     """Why `defect` is not given a one-shot rewrite again: its last two rewrites were reverted for breaking the same
-    test; "" when it may be. Never raises."""
+    test, or the same line of the compiler's on the same file (LF.1612); "" when it may be. Never raises.
+
+    Measured on one Java run: three rewrites of one unit test were each reverted for the same import the compiler
+    rejected (`tests` empty, the compiler's words under `other`), and the third was asked all the same.
+    """
     try:
         rewrites = [entry for entry in _reverts(root, defect) if entry.get("made_by") == "rewrite"]
         if len(rewrites) < 2:
             return ""
         before, last = rewrites[-2], rewrites[-1]
-        same = [name for name in _names(last) if name in _names(before)]
+        same = [name for name in _breaks(last) if name in _breaks(before)]
         if not same:
             return ""
         return (f"{STOPPED}: its rewrites `{before.get('stage')}` and `{last.get('stage')}` were each reverted for "

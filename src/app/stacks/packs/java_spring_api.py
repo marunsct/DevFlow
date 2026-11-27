@@ -186,7 +186,33 @@ SPRING_KNOWN_ERRORS = {
     ),
     "package org.springframework.boot.test.mock.bean does not exist": (
         "`@MockBean` is `org.springframework.boot.test.mock.mockito.MockBean` (deprecated since Spring Boot 3.4); "
-        "its replacement is `@MockitoBean` from `org.springframework.test.context.bean.override.mockito`."
+        "its replacement is `@MockitoBean` from `org.springframework.test.context.bean.override.mockito`, which "
+        "exists only from Spring Boot 3.4 on (the parent's version in `pom.xml`)."
+    ),
+    # LF.1613, measured on one Java run: the specification set the parent to Spring Boot 3.2.5, a controller test used
+    # `@MockitoBean` (Spring Framework 6.2, which Boot 3.4 brings; read from the 3.2.5 and 3.4.5 jars), and each fix
+    # swapped it for a `MockBean` package that does not exist either.
+    "package org.springframework.test.context.bean.override.mockito does not exist": (
+        "`@MockitoBean` comes with Spring Framework 6.2, which Spring Boot 3.4 and later bring. Under an earlier "
+        "Spring Boot parent in `pom.xml`, use `@MockBean` from `org.springframework.boot.test.mock.mockito` (in "
+        "`spring-boot-starter-test`); the package `org.springframework.boot.test.mock.bean` does not exist."
+    ),
+    # LF.1613, measured on one Java run: the specification asked for a configuration class building a Hibernate
+    # `SessionFactory` bean for SQLite's settings; the service exited at start with this message, and no fix was given
+    # that class. Read from the Spring Boot 3.2.5 and 3.4.5 jars: `JpaBaseConfiguration.entityManagerFactory` is
+    # `@ConditionalOnMissingBean({LocalContainerEntityManagerFactoryBean, EntityManagerFactory})`, and Hibernate 6's
+    # `SessionFactory` extends `jakarta.persistence.EntityManagerFactory`; sqlite-jdbc reads `journal_mode` and
+    # `busy_timeout` from the JDBC URL's query.
+    "a bean named 'entityManagerFactory' that could not be found": (
+        "Spring Boot builds the JPA `EntityManagerFactory` - the bean `entityManagerFactory` that Spring Data "
+        "repositories are wired to - only when the application declares no `EntityManagerFactory` of its own. "
+        "Hibernate's `SessionFactory` is an `EntityManagerFactory`, so a hand-written `@Bean` returning a "
+        "`SessionFactory` (or a `LocalSessionFactoryBean`, or an `EntityManagerFactory` by another name) makes Boot "
+        "build none, and the repositories find no `entityManagerFactory`. Remove that `@Bean` - the `@Configuration` "
+        "class that declares it, when that is all it holds - and let Boot build it from `spring.datasource.*` and "
+        "`spring.jpa.*` in `application.properties`. SQLite's settings go in the JDBC URL's query "
+        "(`jdbc:sqlite:${DATA_DIR}/app.db?journal_mode=WAL&busy_timeout=5000`), not in Hibernate properties. "
+        "Without `spring-boot-starter-data-jpa` in `pom.xml` there is no such bean either."
     ),
 }
 

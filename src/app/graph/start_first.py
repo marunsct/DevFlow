@@ -43,13 +43,39 @@ def is_a_start_defect(defect: Any) -> bool:
     return str(getattr(defect, "description", "") or "") == THE_PRODUCT_DOES_NOT_START
 
 
-def _part_of_the_start(defect: Any) -> bool:
-    """A finding that says why a product does not build or start: a compiler's, a build's, an install's."""
+def _part_of_the_start(defect: Any, start: Any) -> bool:
+    """A finding that says why a product does not build or start: a compiler's, a build's, an install's.
+
+    Not one on unit tests alone that the start's own output never names (LF.1611): a build that compiles its tests
+    names the test file it fails on, and a start that leaves its tests out cannot fail on them.
+    """
     # The setup's contract on its entry file (a declaration or an export its build and start rely on) too: measured
     # on one Rust run, `app()` declared `-> Router<AppState>` waited three rounds behind the start defect it caused.
-    return (str(getattr(defect, "kind", "") or "") == cause.COMPILE_ERROR
+    if not (str(getattr(defect, "kind", "") or "") == cause.COMPILE_ERROR
             or str(getattr(defect, "source", "") or "") in ("language service", "pack contract")
-            or str(getattr(defect, "description", "") or "").startswith(DEPENDENCIES_DO_NOT_INSTALL))
+            or str(getattr(defect, "description", "") or "").startswith(DEPENDENCIES_DO_NOT_INSTALL)):
+        return False
+    return not _only_tests_the_start_never_names(defect, start)
+
+
+def _only_tests_the_start_never_names(defect: Any, start: Any) -> bool:
+    """Whether every file `defect` names is a unit test and the start defect's output names none of them.
+
+    Measured on one Java run: a unit test's import the compiler rejected was folded into the start defect, its test
+    file became that defect's file, and five of six rounds of fixes for a service that failed at start rewrote the test
+    - which the start's build skips - while the cause (a duplicate bean, then a bean that kept the framework from
+    building another) was in two product files no fix was given.
+    """
+    from pathlib import PurePosixPath
+
+    from app.analysis.file_kinds import classify_file
+
+    files = [str(f).strip() for f in getattr(defect, "affected_files", None) or [] if str(f).strip()]
+    if not files or any(classify_file(f) != "test" for f in files):
+        return False
+    said = " ".join(str(getattr(start, field, "") or "") for field in ("actual_behavior", "reproduction_steps"))
+    said += " " + " ".join(map(str, getattr(start, "evidence", None) or []))
+    return not any(f in said or PurePosixPath(f).name in said for f in files)
 
 
 def folded(reported: Sequence[Any]) -> list[Any]:
@@ -62,10 +88,10 @@ def folded(reported: Sequence[Any]) -> list[Any]:
     lead_at = next((at for at, item in enumerate(reported) if is_a_start_defect(item)), None)
     if lead_at is None:
         return reported
-    parts = [item for at, item in enumerate(reported) if at != lead_at and _part_of_the_start(item)]
+    lead = reported[lead_at]
+    parts = [item for at, item in enumerate(reported) if at != lead_at and _part_of_the_start(item, lead)]
     if not parts:
         return reported
-    lead = reported[lead_at]
     lines = [
         f"- [{getattr(item, 'source', '') or 'reported'}] {' '.join(str(item.description).split())[:400]}"
         + (f"\n  {' '.join(str(item.actual_behavior).split())[:600]}" if str(getattr(item, "actual_behavior", "") or "").strip()

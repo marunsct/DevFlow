@@ -17,6 +17,19 @@ So when a sprint is accepted at an escalation, the code review is still asked, o
   pass changed its file and was kept, "still open" otherwise - and a product with one still open is delivered with
   known defects (`completion_verdict.DELIVERED_WITH_KNOWN_DEFECTS`), not plain delivered.
 
+Its findings rest on the product, not on what the diff happens to show (LF.1645). The ordinary code review has tools
+and its project memory holds the changed files whole; this one call has neither. Measured on its first live review: a
+"blocking" finding said a stylesheet's import was "not present in the provided changes" while an unchanged entry file
+imported it; the fix pass added a second import, and a finding about a unit test file's strength made a product whose
+hidden tests all passed "delivered with known defects". So:
+
+- the request carries every line of the product's code that names a changed file (`uses_of_the_changed_files`, at most
+  `USES_CHARACTERS`), and the review is told that absence from the diff is not absence from the product;
+- a finding that a named file is not imported, included, linked or referenced, where the product's code does name it,
+  is set aside before the fix pass (`contradicted`), and the decision says which line contradicts it;
+- a finding in one of the product's test files is a note for the reader (`completion_verdict.REVIEW_FINDING_ON_TESTS`),
+  not a known defect and not given the fix pass: the suite measured at release says whether the product works.
+
 What it costs, only on a sprint accepted at an escalation: one judgement-model call; and, only when it finds a major
 finding in a named file, at most three build-model rewrite calls and the two measurements every fix has. Never raises:
 a review that cannot be asked leaves the acceptance as it was.
@@ -24,11 +37,12 @@ a review that cannot be asked leaves the acceptance as it was.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Callable
+from pathlib import Path, PurePosixPath
+from typing import Any, Callable, Iterable, Mapping
 
-from app.completion_verdict import OPEN_REVIEW_FINDING, REVIEW_FINDING_GIVEN_A_FIX
+from app.completion_verdict import OPEN_REVIEW_FINDING, REVIEW_FINDING_GIVEN_A_FIX, REVIEW_FINDING_ON_TESTS
 from app.observability.degraded import degraded
 
 logger = logging.getLogger(__name__)
@@ -44,25 +58,41 @@ REPLY_TOKENS = 16_000
 #: Blocking or major findings carried, and files the one fix pass rewrites, at most.
 MOST_FINDINGS = 6
 MOST_FILES = 3
+#: The most characters of the lines that name a changed file the request carries (`uses_of_the_changed_files`).
+USES_CHARACTERS = 6_000
+#: How the request heads those lines.
+USES_HEADING = ("--- Where the product's code names the changed files, as the files are now (file:line), changed or "
+                "not ---")
 
 
 @dataclass
 class Outcome:
-    """What the review after an escalation found and what became of it."""
+    """What the review after an escalation found and what became of it.
+
+    `findings` are the product's major findings (the fix pass and the known defects); `on_tests` the major findings in
+    the product's own test files (notes); `set_aside` each finding the product's files contradict, with the line that
+    does."""
 
     findings: list[Any] = field(default_factory=list)
     fixed_files: list[str] = field(default_factory=list)
     put_back: list[str] = field(default_factory=list)
+    on_tests: list[Any] = field(default_factory=list)
+    set_aside: list[tuple[Any, str]] = field(default_factory=list)
 
     def known_issues(self) -> list[str]:
-        return known_issues(self.findings, self.fixed_files)
+        return known_issues(self.findings, self.fixed_files) + known_issues(self.on_tests, [], on_tests=True)
 
     def decision(self) -> str:
+        said = []
+        if self.on_tests:
+            said.append(f"{len(self.on_tests)} about the product's own tests, a note")
+        if self.set_aside:
+            said.append(f"{len(self.set_aside)} set aside, the product's files contradict it")
         if not self.findings:
-            return "reviewed after the escalation: no major finding"
+            return "; ".join(["reviewed after the escalation: no major finding in the product", *said])
         open_ = len(self.findings) - sum(1 for f in self.findings if _the_file(f) in self.fixed_files)
-        return (f"reviewed after the escalation: {len(self.findings)} major finding(s), "
-                f"{len(self.findings) - open_} given one fix pass, {open_} still open")
+        return "; ".join([f"reviewed after the escalation: {len(self.findings)} major finding(s), "
+                          f"{len(self.findings) - open_} given one fix pass, {open_} still open", *said])
 
 
 def _the_file(finding: Any) -> str:
@@ -77,17 +107,103 @@ def major_findings(review: Any, later: Callable[[str], Any] = lambda text: []) -
     return found[:MOST_FINDINGS]
 
 
-def known_issues(findings: list[Any], fixed_files: list[str]) -> list[str]:
-    """One known issue per major finding: given one fix pass when its file was rewritten and kept, else still open."""
+def known_issues(findings: list[Any], fixed_files: list[str], on_tests: bool = False) -> list[str]:
+    """One known issue per major finding: given one fix pass when its file was rewritten and kept, else still open;
+    with `on_tests`, a note about the product's own tests."""
     lines = []
     for finding in findings:
         where = _the_file(finding) or "no file named"
         said = " ".join(str(getattr(finding, "problem", "") or "").split())[:400]
         order = str(getattr(finding, "work_order", "") or "").strip()
-        prefix = REVIEW_FINDING_GIVEN_A_FIX if _the_file(finding) and _the_file(finding) in fixed_files \
-            else OPEN_REVIEW_FINDING
+        prefix = REVIEW_FINDING_ON_TESTS if on_tests else REVIEW_FINDING_GIVEN_A_FIX \
+            if _the_file(finding) and _the_file(finding) in fixed_files else OPEN_REVIEW_FINDING
         lines.append(f"{prefix} `{where}`{f' ({order})' if order else ''}: {said}")
     return lines
+
+
+def on_the_tests(finding: Any) -> bool:
+    """Whether the finding is in one of the product's own test files: about the suite's strength, not the product."""
+    from app.analysis.file_kinds import is_test
+
+    return bool(_the_file(finding)) and is_test(_the_file(finding))
+
+
+def _references(changed: Iterable[str]) -> list[tuple[str, re.Pattern[str]]]:
+    """For each changed file, what names it in code: its file name, or its stem written as a path or module part
+    (`./App.js`, `'./App'`, `app.store`)."""
+    found = []
+    for path in changed:
+        name = PurePosixPath(str(path or "").strip().lstrip("/")).name
+        if not name:
+            continue
+        stem = PurePosixPath(name).stem
+        forms = [re.escape(name)]
+        if len(stem) >= 3 and stem != name:
+            forms.append(rf"(?<=[/.'\"]){re.escape(stem)}(?=['\"/.;)\s]|$)")
+        found.append((str(path).strip().lstrip("/"), re.compile(rf"(?<![\w-])(?:{'|'.join(forms)})(?![\w-])")))
+    return found
+
+
+def uses_of_the_changed_files(changed: Iterable[str], sources: Mapping[str, str],
+                              most: int = USES_CHARACTERS) -> str:
+    """Each line of the product's code (`sources`, path to text) that names a changed file, as `file:line: text`; at
+    most `most` characters; "" when none does. A file naming itself is not a use."""
+    named = _references(changed)
+    if not named:
+        return ""
+    lines: list[str] = []
+    size = 0
+    for path in sorted(sources):
+        for number, line in enumerate(str(sources[path]).splitlines(), start=1):
+            if len(line) > 400 or not any(pattern.search(line) for changed_path, pattern in named
+                                          if changed_path != path):
+                continue
+            entry = f"{path}:{number}: {line.strip()}"
+            if size + len(entry) + 1 > most:
+                lines.append("... (more lines name the changed files; not shown)")
+                return "\n".join(lines)
+            lines.append(entry)
+            size += len(entry) + 1
+    return "\n".join(lines)
+
+
+#: A file named in prose, as `names_a_file` reads one: a name with an extension.
+_A_FILE_NAMED = re.compile(r"(?<![\w@-])[\w@.-]*[\w-]\.[A-Za-z][A-Za-z0-9]{0,5}(?![\w-])")
+#: Words for how code takes in, includes or links a file.
+_TAKEN_IN = r"(?:import(?:s|ed|ing)?|includ(?:e|es|ed|ing)|link(?:s|ed|ing)?|referenc(?:e|es|ed|ing))"
+#: A claim that a file is not taken in: "is not imported", "does not import", "never linked", "missing import of";
+#: or "the import of X ... is not present", "... is missing", "absent".
+_NOT_TAKEN_IN = re.compile(
+    rf"(?:\b(?:not|never|no|missing|without)|n't)\s+(?:\w+\s+){{0,2}}?(?P<word>{_TAKEN_IN})\b"
+    rf"|\b(?P<noun>{_TAKEN_IN})\s+(?:of|for|to)\b[^;]*?\b(?:not present|missing|absent|not found|nowhere)\b",
+    re.I)
+
+
+def contradicted(finding: Any, sources: Mapping[str, str]) -> str:
+    """The product's line that contradicts a finding's claim that a named file is not imported, included, linked or
+    referenced, as `file:line`; "" when the finding claims no such absence or nothing in `sources` names that file.
+
+    The file a claim is about is the named file nearest its word for taking a file in, in the same sentence. Only the
+    finding's problem is read: its fix says what to add, not what is missing."""
+    from app.analysis.file_kinds import names_a_file
+
+    problem = " ".join(str(getattr(finding, "problem", "") or "").split())
+    for sentence in re.split(r"(?<=[.;!?])\s+", problem):
+        taken_in = [match.span("word") if match.group("word") else match.span("noun")
+                    for match in _NOT_TAKEN_IN.finditer(sentence)]
+        if not taken_in:
+            continue
+        files = [match for match in _A_FILE_NAMED.finditer(sentence) if names_a_file(match.group(0).rstrip("."))]
+        if not files:
+            continue
+        nearest = min(files, key=lambda match: min(max(start - match.end(), match.start() - end, 0)
+                                                   for start, end in taken_in))
+        name = nearest.group(0).rstrip(".")
+        use = uses_of_the_changed_files([name], {path: text for path, text in sources.items()
+                                                 if PurePosixPath(path).name != PurePosixPath(name).name}, most=400)
+        if use:
+            return use.splitlines()[0].split(": ", 1)[0]
+    return ""
 
 
 def files_to_fix(findings: list[Any], root: str | Path) -> list[str]:
@@ -114,7 +230,17 @@ def the_review(model: Any, request: str) -> Any:
     return _read(reply_text(reply), CodeReviewOutput)
 
 
-def _the_request(state: Any, root: str, diff: str) -> str:
+def with_the_uses(request: str, uses: str) -> str:
+    """The request with the lines that name the changed files, ahead of its closing line; as it was when none."""
+    if not uses.strip():
+        return request
+    section, closing = f"{USES_HEADING}\n{uses}\n\n", "Review the batch."
+    if request.endswith(closing):
+        return request[:-len(closing)] + section + closing
+    return f"{request}\n\n{section}".rstrip()
+
+
+def _the_request(state: Any, root: str, diff: str, uses: str = "") -> str:
     from app.acceptance import suite
     from app.acceptance.requests import criteria_text
     from app.agents.code_reviewer import build_code_review_request, the_standards
@@ -133,6 +259,7 @@ def _the_request(state: Any, root: str, diff: str) -> str:
         "The sprint was accepted at an escalation: its fixes and re-plans ran out with this still failing. "
         + str(state.get("ci_report") or ""),
         engineering._later_sprints(state), standards=the_standards(state.get("technical_specification")))
+    request["messages"][-1]["content"] = with_the_uses(request["messages"][-1]["content"], uses)
     return str(with_the_facts(request, root)["messages"][-1]["content"])
 
 
@@ -196,6 +323,21 @@ def fix_pass(state: Any, root: str, findings: list[Any], rewrite: Callable[[Any,
     return changed, []
 
 
+def sorted_out(findings: list[Any], sources: Mapping[str, str]) -> Outcome:
+    """The major findings as the fix pass and the release take them: each the product's code contradicts set aside,
+    each in a test file a note, the rest the product's."""
+    outcome = Outcome()
+    for finding in findings:
+        against = contradicted(finding, sources)
+        if against:
+            outcome.set_aside.append((finding, against))
+        elif on_the_tests(finding):
+            outcome.on_tests.append(finding)
+        else:
+            outcome.findings.append(finding)
+    return outcome
+
+
 def review_and_fix(state: Any, judge: Any, builder: Any) -> Outcome | None:
     """The review after a sprint accepted at an escalation, and its one fix pass; None when no review could be asked."""
     if judge is None or not hasattr(judge, "invoke"):
@@ -212,17 +354,21 @@ def review_and_fix(state: Any, judge: Any, builder: Any) -> Outcome | None:
         diff = ci.diff_since(root, since, max_chars=DIFF_CHARACTERS)
         if not diff.strip():
             return None
-        review = the_review(judge, _the_request(state, root, diff))
+        from app.graph.unfinished_build import product_sources
+
+        sources = product_sources(root)
+        uses = uses_of_the_changed_files(ci.changed_since(root, since), sources)
+        review = the_review(judge, _the_request(state, root, diff, uses))
         if review is None:
             logger.warning("The code review after the escalation gave no readable answer")
             degraded("review_after_escalation", None, why="no readable answer")
             return None
         from app.graph.acceptance_nodes import criteria_only_later
 
-        findings = major_findings(review, lambda text: criteria_only_later(state, text))
-        outcome = Outcome(findings=findings)
-        if findings and builder is not None:
-            outcome.fixed_files, outcome.put_back = fix_pass(state, root, findings, _a_rewrite(state, root, builder))
+        outcome = sorted_out(major_findings(review, lambda text: criteria_only_later(state, text)), sources)
+        if outcome.findings and builder is not None:
+            outcome.fixed_files, outcome.put_back = fix_pass(state, root, outcome.findings,
+                                                             _a_rewrite(state, root, builder))
         logger.info("Code review after the escalation: %s", outcome.decision())
         return outcome
     except Exception as error:  # noqa: BLE001 - the acceptance stands as it was
@@ -240,16 +386,21 @@ def recorded(state: Any, update: dict[str, Any], outcome: Outcome | None) -> lis
     from app.decisions import record_decision
 
     lines = outcome.known_issues()
+    set_aside = [f"Set aside, `{against}` contradicts it: `{_the_file(finding) or 'no file named'}`: "
+                 + " ".join(str(getattr(finding, "problem", "") or "").split())[:400]
+                 for finding, against in outcome.set_aside]
     record_decision(
         state, update, point=DECISION_POINT,
         question="The escalation accepted the sprint: what does a code review find in it?",
         options=["fix the major findings once and name them at release"],
         decision=outcome.decision(),
-        rationale=("\n".join(lines) or "The review found no blocking or major problem.")
+        rationale=("\n".join([*lines, *set_aside]) or "The review found no blocking or major problem.")
         + (f"\nThe fix pass was put back: it broke {'; '.join(outcome.put_back[:3])}" if outcome.put_back else ""),
     )
     return lines
 
 
-__all__ = ["DECISION_POINT", "DIFF_CHARACTERS", "FIX_STAGE", "MOST_FILES", "MOST_FINDINGS", "Outcome", "files_to_fix",
-           "fix_pass", "known_issues", "major_findings", "recorded", "review_and_fix", "the_review"]
+__all__ = ["DECISION_POINT", "DIFF_CHARACTERS", "FIX_STAGE", "MOST_FILES", "MOST_FINDINGS", "USES_CHARACTERS",
+           "USES_HEADING", "Outcome", "contradicted", "files_to_fix", "fix_pass", "known_issues", "major_findings",
+           "on_the_tests", "recorded", "review_and_fix", "sorted_out", "the_review", "uses_of_the_changed_files",
+           "with_the_uses"]

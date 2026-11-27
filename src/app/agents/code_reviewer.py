@@ -146,10 +146,14 @@ _SYSTEM_PROMPT = f"""{_THE_REVIEW}
 {STRUCTURED_RESPONSE_RULE}"""
 
 #: The same review asked in one call with no tools, after a sprint accepted at an escalation (PQ.4): what the diff
-#: and the request show is all it reads.
+#: and the request show is all it reads. The diff shows only what changed (LF.1645): its first live review called a
+#: stylesheet's import "not present in the provided changes" while an unchanged file imported it.
 ONE_CALL_SYSTEM_PROMPT = f"""{_THE_REVIEW}
 
-You have no tools in this review: judge what the diff and this request show. Answer with one JSON object and
+You have no tools in this review: judge what the diff and this request show. The diff shows only what this
+sprint changed, and a line it does not show is still in the product as it was. Absence from the diff is not
+absence from the product: say something is missing only where the lines this request gives show it missing,
+never because the diff does not show it. Answer with one JSON object and
 nothing else, in this shape:
 {{"approved": true or false, "findings": [{{"work_order": "...", "severity": "blocking, major or minor",
 "file": "...", "problem": "...", "fix": "...", "quality_bar": true or false}}]}}"""

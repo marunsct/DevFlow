@@ -257,9 +257,130 @@ def test_a_local_run_s_major_finding_gets_its_one_fix_pass_on_the_deployment_s_m
 
 def test_the_words_the_review_and_the_release_add_use_none_of_the_banned_ones() -> None:
     from app.agents.code_reviewer import ONE_CALL_SYSTEM_PROMPT, CodeReviewFinding
-    from app.graph.review_after_escalation import known_issues
+    from app.graph.review_after_escalation import USES_HEADING, known_issues
 
     finding = CodeReviewFinding(work_order="w", severity="major", file="a.js", problem="p")
     texts = [ONE_CALL_SYSTEM_PROMPT, *known_issues([finding], []), *known_issues([finding], ["a.js"]),
-             completion_verdict.OPEN_REVIEW_FINDING, completion_verdict.REVIEW_FINDING_GIVEN_A_FIX]
+             *known_issues([finding], [], on_tests=True), USES_HEADING,
+             completion_verdict.OPEN_REVIEW_FINDING, completion_verdict.REVIEW_FINDING_GIVEN_A_FIX,
+             completion_verdict.REVIEW_FINDING_ON_TESTS]
     assert not [text for text in texts if BANNED.search(text)]
+
+
+# --- The review's findings rest on the product, not on what the diff shows (LF.1645) ------------------------------
+# Measured on its first live review: the diff held a stylesheet's change but not the unchanged entry file that
+# imported it; a "blocking" finding called the import "not present in the provided changes", the fix pass added a
+# second import, and a major finding about a unit test file's strength made a product whose hidden tests all passed
+# "delivered with known defects".
+
+STYLES = "notes/styles.css"
+ENTRY = "notes/src/main.js"
+TEST_FILE = "notes/tests/notes.test.js"
+
+
+class RecordingJudge(Judge):
+    """`Judge`, keeping the one request it was sent."""
+
+    def invoke(self, messages, **kwargs):
+        self.request = str(messages[-1].content)
+        self.system = str(messages[0].content)
+        return super().invoke(messages, **kwargs)
+
+
+def _a_sprint_that_changed_the_stylesheet_and_a_test(root: Path) -> None:
+    """The stuck sprint also changed the stylesheet the page links in an unchanged file, and a unit test file."""
+    (root / STYLES).write_text(":root { --ink: #111; }\nbody { color: var(--ink); }\n")
+    (root / TEST_FILE).parent.mkdir(parents=True, exist_ok=True)
+    (root / TEST_FILE).write_text("import test from 'node:test';\ntest('renders the list', () => {});\n")
+    ci.commit(root, "the stuck sprint's styling")
+    ci.save(root, ci.take(root, "after the stuck sprint"))
+
+
+NOT_IN_THE_DIFF = {"work_order": "Delete notes", "severity": "blocking", "file": ENTRY,
+                   "problem": "The diff only shows a change to the stylesheet. The import of styles.css is not present "
+                              "in the provided changes, so the page has none of its colours.",
+                   "fix": "Add import './styles.css' to main.js."}
+ON_A_TEST_FILE = {"work_order": "Delete notes", "severity": "major", "file": TEST_FILE,
+                  "problem": "The work order specifies browser tests that check the page's colours; this file only "
+                             "checks that the list renders.",
+                  "fix": "Check the colours in a browser test."}
+
+
+def test_the_review_is_shown_the_unchanged_lines_that_name_a_changed_file(workspace) -> None:
+    _a_sprint_that_changed_the_stylesheet_and_a_test(workspace.root)
+    judge = RecordingJudge([])
+
+    _accepted(workspace.root, judge, Builder(""))
+
+    assert 'notes/index.html:' in judge.request, "the unchanged page that links the stylesheet"
+    assert '<link rel="stylesheet" href="styles.css">' in judge.request
+
+
+def test_the_review_is_told_absence_from_the_diff_is_not_absence_from_the_product(workspace) -> None:
+    judge = RecordingJudge([])
+
+    _accepted(workspace.root, judge, Builder(""))
+
+    assert "Absence from the diff is not absence from the product" in " ".join(judge.system.split())
+
+
+def test_a_finding_the_product_s_files_contradict_gets_no_fix_pass_and_is_no_known_issue(workspace) -> None:
+    _a_sprint_that_changed_the_stylesheet_and_a_test(workspace.root)
+    before = (workspace.root / ENTRY).read_text()
+    builder = Builder("import './styles.css';\n")
+
+    update = _accepted(workspace.root, Judge([NOT_IN_THE_DIFF]), builder)
+
+    assert builder.calls == 0, "no rewrite of a file to add what the product already has"
+    assert (workspace.root / ENTRY).read_text() == before
+    assert not [line for line in update["known_issues"] if ENTRY in line]
+    decision = [d for d in update["decisions"] if d["point"] == "code_review_after_escalation"][0]
+    assert "notes/index.html" in decision["rationale"], "the line that contradicts it is named"
+
+
+def test_a_major_finding_on_the_product_s_own_tests_is_a_note_not_a_known_defect(workspace) -> None:
+    _a_sprint_that_changed_the_stylesheet_and_a_test(workspace.root)
+    # As measured: the fix pass left the test file as it was, so the finding stayed open.
+    builder = Builder((workspace.root / TEST_FILE).read_text())
+
+    update = _accepted(workspace.root, Judge([ON_A_TEST_FILE]), builder)
+
+    (issue,) = [line for line in update["known_issues"] if TEST_FILE in line]
+    assert "only checks that the list renders" in issue, "the reader is still told"
+    gap = f"An escalation left this open ({delivery._accepted_at_an_escalation(update)}): {issue}"
+    assert completion_verdict.verdict([gap]) == completion_verdict.DELIVERED
+    assert builder.calls == 0, "a test file's strength is no defect of the product to rewrite"
+
+
+def _finding(problem: str) -> Any:
+    from app.agents.code_reviewer import CodeReviewFinding
+
+    return CodeReviewFinding(work_order="w", severity="blocking", file="web/src/App.tsx", problem=problem)
+
+
+SOURCES = {"web/src/main.tsx": "import './styles.css';\nimport { App } from './App.js';\n",
+           "web/src/App.tsx": "import './index.css';\nexport function App() { return null; }\n"}
+
+
+@pytest.mark.parametrize("problem", [
+    "The required import of styles.css, which defines the tokens used by index.css, is not present in the provided "
+    "changes.",
+    "styles.css is never imported, so its tokens are undefined.",
+    "App.tsx does not import styles.css.",
+    "Missing import of styles.css in the page.",
+])
+def test_a_claim_that_a_file_is_not_imported_is_contradicted_by_the_line_that_imports_it(problem) -> None:
+    from app.graph.review_after_escalation import contradicted
+
+    assert contradicted(_finding(problem), SOURCES) == "web/src/main.tsx:1"
+
+
+@pytest.mark.parametrize("problem", [
+    "styles.css is imported, but its dark colours are not defined.",
+    "The import of theme.css is not present anywhere, so the page has no theme.",
+    "The title is required, and App.tsx has no check for an empty one.",
+])
+def test_a_finding_that_claims_no_absence_the_files_contradict_stands(problem) -> None:
+    from app.graph.review_after_escalation import contradicted
+
+    assert contradicted(_finding(problem), SOURCES) == ""

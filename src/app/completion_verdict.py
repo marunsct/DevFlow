@@ -30,6 +30,9 @@ SETTLED_DESIGN_FINDING = "Design review finding settled by "
 #: had its one fix pass (PQ.4, `app.graph.review_after_escalation`), and of one that fix pass changed the code for.
 OPEN_REVIEW_FINDING = "A code review's major finding is still open after the escalation:"
 REVIEW_FINDING_GIVEN_A_FIX = "A code review's major finding had one fix pass after the escalation, not reviewed again:"
+#: The start of a note for a code review's major finding after an escalation that is in one of the product's own test
+#: files (LF.1645): about the suite's strength, not the product; the suite measured at release says whether it works.
+REVIEW_FINDING_ON_TESTS = "A code review's major finding after the escalation is about the product's own tests:"
 _AT_AN_ESCALATION = r"(?:An escalation left this open(?: \(DR-\d+\))?: )?"
 _KNOWN_DEFECT = re.compile(_AT_AN_ESCALATION + re.escape(OPEN_REVIEW_FINDING))
 
@@ -59,6 +62,9 @@ _NOTES = re.compile(
         # A major review finding the one fix pass after an escalation changed the code for (PQ.4): no review read it
         # again, so the reader is told, and the suite measured at release says whether the product works.
         _AT_AN_ESCALATION + re.escape(REVIEW_FINDING_GIVEN_A_FIX),
+        # One in the product's own test files (LF.1645): measured on its first live review, such a finding about a
+        # unit test file's strength made a product whose hidden tests all passed "delivered with known defects".
+        _AT_AN_ESCALATION + re.escape(REVIEW_FINDING_ON_TESTS),
         # A sprint accepted unfinished whose tests the locked suite passes in full at release (LR.21).
         r"An escalation left this open(?: \(DR-\d+\))?: every locked test passes at release: ",
         # Worth knowing about what ships beside the product, or who judged it.
@@ -155,5 +161,5 @@ def split(gaps: list[str] | None) -> tuple[list[str], list[str]]:
 
 
 __all__ = ["DELIVERED", "DELIVERED_WITH_CUTS", "DELIVERED_WITH_KNOWN_DEFECTS", "NOT_DELIVERABLE", "OPEN_REVIEW_FINDING",
-           "REVIEW_FINDING_GIVEN_A_FIX", "SETTLED_DESIGN_FINDING", "is_a_cut", "is_a_known_defect", "is_blocking", "split",
+           "REVIEW_FINDING_GIVEN_A_FIX", "REVIEW_FINDING_ON_TESTS", "SETTLED_DESIGN_FINDING", "is_a_cut", "is_a_known_defect", "is_blocking", "split",
            "verdict"]

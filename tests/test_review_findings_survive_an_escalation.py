@@ -192,6 +192,69 @@ def test_a_finding_about_a_later_sprint_s_criterion_is_not_carried(workspace) ->
     assert [f.problem for f in kept] == [MAJOR["problem"]]
 
 
+class DeploymentModel:
+    """The deployment's default model, the one every stage builds when a run names none: it answers the one review
+    call with `findings` and a whole-file rewrite with `content`, and counts each."""
+
+    def __init__(self, findings: list[dict[str, Any]], content: str) -> None:
+        self.findings, self.content = findings, content
+        self.reviews = self.rewrites = 0
+
+    def invoke(self, messages, **kwargs):
+        from app.agents.code_reviewer import ONE_CALL_SYSTEM_PROMPT
+
+        if str(getattr(messages[0], "content", "")) == ONE_CALL_SYSTEM_PROMPT:
+            self.reviews += 1
+            return AIMessage(content=json.dumps({"approved": False, "findings": self.findings}))
+        self.rewrites += 1
+        return AIMessage(content=f"```js\n{self.content}```")
+
+
+def _accepted_on_a_local_run(root: Path, monkeypatch, deployment: DeploymentModel) -> dict[str, Any]:
+    """`_accepted` as the worker builds a local run's graph: no run model and no judgement model named, so every
+    model the context holds is None and a stage builds the deployment's default model itself."""
+    from app.graph.context import GraphContext
+
+    monkeypatch.setattr("app.models.build_default_chat_model", lambda *args, **kwargs: deployment)
+    state = {
+        "repository": SimpleNamespace(root_path=str(root)),
+        "escalation": {"error": "Sprint 'Delete notes' exhausted its remediation attempts with defects still open."},
+        "milestone_plan": SimpleNamespace(delegated_tasks=[
+            SimpleNamespace(title="Delete notes", task_description="Remove a note", specialist_role="frontend"),
+        ]),
+        "review_policy": {},
+        "decisions": [],
+    }
+    ctx = GraphContext(model=None, judgement_model=None, planning_model=None, building_model=None,
+                       checkpointer=None, repo_root=None)
+    return escalation.accept(state, CONFIG, ctx)
+
+
+def test_a_local_run_with_no_judgement_model_named_still_has_the_sprint_reviewed(workspace, monkeypatch) -> None:
+    """Measured on three runs of 2026-11-27: each accepted a sprint at an escalation and released "No review read the
+    product's code"; no stored transcript holds the review's call, because a local run's context names no judgement
+    model and the review was skipped on `None` instead of asking the deployment's model."""
+    deployment = DeploymentModel([MAJOR], (workspace.root / PRODUCT_FILE).read_text())
+
+    update = _accepted_on_a_local_run(workspace.root, monkeypatch, deployment)
+
+    assert deployment.reviews == 1, "one review call, on the deployment's own model"
+    (issue,) = [line for line in update["known_issues"] if PRODUCT_FILE in line]
+    assert "remove() returns an empty list" in issue
+    assert any(d["point"] == "code_review_after_escalation" for d in update["decisions"])
+
+
+def test_a_local_run_s_major_finding_gets_its_one_fix_pass_on_the_deployment_s_model(workspace, monkeypatch) -> None:
+    deployment = DeploymentModel([MAJOR], "export function remove(notes, id) { return notes.filter((n) => n.id !== id); }\n")
+
+    update = _accepted_on_a_local_run(workspace.root, monkeypatch, deployment)
+
+    assert deployment.rewrites == 1, "one rewrite of the one file named"
+    assert "notes.filter" in (workspace.root / PRODUCT_FILE).read_text()
+    assert "1 given one fix pass" in [d for d in update["decisions"]
+                                      if d["point"] == "code_review_after_escalation"][0]["decision"]
+
+
 def test_the_words_the_review_and_the_release_add_use_none_of_the_banned_ones() -> None:
     from app.agents.code_reviewer import ONE_CALL_SYSTEM_PROMPT, CodeReviewFinding
     from app.graph.review_after_escalation import known_issues

@@ -371,9 +371,12 @@ def _defer_and_continue(
         suite.defer(root, to_defer)
     # The code review still reads the sprint, once, and its major findings get one fix pass and reach the release
     # (PQ.4): ahead of the measurement below, so a kept fix is in the baseline the next sprint is measured against.
+    # A local run's context names no model at all (LF.1644): the review is asked of the deployment's own model, as
+    # every stage builds it, never skipped on None - three runs of one day released "No review read the product's code".
     from app.graph import review_after_escalation
+    from app.graph.context import a_model_to_call
 
-    reviewed = review_after_escalation.review_and_fix(state, getattr(ctx, "judgement_model", None),
+    reviewed = review_after_escalation.review_and_fix(state, a_model_to_call(ctx),
                                                       _the_fixer_s_model(state, ctx))
     # The run goes on from here, so this is the state the next sprint is
     # measured against and the one this sprint's record counts. Without it the
@@ -412,11 +415,17 @@ def _defer_and_continue(
 
 
 def _the_fixer_s_model(state: Any, ctx: Any) -> Any:
-    """The model the review's one fix pass rewrites with, or None when there is no context to choose one."""
+    """The model the review's one fix pass rewrites with: the build model a fix stage runs on, else a model a helper
+    can call (the deployment's default when the run names none, LF.1644); None only when no model can be had."""
+    from app.graph.context import a_model_to_call
     from app.graph.review_after_escalation import FIX_STAGE
 
     try:
-        return ctx.the_build_model(state, FIX_STAGE, reasons=True) if ctx is not None else None
+        chosen = ctx.the_build_model(state, FIX_STAGE, reasons=True) if ctx is not None else None
+    except Exception:  # noqa: BLE001 - a model a helper can call instead
+        chosen = None
+    try:
+        return a_model_to_call(ctx, chosen)
     except Exception:  # noqa: BLE001 - no fix pass; the review's findings are still named at release
         return None
 

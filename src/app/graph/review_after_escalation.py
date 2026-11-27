@@ -199,6 +199,8 @@ def fix_pass(state: Any, root: str, findings: list[Any], rewrite: Callable[[Any,
 def review_and_fix(state: Any, judge: Any, builder: Any) -> Outcome | None:
     """The review after a sprint accepted at an escalation, and its one fix pass; None when no review could be asked."""
     if judge is None or not hasattr(judge, "invoke"):
+        # Said, not silent (LF.1644): no stored transcript held this review's call while the release blamed routing.
+        degraded("review_after_escalation", None, why="no model to ask")
         return None
     try:
         from app import ci
@@ -213,6 +215,7 @@ def review_and_fix(state: Any, judge: Any, builder: Any) -> Outcome | None:
         review = the_review(judge, _the_request(state, root, diff))
         if review is None:
             logger.warning("The code review after the escalation gave no readable answer")
+            degraded("review_after_escalation", None, why="no readable answer")
             return None
         from app.graph.acceptance_nodes import criteria_only_later
 

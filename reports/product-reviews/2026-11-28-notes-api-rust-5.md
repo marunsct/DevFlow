@@ -18,12 +18,16 @@ execution, a second run live beside it. 21:55 to 01:00 JST. Mixed versions: four
 - For most of the run the product did not compile: the extractor was written under `#[async_trait]` as for axum 0.7,
   a `tower::Limit` that does not exist was imported, and state was given to a `Router<()>`. The pack named none of
   these until LF.1625-1627, two and a half hours in.
-- Every hidden test fails on database setup: "Execute returned results - did you mean to call query?" (a statement
-  that returns a row run through `execute`, to be verified; a fix is being built).
+- The cause of the 0/9, established afterwards: at 00:34 a build step renamed the package, so cargo built a new
+  binary while the kept `start.sh` went on starting the old one. From 00:35 every smoke test, acceptance run, fixer
+  and hidden test measured code from 00:18, including a database statement run with `execute` ("Execute returned
+  results") that had been corrected at 00:36 (fixed by LF.1628, 1630; the pack verified after deploy).
+- A forward repair was handed the build output without the known causes and put the bad import back (LF.1629).
 - The last rounds left `tower::Limit` in place with its known cause in the request, and one fix was reverted for
   breaking the build.
 - Six fixes reverted (5-run mean 1).
 
 ## To add or improve
-1. The database setup cause in the Rust pack (being built).
-2. Why a rewrite given the known cause left the import (being checked).
+1. The Rust Dockerfile, and Java and Node packs with a fixed build output path, can also run a stale or missing build
+   if a builder changes their manifest.
+2. A specification naming a library call that does not exist still weighs against a known cause that says otherwise.

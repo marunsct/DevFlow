@@ -205,15 +205,22 @@ def view() -> dict[str, Any]:
     """What the settings page shows of the serving model's steering."""
     from app.models import deep_diagnosis, diagnostics, guidance
 
+    from app.models import diagnosis_fingerprint
+
     name = page_model()
     profile = guidance.recorded(name) if name else None
-    deep = deep_diagnosis.recorded(name) if name else None
-    tools = diagnostics.recorded(name) if name else None
+    # Shown even when measured on another template or build, and said so (DX.5); runs are not served it.
+    deep = deep_diagnosis.recorded(name, even_if_stale=True) if name else None
+    tools = diagnostics.recorded(name, even_if_stale=True) if name else None
+    now = diagnosis_fingerprint.current()
+    stale = diagnosis_fingerprint.stale((tools.fingerprint if tools else None) or (deep or {}).get("fingerprint"), now)
     checks = []
     area = {check: g.area for g in guidance.GUIDES for check in g.checks}
     for result in (deep or {}).get("baseline") or []:
         checks.append({"name": result["check"], "area": area.get(result["check"], "instructions"),
-                       "passed": result["passed"], "tries": result["tries"]})
+                       "passed": result["passed"], "tries": result["tries"],
+                       "unmeasured": int(result.get("unmeasured") or 0),
+                       "calibrating": result["check"] in deep_diagnosis.CALIBRATING})
     store_rows: dict[str, str] = {}
     try:
         from app.server.plugin_store import PluginStore
@@ -239,7 +246,8 @@ def view() -> dict[str, Any]:
     }
     return {"model": name, "measured_at": (profile.measured_at if profile else None) or None, **status(),
             "tier": (profile.tier if profile else None) or None, "score": profile.score if profile else None,
-            "checks": checks, "guides": guides, "settings": settings}
+            "checks": checks, "guides": guides, "settings": settings, "stale": stale,
+            "harmful": list((deep or {}).get("harmful") or [])}
 
 
 __all__ = ["HEARTBEAT_SECONDS", "STALE_SECONDS", "STOPPED", "capabilities_view", "fill_capabilities", "page_model", "run", "set_status", "status", "view"]

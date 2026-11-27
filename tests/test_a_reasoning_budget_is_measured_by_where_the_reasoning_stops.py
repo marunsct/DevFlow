@@ -127,7 +127,9 @@ def test_a_budget_the_reasoning_stopped_at_is_enforced_though_the_effort_switche
 
     assert not diagnosis.settings.reasoning_measurable
     assert diagnosis.settings.reasoning_budget
-    assert _stage_budget(diagnosis) == 20_000
+    # No budget question reasoned past the moderate budget, so no reply showed a stage call's budget usable (DX.4).
+    assert diagnosis.settings.reasoning_budget_usable is None
+    assert _stage_budget(diagnosis) is None
 
 
 def test_a_reply_held_to_64_tokens_that_answered_wrong_still_shows_the_budget_enforced():

@@ -12,6 +12,19 @@ Status words:
 - **Owner action**: only the owner can do it. The harness never changes the owner's models, machine or accounts.
 - **Waiting**: blocked on something named.
 
+## 2026-11-27 (owner: build the model diagnosis design's first three items)
+Context: `reports/research/2026-11-27-model-diagnosis-design.md`. Approved: Phase 0 (DX.1-DX.5), DX.6 (speed and
+concurrency profile), DX.7 (reasoning dose-response) with the minimal DX.8 replay set it needs, and, in the owner's
+words, "if the model supports more parallel request run the diagnosis parallely".
+
+| # | Decision | Status | Trigger / where it lives |
+|---|---|---|---|
+| 1 | Settings the diagnosis finds are applied behind one switch, `PROFILE_FROM_DIAGNOSIS`, with every field overridable on the settings page; a value the owner set always wins. | Deferred | Built with DX.6 and DX.7 (`models/diagnosis_profile.py`). |
+| 2 | The full calibration tier starts only from the settings page, never by itself. | Deferred | Built with DX.7. |
+| 3 | Only benchmark runs' transcripts may become probes - never the owner's own runs, never hidden tests. | Deferred | Built with DX.8 (the replay set's builder and its guard). |
+| 4 | The model under test is diagnosed again after the first step (Phase 0), before runs resume. | Waiting | The main session does it once Phase 0 is deployed. |
+| 5 | The diagnosis runs its independent requests side by side, up to what the server really serves at once, never above it. | Deferred | Built after Phase 0 in this bundle (`models/diagnosis_pool.py`). |
+
 ## 2026-11-18 (owner, about 16:25 JST: "implement all the improvement plans as per the recent review findings")
 Context: [Harness Deep Review 2026-11-18](https://claude.ai/artifact/9nhWdxAtiiatDkDiLR5Wwx), its plan (Phases 0-3) and
 its six decisions. Read as approving the plan and decisions 1, 2, 3 and 5; 4 and 6 spend money or are owner actions.

@@ -54,8 +54,11 @@ class _Server:
 
     def create(self, **payload):
         extra = payload.get("extra_body") or {}
-        right = "330" if "from 1 to 50" in payload["messages"][-1]["content"] else "18"
-        tokens, answer, reasoning = 900, right, "x" * 3_600
+        asked = payload["messages"][-1]["content"]
+        right = "330" if "from 1 to 50" in asked else "1902" if "from 1 to 200" in asked else "18"
+        # The longer budget question reasons past the moderate budget, so a reply held to it shows it usable (DX.4).
+        tokens = 1_900 if "from 1 to 200" in asked else 900
+        answer, reasoning = right, "x" * 4 * tokens
         if self.budget and "reasoning_budget_tokens" in extra:
             budget = extra["reasoning_budget_tokens"]
             # As llama.cpp's budget sampler: the reasoning ends at the budget with the request's words for it.

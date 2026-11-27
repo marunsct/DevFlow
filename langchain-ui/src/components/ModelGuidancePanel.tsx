@@ -13,7 +13,16 @@ import { Compass } from 'lucide-react';
 import { api } from '../api';
 import { useFeedback } from './Feedback';
 
-export interface SteeringCheck { name: string; area: string; passed: number; tries: number }
+export interface SteeringCheck {
+  name: string;
+  area: string;
+  passed: number;
+  tries: number;
+  /** Tries the server failed (an error, a timeout): not counted either way. */
+  unmeasured?: number;
+  /** Asked and shown, not scored: nearly every model fails it by its wording. */
+  calibrating?: boolean;
+}
 
 export interface SteeringGuide {
   id: string;
@@ -37,6 +46,10 @@ export interface Steering {
   checks: SteeringCheck[];
   guides: SteeringGuide[];
   settings: { structured_answers: string; reasoning_effort: string; reply_ceiling: number | null; tail_reminder: boolean };
+  /** What differs between the server the diagnosis was measured on and the server now; runs are not given it. */
+  stale?: string[];
+  /** Guides dropped because a check fell when they were given together. */
+  harmful?: string[];
 }
 
 /** How often a running diagnosis is asked about, in milliseconds. */
@@ -178,6 +191,18 @@ export const ModelGuidancePanel: React.FC = () => {
           {note && !running && <span className="text-sm text-text-secondary">{note}</span>}
         </div>
 
+        {steering?.stale && steering.stale.length > 0 && (
+          <p role="alert" className="text-sm text-warning">
+            Measured on another server ({steering.stale.join('; ')}): runs are not given these settings until the
+            model is diagnosed again.
+          </p>
+        )}
+        {steering?.harmful && steering.harmful.length > 0 && (
+          <p className="text-sm text-text-secondary">
+            Dropped because a check fell when they were given together: {steering.harmful.join(', ')}.
+          </p>
+        )}
+
         {steering && steering.checks.length > 0 && (
           <table className="w-full text-sm">
             <caption className="text-left text-text-muted mb-1">What the diagnosis measured</caption>
@@ -191,10 +216,14 @@ export const ModelGuidancePanel: React.FC = () => {
             <tbody>
               {steering.checks.map((check) => (
                 <tr key={check.name} className="border-t border-border/50">
-                  <td className="py-1 text-text-primary">{check.name}</td>
+                  <td className="py-1 text-text-primary">
+                    {check.name}
+                    {check.calibrating && <span className="ml-2 text-xs text-text-muted">calibrating, not scored</span>}
+                  </td>
                   <td className="py-1 text-text-secondary">{check.area}</td>
                   <td className={`py-1 text-right ${check.passed === check.tries ? 'text-success' : 'text-warning'}`}>
                     {check.passed}/{check.tries}
+                    {check.unmeasured ? <span className="ml-1 text-xs text-text-muted">({check.unmeasured} not measured)</span> : null}
                   </td>
                 </tr>
               ))}

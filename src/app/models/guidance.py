@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 PREFIX = "guide:"
 #: Where a model's steering profile is kept in its fitness file.
 RECORD_KEY = "steering"
-#: Tiers, by the share of the deep diagnosis's tries a model passed with no guidance.
+#: Tiers, by the share of the deep diagnosis's scored tries a model passed with no guidance (`chosen_by`).
 STRONG_FROM = 0.9
 STANDARD_FROM = 0.65
 
@@ -125,16 +125,24 @@ def tier_of(score: float | None) -> str:
 
 
 def chosen_by(diagnosis: Any) -> Profile:
-    """The profile a deep diagnosis calls for (`deep_diagnosis.Diagnosis`)."""
-    baseline = {r.check: r for r in diagnosis.baseline}
-    tries = sum(r.tries for r in diagnosis.baseline)
-    score = round(sum(r.passed for r in diagnosis.baseline) / tries, 3) if tries else None
+    """The profile a deep diagnosis calls for (`deep_diagnosis.Diagnosis`).
+
+    Scored over the checks that have a verdict and are not calibrating (`deep_diagnosis.scored`, DX.1 and DX.3): a
+    check the server failed, or one nearly every model fails by its wording, sets no tier and chooses no guide. A
+    guide the diagnosis found harmful is never chosen (DX.2)."""
+    from app.models.deep_diagnosis import scored
+
+    counted = [r for r in diagnosis.baseline if scored(r)]
+    baseline = {r.check: r for r in counted}
+    tries = sum(r.tries for r in counted)
+    score = round(sum(r.passed for r in counted) / tries, 3) if tries else None
     tier = tier_of(score)
+    harmful = set(getattr(diagnosis, "harmful", ()) or ())
     chosen: dict[str, bool] = {}
     for guide in GUIDES:
         short = [c for c in guide.checks if c in baseline and baseline[c].passed < baseline[c].tries]
         helped = guide.id in (diagnosis.helped or ())
-        chosen[guide.id] = bool(short) and (helped or tier == "weak")
+        chosen[guide.id] = bool(short) and guide.id not in harmful and (helped or tier == "weak")
     reminder = baseline.get(REMINDER_CHECK)
     tail = tier == "weak" or bool(reminder and reminder.passed < reminder.tries and diagnosis.reminder_helped)
     return Profile(model=diagnosis.model, tier=tier, score=score, chosen=chosen, tail_reminder=tail,

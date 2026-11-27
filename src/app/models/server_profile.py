@@ -52,6 +52,10 @@ class ServerProfile:
     reasoning_effort_levels: tuple[str, ...] = ()
     #: The effort the chat template reasons at when a request sends none, as the template writes it; "" unread.
     template_default_effort: str = ""
+    #: A short hash of the chat template the server applies, and the server's build (`build_info`); "" unread. Part
+    #: of what a diagnosis was measured on (`diagnosis_fingerprint`, DX.5): one name, another template, other habits.
+    template_hash: str = ""
+    build: str = ""
 
     @property
     def bits(self) -> int | None:
@@ -93,7 +97,15 @@ def from_props(props: dict[str, Any]) -> ServerProfile:
         aliases=(alias,) if alias else (),
         reasoning_effort_levels=tuple(str(level).strip().lower() for level in levels if str(level).strip()),
         template_default_effort=template_default_effort(str(props.get("chat_template") or "")),
+        template_hash=_short_hash(str(props.get("chat_template") or "")),
+        build=str(props.get("build_info") or "").strip(),
     )
+
+
+def _short_hash(text: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12] if text else ""
 
 
 #: A chat template's default effort, in the two ways Jinja templates write one: `reasoning_effort if reasoning_effort

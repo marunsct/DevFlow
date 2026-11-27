@@ -91,6 +91,14 @@ _LONG_QUESTION = (
     "What is the total? Reply with the number only."
 )
 _LONG_ANSWER = "330"
+#: Longer questions of the same kind, asked in turn while the reply before reasoned no further than the moderate
+#: budget (DX.4), with their answers (worked out by summing the digits).
+_HARDER_QUESTIONS = (
+    ("Add up the digits of every whole number from 1 to 200 (for 123, add 1, 2 and 3). "
+     "What is the total? Reply with the number only.", "1902"),
+    ("Add up the digits of every whole number from 1 to 1000 (for 123, add 1, 2 and 3). "
+     "What is the total? Reply with the number only.", "13501"),
+)
 #: The budget probe's reply cap: each of its replies is cut here, whatever the server does with a budget.
 BUDGET_PROBE_CAP = REPLY_TOKENS
 #: Characters a reasoning token is counted as, where a server reports no reasoning tokens (llama.cpp reports none):
@@ -107,15 +115,22 @@ NAMED_AGAINST_THE_REQUEST = "a named tool the request does not fit"
 @dataclass(frozen=True)
 class Check:
     name: str
+    #: Measured tries: a try the server failed (`server_fault`) is not one of them, it is `unmeasured` (DX.1).
     tries: int = 0
     passed: int = 0
     refused: int = 0
     #: What a failed try did instead, one short note each.
     notes: tuple[str, ...] = ()
+    unmeasured: int = 0
+
+    @property
+    def has_verdict(self) -> bool:
+        """Whether the check says anything: two measured tries, or every try of a one-try check (DX.1)."""
+        return self.tries >= 2 or (self.tries >= 1 and self.unmeasured == 0)
 
     @property
     def works(self) -> bool:
-        return self.tries > 0 and self.passed / self.tries >= PASSES_AT
+        return self.has_verdict and self.passed / self.tries >= PASSES_AT
 
 
 @dataclass(frozen=True)
@@ -141,10 +156,12 @@ class Settings:
     #: Whether the server ends reasoning at a per-request budget (`reasoning_budget_tokens`): the reasoning stopped at
     #: the bound on a question that reasons past it. Whether a cut reply was right is `reasoning_budget_usable`.
     reasoning_budget: bool = False
-    #: Whether a budget of zero still gets the right answer, for no more tokens than reasoning freely.
-    zero_budget_answers: bool = False
-    #: Whether a reply held to the share of its cap a real call gives reasoning still answers right (LF.1588).
-    reasoning_budget_usable: bool = False
+    #: Whether a budget of zero still gets the right answer, for no more tokens than reasoning freely; None when no
+    #: zero-budget reply was asked (DX.4).
+    zero_budget_answers: bool | None = False
+    #: Whether a reply held to the share of its cap a real call gives reasoning still answers right (LF.1588); None
+    #: when no reply showed it either way - "not measured", which sends no stage call a budget (DX.4).
+    reasoning_budget_usable: bool | None = False
     #: The effort the chat template reasons at when a request sends none, as the template writes it; "" unread.
     template_default_effort: str = ""
 
@@ -161,6 +178,8 @@ class Diagnosis:
     #: The budget probe's replies by label (`UNBOUNDED`, "budget N"): what each reasoned and answered, None where
     #: the server refused the request (`budget_reading`).
     reasoning_budget_probe: dict[str, dict | None] = field(default_factory=dict)
+    #: What it was measured on: model file, quantisation, template, build, endpoints, probe and rule versions (DX.5).
+    fingerprint: dict = field(default_factory=dict)
 
 
 def speaks_chat_completions(model: Any) -> bool:
@@ -190,7 +209,9 @@ def _refused(error: Exception) -> bool:
 
 def _tool_check(model: Any, name: str, *, tools: list[dict], ask: str | list[dict], wanted: str, args_ok: Any,
                 extra: dict | None = None, tries: int = TRIES, only_offered_names: bool = False) -> Check:
-    passed = refused = 0
+    from app.models.server_fault import server_fault
+
+    passed = refused = unmeasured = 0
     notes: list[str] = []
     for _ in range(tries):
         try:
@@ -202,6 +223,10 @@ def _tool_check(model: Any, name: str, *, tools: list[dict], ask: str | list[dic
             if _refused(error):
                 refused += 1
                 notes.append(f"refused: {str(error)[:120]}")
+            elif server_fault(error):
+                # The server's failure, not the model's: not one of the check's tries (DX.1).
+                unmeasured += 1
+                notes.append(f"not measured ({server_fault(error)}): {str(error)[:120]}")
             else:
                 notes.append(f"error: {type(error).__name__}: {str(error)[:120]}")
             continue
@@ -231,7 +256,7 @@ def _tool_check(model: Any, name: str, *, tools: list[dict], ask: str | list[dic
             notes.append(f"wrong arguments: {json.dumps(arguments)[:100]}")
             continue
         passed += 1
-    return Check(name, tries, passed, refused, tuple(notes))
+    return Check(name, tries - unmeasured, passed, refused, tuple(notes), unmeasured)
 
 
 def _named(tool: dict) -> dict:
@@ -323,11 +348,11 @@ def _budget_probe(model: Any) -> dict[str, dict | None]:
     at `BUDGET_PROBE_CAP`. Two to four requests. Never raises."""
     from app.models.reasoning_budget import fields
 
-    def ask(extra: dict) -> dict | None:
+    def ask(extra: dict, question: str = _LONG_QUESTION, answer: str = _LONG_ANSWER) -> dict | None:
         try:
             return budget_reading(*_message(_create(model)(
-                model=model.model_name, messages=[{"role": "user", "content": _LONG_QUESTION}],
-                max_tokens=BUDGET_PROBE_CAP, stream=False, **extra)))
+                model=model.model_name, messages=[{"role": "user", "content": question}],
+                max_tokens=BUDGET_PROBE_CAP, stream=False, **extra)), answer=answer)
         except Exception:  # noqa: BLE001 - refused: the finding
             return None
 
@@ -339,9 +364,20 @@ def _budget_probe(model: Any) -> dict[str, dict | None]:
     # As a call meant to answer without reasoning sends it (`reasoning_budget.fields`).
     out["budget 0"] = ask({"extra_body": fields(0)})
     moderate = moderate_budget()
-    unbounded = out[UNBOUNDED]
-    if unbounded is not None and _reasoned(unbounded, unbounded) > moderate:
-        out[f"budget {moderate}"] = ask({"extra_body": fields(moderate)})
+    # The question climbs until it reasons past the moderate budget, so a reply held to it shows something (DX.4).
+    # Measured: one model reasoned about 225 tokens on the first, the moderate reply was never asked, and "usable"
+    # was kept true on no reply at all.
+    question, answer, label = _LONG_QUESTION, _LONG_ANSWER, UNBOUNDED
+    for rung, (harder, right) in enumerate(_HARDER_QUESTIONS, start=2):
+        unbounded = out.get(label)
+        if unbounded is None or _reasoned(unbounded, unbounded) > moderate or unbounded.get("finish") == "length":
+            break
+        question, answer, label = harder, right, f"{UNBOUNDED}, question {rung}"
+        out[label] = ask({}, question, answer)
+    unbounded = out.get(label)
+    if unbounded is not None and (_reasoned(unbounded, unbounded) > moderate or unbounded.get("finish") == "length"):
+        cut = ask({"extra_body": fields(moderate)}, question, answer)
+        out[f"budget {moderate}"] = {**cut, "against": label} if cut is not None else None
     return out
 
 
@@ -390,21 +426,31 @@ def _budget_settled(probe: dict[str, dict | None]) -> dict:
         bound = probe.get(f"budget {BUDGET_PROBE_TOKENS}") or {}
         advice.append(f"a per-request reasoning budget is not enforced: held to {BUDGET_PROBE_TOKENS} tokens the "
                       f"budget question still reasoned {_reasoned(bound, unbounded)} (unbounded {tokens})")
-    usable = zero = False
+    usable: bool | None = False
+    zero: bool | None = False
     if enforced:
         moderate = moderate_budget()
         cut = probe.get(f"budget {moderate}")
-        # A reply the moderate budget did not cut answers as the unbounded one did; a model that answers wrong
-        # unbounded loses nothing to a budget.
-        usable = bool(cut.get("answered") or not unbounded.get("answered")) if cut else True
+        against = probe.get(str((cut or {}).get("against") or UNBOUNDED)) or {}
+        # Only a reply shows it (DX.4): right under the moderate budget is usable; wrong there where the same
+        # question unbounded was right is not; no such reply, or both wrong, is not measured.
+        if not cut:
+            usable = None
+        elif cut.get("answered"):
+            usable = True
+        else:
+            usable = False if against.get("answered") else None
         zeroed = probe.get("budget 0") or {}
         spent, free = zeroed.get("completion_tokens") or 0, unbounded.get("completion_tokens") or 0
-        zero = bool(zeroed.get("answered") and spent and spent <= free)
+        zero = bool(zeroed.get("answered") and spent and spent <= free) if zeroed else None
+        held = f"a reply held to {moderate:,} of {BUDGET_PROBE_CAP:,} tokens"
         advice.append("a per-request reasoning budget is enforced"
                       + ("; a zero budget still answers" if zero else "")
-                      + (f"; a reply held to {moderate:,} of {BUDGET_PROBE_CAP:,} tokens answers right" if usable
-                         else f"; but a reply held to {moderate:,} of {BUDGET_PROBE_CAP:,} tokens answered wrong, "
-                              "so no stage call is sent one"))
+                      + (f"; {held} answers right" if usable
+                         else f"; but {held} answered wrong, so no stage call is sent one" if usable is False
+                         else f"; whether {held} still answers is not measured (no budget question reasoned past "
+                              f"{moderate:,} tokens, or neither reply answered), so no stage call is sent one "
+                              "until a reply shows it"))
         if spent > free:
             moved = (zeroed.get("content_chars") or 0) > (zeroed.get("reasoning_chars") or 0)
             advice.append(f"a zero budget cost {spent} output tokens, more than unbounded ({free}): "
@@ -499,14 +545,17 @@ _A_LONG_REQUEST_WITH_A_FACT = (
 
 def _parallel_check(model: Any) -> Check:
     """Whether one reply can hold more than one call: two cities, one reply."""
-    passed, notes = 0, []
+    from app.models.server_fault import server_fault
+
+    passed, unmeasured, notes = 0, 0, []
     for _ in range(TRIES):
         try:
             message, _finish, _usage = _message(_create(model)(
                 model=model.model_name, messages=[{"role": "user", "content": _ASK_TWO}], tools=[_WEATHER],
                 max_tokens=REPLY_TOKENS, stream=False))
         except Exception as error:  # noqa: BLE001
-            notes.append(f"error: {str(error)[:100]}")
+            unmeasured += bool(server_fault(error))
+            notes.append(("not measured: " if server_fault(error) else "error: ") + str(error)[:100])
             continue
         cities = {str((json.loads((c.get("function") or {}).get("arguments") or "{}")).get("city", "")).lower()
                   for c in message.get("tool_calls") or []}
@@ -514,16 +563,21 @@ def _parallel_check(model: Any) -> Check:
             passed += 1
         else:
             notes.append(f"{len(message.get('tool_calls') or [])} call(s) in the reply")
-    return Check("two calls in one reply", TRIES, passed, 0, tuple(notes))
+    return Check("two calls in one reply", TRIES - unmeasured, passed, 0, tuple(notes), unmeasured)
 
 
 def _recall_check(model: Any) -> Check:
     """Whether a fact in the middle of a long request is still read at its end."""
+    from app.models.server_fault import server_fault
+
     try:
         message, finish, _usage = _message(_create(model)(
             model=model.model_name, messages=[{"role": "user", "content": _A_LONG_REQUEST_WITH_A_FACT}],
             max_tokens=REPLY_TOKENS, stream=False))
     except Exception as error:  # noqa: BLE001
+        if server_fault(error):
+            # Measured: a hosted model's 413 "request too large" was kept as "a fact ... was not read" (DX.1).
+            return Check("a fact in a long request", 0, 0, 0, (f"not measured: {str(error)[:100]}",), 1)
         return Check("a fact in a long request", 1, 0, 0, (f"error: {str(error)[:100]}",))
     text = str(message.get("content") or "")
     ok = _THE_CODE in text
@@ -612,8 +666,10 @@ def diagnose(model: Any, name: str = "") -> Diagnosis:
     settings = settled(checks, cost, answered, template_default=template_default, budget=budget)
     if probe_advice:
         settings = Settings(**{**asdict(settings), "advice": (*settings.advice, *probe_advice)})
+    from app.models import diagnosis_fingerprint
+
     diagnosis = Diagnosis(name, datetime.now(timezone.utc).isoformat(timespec="seconds"), tuple(checks), cost, settings,
-                          answered, budget)
+                          answered, budget, diagnosis_fingerprint.current())
     logger.info("Diagnosed %s in %.0f s: %s", name, time.monotonic() - started, "; ".join(settings.advice))
     return diagnosis
 
@@ -623,6 +679,12 @@ def settled(checks: list[Check], cost: dict[str, int | None], answered: dict[str
     """The settings the checks call for, and why, in words."""
     by = {c.name: c for c in checks}
     advice: list[str] = []
+    # A check the server failed says nothing either way (DX.1): the protocol's own checks without a verdict leave the
+    # default form, and the others are left out of what decides it.
+    unmeasured_core = [by[n] for n in ("one tool named", "a tool required") if n in by and not by[n].has_verdict]
+    by = {name: check for name, check in by.items()
+          if check.has_verdict or name in ("one tool named", "a tool required", "tools offered", "only offered names",
+                                           "one tool named, thinking off")}
     against = by.get(NAMED_AGAINST_THE_REQUEST)
     forced = by["one tool named"].works and by["a tool required"].works
     if forced and against is not None and not against.works:
@@ -657,7 +719,12 @@ def settled(checks: list[Check], cost: dict[str, int | None], answered: dict[str
     # the named form failed, `required` is sent where it works.
     only_strings = any("Supported string values" in note for note in by["one tool named"].notes)
     required_works = not forced and required_ok
-    if forced:
+    if unmeasured_core:
+        structured, only_off = "forced", False
+        advice.append("the tool-choice forms are not measured: the server failed the tries of "
+                      + ", ".join(f"{c.name} ({c.unmeasured} of {c.tries + c.unmeasured})" for c in unmeasured_core)
+                      + "; structured answers keep the default, forced")
+    elif forced:
         structured, only_off = "forced", False
     elif required_works:
         structured, only_off = "required", False
@@ -673,7 +740,7 @@ def settled(checks: list[Check], cost: dict[str, int | None], answered: dict[str
     else:
         structured, only_off = "offered", False
         advice.append("forcing a tool does not work: structured answers offer their tool and ask for it")
-    if not by["tools offered"].works:
+    if by["tools offered"].has_verdict and not by["tools offered"].works:
         advice.append("even an offered tool is called wrongly: check the server's tool-call parser for this template")
     wrong = [n for n in by["only offered names"].notes if n.endswith("(not offered)")]
     if wrong:
@@ -734,19 +801,28 @@ def keep(diagnosis: Diagnosis) -> None:
     merge_into_fitness(diagnosis.model, {RECORD_KEY: asdict(diagnosis)})
 
 
-def recorded(name: str) -> Diagnosis | None:
-    """The kept diagnosis of `name`, or None."""
+def recorded(name: str, *, even_if_stale: bool = False, now: dict | None = None) -> Diagnosis | None:
+    """The kept diagnosis of `name`, or None - also when it was measured on another model file, quantisation, chat
+    template or server build than the server's `now` (this process's, by default): one served name, other habits
+    (`diagnosis_fingerprint`, DX.5). A record kept before fingerprints is not stale."""
     from app.models.registry import _slug, fitness_dir
 
     try:
         found = json.loads((fitness_dir() / f"{_slug(name)}.json").read_text(encoding="utf-8")).get(RECORD_KEY)
+        if not even_if_stale:
+            from app.models import diagnosis_fingerprint
+
+            current = now if now is not None else diagnosis_fingerprint.current()
+            if diagnosis_fingerprint.stale(found.get("fingerprint"), current):
+                return None
         checks = tuple(Check(**{**c, "notes": tuple(c.get("notes") or ())}) for c in found.get("checks") or ())
         kept = dict(found.get("settings") or {})
         # Kept before LF.1588: a budget was enforced only where its 64-token reply answered right.
         kept.setdefault("reasoning_budget_usable", bool(kept.get("reasoning_budget")))
         settings = Settings(**{**kept, "advice": tuple(kept.get("advice") or ())})
         return Diagnosis(found["model"], found["measured_at"], checks, dict(found.get("reasoning_tokens") or {}), settings,
-                         dict(found.get("reasoning_answered") or {}), dict(found.get("reasoning_budget_probe") or {}))
+                         dict(found.get("reasoning_answered") or {}), dict(found.get("reasoning_budget_probe") or {}),
+                         dict(found.get("fingerprint") or {}))
     except Exception:  # noqa: BLE001 - never diagnosed, or kept by an older harness
         return None
 
@@ -848,6 +924,7 @@ def report(diagnosis: Diagnosis) -> str:
     lines = [f"model {diagnosis.model} (measured {diagnosis.measured_at})"]
     for check in diagnosis.checks:
         lines.append(f"  {check.name:<30} {check.passed}/{check.tries} passed, {check.refused} refused"
+                     + (f", {check.unmeasured} not measured" if check.unmeasured else "")
                      + (f"  - {check.notes[0]}" if check.notes else ""))
         for note in check.notes[1:]:
             lines.append(f"  {'':<30} - {note}")

@@ -22,12 +22,25 @@ as the model's steering profile (`guidance.chosen_by`), the lines themselves
 staying general rows of the plugin-instruction table. A reply ceiling is chosen when a check saw the model
 loop to its limit. Uses the model's server for several minutes; asked in
 parallel across its slots.
+
+What the answers are taken to mean (the 2026-11-27 diagnosis design, DX.1-DX.3):
+
+- a try that ended in a server error (`server_fault`: a 5xx, 408, 413 or 429, a timeout, a dropped connection) is
+  not measured: it is not one of the check's tries, and a check with fewer than `MIN_MEASURED_TRIES` measured tries
+  has no verdict, so it neither scores nor chooses a guide;
+- a guide helped only when its paired gain on the checks it was tried on clears `gain_needed` (2 of 3 tries, 3 of 6):
+  a gain of one try in three is what a line with no effect shows about one time in three;
+- the guides the profile would use are asked together on every check, and while any check that had a verdict falls
+  by `HARM_AT` passes or more, the line whose removal restores most is dropped and kept as `harmful`;
+- the checks in `CALIBRATING` are asked and shown, never scored: nearly every kept model fails them (they measure
+  their own wording), so they set no tier and choose no guide until their verdicts agree with live rates.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import math
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
@@ -44,6 +57,19 @@ REPLY_TOKENS = 6_000
 #: answers a reply cut there from its own reasoning.
 LOOPING_MODEL_CEILING = 40_000
 RECORD_KEY = "deep_diagnosis"
+#: A check with fewer measured tries than this has no verdict (DX.1).
+MIN_MEASURED_TRIES = 2
+#: A check that had a verdict and lost this many passes with the profile's guides is harmed by them (DX.2). Read from
+#: the kept diagnoses: with their kept lines one model's "a long list without repeating itself" fell from 3/3 to 0/3,
+#: another's from 3/3 to 1/3, and the lines stayed on.
+HARM_AT = 2
+#: Checks asked and shown but not scored (DX.3). Read from the eleven kept diagnoses: "the answer as a call, not as
+#: text" passed 0/3 on 9 of them and 1/3 on the others, "a refusal heeded" 0/3 on 9 - though these models give their
+#: answers in runs. In the first the request already holds a passing test run and most models run one more command;
+#: in the second most read the file before editing it, which the check counts as a failure. They measure their own
+#: wording: six of 36 tries lost by every model, so no model could reach "strong". They leave this set when their
+#: verdicts are shown to agree with the same behaviour's rate in runs.
+CALIBRATING = frozenset({"the answer as a call, not as text", "a refusal heeded"})
 
 def candidates() -> tuple[tuple[str, str, tuple[str, ...]], ...]:
     """(guide id, its line, the checks it is for), from the general catalogue (`app.models.guidance`)."""
@@ -63,9 +89,29 @@ _SPEC = (
 @dataclass(frozen=True)
 class Result:
     check: str
+    #: Measured tries: those that ended in a server error are not among them (`unmeasured`, DX.1).
     tries: int
     passed: int
     notes: tuple[str, ...] = ()
+    unmeasured: int = 0
+
+
+def has_verdict(result: Any) -> bool:
+    """Whether a check's result says anything: at least `MIN_MEASURED_TRIES` tries the server answered (DX.1)."""
+    return int(getattr(result, "tries", 0) or 0) >= MIN_MEASURED_TRIES
+
+
+def scored(result: Any) -> bool:
+    """Whether a check's result counts towards the tier and the guides: a verdict, and not calibrating (DX.3)."""
+    return has_verdict(result) and str(getattr(result, "check", "")) not in CALIBRATING
+
+
+def gain_needed(tries: int) -> int:
+    """The paired gain in passes a guide must show over `tries` tries to be kept as helping (DX.2): 2 of 3, 3 of 6.
+
+    For a line with no effect on a check passed half the time, a gain of 2 in 3 paired tries shows 11% of the time and
+    3 in 6 about 8%; the gain of 1 kept before shows 34%."""
+    return 1 + math.ceil(max(int(tries), 1) / 3)
 
 
 @dataclass(frozen=True)
@@ -82,6 +128,10 @@ class Diagnosis:
     helped: tuple[str, ...] = ()
     #: Whether repeating the rule at the end of the request kept it after a long one.
     reminder_helped: bool = False
+    #: Guides dropped because, asked with the others, a check that had a verdict fell by `HARM_AT` or more (DX.2).
+    harmful: tuple[str, ...] = ()
+    #: What it was measured on (`diagnosis_fingerprint`, DX.5).
+    fingerprint: dict = field(default_factory=dict)
 
 
 def _create(model: Any) -> Callable[..., Any]:
@@ -393,70 +443,130 @@ CHECKS: dict[str, Callable[[Any, str], tuple[bool, str]]] = {
 }
 
 
-def _measure(model: Any, guidance: str, names: list[str], workers: int) -> tuple[Result, ...]:
-    jobs = [(name, n) for name in names for n in range(TRIES)]
+def _reminded(model: Any, guidance: str) -> tuple[bool, str]:
+    return rule_kept_after_a_long_request(model, guidance, reminded=True)
 
-    def one(job: tuple[str, int]) -> tuple[str, bool, str]:
-        name, _n = job
-        try:
-            ok, note = CHECKS[name](model, guidance)
-        except Exception as error:  # noqa: BLE001 - a failed call is a failed try
-            ok, note = False, f"error: {type(error).__name__}: {str(error)[:80]}"
-        return name, ok, note
+
+#: The check asked with the rule repeated at the end of the request, for the end-of-request reminder.
+REMINDED = "the rule repeated at the end"
+
+
+def _check(name: str) -> Callable[[Any, str], tuple[bool, str]]:
+    return _reminded if name == REMINDED else CHECKS[name]
+
+
+def _one_try(model: Any, name: str, guidance: str) -> tuple[bool | None, str]:
+    """One try of a check: (passed, note); passed None when the server, not the model, failed it (DX.1)."""
+    from app.models.server_fault import server_fault
+
+    try:
+        return _check(name)(model, guidance)
+    except Exception as error:  # noqa: BLE001 - a failed call is a failed try, unless the server failed it
+        why = server_fault(error)
+        if why:
+            return None, f"not measured ({why}): {type(error).__name__}: {str(error)[:80]}"
+        return False, f"error: {type(error).__name__}: {str(error)[:80]}"
+
+
+def _measure_many(model: Any, groups: list[tuple[str, str, list[str]]], workers: int) -> dict[str, tuple[Result, ...]]:
+    """Each (label, guidance, checks) of `groups` measured, all their tries asked together: results by label, each
+    in its checks' order with its notes in try order."""
+    jobs = [(label, guidance, name) for label, guidance, names in groups for name in names for _ in range(TRIES)]
+
+    def one(job: tuple[str, str, str]) -> tuple[bool | None, str]:
+        _label, guidance, name = job
+        return _one_try(model, name, guidance)
 
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         outcomes = list(pool.map(one, jobs))
-    results = []
-    for name in names:
-        mine = [(ok, note) for n, ok, note in outcomes if n == name]
-        results.append(Result(name, len(mine), sum(1 for ok, _ in mine if ok), tuple(note for ok, note in mine if note)))
-    return tuple(results)
+    out: dict[str, tuple[Result, ...]] = {}
+    for label, _guidance, names in groups:
+        results = []
+        for name in names:
+            mine = [outcome for job, outcome in zip(jobs, outcomes) if job[0] == label and job[2] == name]
+            measured = [(ok, note) for ok, note in mine if ok is not None]
+            results.append(Result(name, len(measured), sum(1 for ok, _ in measured if ok),
+                                  tuple(note for _ok, note in mine if note), len(mine) - len(measured)))
+        out[label] = tuple(results)
+    return out
+
+
+def _measure(model: Any, guidance: str, names: list[str], workers: int) -> tuple[Result, ...]:
+    return _measure_many(model, [("", guidance, names)], workers)[""]
 
 
 def _passes(results: tuple[Result, ...]) -> dict[str, int]:
     return {r.check: r.passed for r in results}
 
 
+def _lines(guides: list[Any]) -> str:
+    return "\n".join(f"- {guide.line}" for guide in guides)
+
+
+def falls(before: dict[str, Result], after: tuple[Result, ...]) -> list[str]:
+    """The checks with a verdict on both sides that lost `HARM_AT` passes or more from `before` to `after` (DX.2)."""
+    return [r.check for r in after if r.check in before and has_verdict(before[r.check]) and has_verdict(r)
+            and before[r.check].passed - r.passed >= HARM_AT]
+
+
 def diagnose(model: Any, name: str, workers: int = 3) -> Diagnosis:
-    """Measure the model, try each candidate line where it fell short, keep the lines that helped. Never raises."""
+    """Measure the model, try each candidate line where it fell short, keep the lines that helped and harmed nothing.
+    Never raises."""
+    from app.models import diagnosis_fingerprint
+    from app.models import guidance as catalogue
+
     started = time.monotonic()
     baseline = _measure(model, "", list(CHECKS), workers)
-    before = _passes(baseline)
+    before = {r.check: r for r in baseline}
+
+    def short(check: str) -> bool:
+        return check in before and scored(before[check]) and before[check].passed < before[check].tries
+
+    trials = [(label, line, [t for t in targets if short(t)]) for label, line, targets in candidates()]
+    trials = [trial for trial in trials if trial[2]]
+    rule = catalogue.REMINDER_CHECK
+    groups = list(trials) + ([("end-of-request reminder", "", [REMINDED])] if short(rule) else [])
+    measured = _measure_many(model, groups, workers) if groups else {}
     tried: dict[str, tuple[Result, ...]] = {}
-    kept: list[str] = []
     helped: list[str] = []
-    for label, line, targets in candidates():
-        short = [t for t in targets if before.get(t, TRIES) < TRIES]
-        if not short:
-            continue
-        results = _measure(model, line, short, workers)
-        tried[label] = results
-        after = _passes(results)
-        if sum(after.values()) > sum(before[t] for t in short):
-            kept.append(line)
+    for label, _line, checks in trials:
+        tried[label] = measured[label]
+        gain = sum(r.passed for r in measured[label]) - sum(before[t].passed for t in checks)
+        if gain >= gain_needed(sum(before[t].tries for t in checks)):
             helped.append(label)
     reminder_helped = False
-    rule = "a rule kept after a long request"
-    if before.get(rule, TRIES) < TRIES:
-        def reminded(model_: Any, guidance: str) -> tuple[bool, str]:
-            return rule_kept_after_a_long_request(model_, guidance, reminded=True)
-
-        CHECKS["the rule repeated at the end"] = reminded
-        try:
-            results = _measure(model, "", ["the rule repeated at the end"], workers)
-        finally:
-            CHECKS.pop("the rule repeated at the end", None)
-        tried["end-of-request reminder"] = results
-        reminder_helped = results[0].passed > before[rule]
-    with_guidance = _measure(model, "\n".join(f"- {line}" for line in kept), list(CHECKS), workers) if kept else ()
+    if short(rule):
+        results = tried["end-of-request reminder"] = measured["end-of-request reminder"]
+        reminder_helped = results[0].passed - before[rule].passed >= gain_needed(before[rule].tries)
+    # The guides the profile would use, asked together on every check; a line that takes a check down is dropped.
+    draft = Diagnosis(model=name, measured_at="", baseline=baseline, helped=tuple(helped),
+                      reminder_helped=reminder_helped)
+    profile = catalogue.chosen_by(draft)
+    active = [guide for guide in catalogue.GUIDES if profile.chosen.get(guide.id)]
+    harmful: list[str] = []
+    with_guidance: tuple[Result, ...] = _measure(model, _lines(active), list(CHECKS), workers) if active else ()
+    while active:
+        falling = falls(before, with_guidance)
+        if not falling:
+            break
+        without = _measure_many(model, [(g.id, _lines([a for a in active if a is not g]), falling) for g in active],
+                                workers)
+        # The line whose removal restores most; the later one in the catalogue on a tie.
+        worst = max(active, key=lambda g: (sum(r.passed for r in without[g.id]), active.index(g)))
+        harmful.append(worst.id)
+        active.remove(worst)
+        with_guidance = _measure(model, _lines(active), list(CHECKS), workers) if active else ()
+    kept = [guide.line for guide in catalogue.GUIDES if guide.id in helped and guide.id not in harmful]
     looped = any(note.startswith(("looped", "reasoned past")) for r in (*baseline, *with_guidance) for note in r.notes)
     diagnosis = Diagnosis(
         model=name, measured_at=datetime.now(timezone.utc).isoformat(timespec="seconds"), baseline=baseline,
         tried=tried, kept=tuple(kept), with_guidance=with_guidance,
         reply_ceiling=LOOPING_MODEL_CEILING if looped else None, seconds=int(time.monotonic() - started),
-        helped=tuple(helped), reminder_helped=reminder_helped,
+        helped=tuple(helped), reminder_helped=reminder_helped, harmful=tuple(harmful),
+        fingerprint=diagnosis_fingerprint.current(),
     )
-    logger.info("Deep diagnosis of %s in %d s: %d line(s) of guidance kept", name, diagnosis.seconds, len(kept))
+    logger.info("Deep diagnosis of %s in %d s: %d line(s) of guidance kept, %d dropped as harmful", name,
+                diagnosis.seconds, len(kept), len(harmful))
     return diagnosis
 
 
@@ -470,7 +580,7 @@ def keep(diagnosis: Diagnosis) -> None:
     # diagnosis: the diagnosis only sets one when the model loops, and measured on one model it
     # would have dropped the ceiling the runs had shown it needs (21 of 97 replies over 16,000
     # tokens held 73% of the output).
-    earlier_record = recorded(diagnosis.model) or {}
+    earlier_record = recorded(diagnosis.model, even_if_stale=True) or {}
     if earlier_record.get("reply_ceiling") and earlier_record.get("reply_ceiling_from"):
         record["reply_ceiling"] = earlier_record["reply_ceiling"]
         record["reply_ceiling_from"] = earlier_record["reply_ceiling_from"]
@@ -483,14 +593,24 @@ def keep(diagnosis: Diagnosis) -> None:
     guidance.ensure_rows()
 
 
-def recorded(name: str) -> dict | None:
+def recorded(name: str, *, even_if_stale: bool = False, now: dict | None = None) -> dict | None:
+    """The kept deep diagnosis of `name`; None when there is none, or when it was measured on another model file,
+    quantisation, chat template or server build than the server's now (`diagnosis_fingerprint`, DX.5)."""
     from app.models.registry import _slug, fitness_dir
 
     try:
         found = json.loads((fitness_dir() / f"{_slug(name)}.json").read_text(encoding="utf-8")).get(RECORD_KEY)
     except (OSError, ValueError, AttributeError):
         return None
-    return found if isinstance(found, dict) else None
+    if not isinstance(found, dict):
+        return None
+    if not even_if_stale:
+        from app.models import diagnosis_fingerprint
+
+        kept_on = found.get("fingerprint")
+        if diagnosis_fingerprint.stale(kept_on, now if now is not None else diagnosis_fingerprint.current()):
+            return None
+    return found
 
 
 def report(diagnosis: Diagnosis) -> str:
@@ -498,14 +618,19 @@ def report(diagnosis: Diagnosis) -> str:
     after = _passes(diagnosis.with_guidance) if diagnosis.with_guidance else {}
     for result in diagnosis.baseline:
         lines.append(f"  {result.check:<36} {result.passed}/{result.tries}"
+                     + (f" ({result.unmeasured} not measured)" if result.unmeasured else "")
+                     + (" (calibrating, not scored)" if result.check in CALIBRATING else "")
                      + (f" -> {after[result.check]}/{TRIES} with the kept guidance" if result.check in after else "")
                      + (f"  - {result.notes[0]}" if result.notes else ""))
     for label, results in diagnosis.tried.items():
         lines.append(f"  tried '{label}': " + ", ".join(f"{r.check} {r.passed}/{r.tries}" for r in results))
     lines.append("  kept guidance:" + ("".join(f"\n    - {line}" for line in diagnosis.kept) if diagnosis.kept else " none"))
+    if diagnosis.harmful:
+        lines.append("  dropped as harmful (a check fell with them): " + ", ".join(diagnosis.harmful))
     lines.append(f"  reply ceiling: {diagnosis.reply_ceiling or 'none (it did not loop)'}")
     return "\n".join(lines)
 
 
-__all__ = ["CHECKS", "candidates", "Diagnosis", "LOOPING_MODEL_CEILING", "RECORD_KEY", "Result", "TRIES", "diagnose",
+__all__ = ["CALIBRATING", "CHECKS", "HARM_AT", "MIN_MEASURED_TRIES", "REMINDED", "candidates", "Diagnosis", "falls",
+           "gain_needed", "has_verdict", "LOOPING_MODEL_CEILING", "RECORD_KEY", "Result", "scored", "TRIES", "diagnose",
            "keep", "recorded", "report"]

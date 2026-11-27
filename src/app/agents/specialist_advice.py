@@ -216,6 +216,20 @@ _SYSTEM_PROMPT = (
 )
 
 
+#: Told to the testing specialist when the brief has more criteria than its answer has items (LF.1632). Asked how each
+#: criterion is proven, each item opening with its criterion's id, and given ten items for briefs of 11 to 23 criteria
+#: (677 of 694 stored testing consultations), it wrote one item a criterion up to the tenth and then put the rest into
+#: the tenth: of the 56 testing items longer than 3,000 characters in the stored transcripts, 54 were the tenth of ten,
+#: running on through the later criteria into filler; 13 of those replies ran to the reply cap.
+_MORE_CRITERIA_THAN_ITEMS = (
+    "This brief has {count} acceptance criteria and your answer holds at most {most} recommendations, so not every "
+    "criterion has one of its own. Give them to the criteria hardest to prove; one recommendation may open with "
+    "several ids when one test proves them all (\"AC-8, AC-12: ...\"); a criterion whose own words already say how it "
+    "is proven needs none. Each recommendation stays one sentence about the criteria it opens with: the last one is "
+    "not where the rest go.\n\n"
+)
+
+
 def build_advice_request(role: str, brief_text: str, intake_text: str, stack_text: str) -> dict[str, list[dict[str, str]]]:
     """The input asking one specialist for its advice."""
     criteria = ""
@@ -226,6 +240,8 @@ def build_advice_request(role: str, brief_text: str, intake_text: str, stack_tex
                 "--- The acceptance criteria, as the suite will number them ---\n"
                 + "\n".join(f"- {c.id}: {c.text}" for c in numbered) + "\n\n"
             )
+        if len(numbered) > MOST_RECOMMENDATIONS:
+            criteria += _MORE_CRITERIA_THAN_ITEMS.format(count=len(numbered), most=MOST_RECOMMENDATIONS)
     content = (
         f"--- The brief ---\n{brief_text}\n\n"
         f"--- The product intake ---\n{intake_text}\n\n"
@@ -262,6 +278,32 @@ def create_specialist_advice_agent(
     )
 
 
+#: The longest advice item passed on whole (LF.1631). An item is one concrete sentence; measured over 22,601 items in
+#: the stored consultations' answers not cut at the cap, the median is 209 characters, the 99th percentile 673, and
+#: the longest real sentence 2,612 (every role). Past 3,000 (61 items) they are the tenth of ten items
+#: holding the later criteria run together, then reasoning written into the item ("Let me finalize them in the
+#: proper format") or filler; one answer cut at the 16,000-token cap held a tenth item of 56,139 characters, its last
+#: 44,000 one 1,202-character run of "The test is ..." sentences over and over, too long a unit for the loop cut at
+#: the cap (LF.1607), and all of it went into the architect's request. Replies not cut at the cap did the same, up to
+#: 58,269 characters.
+MOST_ITEM_CHARACTERS = 3_000
+
+#: Where a sentence, or a clause after a semicolon, ends.
+_SENTENCE_END = re.compile(r"(?<=[.!?;])\s+")
+
+
+def _its_leading_sentences(text: str) -> str:
+    """`text`, or past `MOST_ITEM_CHARACTERS` its complete leading sentences that fit; one sentence longer than that
+    is kept to its last whole word within it."""
+    if len(text) <= MOST_ITEM_CHARACTERS:
+        return text
+    ends = [found.start() for found in _SENTENCE_END.finditer(text, 0, MOST_ITEM_CHARACTERS + 1)]
+    kept = text[:ends[-1]] if ends else text[:MOST_ITEM_CHARACTERS].rsplit(" ", 1)[0].rstrip(" ,;:")
+    logger.warning("An advice item of %d characters, far past any real one, passed on as its first %d: %s",
+                   len(text), len(kept), text[:160])
+    return kept
+
+
 def advice_from(answer: Any) -> list[str]:
     """The recommendations an answer gave, cleaned of blanks and repeats.
 
@@ -273,7 +315,7 @@ def advice_from(answer: Any) -> list[str]:
     """
     kept: list[str] = []
     for item in getattr(answer, "recommendations", None) or []:
-        text = " ".join(str(item).split())
+        text = _its_leading_sentences(" ".join(str(item).split()))
         if not text or text in kept:
             continue
         if disables_on_a_condition(text):

@@ -488,6 +488,8 @@ def _compaction_middleware(agent_name: str, model: Any = None, role: str = "", r
                 # The room a whole request has in the slot, past which it is compacted at once (LF.1500).
                 reply_reserve_tokens=reserved,
                 window_tokens=budget.window_tokens,
+                # Past the stage's measured opening, a share of the room beside it (LF.1606).
+                soft_trigger_ratio=policy.soft_trigger_ratio,
                 trim_tokens_to_summarize=policy.trim_tokens_to_summarize,
                 # Shorten large tool-call arguments in older messages before
                 # resorting to summarisation. Left unset - which it was - the

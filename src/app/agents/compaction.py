@@ -391,7 +391,7 @@ class RequestKeepingSummarization(SummarizationMiddleware):
     def __init__(self, *args: Any, most_kept_tokens: int | None = None, usual_trigger_tokens: int | None = None,
                  reply_room: tuple[str, int, int] | None = None, role: str = "", repo_root: str | None = None,
                  fix_stage_trigger_tokens: int | None = None, reply_reserve_tokens: int | None = None,
-                 window_tokens: int | None = None, **kwargs: Any) -> None:
+                 window_tokens: int | None = None, soft_trigger_ratio: float | None = None, **kwargs: Any) -> None:
         # The summary is the stage's work note (PA.2): asked for what was found, decided, changed and is left.
         kwargs.setdefault("summary_prompt", WORK_NOTE_PROMPT)
         super().__init__(*args, **kwargs)
@@ -416,6 +416,12 @@ class RequestKeepingSummarization(SummarizationMiddleware):
         # The reply's reserve and the stage's window, for the room a whole request has (`request_fit`, LF.1500).
         self._reply_reserve = reply_reserve_tokens
         self._window = window_tokens
+        # The share of the room beside the measured opening a request may fill before it is summarised (LF.1606).
+        if soft_trigger_ratio is None:
+            from app.agents.context_budget import SOFT_TRIGGER_RATIO
+
+            soft_trigger_ratio = SOFT_TRIGGER_RATIO
+        self._soft_ratio = float(soft_trigger_ratio)
         # How many messages the last cutoff left whole, set where it is chosen and kept on its summary (LF.1499).
         self._kept_tail: int | None = None
 
@@ -620,7 +626,17 @@ class RequestKeepingSummarization(SummarizationMiddleware):
         trigger = getattr(self._lc_helper, "trigger", None)
         configured = int(trigger[1]) if isinstance(trigger, tuple) and len(trigger) == 2 else None
         own = self._the_trigger()
-        if own is not None and own != configured:
+        later = self._past_the_opening(messages, own if own is not None else configured)
+        if later is not None:
+            # Past the stage's measured opening, within the room its request has (LF.1606).
+            if later.upcoming < later.trigger:
+                from app.agents import summary_trigger
+                from app.observability.transcript import _stage_from_config
+
+                if configured and later.upcoming >= configured:
+                    summary_trigger.note_kept_whole(_stage_from_config(""), later, configured)
+                return False
+        elif own is not None and own != configured:
             # A fix stage's own trigger (LF.1420): past it only when its old reads, already notes, left it there.
             if total_tokens < own:
                 return False
@@ -646,6 +662,27 @@ class RequestKeepingSummarization(SummarizationMiddleware):
                 return False
         return True
 
+    def _reserve(self) -> int | None:
+        """The tokens held back for this call's reply: a fix stage's smaller cap where its own trigger counts on it."""
+        if self._fix_stage_trigger and self._the_trigger() == self._fix_stage_trigger:
+            # A fix stage's replies are capped smaller, and its own trigger already counts on that (LF.1420).
+            from app.models import FIX_STAGE_REPLY_TOKENS
+
+            return FIX_STAGE_REPLY_TOKENS
+        return self._reply_reserve
+
+    def _past_the_opening(self, messages: list[AnyMessage], usual: int | None) -> Any:
+        """The trigger past this conversation's measured opening (`summary_trigger`, LF.1606) when it is later than
+        `usual`, else None: the configured trigger, measured against a framing of 6,000 tokens, sits inside an opening
+        of 35,000-40,000 and left a stage about 8,000 tokens of conversation between summaries."""
+        if not usual:
+            return None
+        from app.agents import summary_trigger
+
+        found = summary_trigger.measured(messages, reserve=self._reserve(), window=self._window,
+                                         ratio=self._soft_ratio)
+        return found if found is not None and found.trigger > usual else None
+
     def _past_the_room(self, messages: list[AnyMessage]) -> bool:
         """Whether the next request - the last reply's server-reported tokens and the messages since - would pass
         the room the slot leaves once the reply's reserve is held back (`request_fit`, LF.1500), and summarising
@@ -654,13 +691,7 @@ class RequestKeepingSummarization(SummarizationMiddleware):
         from app.models import request_fit
 
         try:
-            reserve = self._reply_reserve
-            if self._fix_stage_trigger and self._the_trigger() == self._fix_stage_trigger:
-                # A fix stage's replies are capped smaller, and its own trigger already counts on that (LF.1420).
-                from app.models import FIX_STAGE_REPLY_TOKENS
-
-                reserve = FIX_STAGE_REPLY_TOKENS
-            room = request_fit.room_tokens(reserve, window=self._window)
+            room = request_fit.room_tokens(self._reserve(), window=self._window)
             upcoming = request_fit.next_request_tokens(messages)
             if not room or not upcoming or upcoming <= room * request_fit.MARGIN:
                 return False

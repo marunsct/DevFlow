@@ -61,7 +61,7 @@ class Field:
 
 
 #: The stage kinds the reasoning settings are kept for (`dose_response.stage_kind`).
-STAGE_KINDS = ("step", "review", "design")
+STAGE_KINDS = ("step", "reading", "opening")
 _EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
 
 FIELDS: tuple[Field, ...] = (
@@ -69,6 +69,7 @@ FIELDS: tuple[Field, ...] = (
     Field("parallel_cap", "Requests sent at once", "int"),
     Field("session_scope", "Balancer session scope", ("conversation", "request")),
     *(Field(f"effort.{kind}", f"Reasoning effort, {kind}", _EFFORTS) for kind in STAGE_KINDS),
+    Field("effort_route", "Where the effort is sent", ("field", "template")),
     *(Field(f"budget.{kind}", f"Reasoning budget, {kind} (tokens)", "int") for kind in STAGE_KINDS),
     *(Field(f"cap.{kind}", f"Reply cap, {kind} (tokens)", "int") for kind in STAGE_KINDS),
 )

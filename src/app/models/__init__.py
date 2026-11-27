@@ -760,6 +760,11 @@ class CompatibleChatOpenAI(ChatOpenAI):
             except Exception:  # noqa: BLE001 - sized from the payload's messages
                 conversation = None
             with_the_reasoning_budget(payload, self._served_by(), conversation)
+            # The effort, budget and reply cap the model's diagnosis measured for this kind of call (DX.7), behind
+            # `PROFILE_FROM_DIAGNOSIS` unless the owner set them; an effort the run sends itself stays.
+            from app.models.dose_response import with_the_profile
+
+            with_the_profile(payload, self._served_by(), conversation)
         except Exception:  # noqa: BLE001 - the request as it was
             pass
         # The answer tool by name on a call where only the answer is allowed, where the server honours that (PA.16);

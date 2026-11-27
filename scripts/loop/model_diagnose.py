@@ -4,7 +4,9 @@ Runs INSIDE the worker - `scripts/loop/loop.sh diagnose` - and prints what is
 kept for the model the server holds now. A model never diagnosed is diagnosed
 first (a few minutes of small requests); `--again` diagnoses it afresh and
 keeps the new result; `--deep` also asks whether it does as a stage asks
-and keeps the guidance lines that helped (`app.models.deep_diagnosis`). Uses the owner's model: run it between runs, never
+and keeps the guidance lines that helped (`app.models.deep_diagnosis`), then measures the speed and concurrency profile
+and the reasoning dose-response quick tier (`speed_profile`, `dose_response`; `--profile` for those alone). Uses the
+owner's model: run it between runs, never
 while a stage waits for the server. Changes no server setting.
 """
 import os
@@ -39,3 +41,17 @@ if "--deep" in sys.argv:
     else:
         print(f"  deep diagnosis kept {deep.get('measured_at')}: {len(deep.get('kept') or [])} guidance line(s), "
               f"reply ceiling {deep.get('reply_ceiling') or 'none'} (--deep --again to measure afresh)")
+
+if "--deep" in sys.argv or "--profile" in sys.argv:
+    # The speed, cache and concurrency profile (DX.6, alone on the server) and the reasoning dose-response's quick
+    # tier on replayed stage requests (DX.7). Its full tier starts only from the settings page (owner 2026-11-27).
+    from app.models import diagnosis_profile, dose_response, speed_profile
+
+    print(f"speed and concurrency of {name} ...", flush=True)
+    speed_profile.measure(model, name)
+    print(f"reasoning dose-response of {name} (quick tier) ...", flush=True)
+    dose_response.measure(model, name, dose_response.QUICK)
+    for row in diagnosis_profile.view(name):
+        if row["measured"] is not None or row["override"] is not None:
+            print(f"  {row['title']}: measured {row['measured']}, yours {row['override']}, in use {row['applied']}"
+                  + (f" - {row['evidence']}" if row["evidence"] else ""))

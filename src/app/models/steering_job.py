@@ -97,10 +97,13 @@ def status() -> dict[str, str]:
     return {"status": state, "message": str(found.get("message") or "")}
 
 
-def run() -> None:
-    """Diagnose the serving model afresh and keep everything against it. Never raises; failure is a status."""
+def run(full: bool = False) -> None:
+    """Diagnose the serving model afresh and keep everything against it. Never raises; failure is a status.
+
+    `full`: the reasoning dose-response's full tier (`dose_response.FULL`: every replayed request, every effort, two
+    budgets, at a stage's cap; 20-90 minutes), which starts only from here (owner 2026-11-27); else its quick tier."""
     with _Beating():
-        _run()
+        _run(full)
 
 
 def _gone(model: Any) -> bool:
@@ -114,7 +117,7 @@ def _gone(model: Any) -> bool:
     return True
 
 
-def _run() -> None:
+def _run(full: bool = False) -> None:
     try:
         from app.models import build_default_chat_model, deep_diagnosis, diagnostics, reply_salvage, server_profile
 
@@ -153,6 +156,16 @@ def _run() -> None:
         from app.models import speed_profile
 
         speed_profile.measure(model, name)
+        from app.models import dose_response
+
+        tier = dose_response.FULL if full else dose_response.QUICK
+        phase[0] = (f"replaying stage requests at each reasoning effort and budget ({tier.name} tier"
+                    + (", up to two hours" if full else "") + ")")
+        set_status("running", phase[0])
+        with diagnosis_pool.reporting(progress):
+            dose_response.measure(model, name, tier)
+        if _gone(model):
+            return
         diagnostics.apply(model, diagnostics.recorded(name))
         set_status("running", "finding what the model can do: an image, a schema, another language, its model card")
         from app.models import capabilities

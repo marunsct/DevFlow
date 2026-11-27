@@ -79,6 +79,8 @@ where = ["src"]
 "app.acceptance" = ["*.cjs"]
 "app.server" = ["*.js"]
 "app.stacks.packs" = ["*.css"]
+# The diagnosis's replayed stage requests (`app.models.replay_set`).
+"app.models" = ["replays/*.json.gz"]
 
 [tool.coverage.run]
 branch = true

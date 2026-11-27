@@ -58,3 +58,15 @@ def test_the_diagnosis_is_queued_for_the_worker(client, _served, monkeypatch) ->
 
     assert answer.status_code == 202 and queued == [True]
     assert client.get("/api/settings/model/steering").json()["status"] == "running"
+
+
+def test_the_full_calibration_is_queued_only_when_asked_for(client, _served, monkeypatch) -> None:
+    """The reasoning dose-response's full tier starts only from the settings page, when asked (owner 2026-11-27)."""
+    from app.server import settings, tasks
+
+    monkeypatch.setattr(settings, "_a_run_is_live", lambda: False)
+    queued = []
+    monkeypatch.setattr(tasks.diagnose_the_model, "delay", lambda **kwargs: queued.append(kwargs))
+    answer = client.post("/api/settings/model/steering/diagnose", json={"full": True})
+
+    assert answer.status_code == 202 and queued == [{"full": True}]

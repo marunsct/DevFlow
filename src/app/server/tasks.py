@@ -729,11 +729,12 @@ def fill_model_capabilities() -> None:
 
 
 @celery_app.task(name="diagnose_the_model", ignore_result=True)
-def diagnose_the_model() -> None:
-    """The settings page's "diagnose this model" action, in the worker that reaches the model (`steering_job`)."""
+def diagnose_the_model(full: bool = False) -> None:
+    """The settings page's "diagnose this model" action, in the worker that reaches the model (`steering_job`);
+    `full` adds the reasoning dose-response's full tier, which starts only from there (owner 2026-11-27)."""
     from app.models.steering_job import run
 
-    run()
+    run(full=bool(full))
 
 
 @celery_app.task(
@@ -784,7 +785,8 @@ def execute_workflow_run(
                 raise _NotDiagnosed
             # Said in the transcript (HR2.OB.1): a new model's diagnosis makes dozens of calls before the first
             # stage, and an audit reading only the transcript saw a run "stalled at 0%".
-            note_in_transcript(run_id, "", "model_diagnostic", event="start", steps="diagnose, salvage, deep, capabilities")
+            note_in_transcript(run_id, "", "model_diagnostic", event="start",
+                               steps="diagnose, salvage, deep, speed, dose-response, capabilities")
             from app.models.diagnosis_flight import one_at_a_time
             from app.models.reply_salvage import served_name
 
@@ -801,6 +803,10 @@ def execute_workflow_run(
                 from app.models.speed_profile import measure_if_new as speed_if_new
 
                 speed_if_new(served)
+                # Effort and budget usability per kind of call, on replayed stage requests (DX.7, the quick tier).
+                from app.models.dose_response import measure_if_new as dose_if_new
+
+                dose_if_new(served)
                 from app.models.diagnostics import apply, recorded
 
                 apply(served, recorded(served_name(served)))

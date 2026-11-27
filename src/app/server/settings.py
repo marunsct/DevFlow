@@ -767,8 +767,14 @@ def _a_run_is_live() -> bool:
     return any(str(r.status) in ("running", "queued") for r in RunStore.shared().list_all(limit=50))
 
 
+class DiagnosisRequest(BaseModel):
+    #: The reasoning dose-response's full tier too (20-90 minutes of the model server); only ever started from here.
+    full: bool = False
+
+
 @settings_router.post("/model/steering/diagnose", status_code=202)
-async def diagnose_the_model(user: UserInDB = Depends(require_admin)) -> dict[str, Any]:
+async def diagnose_the_model(payload: DiagnosisRequest | None = None,
+                             user: UserInDB = Depends(require_admin)) -> dict[str, Any]:
     """Diagnose the serving model afresh and save the guidance it needs against it; refused while a run is live."""
     from fastapi import HTTPException
 
@@ -781,10 +787,15 @@ async def diagnose_the_model(user: UserInDB = Depends(require_admin)) -> dict[st
                                                     "not share the model's slots.")
     from app.server.tasks import diagnose_the_model as job
 
+    full = bool(payload and payload.full)
     set_status("running", "queued")
-    job.delay()
-    record_audit(actor=user.username, tenant_id=user.tenant_id, action="settings.model_diagnosis")
-    return {"status": "running", "message": "diagnosing the model"}
+    if full:
+        job.delay(full=True)
+    else:
+        job.delay()
+    record_audit(actor=user.username, tenant_id=user.tenant_id, action="settings.model_diagnosis",
+                 detail={"full": full})
+    return {"status": "running", "message": "diagnosing the model" + (" with the full calibration" if full else "")}
 
 
 @settings_router.get("/model/capabilities")

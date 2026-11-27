@@ -134,11 +134,13 @@ export const ModelGuidancePanel: React.FC = () => {
     };
   }, [follow]);
 
-  const diagnose = async () => {
+  const diagnose = async (full = false) => {
     setStarting(true);
     setNote('');
     try {
-      const res = await api.post('/settings/model/steering/diagnose');
+      const res = full
+        ? await api.post('/settings/model/steering/diagnose', { full: true })
+        : await api.post('/settings/model/steering/diagnose');
       setNote(res.data?.message ?? 'The diagnosis has started.');
       if (timer.current) clearTimeout(timer.current);
       await follow();
@@ -210,11 +212,20 @@ export const ModelGuidancePanel: React.FC = () => {
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
-            onClick={diagnose}
+            onClick={() => diagnose()}
             disabled={starting || running}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
           >
             {running ? 'Diagnosing…' : 'Diagnose this model and set its guidance'}
+          </button>
+          <button
+            type="button"
+            onClick={() => diagnose(true)}
+            disabled={starting || running}
+            title="Also replays stage requests at every reasoning effort and budget at a stage's size: 20 to 90 minutes of the model server, between runs."
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border text-sm font-medium text-text-primary disabled:opacity-50"
+          >
+            Full calibration (20-90 minutes)
           </button>
           {running && (
             <span role="status" className="text-sm text-text-secondary">

@@ -893,7 +893,18 @@ def apply(model: Any, diagnosis: Diagnosis | None) -> None:
         # the model has no switch for it (IK.3, IK.4; used behind `REASONING_BUDGET`).
         from app.models import reasoning_budget
 
-        reasoning_budget.learnt(server, diagnosis.settings)
+        settings = diagnosis.settings
+        if settings.reasoning_budget and settings.reasoning_budget_usable is None:
+            # The budget question showed nothing either way; replies to real stage requests held to a budget may
+            # have (`dose_response`, DX.4 at stage size).
+            from dataclasses import replace
+
+            from app.models.dose_response import budget_usable
+
+            shown = budget_usable(diagnosis.model)
+            if shown is not None:
+                settings = replace(settings, reasoning_budget_usable=shown)
+        reasoning_budget.learnt(server, settings)
     except Exception:  # noqa: BLE001
         logger.debug("Could not apply the model's diagnosis", exc_info=True)
 

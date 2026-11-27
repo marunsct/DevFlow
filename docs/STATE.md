@@ -5,8 +5,8 @@ the block below is written by `loop.sh state`. The map of all documents is `docs
 `docs/improvement-plan.md`; how the product works is `docs/PRODUCT.md`; how to run and test it is `docs/HANDOVER.md`;
 decisions in force are `docs/owner-decisions.md`; old information is found through `docs/ARCHIVE.md`.
 <!-- state:generated -->
-**As of:** 11-27 22:01 JST (written by `loop.sh state`). Harness 7d578a70 committed; 653cda97 deployed (not the same).
-**Live, and stopped in the last day:** run-1fb341dc running at principal_architect; run-31be509b running at defect_fix_1_0; run-970c2cb6 paused at ?; run-4d1f3829 failed at failed; run-c13e7189 paused at awaiting_approval:defect_fix_2_2; run-e799301e failed at failed
+**As of:** 11-27 22:21 JST (written by `loop.sh state`). Harness 3dcf0e6d committed; 3dcf0e6d deployed.
+**Live, and stopped in the last day:** run-1fb341dc running at acceptance_author_0_g0; run-31be509b running at defect_fix_1_2; run-970c2cb6 paused at ?; run-4d1f3829 failed at failed; run-c13e7189 paused at awaiting_approval:defect_fix_2_2; run-e799301e failed at failed
 **Last scored:** run-a753551e fullstack-bookmarks 8/8 (completed, mixed, 194 active min, handoff 1.0; scored 11-27 21:54 JST); run-e4e5c8a4 notes-api-java 9/9 (completed, mixed, 126 active min, handoff 1.0; scored 11-27 20:55 JST); run-45ded0b4 web-todo 10/10 (completed, mixed, 76 active min, handoff 1.0; scored 11-27 18:40 JST).
 <!-- /state:generated -->
 
@@ -15,10 +15,10 @@ decisions in force are `docs/owner-decisions.md`; old information is found throu
 |---|---|
 | Phase | **Learning runs, fixes deployed at once** (deep-review plan, owner 11-18: implement all; frozen-version measuring for Measure batches). The release-candidate count starts only when a full audit cycle finds nothing to fix. |
 | Models | olla `host.docker.internal:4001/olla/openai/v1`, model `qwen3.6-35b-a3b` again (owner 11-27 afternoon; two llama.cpp servers, 2 slots each, 93k context per slot, 4 requests at once). Runs pinned to it, build model only (`FRONTIER=false`: the settings name a hosted judgement model, not used by the loop); per-request sessions (`.env` MODEL_SESSION_SCOPE=request). Not yet measured by the new diagnosis; inkling was (12:16 JST). |
-| Harness | 653cda9 deployed 11-27 20:28 JST, into both live runs: LF.1503-1613 (details `docs/archive/plans/fix-log.md`); LF.1593 step-sized reasoning budget on. **Runs resumed 16:48 JST** on Qwen 3.6, 2 in parallel mode: textkit-lib 10 8/8 (23 min), notes-api-go 16 9/9, 8/8 (66 min, mixed), web-todo 7 10/10, 6/6 (78 min, mixed). Host rebooted 18:26. notes-api-java 13 9/9, 6/8, not deliverable (128 min, mixed). fullstack-bookmarks 17 8/8, 7/7, not deliverable (195 min, mixed; 3 unpassable locked tests, LF.1614-1618). Live: run-31be509b `notes-api-csharp 17`, run-1fb341dc `notes-api-rust 5`; run-970c2cb6 (pinned to inkling) stays paused. Earlier today on inkling (reviews in `reports/product-reviews/`; diagnosis DX.1-7, LF.1596-1603). Open: the plan. |
+| Harness | 3dcf0e6 deployed 11-27 22:21 JST, into both live runs: LF.1503-1618 (details `docs/archive/plans/fix-log.md`); LF.1593 step-sized reasoning budget on. **Runs resumed 16:48 JST** on Qwen 3.6, 2 in parallel mode: textkit-lib 10 8/8 (23 min), notes-api-go 16 9/9, 8/8 (66 min, mixed), web-todo 7 10/10, 6/6 (78 min, mixed). Host rebooted 18:26. notes-api-java 13 9/9, 6/8, not deliverable (128 min, mixed). fullstack-bookmarks 17 8/8, 7/7, not deliverable (195 min, mixed; 3 unpassable locked tests, LF.1614-1618). Live: run-31be509b `notes-api-csharp 17`, run-1fb341dc `notes-api-rust 5`; run-970c2cb6 (pinned to inkling) stays paused. Earlier today on inkling (reviews in `reports/product-reviews/`; diagnosis DX.1-7, LF.1596-1603). Open: the plan. |
 | Switches | 53 fixes built in (always on). 29 optional switches (9 groups, `docs/measuring.md`); `WEB_LOOKUP_WHEN_STUCK` is off and set per run. Measure arms use `SWITCHES_OFF` per run. |
 | Operations | Nightly backups (`loop.sh backup --check`). At most 2 runs, parallel execution mode (`.env` `MAX_CONCURRENT_RUNS=2`). Audit cron every 15 minutes (recreated 11-27 18:32 JST). |
-| Suites | both green at 22,984 passed on 653cda9 (11-27), at SUITE_WORKERS=2. |
+| Suites | both green at 23,024 passed on 3dcf0e6 (11-27), at SUITE_WORKERS=2. |
 
 ## Off until measured
 BATCH_ACCEPTANCE_AUTHOR (web tools are on since 11-23, measured from there). Hosted-model

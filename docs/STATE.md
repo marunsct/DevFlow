@@ -5,8 +5,8 @@ the block below is written by `loop.sh state`. The map of all documents is `docs
 `docs/improvement-plan.md`; how the product works is `docs/PRODUCT.md`; how to run and test it is `docs/HANDOVER.md`;
 decisions in force are `docs/owner-decisions.md`; old information is found through `docs/ARCHIVE.md`.
 <!-- state:generated -->
-**As of:** 11-27 11:57 JST (written by `loop.sh state`). Harness 974cc935 committed; 974cc935 deployed.
-**Live, and stopped in the last day:** run-970c2cb6 paused at ?; run-4d1f3829 failed at failed; run-c13e7189 paused at awaiting_approval:defect_fix_2_2; run-e799301e failed at failed
+**As of:** 11-27 16:49 JST (written by `loop.sh state`). Harness 6b7758f2 committed; 974cc935 deployed (not the same).
+**Live, and stopped in the last day:** run-2130eb52 running at ?; run-5f90ad7f running at ?; run-970c2cb6 paused at ?; run-4d1f3829 failed at failed; run-c13e7189 paused at awaiting_approval:defect_fix_2_2; run-e799301e failed at failed
 **Last scored:** run-af51e4c9 wordstats-cli 6/8 (completed, FALSE ACCEPTANCE, mixed, 160 active min, handoff 1.0; scored 11-27 09:59 JST); run-4d1f3829 textkit-lib 0/1 (failed, mixed, 92 active min, handoff 0.333; scored 11-27 09:37 JST); run-f6502d06 notes-api-hono 9/9 (completed, mixed, 293 active min, handoff 1.0; scored 11-27 07:51 JST).
 <!-- /state:generated -->
 
@@ -14,10 +14,10 @@ decisions in force are `docs/owner-decisions.md`; old information is found throu
 | | |
 |---|---|
 | Phase | **Learning runs, fixes deployed at once** (deep-review plan, owner 11-18: implement all; frozen-version measuring for Measure batches). The release-candidate count starts only when a full audit cycle finds nothing to fix. |
-| Models | olla `host.docker.internal:4001/olla/openai/v1`, model `inkling-2-mini` (the owner's, under test since 11-27; two llama.cpp servers, 1 slot each, 231k context). Runs pinned to it; per-request sessions (`.env` MODEL_SESSION_SCOPE=request). Re-diagnose after a reasoning or diagnosis change. |
-| Harness | 974cc93 deployed 11-27 11:57 JST: LF.1503-1603 (details `docs/archive/plans/fix-log.md`); LF.1593 step-sized reasoning budget on. Scored on inkling: notes-api-hono 17 9/9, quality 1.0 re-scored; web-todo 1 7/10 (silent loss, fixed by LF.1590). Runs: wordstats-cli 1 6/8 (false acceptance: printed 'The', review 11-27). **Runs paused by the owner 09:59 JST** (run-970c2cb6, notes-api-go); the audit cron is removed until the owner resumes. L textkit-lib (inkling) 1 failed 09:31: the replayed setup's test runner crashes on any failing test (fixed by LF.1594; LF.1595 runs the consultations side by side). Diagnosis DX.1-7 built (LF.1596-1603, `PROFILE_FROM_DIAGNOSIS` on); inkling re-diagnosed 11-27 12:16 JST (standard tier; step and opening effort minimal, on 2 samples; no guides kept); runs resume on the owner's word. Medium 5 (Qwen) not resumed. Open: the plan. |
+| Models | olla `host.docker.internal:4001/olla/openai/v1`, model `qwen3.6-35b-a3b` again (owner 11-27 afternoon; two llama.cpp servers, 2 slots each, 93k context per slot, 4 requests at once). Runs pinned to it, build model only (`FRONTIER=false`: the settings name a hosted judgement model, not used by the loop); per-request sessions (`.env` MODEL_SESSION_SCOPE=request). Not yet measured by the new diagnosis; inkling was (12:16 JST). |
+| Harness | 974cc93 deployed 11-27 11:57 JST: LF.1503-1603 (details `docs/archive/plans/fix-log.md`); LF.1593 step-sized reasoning budget on. Scored on inkling: notes-api-hono 17 9/9, quality 1.0 re-scored; web-todo 1 7/10 (silent loss, fixed by LF.1590). Runs: wordstats-cli 1 6/8 (false acceptance: printed 'The', review 11-27). **Runs resumed 16:48 JST** on Qwen 3.6, 2 in parallel mode: run-5f90ad7f `notes-api-go 16`, run-2130eb52 `textkit-lib 10`; run-970c2cb6 (pinned to inkling) stays paused. L textkit-lib (inkling) 1 failed 09:31: the replayed setup's test runner crashes on any failing test (fixed by LF.1594; LF.1595 runs the consultations side by side). Diagnosis DX.1-7 built (LF.1596-1603, `PROFILE_FROM_DIAGNOSIS` on); inkling re-diagnosed 11-27 12:16 JST (standard tier; step and opening effort minimal, on 2 samples; no guides kept). Medium 5 (Qwen) not resumed. Open: the plan. |
 | Switches | 53 fixes built in (always on). 29 optional switches (9 groups, `docs/measuring.md`); `WEB_LOOKUP_WHEN_STUCK` is off and set per run. Measure arms use `SWITCHES_OFF` per run. |
-| Operations | Nightly backups (`loop.sh backup --check`). At most 2 runs, parallel execution mode (`.env` `MAX_CONCURRENT_RUNS=2`). Suites at SUITE_WORKERS=2 while inkling is loaded (memory). No audit cron while runs are paused (owner 11-27). |
+| Operations | Nightly backups (`loop.sh backup --check`). At most 2 runs, parallel execution mode (`.env` `MAX_CONCURRENT_RUNS=2`). Audit cron every 15 minutes (11-27 16:50 JST). |
 | Suites | both green at 22,930 passed on 974cc93 (11-27), at SUITE_WORKERS=2. |
 
 ## Off until measured
@@ -26,8 +26,6 @@ runs only when the owner starts them. Everything under measurement: `docs/improv
 
 ## The last three runs (11-20, hidden / quality; local model)
 Earlier runs (11-22 and before): `reports/product-reviews/`, `reports/status-board/`, git history of this file.
-- **Live (11-24 14:20 JST):** run-031094d4 `L notes-api-js container 1` on :8888 (14:26 JST) and run-972956f5 `L web-todo container 6` on :1234 (14:05 JST; both ports
-  after both ports sat idle 10:55-14:04 while the Opus usage limit stopped the audit and the build agents).
 - **Deployed 11-23/24:** LF.1227-LF.1256, each in `docs/archive/plans/fix-log.md`; the largest: builders and reviews on written code hold that code
   (LF.1232/1233/1236), the release probes sign in and read the contract from the criteria (LF.1242/1249), a fix round starts with its round's defects
   (LF.1244), full-stack packs carry their service's known errors (LF.1245), cannot-pass checks for own-record picks and whole-list counts (LF.1237/1246),

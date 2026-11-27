@@ -5,7 +5,7 @@ the block below is written by `loop.sh state`. The map of all documents is `docs
 `docs/improvement-plan.md`; how the product works is `docs/PRODUCT.md`; how to run and test it is `docs/HANDOVER.md`;
 decisions in force are `docs/owner-decisions.md`; old information is found through `docs/ARCHIVE.md`.
 <!-- state:generated -->
-**As of:** 11-27 10:00 JST (written by `loop.sh state`). Harness 6f9dd689 committed; 60061dac deployed (not the same).
+**As of:** 11-27 10:21 JST (written by `loop.sh state`). Harness b18c1299 committed; fdbfd5d8 deployed (not the same).
 **Live, and stopped in the last day:** run-970c2cb6 paused at ?; run-4d1f3829 failed at failed; run-c13e7189 paused at awaiting_approval:defect_fix_2_2; run-e799301e failed at failed
 **Last scored:** run-af51e4c9 wordstats-cli 6/8 (completed, FALSE ACCEPTANCE, mixed, 160 active min, handoff 1.0; scored 11-27 09:59 JST); run-4d1f3829 textkit-lib 0/1 (failed, mixed, 92 active min, handoff 0.333; scored 11-27 09:37 JST); run-f6502d06 notes-api-hono 9/9 (completed, mixed, 293 active min, handoff 1.0; scored 11-27 07:51 JST).
 <!-- /state:generated -->
@@ -15,10 +15,10 @@ decisions in force are `docs/owner-decisions.md`; old information is found throu
 |---|---|
 | Phase | **Learning runs, fixes deployed at once** (deep-review plan, owner 11-18: implement all; frozen-version measuring for Measure batches). The release-candidate count starts only when a full audit cycle finds nothing to fix. |
 | Models | olla `host.docker.internal:4001/olla/openai/v1`, model `inkling-2-mini` (the owner's, under test since 11-27; two llama.cpp servers, 1 slot each, 231k context). Runs pinned to it; per-request sessions (`.env` MODEL_SESSION_SCOPE=request). Re-diagnose after a reasoning or diagnosis change. |
-| Harness | 60061da deployed 11-27 08:53 JST: LF.1503-1593 (details `docs/archive/plans/fix-log.md`); latest LF.1591-1592 quality scorer false findings, LF.1593 a step-sized reasoning budget (switch on, measured). Scored on inkling: notes-api-hono 17 9/9, quality 1.0 re-scored; web-todo 1 7/10 (silent loss, fixed by LF.1590). Runs: wordstats-cli 1 6/8 (false acceptance: printed 'The', review 11-27). **Runs paused by the owner 09:59 JST** (run-970c2cb6, notes-api-go); the audit cron is removed until the owner resumes. L textkit-lib (inkling) 1 failed 09:31: the replayed setup's test runner crashes on any failing test (LF.1594-1595 merged, suites running). Medium 5 (Qwen) not resumed; the bookmarks run paused by the owner. Left in the plan: PA.10, PA.13, PA.18, PA.4 repair, measurements. |
+| Harness | fdbfd5d deployed 11-27 10:20 JST: LF.1503-1595 (details `docs/archive/plans/fix-log.md`); latest LF.1591-1592 quality scorer false findings, LF.1593 a step-sized reasoning budget (switch on, measured). Scored on inkling: notes-api-hono 17 9/9, quality 1.0 re-scored; web-todo 1 7/10 (silent loss, fixed by LF.1590). Runs: wordstats-cli 1 6/8 (false acceptance: printed 'The', review 11-27). **Runs paused by the owner 09:59 JST** (run-970c2cb6, notes-api-go); the audit cron is removed until the owner resumes. L textkit-lib (inkling) 1 failed 09:31: the replayed setup's test runner crashes on any failing test (fixed by LF.1594; LF.1595 runs the consultations side by side). Next: the diagnosis design (reports/research/2026-11-27-model-diagnosis-design.md), owner to answer its questions. Medium 5 (Qwen) not resumed; the bookmarks run paused by the owner. Left in the plan: PA.10, PA.13, PA.18, PA.4 repair, measurements. |
 | Switches | 53 fixes built in (always on). 29 optional switches (9 groups, `docs/measuring.md`); `WEB_LOOKUP_WHEN_STUCK` is off and set per run. Measure arms use `SWITCHES_OFF` per run. |
 | Operations | Nightly backups (`loop.sh backup --check`). At most 2 runs, parallel execution mode (`.env` `MAX_CONCURRENT_RUNS=2`). Suites at SUITE_WORKERS=2 while inkling is loaded (memory). No audit cron while runs are paused (owner 11-27). |
-| Suites | both green at 22,800 passed on 60061da (11-27 08:50 JST), at SUITE_WORKERS=2. |
+| Suites | both green at 22,844 passed on fdbfd5d (11-27), at SUITE_WORKERS=2. |
 
 ## Off until measured
 BATCH_ACCEPTANCE_AUTHOR (web tools are on since 11-23, measured from there). Hosted-model

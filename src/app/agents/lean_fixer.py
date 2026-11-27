@@ -51,6 +51,16 @@ _TITLES = {
 _WHO = ("You are the {title} specialist, fixing one failure in code that exists. The request names it and shows what "
         "the machine printed when it failed; the project memory holds the files it passes through, where they fit.")
 
+#: What a fixer does with a locked test no right product can pass: it says so and stops, rather than bending the product
+#: to it (LF.1616). Measured on one run: two fixers worked out that a locked test's locator found two of its own records,
+#: wrote "but I can't change the test", spent every call reshaping a right page and gave no answer, so nothing reached
+#: the QA lead until the attempt's rounds were spent.
+LOCKED_TEST_THAT_CANNOT_PASS = (
+    "- A locked test that no product meeting its criterion can pass - its own steps rule out what it asserts - is\n"
+    "  not yours to make pass: change nothing for it, return at once, and put in `blockers` the test's name and the\n"
+    "  line of it that cannot hold, word for word, with why. The QA lead judges it; the test stays as it is."
+)
+
 FIXING_RULES = (
     "How to fix it:\n"
     "- Find the cause before you change anything. Start from what the machine printed and the files the request\n"
@@ -71,9 +81,11 @@ FIXING_RULES = (
     "  exists only so tests can reset, seed or inspect data: everyone who can reach the product can call it.\n"
     "- The locked acceptance suite says what the product must do: read its tests, never change them. `docs/` is\n"
     "  the workflow's: read it, never write there. You already have permission to write; never ask for it.\n"
+    + LOCKED_TEST_THAT_CANNOT_PASS + "\n"
     "- Return your answer once, through your answer tool: the files you changed, every command you ran with its\n"
     "  exit code, and the test you added. What you could not fix goes in `blockers`, with what you found.\n"
 )
+
 
 
 def _role_rules(role: str) -> str:

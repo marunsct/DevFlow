@@ -182,3 +182,58 @@ def test_a_dispute_that_calls_the_test_sound_still_reopens_it(tmp_path):
 def test_every_pack_that_reads_locked_suites_reads_this_too():
     for name in ("fullstack-node", "browser-javascript", "browser-react"):
         assert pack_named(name).own_records_a_pick_misses is js.own_records_a_pick_misses
+
+
+#: A later run's locked test, shortened (LF.1617): its helper takes its values apart in its body, the test pauses
+#: between writes, takes `request` with a trailing comma, and asserts at least as many as it made - and its pick by
+#: "ac11-<marker>" can never keep "ac11-first-<marker>".
+AT_LEAST = """import { test, expect } from '@playwright/test';
+
+function tag() {
+  return `ac7-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+async function createBookmark(request, opts) {
+  const { title, url, tag: t } = opts;
+  const res = await request.post('/api/bookmarks', {
+    data: { title, url, tag: t ?? '' },
+  });
+  expect(res.status()).toBe(201);
+  return await res.json();
+}
+
+test('[AC-11] GET /api/bookmarks returns 200 with an array newest first', async ({
+  request,
+}) => {
+  const t = tag();
+  await createBookmark(request, { title: `ac11-first-${t}`, url: 'https://example.com/1', tag: t });
+  await new Promise((r) => setTimeout(r, 50));
+  await createBookmark(request, { title: `ac11-second-${t}`, url: 'https://example.com/2', tag: t });
+  const res = await request.get('/api/bookmarks');
+  const bookmarks = await res.json();
+  const found = bookmarks.filter((b) => b.title.startsWith(`ac11-${t}`));
+  expect(found.length).toBeGreaterThanOrEqual(PICKED);
+  const firstIdx = found.findIndex((b) => b.title === `ac11-first-${t}`);
+  expect(firstIdx).toBeGreaterThan(-1);
+});
+"""
+
+
+def test_a_pick_held_to_at_least_what_it_made_is_read_through_a_helper_that_takes_its_values_apart():
+    assert js.own_records_a_pick_misses(AT_LEAST.replace("PICKED", "2")) == [
+        (25, "b.title.startsWith(`ac11-${t}`)", "title", 2, 0, ("`ac11-first-${t}`", "`ac11-second-${t}`"), "t")]
+
+
+@pytest.mark.parametrize("spec", [
+    # Picked by the marker every record carries whole.
+    AT_LEAST.replace("PICKED", "2").replace("b.title.startsWith(`ac11-${t}`)", "b.title.includes(t)"),
+    # At least none: any pick keeps that many.
+    AT_LEAST.replace("PICKED", "0"),
+], ids=["whole-marker", "at-least-none"])
+def test_an_at_least_count_the_values_can_give_is_left_alone(spec):
+    assert js.own_records_a_pick_misses(spec) == []
+
+
+def test_more_than_a_number_is_one_more_than_it():
+    spec = AT_LEAST.replace("expect(found.length).toBeGreaterThanOrEqual(PICKED)", "expect(found.length).toBeGreaterThan(1)")
+    assert [hit[3] for hit in js.own_records_a_pick_misses(spec)] == [2]

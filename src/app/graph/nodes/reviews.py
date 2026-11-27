@@ -452,8 +452,6 @@ def acceptance_dispute_node(state: WorkflowGraphState, config: RunnableConfig, c
         past_the_cap_with_their_criteria, with_the_facts,
     )
 
-    from pathlib import Path
-
     from app.acceptance import suite as acceptance_suite
     from app.acceptance.requests import shares_one_service
     from app.agents.suite_dispute import build_dispute_request, tests_it_names
@@ -470,10 +468,8 @@ def acceptance_dispute_node(state: WorkflowGraphState, config: RunnableConfig, c
     if not failing:
         return _handing_on(stage=carry_on, disputed_sprints=disputed, dispute_returns_to=None, dispute_reason=None)
     root = state["repository"].root_path
-    code = "\n\n".join(
-        f"--- {path.relative_to(Path(root)).as_posix()} ---\n{path.read_text(encoding='utf-8', errors='replace')}"
-        for path in acceptance_suite.suite_files(root)
-    )[:16000]
+    # The files of the tests judged first, so the cut never falls on them (LF.1618).
+    code = acceptance_suite.the_code_for_a_dispute(root, [name for name, _, _ in failing])
     # What the runner's own matching rules out in a failing test's code: told to the judge, and never kept as sound.
     shown_by_the_code = acceptance_suite.what_the_code_shows_of(root, [name for name, _, _ in failing])
     # What may explain a failing test's failure without ruling the test out: weighed by the judge, never reopened alone.

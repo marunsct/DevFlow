@@ -235,6 +235,14 @@ class StackPack:
     own_records_a_pick_misses: (
         Callable[[str], Sequence[tuple[int, str, str, int, int, Sequence[str], str]]] | None
     ) = None
+    #: A suite file's text -> (line, the text a locator narrows by, another record's value holding it, the field) where
+    #: a page test narrows by a loosely matched text that two records it made hold, and uses the locator where only one
+    #: element may be found (LF.1614).
+    own_records_a_text_filter_matches: Callable[[str], Sequence[tuple[int, str, str, str]]] | None = None
+    #: (a failed test's message, the test's own code) -> (the text a locator was narrowed by, the texts of the test's
+    #: own records the runner listed holding it) when the runner refused a use of that locator for matching several
+    #: elements and two of them show different texts the test itself wrote (LF.1615); None otherwise.
+    several_of_its_own_records_matched: Callable[[str, str], tuple[str, Sequence[str]] | None] | None = None
     #: (the suite's command, the criterion ids whose tests run - () for all, the suite's files relative to the project
     #: in the order to run them - () for the runner's own) -> the command that runs just those, or None when the runner
     #: cannot be asked. A sprint's run of the suite takes only its due tests through it (`app.acceptance.due_tests`);

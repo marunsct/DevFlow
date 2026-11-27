@@ -3499,6 +3499,68 @@ def picks_of_their_own_records_that_miss_one(repo_root: str | Path) -> list[str]
     return problems[:6]
 
 
+def filters_that_also_match_another_of_their_own_records(repo_root: str | Path) -> list[str]:
+    """Where a page test narrows a locator by a text two records it made hold, and uses it where one element must be
+    found. See the pack's `own_records_a_text_filter_matches` (LF.1614)."""
+    found = contract.the_pack(repo_root)
+    if found is None or found[0].own_records_a_text_filter_matches is None:
+        return []
+    root = Path(repo_root)
+    problems = []
+    for path in suite_files(repo_root):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for line, given, other, field in list(found[0].own_records_a_text_filter_matches(text))[:3]:
+            problems.append(
+                f"`{path.relative_to(root).as_posix()}` line {line} narrows a locator by the text {given}, and the same "
+                f"test made another record whose `{field}` is {other}, which holds that text. A string given as "
+                "`hasText`, to `getByText` or as a role's `name` without `exact: true` is matched ignoring case and as "
+                "part of the text, so the locator finds both records' items, and the runner refuses every use of it "
+                "that needs one element (\"strict mode violation\"), whatever the product does. Narrow by what only "
+                f"that record shows whole - `filter({{ has: page.getByText({given}, {{ exact: true }}) }})`, or by the "
+                "link or name it alone has with `exact: true` - and use that locator for every look inside the item. "
+                "This is about the test, not the product."
+            )
+    return problems[:6]
+
+
+def tests_whose_text_found_several_of_their_own_records(repo_root: str | Path, result: Any) -> list[str]:
+    """Failed tests the runner refused because the text a locator was narrowed by found two records the test writes.
+    See the pack's `several_of_its_own_records_matched` (LF.1615). Never raises."""
+    try:
+        found = contract.the_pack(repo_root)
+        if found is None or found[0].several_of_its_own_records_matched is None or result is None:
+            return []
+        from app.acceptance.sprint_scope import _declared_with_bodies
+
+        bodies = [(title, body) for _, title, body in _declared_with_bodies(repo_root)]
+        problems = []
+        for test in getattr(getattr(result, "report", None), "tests", None) or ():
+            if test.outcome != "failed":
+                continue
+            name = str(test.name)
+            body = next((body for title, body in bodies if _fails(title, [name])), "")
+            matched = found[0].several_of_its_own_records_matched(str(test.message or ""), body) if body else None
+            if matched is None:
+                continue
+            text, shown = matched
+            problems.append(
+                f"`{name}` narrows a locator by the text \"{text}\", and the page it failed on lists "
+                + ", ".join(f'"{item}"' for item in shown[:4])
+                + " - records this test writes itself, each holding that text. Matched ignoring case and as part of "
+                "the text, the locator found them all, and the runner refused the step that needs one element (\"strict "
+                "mode violation\"): no product that lists every record can pass it. Narrow by what only one record "
+                "shows whole (`exact: true`, or `filter({ has: ... })` on its own link or name). This is about the "
+                "test, not the product."
+            )
+        return list(dict.fromkeys(problems))[:6]
+    except Exception:  # noqa: BLE001 - a check that cannot read the run finds nothing
+        logger.debug("Could not read which locators found several of a test's own records", exc_info=True)
+        return []
+
+
 def counts_of_every_record_on_a_shared_page(repo_root: str | Path) -> list[str]:
     """Where a page test asserts an exact number of every item listed on the page, on a suite whose tests share one
     service and other tests make records. See the pack's `counts_of_every_listed_record`."""
@@ -6385,6 +6447,8 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
         *_by(checks, "tests_that_make_what_other_tests_make", tests_that_make_what_other_tests_make(repo_root, result)),
         *_by(checks, "tests_whose_expected_text_breaks_their_own_length",
              tests_whose_expected_text_breaks_their_own_length(repo_root, result)),
+        *_by(checks, "tests_whose_text_found_several_of_their_own_records",
+             tests_whose_text_found_several_of_their_own_records(repo_root, result)),
     ]
     # These read a test's text, and text is a guess at what it does.
     read_from_text = [
@@ -6413,6 +6477,8 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
         *_by(checks, "locators_that_contradict_their_assertions", locators_that_contradict_their_assertions(repo_root)),
         *_by(checks, "absences_a_longer_text_also_meets", absences_a_longer_text_also_meets(repo_root)),
         *_by(checks, "picks_of_their_own_records_that_miss_one", picks_of_their_own_records_that_miss_one(repo_root)),
+        *_by(checks, "filters_that_also_match_another_of_their_own_records",
+             filters_that_also_match_another_of_their_own_records(repo_root)),
         # A line the measured page check above already names is named once.
         *_by(checks, "counts_of_every_record_on_a_shared_page",
              _not_named_in(counts_of_every_record_on_a_shared_page(repo_root), measured)),
@@ -6538,9 +6604,36 @@ def findings_that_reopen(repo_root: str | Path, result: Any, found: Sequence[str
 #: own documented matching, whatever the test asserts. The dispute is told it, and a test it names is never kept as
 #: sound. Measured on one run: a dispute called a test right whose absence its own other assertion ruled out; on
 #: another, one ruled a test right twice whose pick of its own records missed one it made. A count of every record a
-#: page lists, on a service every test shares, holds for no product either.
+#: page lists, on a service every test shares, holds for no product either; nor does one element found by a text two of
+#: the test's own records hold (LF.1614): a dispute named such a test wrong and the repair it asked for kept the locator.
 _SETTLE_A_DISPUTE = (absences_a_longer_text_also_meets, picks_of_their_own_records_that_miss_one,
-                     counts_of_every_record_on_a_shared_page)
+                     counts_of_every_record_on_a_shared_page, filters_that_also_match_another_of_their_own_records)
+
+
+#: The characters of the suite's code a dispute is shown.
+MOST_CODE_FOR_A_DISPUTE = 16000
+
+
+def the_code_for_a_dispute(repo_root: str | Path, names: Sequence[str], most: int = MOST_CODE_FOR_A_DISPUTE) -> str:
+    """The suite's files as a dispute is shown them, those holding a test of `names` first, cut at `most` characters.
+
+    In the runner's order the cut fell first on the files of the tests being judged (LF.1618): measured on one run, the
+    suite's first two files filled the 16,000 characters, the file holding two of the three failing tests was never
+    shown, and the judge ruled on code it wrote out from memory - wrongly for all three."""
+    root = Path(repo_root)
+    files = []
+    for path in suite_files(repo_root):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        python = path.suffix.lower() == ".py"
+        titles = [match.group(1 if python else 2).strip()
+                  for match in (_A_PYTHON_TEST if python else _A_TEST_STARTS).finditer(text)]
+        holds = any(_fails(title, [name]) for title in titles for name in names)
+        files.append((not holds, path.relative_to(root).as_posix(), text))
+    files.sort(key=lambda item: item[0])
+    return "\n\n".join(f"--- {shown} ---\n{text}" for _, shown, text in files)[:most]
 
 
 def what_the_code_shows_of(repo_root: str | Path, names: Sequence[str]) -> list[tuple[str, str]]:

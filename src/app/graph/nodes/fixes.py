@@ -605,11 +605,21 @@ def _rewritten_after_a_surrender(
     the rewrite once, fixed alone or in a batch (LF.1404: measured on one medium run, two batch fixers that read for
     17 and 19 calls and ended with no answer never got it). `beside`: a batch fixer's filter of the files another
     fixer of its batch holds."""
-    from app.graph.surrender_to_rewrite import after_a_surrender
-    from app.graph.workflow import failed_fix_tries
+    from app.graph.surrender_to_rewrite import after_a_surrender, enabled
+    from app.graph.workflow import _a_dispute_may_be_held_now, _blames_a_locked_test, failed_fix_tries
     from app.observability import defect_ledger
 
     defect = state["remediation"].defects[defect_index]
+    # A fixer that changed nothing because a locked test cannot pass is the QA lead's to hear, not the rewrite's to
+    # overrule: the rewrite's answer, a change to the product, would replace the one that names the test (LF.1616).
+    if (enabled() and fix_result is not None and not list(getattr(fix_result, "changed_files", None) or [])
+            and _blames_a_locked_test(state, [*(getattr(fix_result, "blockers", None) or []),
+                                              *(getattr(fix_result, "decisions", None) or [])])
+            and _a_dispute_may_be_held_now(state)):
+        defect_ledger.note("rewrite after surrender", stage_name, defect=defect, index=defect_index,
+                           round_=state.get("test_round", 0),
+                           detail="declined: the fixer says a locked test cannot pass; the QA lead judges it first")
+        return fix_result
     tries = failed_fix_tries(state["remediation"], defect_index)
     why: dict[str, str] = {}
     return after_a_surrender(

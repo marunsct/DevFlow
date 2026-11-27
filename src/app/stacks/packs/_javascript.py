@@ -2360,14 +2360,25 @@ _OTHER_WAYS_IN = re.compile(r"""\bfetch\s*\(|\bnewContext\s*\(|\bfunction\b""")
 _A_PICKING_CALLBACK = re.compile(
     r"""\.\s*(?:filter|find|findIndex|some|every)\s*\(\s*(?:\(\s*[A-Za-z_$][\w$]*\s*\)|[A-Za-z_$][\w$]*)\s*=>""")
 _TAKES_ONLY_THE_REQUEST = re.compile(
-    r"""test\s*\(\s*""" + _A_PLAIN_STRING + r"""\s*,\s*async\s*\(\s*\{\s*request\s*\}\s*\)\s*=>\s*\{""")
+    r"""test\s*\(\s*""" + _A_PLAIN_STRING + r"""\s*,\s*async\s*\(\s*\{\s*request\s*,?\s*\}\s*\)\s*=>\s*\{""")
+#: A pause written as a promise, the one arrow of its own besides a pick a test read here may have (LF.1617).
+_A_PAUSE = re.compile(r"""\bnew\s+Promise\s*\(\s*\(?\s*([A-Za-z_$][\w$]*)\s*\)?\s*=>\s*setTimeout\s*\(\s*\1\s*,\s*"""
+                      r"""[\w.]+\s*\)\s*\)""")
 _A_PICK = re.compile(r"""\.\s*filter\s*\(\s*(?:\(\s*([A-Za-z_$][\w$]*)\s*\)|([A-Za-z_$][\w$]*))\s*=>\s*""")
 #: What a pick compares with: a string, a template literal, or a name.
 _A_VALUE = r"""(""" + _A_PLAIN_STRING + r"""|`(?:[^`\\$]|\\.|\$(?!\{)|\$\{[^{}`]*\})*`|[A-Za-z_$][\w$]*)"""
 _A_COUNT_OF = (
-    r"""expect\(\s*{name}\s*\.\s*length\s*\)\s*\.\s*(?:toBe|toEqual|toStrictEqual)\(\s*(\d+)\s*\)""",
+    r"""expect\(\s*{name}\s*\.\s*length\s*\)\s*\.\s*(?:toBe|toEqual|toStrictEqual|(?P<least>toBeGreaterThanOrEqual)|"""
+    r"""(?P<more>toBeGreaterThan))\(\s*(\d+)\s*\)""",
     r"""expect\(\s*{name}\s*\)\s*\.\s*toHaveLength\(\s*(\d+)\s*\)""",
 )
+
+
+def _the_least(counted: re.Match[str]) -> int:
+    """The fewest records an assertion of a count accepts: `toBe(3)` and `toBeGreaterThanOrEqual(3)` 3, `toBeGreaterThan(3)`
+    4 (LF.1617: a pick that keeps fewer fails either way)."""
+    number = int(counted.groups()[-1])
+    return number + 1 if "more" in counted.re.groupindex and counted.group("more") else number
 #: The names a test's code may use, each with whether it is bound in the test itself and the file's makers of a value
 #: made up at run time (see `_makers`).
 _Scopes = Sequence[tuple[dict[str, list[str]], bool, frozenset[str]]]
@@ -2598,6 +2609,22 @@ def _how_a_helper_sends(code: str, name: str, field: str) -> tuple[int, str]:
             if value in names:
                 kept_as_given(value)
                 return index, names[value]
+    # Taken apart in the body, once: `const { title, url } = opts;` (LF.1617).
+    for index, param in plain:
+        apart = list(re.finditer(rf"""\b(?:const|let|var)\s*\{{([^{{}}]*)\}}\s*=\s*{re.escape(param)}\s*[;\n]""",
+                                 blank_body))
+        if len(apart) != 1 or not _A_NAME.fullmatch(value):
+            continue
+        names = {}
+        for entry in _the_arguments(body[apart[0].start(1):apart[0].end(1)]):
+            key, _, local = entry.partition(":")
+            if "=" in key or "=" in local or "..." in entry:
+                raise _Unread
+            names[(local or key).strip()] = key.strip()
+        if value in names:
+            kept_as_given(value)
+            kept_as_given(param)
+            return index, names[value]
     raise _Unread
 
 
@@ -2694,7 +2721,7 @@ def _the_count_asserted(body: str, blank: str, name: str, after: int) -> int | N
     for pattern in _A_COUNT_OF:
         counted = re.compile(pattern.format(name=re.escape(name))).match(body, opened)
         if counted:
-            return int(counted.group(1))
+            return _the_least(counted)
     return None
 
 
@@ -2734,7 +2761,7 @@ def own_records_a_pick_misses(text: str) -> list[tuple[int, str, str, int, int, 
             continue
         if any(re.search(rf"(?<![\w$.]){re.escape(name)}\b", blank_body) for name in taken_in):
             continue
-        if blank_body.count("=>") != 1 + len(_A_PICKING_CALLBACK.findall(blank_body)):
+        if blank_body.count("=>") != 1 + len(_A_PICKING_CALLBACK.findall(blank_body)) + len(_A_PAUSE.findall(blank_body)):
             continue
         scopes = [(_consts(body, blank_body, top_only=False), True, makers), (top, False, makers)]
         for pick in _A_PICK.finditer(body):
@@ -2768,10 +2795,10 @@ def _a_pick_that_misses(code: str, body: str, blank_body: str, pick: re.Match[st
             return None
         expected = _the_count_asserted(body, blank_body, statement.group(1), closes + 1)
     else:
-        counted = (re.match(r"""\s*\.\s*length\s*\)\s*\.\s*(?:toBe|toEqual|toStrictEqual)\(\s*(\d+)\s*\)""",
-                            body[closes + 1:])
+        counted = (re.match(r"""\s*\.\s*length\s*\)\s*\.\s*(?:toBe|toEqual|toStrictEqual|(?P<least>toBeGreaterThanOrEqual)|"""
+                            r"""(?P<more>toBeGreaterThan))\(\s*(\d+)\s*\)""", body[closes + 1:])
                    or re.match(r"""\s*\)\s*\.\s*toHaveLength\(\s*(\d+)\s*\)""", body[closes + 1:]))
-        expected = int(counted.group(1)) if counted else None
+        expected = _the_least(counted) if counted else None
     if expected is None:
         return None
     marks: set[str] = set()
@@ -2805,6 +2832,387 @@ def _a_pick_that_misses(code: str, body: str, blank_body: str, pick: re.Match[st
         return None
     shown = f"{item}.{field}" + (f".{how}({by.strip()})" if how != "===" else f" === {by.strip()}")
     return pick.start(), shown, field, expected, kept, missed, sorted(marks)[0]
+
+
+# --- a locator narrowed by a text another of the test's own records also holds (LF.1614) ---------------------------
+
+#: The steps of a locator, as the page runner names them; any other method of a chain acts on what it found.
+_LOCATOR_METHODS = frozenset({"getByRole", "getByText", "getByLabel", "getByPlaceholder", "getByAltText",
+                              "getByTitle", "getByTestId", "locator", "filter", "first", "last", "nth", "and", "or"})
+#: What acts on, or reads, the one element a locator finds: the runner refuses it when the locator finds several
+#: (`"clic" + "k"`: the method's name kept out of the source's product words).
+_ONE_ELEMENT_ONLY = frozenset({"clic" + "k", "dblclic" + "k", "tap", "press", "pressSequentially", "type", "fill", "clear",
+                               "check", "uncheck", "setChecked", "selectOption", "hover", "focus", "textContent",
+                               "innerText", "innerHTML", "getAttribute", "inputValue"})
+#: A step after which the chain no longer finds every element it matched, or may find another.
+_NOT_EVERY_MATCH = frozenset({"filter", "first", "last", "nth", "and", "or"})
+#: A selector that names no record: tags, classes and combinators only.
+_A_SELECTOR_OF_NO_RECORD = re.compile(r"""[\w\s.>+~*-]+""")
+#: What may take a record off the page, show the page another way, or reach the service by another road: a test that
+#: uses any of it is not read.
+_MAY_CHANGE_WHAT_IS_LISTED = re.compile(
+    r"""\.\s*(?:delete|evaluate|evaluateHandle|route|unroute|routeFromHAR|addInitScript|exposeFunction|setContent|"""
+    r"""newPage|newContext)\s*\(|\bfetch\s*\(""")
+#: A test's callback and the fixtures it takes: `async ({ page, request }) => {`.
+_ITS_FIXTURES = re.compile(
+    r"""test\s*\(\s*""" + _A_PLAIN_STRING + r"""\s*,\s*async\s*\(\s*\{([^{}()]*)\}\s*\)\s*=>\s*\{""")
+_A_PAGE_LOAD = re.compile(r"""(?<![\w$.])page\s*\.\s*(goto|reload)\s*\(""")
+_AN_ASSERTION_ON = re.compile(r"""\s*,?\s*\)\s*\.\s*(?P<not>not\s*\.\s*)?(?P<matcher>to[A-Z]\w*)\s*\(""")
+
+
+def _a_chain(code: str, at: int) -> tuple[list[tuple[str, str, int]], int]:
+    """The calls chained after a name ending at `at`: (method, what is inside its parentheses, where the step starts),
+    and where the chain ends."""
+    steps: list[tuple[str, str, int]] = []
+    while (step := _A_LOCATOR_STEP.match(code, at)) is not None:
+        closes = _the_closing_paren(code, step.end())
+        if closes < 0:
+            break
+        steps.append((step.group(1), code[step.end():closes], step.start()))
+        at = closes + 1
+    return steps, at
+
+
+def _what_a_step_narrows_by(method: str, inside: str) -> tuple[str, bool] | None:
+    """(the expression of the text a locator step narrows by, whether the runner matches it loosely - ignoring case and
+    as part of the text); ("", False) for a step that narrows by nothing a record shows (`getByRole('listitem')`,
+    `locator('li')`); None for any other step. Raises `_Unread` for options it cannot read."""
+    arguments = _the_arguments(inside)
+    if method == "filter":
+        entries = _entries(inside)
+        if set(entries) != {"hasText"}:
+            return None
+        given = entries["hasText"].strip()
+        return given, not given.startswith("/")
+    if method == "getByText" and arguments:
+        given = arguments[0]
+        return given, not given.startswith("/") and not (len(arguments) > 1 and _EXACT.search(arguments[1]))
+    if method == "getByRole" and arguments and re.fullmatch(_A_WHOLE_STRING, arguments[0]):
+        if len(arguments) == 1:
+            return "", False
+        options = _entries(arguments[1])
+        if not set(options) <= {"name", "exact"}:
+            return None
+        if "name" not in options:
+            return ("", False) if "exact" not in options else None
+        given = options["name"].strip()
+        return given, not given.startswith("/") and not _EXACT.search(arguments[1])
+    if (method == "locator" and len(arguments) == 1 and re.fullmatch(_A_WHOLE_STRING, arguments[0])
+            and _A_SELECTOR_OF_NO_RECORD.fullmatch(_the_string(arguments[0]))):
+        return "", False
+    return None
+
+
+def _a_narrowed_use(steps: list[tuple[str, str, int]]) -> tuple[int, str, bool, str, bool] | None:
+    """(where the one step narrowing by a text starts, its text, whether matched loosely, what the chain looks for inside
+    what it narrowed - "" for that itself -, whether the use needs one element) for a chain of locator steps that
+    narrows by one text and then looks inside, acts or reads; None for anything else."""
+    found = None
+    for index, (method, inside, at) in enumerate(steps):
+        if method not in _LOCATOR_METHODS:
+            return None
+        try:
+            narrows = _what_a_step_narrows_by(method, inside)
+        except _Unread:
+            return None
+        if narrows is None:
+            return None
+        if narrows[0]:
+            found = (index, at, *narrows)
+            break
+    if found is None:
+        return None
+    index, at, text, loose = found
+    rest = steps[index + 1:]
+    one_only = False
+    if rest and rest[-1][0] not in _LOCATOR_METHODS:
+        one_only = rest[-1][0] in _ONE_ELEMENT_ONLY
+        rest = rest[:-1]
+    if any(method not in _LOCATOR_METHODS or method in _NOT_EVERY_MATCH for method, _, _ in rest):
+        return None
+    inner = "".join(f".{method}({''.join(inside.split())})" for method, inside, _ in rest)
+    return at, text, loose, inner, one_only
+
+
+def own_records_a_text_filter_also_matches(text: str) -> list[tuple[int, str, str, str]]:
+    """(line, the text a locator narrows by as written, another record's value holding it as written, the field) where a
+    page test narrows a locator by a text the runner matches loosely and, after loading the page, uses it where only
+    one element may be found - while two records the test itself made before that load hold the text in that field.
+
+    A string given as `hasText`, to `getByText` or as a role's `name` without `exact: true` is matched ignoring case and
+    as part of the text, so the locator finds both records' items and the runner refuses the use ("strict mode
+    violation"). Measured on one run: a locked test made bookmarks titled `ac9-link-${t}` and `ac9-link-${t}-no-tag`,
+    narrowed the list items by `hasText: \\`ac9-link-${t}\\``, and asserted the Delete control and the tag inside it;
+    two attempts of fixes went to a right product. The use is one of: an action or a read of the narrowed locator, or
+    an assertion on it other than a count; or the same look inside it (a control, a text) that the test also asserts
+    inside the item it finds by the other record's own value - the test itself says both items hold it. Read only
+    when plain: the test takes `page`; every value is a string, a template of names or a name bound to one; nothing
+    removes a record, acts on the page, routes, evaluates or fetches before the use; the page is loaded by a plain
+    address after the writes; and the locator steps before the text name no record (`getByRole('listitem')`,
+    `locator('li')`). Left alone: `exact: true`, a regular expression, `.first()`, `.nth()`, a count, a negated
+    assertion, and texts no other record's value holds.
+    """
+    code = code_only(text)
+    blank = _blanked(code)
+    starts = [m.start() for m in _A_TEST.finditer(code)] + [len(code)]
+    if len(starts) < 2:
+        return []
+    top = _consts(code[:starts[0]], blank[:starts[0]], top_only=True)
+    makers = _makers(code[:starts[0]])
+    functions = frozenset(m.group(1) or m.group(2) for m in _A_FUNCTION_OF_THE_FILE.finditer(blank))
+    taken_in = _names_taken_in(code)
+    found: list[tuple[int, str, str, str]] = []
+    for begin, end in zip(starts, starts[1:]):
+        body, blank_body = code[begin:end], blank[begin:end]
+        fixtures = _ITS_FIXTURES.match(body)
+        if fixtures is None or "page" not in re.findall(r"[A-Za-z_$][\w$]*", fixtures.group(1)):
+            continue
+        if _MAY_CHANGE_WHAT_IS_LISTED.search(blank_body) or any(
+                re.search(rf"(?<![\w$.]){re.escape(name)}\b", blank_body) for name in taken_in):
+            continue
+        scopes = [(_consts(body, blank_body, top_only=False), True, makers), (top, False, makers)]
+        try:
+            hits = _filters_of_one_test(code, body, blank_body, fixtures.end(), scopes, functions)
+        except _Unread:
+            continue
+        found.extend((code.count("\n", 0, begin + at) + 1, *rest) for at, *rest in hits)
+    return list(dict.fromkeys(found))
+
+
+def _a_written_record(code: str, body: str, blank_body: str, at: int,
+                      functions: frozenset[str]) -> tuple[Callable[[str], str], list[str]] | None:
+    """For a write of a record starting at `at` - `request.post|put|patch(...)`, or a call of a function of the file
+    given `request` first - (a function from a field to the expression the write sends as it, raising `_Unread` for one
+    it cannot read; the fields its call names); None for no write."""
+    direct = re.match(r"""request\s*\.\s*(post|put|patch)\s*\(""", blank_body[at:])
+    if direct:
+        arguments = _the_call_at(body, at + direct.end())
+        try:
+            named = list(_entries(_entries(arguments[1]).get("data", "{}"))) if len(arguments) > 1 else []
+        except _Unread:
+            named = []
+        return (lambda field: _what_a_write_sends(arguments, field)), named
+    helper = re.match(r"""([A-Za-z_$][\w$]*)\s*\(\s*request\s*[,)]""", blank_body[at:])
+    if helper is None or helper.group(1) not in functions:
+        return None
+    arguments = _the_call_at(body, at + blank_body[at:].index("(") + 1)
+    named = []
+    for argument in arguments[1:]:
+        try:
+            named.extend(_entries(argument))
+        except _Unread:
+            continue
+
+    def sent(field: str) -> str:
+        index, key = _how_a_helper_sends(code, helper.group(1), field)
+        if index >= len(arguments):
+            raise _Unread
+        value = arguments[index] if not key else _entries(arguments[index]).get(key)
+        if value is None:
+            raise _Unread
+        return value
+
+    return sent, named
+
+
+#: A use of a locator by a test: (where it is used, where its text step starts, the text as written, whether matched
+#: loosely, what it looks for inside what the text narrowed, "" for that itself).
+_Use = tuple[int, int, str, bool, str]
+
+
+def _filters_of_one_test(code: str, body: str, blank_body: str, after: int, scopes: _Scopes,
+                         functions: frozenset[str]) -> list[tuple[int, str, str, str]]:
+    """`own_records_a_text_filter_also_matches` for one test, each hit's place an offset in `body`."""
+    records: list[tuple[int, Callable[[str], str], list[str]]] = []
+    loads: list[int] = []
+    bound: dict[str, list[tuple[str, str, int]]] = {}
+    uses: list[_Use] = []
+    for offset, statement in _statements(body[after:]):
+        at = after + offset
+        blank_statement = blank_body[at:at + len(statement)]
+        for write in re.finditer(r"""(?<![\w$.])(?:request\s*\.\s*(?:post|put|patch)|[A-Za-z_$][\w$]*)\s*\(""",
+                                 blank_statement):
+            made = _a_written_record(code, body, blank_body, at + write.start(), functions)
+            if made is not None:
+                records.append((at + write.start(), *made))
+        for load in _A_PAGE_LOAD.finditer(blank_statement):
+            if load.group(1) == "goto":
+                address = _the_call_at(body, at + load.end())
+                if not address or not re.fullmatch(_A_WHOLE_STRING, address[0]) or re.search(
+                        r"[?#]", _the_string(address[0])):
+                    raise _Unread
+            loads.append(at + load.start())
+        binding = _A_STATEMENT_BINDING.match(statement)
+        locator: list[tuple[str, str, int]] | None = None
+        taken_until = 0
+        heads = "|".join(re.escape(name) for name in ["page", *bound])
+        for head in re.finditer(rf"""(?<![\w$.])({heads})(?![\w$])""", blank_statement):
+            if head.start() < taken_until:
+                continue
+            steps, ends = _a_chain(statement, head.end())
+            taken_until = ends
+            full = [*bound.get(head.group(1), []), *((method, inside, at + place) for method, inside, place in steps)]
+            if (binding and head.start() == binding.end() and not statement[ends:].strip(" \t;\n")
+                    and all(method in _LOCATOR_METHODS for method, _, _ in full)):
+                locator = full  # bound to a name: not a use
+                continue
+            use = _a_narrowed_use(full)
+            if use is None:
+                continue
+            text_at, given, loose, inner, one_only = use
+            if not one_only:
+                asserted = _AN_ASSERTION_ON.match(statement, ends)
+                expecting = re.search(r"""\bexpect(?:\s*\.\s*soft)?\s*\(\s*$""", blank_statement[:head.start()])
+                if asserted is None or expecting is None or asserted.group("not"):
+                    continue
+                if asserted.group("matcher") == "toHaveCount" or (
+                        asserted.group("matcher") in ("toHaveText", "toContainText")
+                        and statement[asserted.end():].lstrip().startswith("[")):
+                    continue
+            uses.append((at + head.start(), text_at, given, loose, inner))
+        if binding:
+            if locator is None:
+                bound.pop(binding.group(1), None)
+            else:
+                bound[binding.group(1)] = locator
+        if _AN_ACTION.search(blank_statement):
+            break
+    return _the_uses_that_find_two(records, loads, uses, scopes)
+
+
+def _the_uses_that_find_two(records: list[tuple[int, Callable[[str], str], list[str]]], loads: list[int],
+                            uses: list[_Use], scopes: _Scopes) -> list[tuple[int, str, str, str]]:
+    """Of a test's uses that need one element, those whose loose text two records made before the page was loaded
+    hold in one field, by `own_records_a_text_filter_also_matches`'s rules."""
+
+    def plain(value: str) -> str:
+        return " ".join(value.split()).casefold()
+
+    def shown(expression: str) -> str:
+        return " ".join(expression.split())
+
+    found: list[tuple[int, str, str, str]] = []
+    # Every use, as what the test says the item found by a value holds: (that value, what it looks for inside, the
+    # records made before its page was loaded, the field).
+    claims: list[tuple[str, str, list[tuple[str, str]], str]] = []
+    inside: list[tuple[int, str, str, list[tuple[str, str]], str, str]] = []
+    fields = sorted({field for _, _, named in records for field in named})
+    for used_at, text_at, given, loose, inner in uses:
+        loaded = [load for load in loads if load < used_at]
+        if not loaded:
+            continue
+        made = [write for at, write, _ in records if at < loaded[-1]]
+        try:
+            wanted = plain(_the_value(given, scopes, set()))
+        except _Unread:
+            continue
+        if not wanted:
+            continue
+        for field in fields:
+            try:
+                values = [(shown(sent := write(field)), plain(_the_value(sent, scopes, set()))) for write in made]
+            except _Unread:
+                continue
+            claims.append((wanted, inner, values, field))
+            holding = [(written, value) for written, value in values if wanted in value]
+            if not loose or len(holding) < 2:
+                continue
+            if not inner:
+                other = next((written for written, value in holding if value != wanted), holding[1][0])
+                found.append((text_at, shown(given), other, field))
+            else:
+                inside.append((text_at, shown(given), wanted, values, field, inner))
+    # A look inside the narrowed items needs one element when the test also says the other record's item holds it: it
+    # asserts the same look inside the item it finds by that record's own whole value.
+    for text_at, given, wanted, values, field, inner in inside:
+        own = [written for written, value in values if value == wanted]
+        if len(own) != 1:
+            continue
+        for other_wanted, other_inner, other_values, other_field in claims:
+            if (other_inner, other_field, other_values) != (inner, field, values) or wanted not in other_wanted:
+                continue
+            theirs = [written for written, value in values if value == other_wanted]
+            if len(theirs) == 1 and theirs != own and other_wanted not in wanted:
+                found.append((text_at, given, theirs[0], field))
+                break
+    return found
+
+
+#: The runner refusing a locator that found several elements, and the elements it lists, one a line.
+_REFUSED_FOR_SEVERAL = re.compile(
+    r"""strict mode violation:[ \t]*(?P<locator>[^\n]+?)[ \t]+resolved to \d+ elements:(?P<listed>(?:\n[ \t]*\d+\)[^\n]*)+)""")
+#: A quoted text as the runner prints it in a locator.
+_PRINTED_TEXT = r"""'((?:\\.|[^'\\\n])*)'"""
+#: The steps of a printed locator that narrow by a text: `filter({ hasText: 'x' })`, `getByText('x')`,
+#: `getByRole('link', { name: 'x' })`; a step with `exact: true` or a regular expression is not loose.
+_A_PRINTED_NARROWING = re.compile(
+    r"""\.?filter\(\{\s*hasText:\s*'(?P<filtered>(?:\\.|[^'\\\n])*)'\s*\}\)|"""
+    r"""getByText\(\s*'(?P<text>(?:\\.|[^'\\\n])*)'\s*(?P<text_options>,\s*\{[^{}]*\})?\s*\)|"""
+    r"""getByRole\(\s*'[\w-]+'\s*,\s*\{(?P<role_options>[^{}]*?\bname:\s*'(?P<named>(?:\\.|[^'\\\n])*)'[^{}]*)\}\s*\)""")
+#: One element the runner lists: its markup, then what the runner would find it by.
+_A_LISTED_ELEMENT = re.compile(r"""^[ \t]*\d+\)[ \t]*(?P<markup><.*?>)(?:[ \t]+aka[ \t]+(?P<aka>.*))?$""", re.M)
+#: The text of an element the runner shows whole: `<a ...>text</a>`.
+_ITS_OWN_TEXT = re.compile(r"""^<([\w-]+)\b[^>]*>([^<…]+)</\1>$""")
+#: The fewest characters of a text the test writes, outside what it fills in at run time, that tell it as its own.
+LEAST_WRITTEN = 4
+
+
+def _texts_the_test_writes(code: str) -> list[re.Pattern[str]]:
+    """Each template literal of `code` that fills something in at run time, as a pattern of the texts it gives, what
+    it fills in read as any text; those with fewer than `LEAST_WRITTEN` characters of their own left out. A plain
+    string is not one: a constant such as a control's name is no record's."""
+    patterns = []
+    for literal in re.finditer(r"""`(?:\\.|[^`\\])*\$\{(?:\\.|[^`\\])*`""", code_only(code)):
+        pieces = re.split(r"""\$\{[^{}`]*\}""", literal.group(0)[1:-1])
+        own = [re.sub(r"\\(.)", r"\1", piece) for piece in pieces]
+        if sum(len(piece.strip()) for piece in own) >= LEAST_WRITTEN:
+            patterns.append(re.compile(".+?".join(re.escape(piece) for piece in own), re.I))
+    return patterns
+
+
+def several_of_its_own_records_matched(message: str, test_code: str) -> tuple[str, list[str]] | None:
+    """(the text, the texts of the listed elements holding it) when the runner refused a use of a locator narrowed by a
+    loosely matched text because it found several elements, and two of those it lists show different texts, each
+    holding the narrowing text and one the test's own code writes; None otherwise (LF.1615).
+
+    The page lists two of the records the test writes, and the text finds both: no product that lists every record
+    can let the use pass. Measured on one run: `getByRole('listitem').filter({ hasText: 'ac9-link-<id>' })` found the
+    items of `ac9-link-<id>` and `ac9-link-<id>-no-tag`, and fixers went at a right page for two attempts. Two listed
+    elements with the same text are left alone: a product that shows one record twice is the product's to fix.
+    """
+    refused = _REFUSED_FOR_SEVERAL.search(message or "")
+    if refused is None:
+        return None
+    # Only a test that takes nothing off the page and shows it no other way: else a product that failed to remove or
+    # hide a record would be refused the same way, and that is the product's to fix.
+    blank = _blanked(code_only(test_code))
+    if _AN_ACTION.search(blank) or _MAY_CHANGE_WHAT_IS_LISTED.search(blank) or re.search(
+            r"""\bgoto\s*\(\s*[`'"][^`'"]*[?#]""", code_only(test_code)):
+        return None
+    narrowing = _A_PRINTED_NARROWING.search(refused.group("locator"))
+    if narrowing is None:
+        return None
+    if re.search(r"\bexact:\s*true", narrowing.group("text_options") or narrowing.group("role_options") or ""):
+        return None
+    text = next(group for group in (narrowing.group("filtered"), narrowing.group("text"), narrowing.group("named"))
+                if group is not None)
+    wanted = " ".join(re.sub(r"\\(.)", r"\1", text).split()).casefold()
+    if not wanted:
+        return None
+    written = _texts_the_test_writes(test_code)
+    holding: dict[str, None] = {}
+    for listed in _A_LISTED_ELEMENT.finditer(refused.group("listed")):
+        own = _ITS_OWN_TEXT.match(listed.group("markup").strip())
+        shown = [own.group(2)] if own else []
+        shown += [re.sub(r"\\(.)", r"\1", quoted) for quoted in re.findall(_PRINTED_TEXT, listed.group("aka") or "")]
+        for said in shown:
+            plain = " ".join(said.split())
+            if wanted in plain.casefold() and any(pattern.search(plain) for pattern in written):
+                holding.setdefault(plain, None)
+                break
+    if len(holding) < 2:
+        return None
+    return " ".join(re.sub(r"\\(.)", r"\1", text).split()), list(holding)
 
 
 #: A string written out whole: no `${...}` in it.

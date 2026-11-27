@@ -95,9 +95,28 @@ def _bounded(line: str) -> str:
     return flat if len(flat) <= MOST_LINE_CHARS else flat[: MOST_LINE_CHARS - 3].rstrip() + "..."
 
 
+def _shown(lines: list[str]) -> list[str]:
+    """Each error line bounded, and the known cause it carries kept whole beneath it, once in the note.
+
+    A cause follows its error on the same line, and the two ran past the bound together: the cut fell in the cause, the
+    part the builder acts on (on a Rust run, axum's E0195 error line is some 210 characters and its cause 600).
+    """
+    from app.stacks.known_errors import KNOWN_CAUSE
+
+    out, said = [], set()
+    for line in lines:
+        error, *causes = str(line).split(KNOWN_CAUSE)
+        out.append(_bounded(error))
+        for cause in (" ".join(cause.split()) for cause in causes):
+            if cause and cause not in said:
+                said.add(cause)
+                out.append(f"  {KNOWN_CAUSE} {cause}")
+    return out
+
+
 def the_note(lines: list[str]) -> str:
     """What a builder sent back for the build reads, added to its work order's request."""
-    shown = "\n".join(_bounded(line) for line in lines[:MOST_LINES])
+    shown = "\n".join(_shown(lines[:MOST_LINES]))
     return f"\n\n--- {HEADING} ---\n{OPENING}\n{shown}\n{CLOSING}"
 
 

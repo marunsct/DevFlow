@@ -55,6 +55,48 @@ def test_the_error_is_given_its_cause(tmp_path, error, cause):
     assert not BANNED.search(defect.actual_behavior)
 
 
+@pytest.mark.parametrize("error, cause", [
+    # The compiler's words as the harness's build check reported them on axum 0.8.9, rustc 1.85.
+    ("lifetime parameters or bounds on associated function `from_request_parts` do not match the trait declaration: "
+     "lifetimes do not match associated function in trait", "delete that attribute line above the `impl`"),
+    ("lifetime parameters or bounds on method `from_request` do not match the trait declaration",
+     "delete that attribute line above the `impl`"),
+    ("mismatched types: expected `()`, found `AppState`", "`pub fn routes() -> Router<AppState>`"),
+    ("unresolved import `tower::Limit`: no `Limit` in the root", "`.layer(axum::extract::DefaultBodyLimit::max(<bytes>))`"),
+    ("failed to resolve: could not find `limit` in `tower`", "`.layer(axum::extract::DefaultBodyLimit::max(<bytes>))`"),
+], ids=["an-extractor-under-async-trait", "a-body-extractor-under-async-trait", "state-given-to-a-router-of-unit",
+        "no-tower-limit", "tower-limit-behind-its-feature"])
+def test_an_axum_0_8_error_is_given_its_version_true_cause(tmp_path, error, cause):
+    """Measured on a Rust run on axum 0.8.9: an extractor written `#[async_trait::async_trait] impl FromRequestParts`
+    (axum 0.7's form) failed with E0195 at three building stages and a fixer, and none removed the attribute; a helper
+    declared `-> Router` was given `.with_state(state)`; two fixes imported a `tower::Limit` that does not exist."""
+    contract.write(tmp_path, pack_named("rust-axum-api"), "notes-api", "Notes")
+
+    (defect,) = with_known_causes(tmp_path, [_defect(error)])
+
+    assert KNOWN_CAUSE in defect.actual_behavior and cause in defect.actual_behavior
+    assert not BANNED.search(defect.actual_behavior)
+
+
+def test_the_extractor_s_cause_says_axum_0_7_wanted_the_attribute(tmp_path):
+    """The same E0195 has the opposite cause on axum 0.7, whose trait is `#[async_trait]`: the version decides."""
+    contract.write(tmp_path, pack_named("rust-axum-api"), "notes-api", "Notes")
+
+    (defect,) = with_known_causes(tmp_path, [_defect(
+        "lifetime parameters or bounds on associated function `from_request_parts` do not match the trait declaration")])
+
+    assert "read axum's version in `Cargo.toml`" in defect.actual_behavior
+    assert "up to axum 0.7 is the trait `#[async_trait]`" in defect.actual_behavior
+
+
+def test_one_line_carrying_two_phrases_of_an_error_is_given_its_cause_once(tmp_path):
+    contract.write(tmp_path, pack_named("rust-axum-api"), "notes-api", "Notes")
+
+    (defect,) = with_known_causes(tmp_path, [_defect("unresolved import `tower::limit`: could not find `limit` in `tower`")])
+
+    assert defect.actual_behavior.count(KNOWN_CAUSE) == 1
+
+
 def test_a_router_error_names_the_return_type_that_keeps_it_waiting(tmp_path):
     """Measured: `app()` ended in `.with_state(state)` but was declared `-> Router<AppState>`; told to apply the state,
     the fixer found it applied and left the error open."""

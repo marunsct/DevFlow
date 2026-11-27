@@ -79,8 +79,13 @@ with `.route("/items", post(create))`), and `src/main.rs` starts it. Unit tests 
 `http_body_util::BodyExt` and `tower::ServiceExt`, as `tests/scaffold_smoke.rs` does. `app()`
 returns a plain `Router`: shared state is applied inside it with `.with_state(state)`, since
 `axum::serve` cannot serve a `Router<AppState>`. Its signature is `pub fn app() -> Router`: declared
-`-> Router<AppState>`, it still waits for its state after `.with_state`. Run them with `cargo nextest run` (or `cargo
-test`). Add a crate with `cargo add <name>`."""
+`-> Router<AppState>`, it still waits for its state after `.with_state`. A helper that builds routes for `app()` to
+give the state to is declared `-> Router<AppState>`; only `app()` returns a plain `Router`. This is axum 0.8: a custom
+extractor implements `FromRequestParts<S>` with a plain `async fn from_request_parts(parts: &mut Parts, state: &S)`,
+never under `#[async_trait]` (axum 0.7's form, which 0.8 rejects), and needs no `async-trait` crate; a request body's
+size is limited with `.layer(axum::extract::DefaultBodyLimit::max(bytes))` - tower has no `Limit`; and a path
+parameter is written `/items/{id}`, since 0.8 refuses `/:id` when it builds the router. Run them with `cargo nextest
+run` (or `cargo test`). Add a crate with `cargo add <name>`."""
 
 DOCKERFILE = """# {{title}}: build with `docker build -t {{project}} .`, run with
 # `docker run -p 3000:3000 -v {{project}}-data:/data {{project}}`.
@@ -204,6 +209,35 @@ AXUM_KNOWN_ERRORS = {
         "`axum::serve` was given a `Router<AppState>`, a router still waiting for its state. Apply the state with "
         "`.with_state(state)` before serving, so the router served is a plain `Router`." + THE_SIGNATURE_DECIDES
     ),
+    # Measured on a Rust run: a custom extractor was written `#[async_trait::async_trait] impl FromRequestParts`, axum
+    # 0.7's form, on axum 0.8; three building stages and a fixer saw E0195 and none removed the attribute. The same
+    # error has the opposite cause on 0.7, so the version decides.
+    **{phrase: (
+        "read axum's version in `Cargo.toml`. From axum 0.8 (axum-core 0.5) `FromRequestParts` and `FromRequest` "
+        "declare `from_request_parts` and `from_request` as a plain `async fn`, without `#[async_trait]`, so an "
+        "`impl` under `#[async_trait]` or `#[async_trait::async_trait]` no longer matches the trait: delete that "
+        "attribute line above the `impl`, keep `async fn from_request_parts(parts: &mut Parts, state: &S) -> "
+        "Result<Self, Self::Rejection>`, and remove `async-trait` from `Cargo.toml` when nothing else uses it. Only "
+        "up to axum 0.7 is the trait `#[async_trait]`, and there the `impl` needs the attribute too."
+    ) for phrase in ("`from_request_parts` do not match the trait declaration",
+                     "`from_request` do not match the trait declaration")},
+    # Measured on the same run: a helper declared `-> Router` built the routes and `app()` called `.with_state(state)`
+    # on it; `Router` is `Router<()>`, so the state it was given had to be `()`.
+    "expected `()`, found `AppState`": (
+        "`.with_state(state)` was called on a router whose type was already fixed as `Router` - that is `Router<()>`, "
+        "a router waiting for no state, so its state must be `()`. That is a helper (`fn routes() -> Router`) or a "
+        "`let router: Router` holding the routes before `app()` gives them the state: declare it `Router<AppState>` "
+        "(`pub fn routes() -> Router<AppState>`), and keep the plain `Router` for `app()`'s own return type. When no "
+        "handler takes `State<AppState>`, drop `.with_state(state)` instead."
+    ),
+    # Measured on the same run: the specification named "a body size limit via tower::Limit", and two fixes that
+    # imported it, then `tower::limit::RateLimitLayer`, were reverted.
+    **{phrase: (
+        "tower has no `Limit`, and its `limit` module (behind tower's `limit` feature) caps how many requests run at "
+        "once or per second, never a body's size. axum limits a request body with "
+        "`.layer(axum::extract::DefaultBodyLimit::max(<bytes>))` - its default is 2 MB - and `Json` then answers 413 "
+        "to a larger body; no other crate is needed."
+    ) for phrase in ("`tower::Limit`", "could not find `limit` in `tower`")},
 }
 
 #: The pack's golden example (`StackPack.golden_example`), in axum 0.8: state applied inside `app()` with
@@ -384,6 +418,10 @@ PACK = service_pack(
         # Measured on a Rust run: the store's `sqlx::query!` macros needed a database at build time and it never built.
         "With sqlx, queries are `sqlx::query(...).bind(...)` or `query_as::<_, T>(...)`, never the `query!` macros: "
         "those need a live database at build time.",
+        # Measured on a Rust run: the specification named "a body size limit via tower::Limit", which does not exist,
+        # and the builders wrote a custom extractor in axum 0.7's `#[async_trait]` form, which 0.8 rejects.
+        "axum 0.8: a body size limit is `.layer(axum::extract::DefaultBodyLimit::max(bytes))` (tower has no "
+        "`Limit`); an extractor's `from_request_parts` is a plain `async fn`, never under `#[async_trait]`.",
     ),
     stack={
         "language": "Rust",

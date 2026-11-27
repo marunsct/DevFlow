@@ -37,6 +37,14 @@ def _known(repo_root: str | Path) -> dict[str, str]:
     return known
 
 
+def _causes(known: dict[str, str], text: str, shown: str | None = None) -> list[str]:
+    """The causes of the known errors `text` carries, each once and in the pack's order, leaving out any that `shown`
+    (`text` when not given) already holds. Two phrases of one error share a cause, and one line can carry both."""
+    lowered, shown = text.lower(), text if shown is None else shown
+    return list(dict.fromkeys(cause for phrase, cause in known.items()
+                              if phrase.lower() in lowered and cause not in shown))
+
+
 def with_known_causes_in_lines(repo_root: str | Path, lines: list[str]) -> list[str]:
     """`lines` - what the compiler or language service reports on a stage's own writes - each carrying an error the
     project's pack knows followed by its cause. Never raises.
@@ -53,7 +61,7 @@ def with_known_causes_in_lines(repo_root: str | Path, lines: list[str]) -> list[
     out = []
     for line in lines:
         text = str(line)
-        causes = [cause for phrase, cause in known.items() if phrase.lower() in text.lower() and cause not in text]
+        causes = _causes(known, text)
         out.append(text + "".join(f"\n  {KNOWN_CAUSE} {cause}" for cause in causes))
     return out
 
@@ -70,7 +78,7 @@ def with_known_causes(repo_root: str | Path, defects: list[Any]) -> list[Any]:
     for defect in defects:
         text = f"{getattr(defect, 'description', '')} {getattr(defect, 'actual_behavior', '')}".lower()
         actual = str(getattr(defect, "actual_behavior", "") or "")
-        causes = [cause for phrase, cause in known.items() if phrase.lower() in text and cause not in actual]
+        causes = _causes(known, text, actual)
         if causes:
             try:
                 defect = defect.model_copy(update={
@@ -82,4 +90,32 @@ def with_known_causes(repo_root: str | Path, defects: list[Any]) -> list[Any]:
     return out
 
 
-__all__ = ["KNOWN_CAUSE", "with_known_causes", "with_known_causes_in_lines"]
+#: How many causes one command's output is given at most: a build failing on many errors stays readable.
+MOST_CAUSES_FOR_A_COMMAND = 4
+#: How the causes open in the note of a command that failed.
+COMMAND_OPENING = "What this command printed carries errors this project's stack is known to raise."
+
+
+def known_causes_of_a_command(repo_root: str | Path, result: Any) -> str:
+    """The note for a command run in the workspace: each error of the project's pack its output carries, with its
+    cause, when the command failed; "" otherwise. Never raises.
+
+    Measured on a Rust run: three building stages ran the build themselves and read in its output an error the pack
+    names (an axum 0.8 extractor under `#[async_trait]`); none was told its cause, which only a defect at triage and
+    a line of the harness's own build check carried.
+    """
+    try:
+        if not isinstance(result, dict) or int(str(result.get("returncode")).strip()) == 0:
+            return ""
+        known = _known(repo_root)
+        if not known:
+            return ""
+        causes = _causes(known, f"{result.get('stdout') or ''}\n{result.get('stderr') or ''}", "")
+    except Exception:  # noqa: BLE001 - the command's result as it is
+        return ""
+    if not causes:
+        return ""
+    return COMMAND_OPENING + "".join(f"\n{KNOWN_CAUSE} {cause}" for cause in causes[:MOST_CAUSES_FOR_A_COMMAND])
+
+
+__all__ = ["KNOWN_CAUSE", "known_causes_of_a_command", "with_known_causes", "with_known_causes_in_lines"]

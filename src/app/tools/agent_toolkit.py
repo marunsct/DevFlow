@@ -685,6 +685,11 @@ def build_terminal_command_tool(repo_root: str, role_name: str = "general") -> B
             working_directory=working_directory,
         )
         stage_scratch.record_what_a_command_created(repo_root, before, result, stage)
+        # An error the project's pack knows, in what the command printed - read before a filter cuts it - is said with
+        # its cause, as the harness's own checks say it (`app.stacks.known_errors`).
+        from app.stacks.known_errors import known_causes_of_a_command
+
+        known_causes = known_causes_of_a_command(repo_root, result)
         if moved and isinstance(result, dict):
             result = {**result, "note": moved}
         if piped is not None:
@@ -693,6 +698,9 @@ def build_terminal_command_tool(repo_root: str, role_name: str = "general") -> B
         if starred:
             earlier = str(result.get("note") or "")
             result = {**result, "note": (earlier + "\n\n" if earlier else "") + starred}
+        if known_causes and isinstance(result, dict):
+            earlier = str(result.get("note") or "")
+            result = {**result, "note": (earlier + "\n\n" if earlier else "") + known_causes}
         return result
 
     run_terminal_command.description = with_the_network_as_it_is(

@@ -1,0 +1,163 @@
+     Locking 1 package to latest Rust 1.85.0 compatible version
+      Adding async-trait v0.1.92
+   Compiling notes_api v0.1.0 (/workspace/notes-api)
+warning: unused imports: `IntoResponse`, `Json`, `Response`, `State`, `delete`, `get`, `http::StatusCode`, `post`, and `put`
+ --> src/lib.rs:4:33
+  |
+4 |     extract::{DefaultBodyLimit, State},
+  |                                 ^^^^^
+5 |     http::StatusCode,
+  |     ^^^^^^^^^^^^^^^^
+6 |     response::{IntoResponse, Response},
+  |                ^^^^^^^^^^^^  ^^^^^^^^
+7 |     routing::{delete, get, post, put},
+  |               ^^^^^^  ^^^  ^^^^  ^^^
+8 |     Json, Router,
+  |     ^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `serde_json::json`
+  --> src/lib.rs:10:5
+   |
+10 | use serde_json::json;
+   |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `DbConn`
+  --> src/lib.rs:12:26
+   |
+12 | use crate::db::{init_db, DbConn};
+   |                          ^^^^^^
+
+warning: unused imports: `create_note`, `delete_note`, `get_note`, `health`, `list_notes`, and `update_note`
+  --> src/lib.rs:13:23
+   |
+13 | use crate::handlers::{create_note, delete_note, get_note, health, list_notes, update_note};
+   |                       ^^^^^^^^^^^  ^^^^^^^^^^^  ^^^^^^^^  ^^^^^^  ^^^^^^^^^^  ^^^^^^^^^^^
+
+warning: unused imports: `CreateNoteRequest`, `Note`, and `UpdateNoteRequest`
+  --> src/lib.rs:14:21
+   |
+14 | use crate::models::{CreateNoteRequest, Note, UpdateNoteRequest};
+   |                     ^^^^^^^^^^^^^^^^^  ^^^^  ^^^^^^^^^^^^^^^^^
+
+warning: private item shadows public glob re-export
+  --> src/lib.rs:14:21
+   |
+14 | use crate::models::{CreateNoteRequest, Note, UpdateNoteRequest};
+   |                     ^^^^^^^^^^^^^^^^^
+   |
+note: the name `CreateNoteRequest` in the type namespace is supposed to be publicly re-exported here
+  --> src/lib.rs:53:9
+   |
+53 | pub use crate::models::*;
+   |         ^^^^^^^^^^^^^^^^
+note: but the private item here shadows it
+  --> src/lib.rs:14:21
+   |
+14 | use crate::models::{CreateNoteRequest, Note, UpdateNoteRequest};
+   |                     ^^^^^^^^^^^^^^^^^
+   = note: `#[warn(hidden_glob_reexports)]` on by default
+
+warning: private item shadows public glob re-export
+  --> src/lib.rs:14:40
+   |
+14 | use crate::models::{CreateNoteRequest, Note, UpdateNoteRequest};
+   |                                        ^^^^
+   |
+note: the name `Note` in the type namespace is supposed to be publicly re-exported here
+  --> src/lib.rs:53:9
+   |
+53 | pub use crate::models::*;
+   |         ^^^^^^^^^^^^^^^^
+note: but the private item here shadows it
+  --> src/lib.rs:14:40
+   |
+14 | use crate::models::{CreateNoteRequest, Note, UpdateNoteRequest};
+   |                                        ^^^^
+
+warning: private item shadows public glob re-export
+  --> src/lib.rs:14:46
+   |
+14 | use crate::models::{CreateNoteRequest, Note, UpdateNoteRequest};
+   |                                              ^^^^^^^^^^^^^^^^^
+   |
+note: the name `UpdateNoteRequest` in the type namespace is supposed to be publicly re-exported here
+  --> src/lib.rs:53:9
+   |
+53 | pub use crate::models::*;
+   |         ^^^^^^^^^^^^^^^^
+note: but the private item here shadows it
+  --> src/lib.rs:14:46
+   |
+14 | use crate::models::{CreateNoteRequest, Note, UpdateNoteRequest};
+   |                                              ^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `Deserialize` and `Serialize`
+ --> src/db.rs:8:13
+  |
+8 | use serde::{Deserialize, Serialize};
+  |             ^^^^^^^^^^^  ^^^^^^^^^
+
+warning: unused imports: `delete` and `put`
+ --> src/routes.rs:1:21
+  |
+1 | use axum::routing::{delete, get, post, put};
+  |                     ^^^^^^             ^^^
+
+error[E0195]: lifetime parameters or bounds on associated function `from_request_parts` do not match the trait declaration
+   --> src/db.rs:162:14
+    |
+162 |     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ lifetimes do not match associated function in trait
+
+error[E0599]: no method named `optional` found for enum `Result` in the current scope
+   --> src/db.rs:120:6
+    |
+111 | /     conn.query_row(
+112 | |         "SELECT id, title, body FROM notes WHERE id = ?1",
+113 | |         [row_id],
+114 | |         |row| Ok(Note {
+...   |
+120 | |     .optional()
+    | |     -^^^^^^^^ method not found in `Result<Note, Error>`
+    | |_____|
+    |
+    |
+   ::: /workspace/.agent-home/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rusqlite-0.40.2/src/lib.rs:294:8
+    |
+294 |       fn optional(self) -> Result<Option<T>>;
+    |          -------- the method is available for `Result<Note, rusqlite::Error>` here
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: trait `OptionalExtension` which provides `optional` is implemented but not in scope; perhaps you want to import it
+    |
+1   + use rusqlite::OptionalExtension;
+    |
+
+error[E0308]: mismatched types
+   --> src/lib.rs:48:21
+    |
+48  |         .with_state(state)
+    |          ---------- ^^^^^ expected `()`, found `AppState`
+    |          |
+    |          arguments to this method are incorrect
+    |
+note: method defined here
+   --> /workspace/.agent-home/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/axum-0.8.9/src/routing/mod.rs:408:12
+    |
+408 |     pub fn with_state<S2>(self, state: S) -> Router<S2> {
+    |            ^^^^^^^^^^
+
+warning: unused variable: `parts`
+   --> src/db.rs:162:33
+    |
+162 |     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+    |                                 ^^^^^ help: if this is intentional, prefix it with an underscore: `_parts`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+Some errors have detailed explanations: E0195, E0308, E0599.
+For more information about an error, try `rustc --explain E0195`.
+warning: `notes_api` (lib) generated 11 warnings
+error: could not compile `notes_api` (lib) due to 3 previous errors; 11 warnings emitted

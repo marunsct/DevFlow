@@ -566,34 +566,47 @@ def blockers_of_its_batch(blockers: list, group: list) -> list:
 def _written_in_batches(state, config, agent, root, criteria, batches, round_, request_for, note_of=None):
     """The suite written a batch of criteria at a time; (the last update, every blocker), or (the pause, None).
 
-    A batch is done when its criteria are covered, so a stage resumed after a pause or a deploy
-    goes on at the first batch not done. Each batch has its own conversation. A criterion still
+    The batch in flight when the node is entered again - the one whose gate the pending decision
+    answers, or whose conversation a stopped worker cut off - goes on first, whatever is on disk, and
+    the batches before it are done (`app.graph.part_in_flight`); otherwise a batch is done when its
+    criteria are covered, so a stage resumed after a pause or a deploy goes on at the first batch not
+    done. Each batch has its own conversation: those after the one in flight are handed no pause. A criterion still
     without a test afterwards, and not set aside, is asked for once more, alone; what is still
     missing then is left to the review, as it is when the suite is written whole. `note_of(index, total, group,
     files)` says what each part is told (`acceptance_batches.note` when None).
     """
+    from app.graph import part_in_flight
     from app.graph.workflow import _run_gated_agent
 
     note_of = note_of or acceptance_batches.note
 
     blockers: list = []
     update: dict = {}
+    names = [*(f"g{index}" for index in range(len(batches))), "fill"]
+    going_on = part_in_flight.going_on(state, config, agent, [f"acceptance_author_{round_}_{name}" for name in names])
+    # The part in flight, by its place in `names`; None when every part starts fresh.
+    flight = names.index(going_on.rsplit("_", 1)[1]) if going_on else None
+    handed = state
 
     def write(name: str, group: list, note: str):
-        nonlocal update
+        nonlocal update, handed
         done = _run_gated_agent(
-            state, config, stage_name=f"acceptance_author_{round_}_{name}", agent=agent,
+            handed, config, stage_name=f"acceptance_author_{round_}_{name}", agent=agent,
             initial_request=request_for(group, note), output_key="__acceptance_author__", next_stage="acceptance_review",
         )
         if "__acceptance_author__" not in done:
             return done
+        # The next part starts its own conversation: the decision it was handed answered this part's gate.
+        handed = part_in_flight.without_the_pause(handed)
         blockers.extend(blockers_of_its_batch(getattr(done.pop("__acceptance_author__"), "blockers", None) or [], group))
         update = done
         return None
 
     for index, group in enumerate(batches):
+        if flight is not None and index < flight:
+            continue  # answered before the part in flight began
         covered = suite.coverage(root)
-        if all(criterion.id in covered for criterion in group):
+        if index != flight and all(criterion.id in covered for criterion in group):
             continue
         files = sorted({name for name, _ in suite.declared_tests(root)})
         paused = write(f"g{index}", group, note_of(index, len(batches), group, files))
@@ -601,7 +614,7 @@ def _written_in_batches(state, config, agent, root, criteria, batches, round_, r
             return paused, None
     covered, set_aside = suite.coverage(root), set(suite.deferred(root)) | set(acceptance_requests.not_automatable(blockers))
     missing = [criterion for criterion in criteria if criterion.id not in covered and criterion.id not in set_aside]
-    if missing:
+    if missing or flight == len(batches):
         logger.info("Batched acceptance suite: %s still have no test; asked for once more", ", ".join(c.id for c in missing))
         files = sorted({name for name, _ in suite.declared_tests(root)})
         paused = write("fill", missing, note_of(len(batches), len(batches) + 1, missing, files))

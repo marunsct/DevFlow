@@ -5151,6 +5151,17 @@ def _run_gated_agent(
             "Stage %s was handed a decision with no gate waiting for it; it starts afresh", stage_name,
         )
         pending_decision = None
+    owner = _the_stage_that_paused({"pending_inner_thread_id": state.get("pending_inner_thread_id")})
+    if pending_decision is not None and owner is not None and owner != stage_name:
+        # A decision answers the gate of the stage whose conversation paused, and that conversation is never carried
+        # on under another stage's name. Measured on one run: the suite written in three parts, part 2's call was
+        # handed the decision of part 1's gate, resumed part 1's conversation and gave part 1's answer as its own;
+        # parts 2 and 3 were never written. It starts as a stage starts.
+        logger.warning(
+            "Stage %s was handed the decision of %s's gate; it starts afresh, not in that stage's conversation",
+            stage_name, owner,
+        )
+        pending_decision = None
     if pending_decision is not None:
         inner_thread_id = state.get("pending_inner_thread_id")
         try:

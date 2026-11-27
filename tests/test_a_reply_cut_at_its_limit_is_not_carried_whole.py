@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass, field, replace
 from typing import Any
 
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from pydantic import BaseModel
 
 from app.agents import settled_answer
@@ -68,14 +68,33 @@ def test_a_long_reply_that_ran_out_of_room_is_cut_too_and_named_so():
     assert len(shown) < CUT_REPLY_KEPT + 600 and "ran past the reply's length limit" in shown
 
 
-def test_a_finished_reply_a_short_cut_one_and_one_with_tool_calls_are_untouched():
+def test_a_finished_reply_and_a_short_cut_one_are_untouched():
     finished = AIMessage(content=LOOPED)
     short = _cut("{ \"product_scope\": ")
-    calling = AIMessage(content=LOOPED, response_metadata={"finish_reason": "length"},
-                        tool_calls=[{"name": "read_file", "args": {"file_path": "a"}, "id": "c1"}])
 
-    for message in (finished, short, calling):
+    for message in (finished, short):
         assert settled_answer._the_cut_reply_shortened(message) is message
+
+
+def _cut_with_a_call(text: str) -> AIMessage:
+    return AIMessage(content=text, response_metadata={"finish_reason": "length"},
+                     tool_calls=[{"name": "write_artifact", "args": {"relative_path": "src/app.js"}, "id": "c1"}])
+
+
+def test_a_cut_reply_that_ends_in_a_call_reaches_the_next_call_as_its_head_and_its_call():
+    """Measured on one builder: 123,226 characters of analysis before a call, all of them in the next request."""
+    sent = _sent([HumanMessage(content="build it"), _cut_with_a_call(LONG_PROSE),
+                  ToolMessage(content="Refusing: not run", tool_call_id="c1", name="write_artifact")])
+
+    reply = next(m for m in sent if getattr(m, "type", None) == "ai")
+    assert len(reply.content) < CUT_REPLY_KEPT + 600 and "ran past the reply's length limit" in reply.content
+    assert [call["id"] for call in reply.tool_calls] == ["c1"]
+
+
+def test_the_note_on_a_cut_reply_with_a_call_uses_none_of_the_banned_words():
+    shown = settled_answer._the_cut_reply_shortened(_cut_with_a_call(LONG_PROSE)).content
+
+    assert not BANNED.search(shown[CUT_REPLY_KEPT:])
 
 
 def test_the_note_uses_none_of_the_banned_words():

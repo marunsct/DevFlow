@@ -425,6 +425,48 @@ def cut_off_notice(
     )
 
 
+def an_answer_tool(name: str) -> bool:
+    """Whether `name` is a stage's answer tool, named after its schema's class, rather than a work tool."""
+    return bool(name) and name != name.lower()
+
+
+def _a_cut_off_work_call(arguments: Any, capped: bool) -> dict[str, Any] | None:
+    """A work tool's call that stopped before its arguments were whole, as its whole fields and `CUT_OFF`; else None.
+
+    Measured on one run's builder: a reply cut at its 32,000-token cap ended 2,701 characters into a `write_artifact`
+    call's `content`. The lenient reading closed the open string and object, and the call ran as if it were whole.
+    A call cut at the cap is cut off whenever it does not parse as it was sent; one that ended on its own is only
+    when not even closing its brackets reads it - a closer left off a call whose values all arrived is read as before.
+    """
+    if not isinstance(arguments, str) or not arguments.lstrip().startswith("{"):
+        return None
+    try:
+        json.loads(arguments, strict=False)
+        return None
+    except ValueError:
+        pass
+    if not capped and _parsed_leniently(arguments) is not None:
+        return None
+    whole = what_arrived_whole(arguments)
+    arrived, stopped_in = whole if whole else ({}, "")
+    return {**arrived, CUT_OFF: stopped_in}
+
+
+def cut_off_call_notice(call: Any) -> str | None:
+    """What a work call cut off before its arguments were whole is answered with, in place of running it; else None."""
+    args = call.get("args") if isinstance(call, dict) else None
+    if not isinstance(args, dict) or CUT_OFF not in args or an_answer_tool(str(call.get("name") or "")):
+        return None  # an answer cut off is told what was kept (`cut_off_notice`)
+    stopped_in = str(args.get(CUT_OFF) or "")
+    where = f" inside `{stopped_in}`" if stopped_in else ""
+    return (
+        f"Refusing: this call was not run. Its arguments stopped{where} before they were complete - a reply ends so "
+        "when it reaches its output limit - and what arrived is not what you meant to send. Nothing was changed. "
+        "Send it again in smaller pieces: keep the text before a call short, and split a long file or command over "
+        "several shorter calls."
+    )
+
+
 def _where_it_fails(arguments: Any) -> str:
     """Why a call's argument text is not an object, and the text around the place, for the log."""
     text = str(arguments or "")
@@ -436,7 +478,7 @@ def _where_it_fails(arguments: Any) -> str:
     return "it parses, but not to an object"
 
 
-def _recovered_calls(message: Any, parameters: dict[str, dict[str, Any]]) -> None:
+def _recovered_calls(message: Any, parameters: dict[str, dict[str, Any]], capped: bool = False) -> None:
     """Calls to a known tool whose arguments were not strict JSON, made calls again.
 
     The client keeps a call whose arguments do not parse apart, as an invalid
@@ -458,8 +500,16 @@ def _recovered_calls(message: Any, parameters: dict[str, dict[str, Any]]) -> Non
                 if tool_name.lower() == name.lower() or (not name and tool_name[0].isupper()):
                     name = tool_name
                     break
+        cut = (_a_cut_off_work_call(call.get("args"), capped)
+               if name in parameters and not an_answer_tool(name) else None)
+        if cut is not None:
+            # Never run as if it were whole (LF.1608): the tool boundary answers it (`cut_off_call_notice`).
+            logger.warning("A call to %s was cut off in `%s` after %d characters; not run, and the stage is asked to "
+                           "send it again in smaller pieces", name, cut[CUT_OFF], len(str(call.get("args") or "")))
+            message.tool_calls.append({"name": name, "args": cut, "id": call.get("id"), "type": "tool_call"})
+            continue
         parsed = _parsed_leniently(call.get("args")) if name in parameters else None
-        if parsed is None and name in parameters:
+        if parsed is None and name in parameters and an_answer_tool(name):
             whole = what_arrived_whole(call.get("args"))
             key = _answer_key(name)
             if whole:
@@ -816,7 +866,7 @@ def decode_structured_arguments(result: Any, tools: Any) -> Any:
         message = getattr(generation, "message", None)
         capped = cut_at_the_cap(generation)
         try:
-            _recovered_calls(message, parameters)
+            _recovered_calls(message, parameters, capped)
         except Exception:  # noqa: BLE001 - a recovery that cannot run changes nothing
             logger.info("Invalid tool calls could not be recovered", exc_info=True)
         for call in getattr(message, "tool_calls", None) or []:
@@ -841,6 +891,10 @@ def decode_structured_arguments(result: Any, tools: Any) -> Any:
                         call["args"] = cut
                         _marked_tail_cut(generation)
                 if isinstance(call["args"], dict) and CUT_OFF in call["args"]:
+                    if not an_answer_tool(str(call.get("name") or "")):
+                        # A work call is never held to be joined to the next one: it is answered unrun at the tool
+                        # boundary (`cut_off_call_notice`).
+                        continue
                     # Kept like any cut-off answer's whole fields: the stage is
                     # told what arrived and asked for the rest (`cut_off_notice`).
                     key = _answer_key(str(call.get("name") or ""))

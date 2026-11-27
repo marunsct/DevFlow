@@ -56,6 +56,9 @@ REFUSED_MARK = "belongs to another work order in this milestone"
 SHORT_MARK = "Do not send it again; finish your own files."
 WITHHELD_MARK = "are withheld for the rest of this stage and were not run"
 
+#: How a refused change that is the whole file begins: a later one replaces what was recorded (`record`).
+WHOLE_FILE = "the file written as "
+
 _LOCK = threading.Lock()
 
 
@@ -82,8 +85,11 @@ def _write(root: str | Path, table: dict) -> None:
 def record(root: str | Path, stage: str, path: str, owner: str, change: str) -> int:
     """Keep one refused change for `owner` as `stage`'s blocker; how many times `stage` has now been refused `path`.
 
-    A repeat counts the refusal and keeps what was first recorded. Never raises: a record that cannot be written
-    reads as a first refusal, so the stage is told in full.
+    A repeat counts the refusal and keeps what was first recorded, unless it is the whole file written again: that
+    replaces whatever was recorded, and goes to the owner again if the earlier change already had (LF.1610). Measured
+    on one builder: its first write was a file cut off mid-line by the reply's cap, its second the whole file, and the
+    owner was handed the first while the second was answered "do not send it again". Never raises: a record that
+    cannot be written reads as a first refusal, so the stage is told in full.
     """
     if not stage or not path or not owner:
         return 1
@@ -97,6 +103,8 @@ def record(root: str | Path, stage: str, path: str, owner: str, change: str) -> 
                 refusals = 1
             else:
                 refusals = entry["refusals"] = int(entry.get("refusals") or 1) + 1
+                if change.startswith(WHOLE_FILE) and cut_short(change) != entry.get("change"):
+                    entry["change"], entry["delivered"] = cut_short(change), ""
             _write(root, table)
     except Exception:  # noqa: BLE001 - the refusal stands without its record
         logger.warning("Could not record a change refused in another work order's file", exc_info=True)
@@ -319,7 +327,8 @@ def effects_lines(records: list[dict]) -> list[str]:
 
 __all__ = [
     "DELIVERED_EVENT", "HEADING", "MOST_CHANGE_CHARS", "NEXT_VISIT", "RECORDED_EVENT", "RECORD_FILE", "REFUSED_MARK",
-    "RUNNING", "SENT_EVENT", "SENT_TO_OWNERS", "SHORT_MARK", "WITHHELD_MARK", "as_blocker", "build_middleware",
+    "RUNNING", "SENT_EVENT", "SENT_TO_OWNERS", "SHORT_MARK", "WHOLE_FILE", "WITHHELD_MARK", "as_blocker",
+    "build_middleware",
     "cut_short", "effects_lines", "first_refusal", "forget", "record", "recorded", "short_refusal", "the_note",
     "to_the_running_owner", "to_their_owners", "with_them", "withheld",
 ]

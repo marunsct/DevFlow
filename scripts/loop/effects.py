@@ -32,6 +32,8 @@ SIGNALS: list[tuple[str, str, str]] = [
     ("AY.3 a write followed by the defect's tests - passing", "result", "they pass now. Your defect is fixed"),
     ("AY.3 a write followed by the defect's tests - still failing", "result", "after the write: they still fail"),
     ("PX.2/LF.197 a withheld tool refused", "result", "is withheld at this point of the stage"),
+    ("LF.1608 a work call cut off before its arguments were whole, answered unrun", "result",
+     "this call was not run. Its arguments stopped"),
     ("LF.174 a re-run refused, nothing changed", "result", "nothing has been written since"),
     ("LF.202 a criterion moved to where its test can pass", "decision", "where a test of it can first pass"),
     ("AY.4 a defect left open at its call cap", "ledger", "model calls across its attempts"),

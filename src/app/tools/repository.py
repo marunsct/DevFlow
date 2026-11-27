@@ -7192,7 +7192,9 @@ def write_approved_artifact(
     if installed is not None:
         raise RepositoryToolError(installed)
     # The owner first: it names who writes the file, which says more.
-    someone_else_s = _another_work_order_s_file(artifact_root, target, change=f"the file written as {content[:400]!r}")
+    from app.tools.foreign_file_handoffs import WHOLE_FILE
+
+    someone_else_s = _another_work_order_s_file(artifact_root, target, change=f"{WHOLE_FILE}{content[:400]!r}")
     if someone_else_s is not None:
         raise RepositoryToolError(someone_else_s)
     not_this_round_s = _a_tester_changing_the_product(

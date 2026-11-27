@@ -155,7 +155,8 @@ def test_a_file_refused_again_is_one_short_line_naming_its_owner(workspace: Path
             messages.append(str(refused.value))
 
     assert "the plan gave it to specialist_backend_1" in messages[0]
-    assert messages[1].startswith("Recorded for specialist_backend_1: ") and "X = 0" in messages[1]
+    # The whole file written again is what is recorded for the owner, and what the line quotes (LF.1610).
+    assert messages[1].startswith("Recorded for specialist_backend_1: ") and "X = 1" in messages[1]
     assert len(messages[1]) < len(messages[0])
 
 

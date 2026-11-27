@@ -25,6 +25,7 @@ from app.agents.technical_lead import MilestonePlanOutput, SpecialistTask
 from app.graph import workflow
 from app.tools.repository import (
     RepositoryToolError, edit_approved_artifact, record_work_order_files, why_the_stage_may_not_write,
+    write_approved_artifact,
 )
 
 CAPTURED = json.loads((Path(__file__).parent / "captured" /
@@ -143,6 +144,43 @@ def test_the_running_owner_s_next_model_call_carries_the_change_once(refused_sta
     note = str(first["messages"][0].content)
     assert f"`{ROUTES}`, for {REFUSED_TO}" in note and "from .models import User, RefreshToken" in note
     assert then is None
+
+
+def the_owner_s_next_note(refused_stage) -> str:
+    from app.tools.foreign_file_handoffs import build_middleware
+
+    refused_stage.stage["now"] = OWNER
+    handed = build_middleware(str(refused_stage.root)).before_model({"messages": []}, None)
+    refused_stage.stage["now"] = REFUSED_TO
+    return str(handed["messages"][0].content) if handed else ""
+
+
+BROKEN = "from .models import User//// the routes, cut short mid-line by the reply's cap"
+WHOLE = "from .models import User, RefreshToken\n\n\ndef routes():\n    return []\n"
+
+
+def test_a_later_whole_version_of_the_file_replaces_the_one_recorded_before(refused_stage):
+    """Measured on one builder: its first write was a truncated file, its second the whole one, and the owner was
+    handed the truncated one while the whole one was answered "already recorded, do not send it again"."""
+    for content in (BROKEN, WHOLE):
+        with pytest.raises(RepositoryToolError):
+            write_approved_artifact(refused_stage.root, ROUTES, content)
+
+    note = the_owner_s_next_note(refused_stage)
+
+    assert "RefreshToken" in note and "cut short mid-line" not in note
+
+
+def test_a_later_whole_version_reaches_an_owner_that_was_handed_the_earlier_one(refused_stage):
+    with pytest.raises(RepositoryToolError):
+        write_approved_artifact(refused_stage.root, ROUTES, BROKEN)
+    the_owner_s_next_note(refused_stage)
+    with pytest.raises(RepositoryToolError):
+        write_approved_artifact(refused_stage.root, ROUTES, WHOLE)
+
+    note = the_owner_s_next_note(refused_stage)
+
+    assert "RefreshToken" in note
 
 
 def test_another_stage_s_model_call_is_handed_nothing(refused_stage):

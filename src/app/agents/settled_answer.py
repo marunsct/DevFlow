@@ -63,6 +63,10 @@ def _call_signature(call: Any) -> str:
     return f"{name}({rendered})"
 
 
+#: What may follow a backslash in a JSON string.
+_JSON_ESCAPES = frozenset('"\\/bfnrtu')
+
+
 def _repair_json(text: str) -> str | None:
     """Close the brackets and quotes a model left open, or None if hopeless.
 
@@ -96,13 +100,22 @@ def _repair_json(text: str) -> str | None:
     # the end - the array's `]` goes missing while the object's `}` is still
     # emitted, so the text ends in a `}` that closes nothing. Keeping it would
     # leave the repair one level too deep forever.
+    # An escape is kept as it was written (LF.1608): dropping it took every
+    # `\n`, `\"` and `\u...` out of the text repaired - a file sent in a cut-off
+    # call reached its tool as one line with its quotes gone. One that JSON has
+    # no meaning for keeps its backslash as text; one the cut stopped inside is
+    # left out with what it began.
     stack: list[str] = []
     out: list[str] = []
     in_string = False
     escaped = False
+    unicode_at = -1
     for ch in text:
         if escaped:
             escaped = False
+            if ch == "u":
+                unicode_at = len(out)
+            out.append("\\" + ch if ch in _JSON_ESCAPES else "\\\\" + ch)
             continue
         if ch == "\\":
             escaped = True
@@ -129,6 +142,8 @@ def _repair_json(text: str) -> str | None:
         return None
     # An unterminated string needs its quote before any closer can count.
     if in_string:
+        if 0 <= unicode_at and len(out) - unicode_at <= 4:
+            del out[unicode_at:]  # `\u20`: the cut stopped inside it
         out.append('"')
     out.extend(reversed(stack))
     return "".join(out)
@@ -2200,13 +2215,19 @@ def _the_cut_reply_shortened(message: Any) -> Any:
     )
     content = getattr(message, "content", "")
     if (getattr(message, "type", None) != "ai" or not truncated or not isinstance(content, str)
-            or len(content) <= CUT_REPLY_CARRIED_WHOLE or getattr(message, "tool_calls", None)):
+            or len(content) <= CUT_REPLY_CARRIED_WHOLE):
         return message
     why = ("it repeated the same text over and over until the limit stopped it"
            if _repeats_itself(content) else "it ran past the reply's length limit")
-    note = (f"\n\n[This reply was cut off: {why}. The {len(content) - CUT_REPLY_KEPT:,} characters after "
-            "this point are not shown. Nothing in it was accepted. Write the answer again, once, "
-            "complete and short enough to finish.]")
+    if getattr(message, "tool_calls", None):
+        # Its calls stay, each answered by its own result; only the text that took the reply's room is cut (LF.1609).
+        note = (f"\n\n[This reply's text was cut off: {why}. The {len(content) - CUT_REPLY_KEPT:,} characters "
+                "after this point are not shown. Each call below is answered by its own result. Keep the text "
+                "before a call short.]")
+    else:
+        note = (f"\n\n[This reply was cut off: {why}. The {len(content) - CUT_REPLY_KEPT:,} characters after "
+                "this point are not shown. Nothing in it was accepted. Write the answer again, once, "
+                "complete and short enough to finish.]")
     return message.model_copy(update={"content": content[:CUT_REPLY_KEPT] + note})
 
 
@@ -2218,7 +2239,9 @@ def _with_cut_replies_shortened(request: Any) -> Any:
     first reply repeated a three-character string until 107,596 tokens were
     spent, the next call was handed all 205,682 characters of it, and its own
     reply repeated one block 102 times. The empty case - a reply all reasoning
-    - is `_the_last_reply_was_all_reasoning`'s.
+    - is `_the_last_reply_was_all_reasoning`'s. A reply that ends in a call is
+    cut too, its calls kept (LF.1609): one builder's 123,226 characters of
+    analysis before a cut-off write were carried whole past the stage's summary.
     """
     try:
         messages = list(getattr(request, "messages", None) or [])
@@ -3045,6 +3068,14 @@ def build_settled_answer_middleware(
             """
             call = getattr(request, "tool_call", None) or {}
             name = str(call.get("name") or "")
+            from app.models.tool_arguments import cut_off_call_notice
+
+            cut_off = cut_off_call_notice(call)
+            if cut_off is not None:
+                # A call the reply stopped inside is never run as if it were whole (LF.1608).
+                from langchain_core.messages import ToolMessage
+
+                return ToolMessage(content=cut_off, tool_call_id=str(call.get("id") or ""), name=name, status="error")
             scratch = a_harness_scratch_delete(call)
             if scratch is not None:
                 return scratch

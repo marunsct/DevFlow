@@ -5,9 +5,9 @@ the block below is written by `loop.sh state`. The map of all documents is `docs
 `docs/improvement-plan.md`; how the product works is `docs/PRODUCT.md`; how to run and test it is `docs/HANDOVER.md`;
 decisions in force are `docs/owner-decisions.md`; old information is found through `docs/ARCHIVE.md`.
 <!-- state:generated -->
-**As of:** 11-28 03:55 JST (written by `loop.sh state`). Harness cbcfe4e6 committed; d08d3e1e deployed (not the same).
-**Live, and stopped in the last day:** run-250d21ef running at tools_models; run-48e11408 running at defect_fix_2_0; run-1fb341dc failed at failed; run-970c2cb6 paused at ?; run-4d1f3829 failed at failed
-**Last scored:** run-55a9cdbb wordstats-cli 8/8 (completed, 35 active min, handoff 1.0; scored 11-28 03:54 JST); run-13fdcebf tasks-api 10/10 (completed, mixed, 174 active min, handoff 1.0; scored 11-28 03:12 JST); run-04f7203e notes-api-ruby 9/9 (completed, mixed, 69 active min, handoff 1.0; scored 11-28 02:25 JST).
+**As of:** 11-28 05:03 JST (written by `loop.sh state`). Harness b66c616a committed; b66c616a deployed.
+**Live, and stopped in the last day:** run-55aade33 running at architecture_review; run-250d21ef running at defect_fix_1_4; run-1fb341dc failed at failed; run-970c2cb6 paused at ?; run-4d1f3829 failed at failed
+**Last scored:** run-48e11408 notes-api-js 9/9 (completed, mixed, 136 active min, handoff 1.0; scored 11-28 04:54 JST); run-55a9cdbb wordstats-cli 8/8 (completed, 35 active min, handoff 1.0; scored 11-28 03:54 JST); run-13fdcebf tasks-api 10/10 (completed, mixed, 174 active min, handoff 1.0; scored 11-28 03:12 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -15,10 +15,10 @@ decisions in force are `docs/owner-decisions.md`; old information is found throu
 |---|---|
 | Phase | **Learning runs, fixes deployed at once** (deep-review plan, owner 11-18: implement all; frozen-version measuring for Measure batches). The release-candidate count starts only when a full audit cycle finds nothing to fix. |
 | Models | olla `host.docker.internal:4001/olla/openai/v1`, model `qwen3.6-35b-a3b` again (owner 11-27 afternoon; two llama.cpp servers, 2 slots each, 93k context per slot, 4 requests at once). Runs pinned to it, build model only (`FRONTIER=false`: the settings name a hosted judgement model, not used by the loop); per-request sessions (`.env` MODEL_SESSION_SCOPE=request). Not yet measured by the new diagnosis; inkling was (12:16 JST). |
-| Harness | d08d3e1 deployed 11-28 03:11 JST: LF.1503-1632 (details `docs/archive/plans/fix-log.md`); LF.1593 step-sized reasoning budget on. **Runs resumed 16:48 JST** on Qwen 3.6, 2 in parallel mode: textkit-lib 10 8/8, notes-api-go 16 9/9, web-todo 7 10/10, notes-api-csharp 17 9/9 delivered; notes-api-java 13 9/9 and fullstack-bookmarks 17 8/8 not deliverable. notes-api-rust 5 failed 0/9 (a stale binary, LF.1628). notes-api-ruby 7 9/9, 8/8, delivered (69 min); tasks-api 26 10/10, 7/7, delivered (180 min, mixed). wordstats-cli 18 8/8, 6/6, delivered (35 min). Live: run-48e11408 `notes-api-js 2`, run-250d21ef `web-todo-react 10` (03:55); run-970c2cb6 (pinned to inkling) stays paused. Earlier today on inkling (reviews in `reports/product-reviews/`; diagnosis DX.1-7, LF.1596-1603). Open: the plan. |
+| Harness | b66c616 deployed 11-28 05:00 JST: LF.1503-1643 (details `docs/archive/plans/fix-log.md`); LF.1593 step-sized reasoning budget on. **Runs resumed 16:48 JST** on Qwen 3.6, 2 in parallel mode: textkit-lib 10 8/8, notes-api-go 16 9/9, web-todo 7 10/10, notes-api-csharp 17 9/9 delivered; notes-api-java 13 9/9 and fullstack-bookmarks 17 8/8 not deliverable. notes-api-rust 5 failed 0/9 (a stale binary, LF.1628). notes-api-ruby 7 9/9, 8/8, delivered (69 min); tasks-api 26 10/10, 7/7, delivered (180 min, mixed). wordstats-cli 18 8/8, 6/6, delivered (35 min). notes-api-js 2 9/9, 8/8, delivered (139 min, mixed). Live: run-250d21ef `web-todo-react 10`, run-55aade33 `notes-api-hono 18` (04:55); run-970c2cb6 (pinned to inkling) stays paused. Earlier today on inkling (reviews in `reports/product-reviews/`; diagnosis DX.1-7, LF.1596-1603). Open: the plan. |
 | Switches | 53 fixes built in (always on). 29 optional switches (9 groups, `docs/measuring.md`); `WEB_LOOKUP_WHEN_STUCK` is off and set per run. Measure arms use `SWITCHES_OFF` per run. |
 | Operations | Nightly backups (`loop.sh backup --check`). At most 2 runs, parallel execution mode (`.env` `MAX_CONCURRENT_RUNS=2`). Audit cron every 15 minutes (recreated 11-27 18:32 JST). |
-| Suites | both green at 23,079 passed on d08d3e1 (11-28), at SUITE_WORKERS=2. |
+| Suites | both green at 23,130 passed on b66c616 (11-28), at SUITE_WORKERS=2. |
 
 ## Off until measured
 BATCH_ACCEPTANCE_AUTHOR (web tools are on since 11-23, measured from there). Hosted-model

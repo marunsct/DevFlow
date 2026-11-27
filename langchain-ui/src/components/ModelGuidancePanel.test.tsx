@@ -118,4 +118,25 @@ describe('the model guidance panel', () => {
     expect(await screen.findByText('not measured')).toBeTruthy();
     expect(screen.queryByText('Guides')).toBeNull();
   });
+
+  it('sends the owner value for a measured setting', async () => {
+    const profile = {
+      switch: 'PROFILE_FROM_DIAGNOSIS', switch_on: true, measured_at: '2026-11-27T01:00:00+00:00',
+      fields: [{
+        id: 'session_scope', title: 'Balancer session scope', choices: ['conversation', 'request'], number: null,
+        measured: 'request', evidence: 'at 2 at once: 4000 tokens a second with a session a conversation, 8000 with one a request',
+        confidence: 'likely', override: null, applied: 'request', behind_switch: true,
+      }],
+    };
+    get.mockResolvedValue({ data: steering({ profile }) });
+    put.mockResolvedValue({ data: steering({ profile }) });
+    const user = userEvent.setup();
+    renderPanel();
+
+    const choice = await screen.findByLabelText('Balancer session scope: your value');
+    expect(screen.getByText(/8000 with one a request/)).toBeTruthy();
+    await user.selectOptions(choice, 'conversation');
+
+    expect(put).toHaveBeenCalledWith('/settings/model/steering/profile/session_scope', { value: 'conversation' });
+  });
 });

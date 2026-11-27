@@ -155,6 +155,42 @@ class Everything:
         return self.stage.create(**payload)
 
 
+class Balanced:
+    """`server`'s answers from `servers` model servers of `slots` slots each behind a balancer that keeps a session on
+    the server its first request went to and sends a new session to the least busy one (the first on a tie). Each
+    request holds its slot `seconds`; every reply says the server generated at `rate` tokens a second (llama.cpp's
+    `timings`)."""
+
+    def __init__(self, server: Any, servers: int = 2, slots: int = 1, seconds: float = 0.03, rate: float = 60.0,
+                 header: str = "X-Olla-Session-ID"):
+        self.server, self.seconds, self.rate, self.header = server, seconds, rate, header
+        self.load = [0] * servers
+        self.where: dict[str, int] = {}
+        self.slots = [threading.Semaphore(slots) for _ in range(servers)]
+        self._lock = threading.Lock()
+
+    def create(self, **payload: Any) -> dict:
+        import time
+
+        session = (payload.get("extra_headers") or {}).get(self.header)
+        with self._lock:
+            if session in self.where:
+                chosen = self.where[session]
+            else:
+                chosen = min(range(len(self.load)), key=lambda n: (self.load[n], n))
+                if session:
+                    self.where[session] = chosen
+            self.load[chosen] += 1
+        try:
+            with self.slots[chosen]:
+                time.sleep(self.seconds)
+            reply = self.server.create(**payload)
+        finally:
+            with self._lock:
+                self.load[chosen] -= 1
+        return {**reply, "timings": {"predicted_per_second": self.rate, "prompt_ms": 50.0}}
+
+
 class Overlapping:
     """`server` answering after `hold` seconds a request, counting how many requests it held at once at most and the
     session header each carried."""

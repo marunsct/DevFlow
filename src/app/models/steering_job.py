@@ -149,6 +149,10 @@ def _run() -> None:
         if _gone(model):
             return
         deep_diagnosis.keep(deep)
+        set_status("running", "measuring the server's speed, cache reuse and requests at once (alone on the server)")
+        from app.models import speed_profile
+
+        speed_profile.measure(model, name)
         diagnostics.apply(model, diagnostics.recorded(name))
         set_status("running", "finding what the model can do: an image, a schema, another language, its model card")
         from app.models import capabilities
@@ -259,7 +263,19 @@ def view() -> dict[str, Any]:
     return {"model": name, "measured_at": (profile.measured_at if profile else None) or None, **status(),
             "tier": (profile.tier if profile else None) or None, "score": profile.score if profile else None,
             "checks": checks, "guides": guides, "settings": settings, "stale": stale,
-            "harmful": list((deep or {}).get("harmful") or [])}
+            "harmful": list((deep or {}).get("harmful") or []),
+            "profile": _profile_rows(name)}
+
+
+def _profile_rows(name: str) -> dict[str, Any]:
+    """The fields the diagnosis measures (DX.6, DX.7), each overridable, and whether they are applied."""
+    from app.models import diagnosis_profile
+
+    if not name:
+        return {"switch": diagnosis_profile.NAME, "switch_on": diagnosis_profile.profile_switch.enabled(), "fields": []}
+    return {"switch": diagnosis_profile.NAME, "switch_on": diagnosis_profile.profile_switch.enabled(),
+            "measured_at": diagnosis_profile.recorded(name).get("measured_at"),
+            "fields": diagnosis_profile.view(name)}
 
 
 __all__ = ["HEARTBEAT_SECONDS", "STALE_SECONDS", "STOPPED", "capabilities_view", "fill_capabilities", "page_model", "run", "set_status", "status", "view"]

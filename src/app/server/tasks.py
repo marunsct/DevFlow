@@ -797,6 +797,10 @@ def execute_workflow_run(
                 from app.models.model_guidance import deep_if_new
 
                 deep_if_new(served)
+                # Speed, cache and concurrency, alone on the server (DX.6).
+                from app.models.speed_profile import measure_if_new as speed_if_new
+
+                speed_if_new(served)
                 from app.models.diagnostics import apply, recorded
 
                 apply(served, recorded(served_name(served)))

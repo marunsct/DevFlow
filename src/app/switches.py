@@ -200,6 +200,9 @@ GROUPS: dict[str, tuple[str, ...]] = {
                      "SPECIALIST_DOMAIN_REVIEW", "FAST_DESIGN_GATE_ON_PRODUCT_BREAKING"),
     # Contract probes the release adds to a green round: what a product must survive that no locked test asks.
     "Contract probes": ("CONCURRENT_WRITE_PROBE", "WRONG_SHAPE_BODY_PROBE", "EDGE_PROBE", "PAGE_PROBE"),
+    # The settings the model's diagnosis measured (DX.6, DX.7): parallel cap, session scope, and effort, reasoning
+    # budget and reply cap per stage kind. Each is also the owner's to set on the settings page, which applies either way.
+    "Model profile": ("PROFILE_FROM_DIAGNOSIS",),
     # Which of the product's own unit tests may hold a run: one that keeps failing beside a green suite is set aside;
     # and which side a failing one is first fixed on, read from its failure (PA.15).
     "Unit test signal": ("UNIT_TEST_QUARANTINE", "UNIT_TEST_FIX_BY_FAILURE"),
@@ -267,6 +270,13 @@ EXPERIMENTS = tuple(name for members in GROUPS.values() for name in members)
 #: owner 2026-11-05). Its cost stays bounded: it covers only the first attempt at a failing unit test.
 TAKEN_OFF_FOR_COST: frozenset[str] = frozenset()
 EXPERIMENTS_ON: dict[str, str] = {
+    "PROFILE_FROM_DIAGNOSIS": "owner 2026-11-27 (DX.6, DX.7; switches on unless a change is drastic): the settings the "
+                              "model's diagnosis measured - parallel cap and session scope from a concurrency probe, "
+                              "effort, budget and reply cap per stage kind from replayed stage requests - each chosen "
+                              "by a rule that takes no value whose answers pass less often, each overridable on the "
+                              "settings page; nothing applies until a diagnosis measured it; off at once if a run it "
+                              "fires in loses a hidden test or its stage kinds' active minutes do not fall "
+                              "(docs/measuring.md M-DX.6/7)",
     "NEAR_GREEN_REPLANNED_ONCE": "measured over 175 past re-plans (LR.53): later re-plans of a near-green sprint beat the "
                                  "best in 4 of 27 cases at about 34 minutes each, 21 of 22 such runs scored every hidden "
                                  "test; on, and kept only if live runs lose no hidden test by it (docs/measuring.md M14)",

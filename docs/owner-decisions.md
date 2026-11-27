@@ -19,7 +19,7 @@ words, "if the model supports more parallel request run the diagnosis parallely"
 
 | # | Decision | Status | Trigger / where it lives |
 |---|---|---|---|
-| 1 | Settings the diagnosis finds are applied behind one switch, `PROFILE_FROM_DIAGNOSIS`, with every field overridable on the settings page; a value the owner set always wins. | Deferred | Built with DX.6 and DX.7 (`models/diagnosis_profile.py`). |
+| 1 | Settings the diagnosis finds are applied behind one switch, `PROFILE_FROM_DIAGNOSIS`, with every field overridable on the settings page; a value the owner set always wins. | Built (LF.1602, LF.1603); live with the bundle's deploy. Compose default **on** (the owner's "switches ON, off on a drastic change": each field is measured by a rule that takes no value whose answers pass less often, and each is overridable) | `models/diagnosis_profile.py`; Settings -> Models -> "Measured settings". `MODEL_SESSION_SCOPE`, set by compose and `.env`, counts as the owner's and wins over the measured scope. |
 | 2 | The full calibration tier starts only from the settings page, never by itself. | Deferred | Built with DX.7. |
 | 3 | Only benchmark runs' transcripts may become probes - never the owner's own runs, never hidden tests. | Deferred | Built with DX.8 (the replay set's builder and its guard). |
 | 4 | The model under test is diagnosed again after the first step (Phase 0), before runs resume. | Waiting | The main session does it once Phase 0 is deployed. |

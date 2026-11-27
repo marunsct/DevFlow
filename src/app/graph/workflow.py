@@ -1292,7 +1292,22 @@ def concurrent_requests() -> int:
         slots = getattr(current(), "slots", None)
     except Exception:  # noqa: BLE001
         slots = None
-    return max(1, min(max_parallel(), slots)) if slots else max_parallel()
+    wave = max(1, min(max_parallel(), slots)) if slots else max_parallel()
+    # Fewer, where the model's concurrency probe found no gain past them (DX.6), behind `PROFILE_FROM_DIAGNOSIS`,
+    # or where the owner set the cap on the settings page.
+    try:
+        from app.models.diagnosis_profile import applied
+
+        cap = applied("parallel_cap")
+        if isinstance(cap, int) and 1 <= cap < wave:
+            wave = cap
+            from app.models.diagnosis_profile import from_the_diagnosis, note
+
+            if from_the_diagnosis("parallel_cap") is not None:
+                note(f"at most {cap} requests at once")
+    except Exception:  # noqa: BLE001 - the slots' wave
+        pass
+    return wave
 
 
 def _in_parallel_mode() -> bool:

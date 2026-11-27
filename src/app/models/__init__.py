@@ -89,6 +89,16 @@ def _tokens_per_second() -> float:
 
     raw = os.environ.get("MODEL_TOKENS_PER_SECOND", "").strip()
     if not raw:
+        # The slowest rate the serving model was measured at (`speed_profile`, DX.6), where it is slower than the
+        # default: a floor only ever lowered lengthens patience, so it applies with no switch.
+        try:
+            from app.models.diagnosis_profile import applied
+
+            measured = applied("timeout_floor")
+            if isinstance(measured, (int, float)) and 0 < measured < DEFAULT_MIN_TOKENS_PER_SECOND:
+                return float(measured)
+        except Exception:  # noqa: BLE001 - the default floor
+            pass
         return DEFAULT_MIN_TOKENS_PER_SECOND
     try:
         value = float(raw)

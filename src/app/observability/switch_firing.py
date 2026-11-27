@@ -113,6 +113,8 @@ SIGNALS: dict[str, str] = {
     "REASONING_BUDGET": "reasoning held to a budget of",
     # Recorded by the harness each time a working stage's step budget changes (`app.models.step_budget`, LF.1593).
     "STEP_SIZED_REASONING_BUDGET": "reasoning held to a step budget of",
+    # Recorded by the harness once per stage visit and field the model's diagnosis set (`app.models.diagnosis_profile`).
+    "PROFILE_FROM_DIAGNOSIS": "set from the model's diagnosis:",
 }
 #: Transcript records the harness writes of what it did itself, with no model reading it: kind -> the field whose
 #: text a switch's signal is looked for in.
@@ -130,6 +132,8 @@ HARNESS_RECORDS: dict[str, str] = {"repository_delivery": "message", "prompt_sha
                                    "reasoning_budget": "message",
                                    # A step's reasoning budget sent (`app.models.step_budget`, LF.1593).
                                    "step_reasoning_budget": "message",
+                                   # A field the model's diagnosis set (`app.models.diagnosis_profile`, DX.6/DX.7).
+                                   "diagnosis_profile": "message",
                                    # Each decision the run took, with its rationale (`app.decisions.record_decision`):
                                    # switches whose acts are decisions say so only there.
                                    "decision": "text"}

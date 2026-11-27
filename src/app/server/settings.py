@@ -936,6 +936,36 @@ async def set_guide_override(
     return view()
 
 
+class ProfileOverride(BaseModel):
+    #: The owner's value for the field; None (or "") follows the diagnosis.
+    value: int | float | str | None = None
+
+
+@settings_router.put("/model/steering/profile/{field_id}")
+async def set_profile_override(
+    field_id: str, payload: ProfileOverride, user: UserInDB = Depends(require_admin)
+) -> dict[str, Any]:
+    """The owner's value for one field the diagnosis measures (DX.6, DX.7), or back to what it measured; the owner's
+    value always wins and applies with `PROFILE_FROM_DIAGNOSIS` on or off."""
+    from fastapi import HTTPException
+
+    from app.models import diagnosis_profile
+    from app.models.steering_job import page_model, view
+
+    name = page_model()
+    if not name:
+        raise HTTPException(status_code=409, detail="No model is serving.")
+    try:
+        diagnosis_profile.set_override(name, field_id, payload.value)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"No field {field_id}.")
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error))
+    record_audit(actor=user.username, tenant_id=user.tenant_id, action="settings.model_profile",
+                 subject=field_id, detail={"value": payload.value, "model": name})
+    return view()
+
+
 class SwitchEntry(BaseModel):
     """One switch on the admin page: what it does, and where its value comes from."""
 

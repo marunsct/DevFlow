@@ -187,7 +187,8 @@ class _Completions:
             from app.models.session_header import session_header_name
 
             header = session_header_name()
-            if header:
+            # A probe that names its own session (one conversation sent twice, `speed_profile`) keeps it.
+            if header and header not in (payload.get("extra_headers") or {}):
                 payload["extra_headers"] = {**(payload.get("extra_headers") or {}),
                                             header: f"diagnosis:{uuid.uuid4().hex[:12]}"}
         response = self._model.root_client.chat.completions.create(**payload)

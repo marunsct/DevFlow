@@ -58,10 +58,26 @@ SCOPES = ("conversation", "request")
 
 
 def session_scope(environment: Mapping[str, str] | None = None) -> str:
-    """`MODEL_SESSION_SCOPE`: `request` for a fresh session per request; `conversation` otherwise."""
+    """`MODEL_SESSION_SCOPE`: `request` for a fresh session per request; `conversation` otherwise.
+
+    For the process's own environment, the scope the owner set for the serving model on the settings page comes
+    first, and where neither that nor `MODEL_SESSION_SCOPE` is set, the scope its concurrency probe measured
+    (`speed_profile`, DX.6; behind `PROFILE_FROM_DIAGNOSIS`)."""
     values = os.environ if environment is None else environment
+    profile = None
+    if environment is None:
+        try:
+            from app.models import diagnosis_profile as profile
+        except Exception:  # noqa: BLE001
+            profile = None
+    owner = profile.owner("session_scope") if profile is not None else None
+    if owner in SCOPES:
+        return str(owner)
     raw = str(values.get("MODEL_SESSION_SCOPE") or "").strip().lower()
-    return raw if raw in SCOPES else "conversation"
+    if raw in SCOPES:
+        return raw
+    measured = profile.applied("session_scope") if profile is not None else None
+    return str(measured) if measured in SCOPES else "conversation"
 
 
 #: The part of a fan-out the running call belongs to (`as_a_part_of_its_own`); "" outside one.

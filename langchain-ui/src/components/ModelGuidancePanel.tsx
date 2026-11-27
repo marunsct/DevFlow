@@ -50,6 +50,31 @@ export interface Steering {
   stale?: string[];
   /** Guides dropped because a check fell when they were given together. */
   harmful?: string[];
+  /** The settings the diagnosis measures, each overridable (PROFILE_FROM_DIAGNOSIS). */
+  profile?: ProfileSection;
+}
+
+export interface ProfileField {
+  id: string;
+  title: string;
+  /** The values it takes, or null for a number. */
+  choices: string[] | null;
+  number: 'int' | 'float' | null;
+  measured: number | string | null;
+  evidence: string;
+  confidence: string;
+  /** The owner's value; it always wins. */
+  override: number | string | null;
+  /** What runs use now; null for the harness's default. */
+  applied: number | string | null;
+  behind_switch: boolean;
+}
+
+export interface ProfileSection {
+  switch: string;
+  switch_on: boolean;
+  measured_at?: string | null;
+  fields: ProfileField[];
 }
 
 /** How often a running diagnosis is asked about, in milliseconds. */
@@ -131,6 +156,17 @@ export const ModelGuidancePanel: React.FC = () => {
       else await load();
     } catch (err: any) {
       notify(err.response?.data?.detail ?? 'Only an administrator can change a guide.');
+    }
+  };
+
+  const setField = async (field: ProfileField, value: string) => {
+    const typed = value === '' ? null : field.number ? Number(value) : value;
+    try {
+      const res = await api.put(`/settings/model/steering/profile/${field.id}`, { value: typed });
+      if (isSteering(res.data)) setSteering(res.data);
+      else await load();
+    } catch (err: any) {
+      notify(err.response?.data?.detail ?? 'Only an administrator can change a setting.');
     }
   };
 
@@ -295,6 +331,69 @@ export const ModelGuidancePanel: React.FC = () => {
               <dd className="text-text-primary">{steering.settings.tail_reminder ? 'yes' : 'no'}</dd>
             </div>
           </dl>
+        )}
+
+        {steering?.profile && steering.profile.fields.length > 0 && (
+          <div>
+            <h3 className="text-sm font-semibold text-text-primary mb-1">Measured settings</h3>
+            <p className="text-xs text-text-muted mb-2">
+              Switch <span className="font-mono">{steering.profile.switch}</span>
+              {steering.profile.switch_on ? ' on: measured values are used.' : ' off: only your values and the timeout floor are used.'}
+              {' '}A value you set always wins; leave it empty to follow the diagnosis.
+            </p>
+            <table className="w-full text-sm">
+              <caption className="sr-only">Settings the diagnosis measured</caption>
+              <thead>
+                <tr className="text-left text-text-muted">
+                  <th scope="col" className="py-1 font-normal">Setting</th>
+                  <th scope="col" className="py-1 font-normal">Measured</th>
+                  <th scope="col" className="py-1 font-normal">Your value</th>
+                  <th scope="col" className="py-1 font-normal">In use</th>
+                </tr>
+              </thead>
+              <tbody>
+                {steering.profile.fields.map((field) => (
+                  <tr key={field.id} className="border-t border-border/50 align-top">
+                    <td className="py-1 text-text-primary">{field.title}</td>
+                    <td className="py-1 text-text-secondary">
+                      {field.measured ?? 'not measured'}
+                      {field.evidence && <span className="block text-xs text-text-muted">{field.evidence}</span>}
+                    </td>
+                    <td className="py-1">
+                      {field.choices ? (
+                        <select
+                          aria-label={`${field.title}: your value`}
+                          value={field.override == null ? '' : String(field.override)}
+                          onChange={(e) => setField(field, e.target.value)}
+                          className="rounded border border-border bg-transparent px-2 py-1 text-text-primary"
+                        >
+                          <option value="">Follow the diagnosis</option>
+                          {field.choices.map((choice) => (
+                            <option key={choice} value={choice}>{choice}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          aria-label={`${field.title}: your value`}
+                          type="number"
+                          min={field.number === 'int' ? 1 : 0}
+                          step={field.number === 'int' ? 1 : 'any'}
+                          defaultValue={field.override == null ? '' : String(field.override)}
+                          placeholder="follow the diagnosis"
+                          onBlur={(e) => {
+                            const was = field.override == null ? '' : String(field.override);
+                            if (e.target.value !== was) setField(field, e.target.value);
+                          }}
+                          className="w-32 rounded border border-border bg-transparent px-2 py-1 text-text-primary"
+                        />
+                      )}
+                    </td>
+                    <td className="py-1 text-text-primary">{field.applied ?? 'default'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </section>

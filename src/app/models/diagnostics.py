@@ -840,6 +840,17 @@ def recorded(name: str, *, even_if_stale: bool = False, now: dict | None = None)
 
 def apply(model: Any, diagnosis: Diagnosis | None) -> None:
     """Use the diagnosis's settings for this model's server from now on in this process. Never raises."""
+    try:
+        # The profile's fields (`diagnosis_profile`: speed, concurrency, reasoning by stage kind), and the owner's
+        # values for them, whether or not this diagnosis is kept.
+        from app.models import diagnosis_profile
+        from app.models.reply_salvage import served_name
+
+        diagnosis_profile.apply((str(getattr(model, "openai_api_base", "") or ""),
+                                 str(getattr(model, "model_name", "") or "")),
+                                diagnosis.model if diagnosis is not None else served_name(model))
+    except Exception:  # noqa: BLE001
+        logger.debug("Could not apply the model's profile", exc_info=True)
     if diagnosis is None:
         return
     try:

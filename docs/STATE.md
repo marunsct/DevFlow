@@ -5,9 +5,9 @@ the block below is written by `loop.sh state`. The map of all documents is `docs
 `docs/improvement-plan.md`; how the product works is `docs/PRODUCT.md`; how to run and test it is `docs/HANDOVER.md`;
 decisions in force are `docs/owner-decisions.md`; old information is found through `docs/ARCHIVE.md`.
 <!-- state:generated -->
-**As of:** 11-27 17:41 JST (written by `loop.sh state`). Harness fabd42f7 committed; 5d8dc540 deployed (not the same).
-**Live, and stopped in the last day:** run-45ded0b4 running at acceptance_author_1; run-5f90ad7f running at awaiting_approval:defect_fix_2_2; run-970c2cb6 paused at ?; run-4d1f3829 failed at failed; run-c13e7189 paused at awaiting_approval:defect_fix_2_2; run-e799301e failed at failed
-**Last scored:** run-2130eb52 textkit-lib 8/8 (completed, 23 active min, handoff 1.0; scored 11-27 17:21 JST); run-af51e4c9 wordstats-cli 6/8 (completed, FALSE ACCEPTANCE, mixed, 160 active min, handoff 1.0; scored 11-27 09:59 JST); run-4d1f3829 textkit-lib 0/1 (failed, mixed, 92 active min, handoff 0.333; scored 11-27 09:37 JST).
+**As of:** 11-27 18:39 JST (written by `loop.sh state`). Harness 7383170a committed; 5d8dc540 deployed (not the same).
+**Live, and stopped in the last day:** run-a753551e running at tools_models; run-45ded0b4 running at milestone_review; run-970c2cb6 paused at ?; run-4d1f3829 failed at failed; run-c13e7189 paused at awaiting_approval:defect_fix_2_2; run-e799301e failed at failed
+**Last scored:** run-5f90ad7f notes-api-go 9/9 (completed, handoff 1.0; scored 11-27 18:39 JST); run-2130eb52 textkit-lib 8/8 (completed, 23 active min, handoff 1.0; scored 11-27 17:21 JST); run-af51e4c9 wordstats-cli 6/8 (completed, FALSE ACCEPTANCE, mixed, 160 active min, handoff 1.0; scored 11-27 09:59 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -15,9 +15,9 @@ decisions in force are `docs/owner-decisions.md`; old information is found throu
 |---|---|
 | Phase | **Learning runs, fixes deployed at once** (deep-review plan, owner 11-18: implement all; frozen-version measuring for Measure batches). The release-candidate count starts only when a full audit cycle finds nothing to fix. |
 | Models | olla `host.docker.internal:4001/olla/openai/v1`, model `qwen3.6-35b-a3b` again (owner 11-27 afternoon; two llama.cpp servers, 2 slots each, 93k context per slot, 4 requests at once). Runs pinned to it, build model only (`FRONTIER=false`: the settings name a hosted judgement model, not used by the loop); per-request sessions (`.env` MODEL_SESSION_SCOPE=request). Not yet measured by the new diagnosis; inkling was (12:16 JST). |
-| Harness | 5d8dc54 deployed 11-27 17:40 JST, into both live runs: LF.1503-1605 (details `docs/archive/plans/fix-log.md`); LF.1593 step-sized reasoning budget on. **Runs resumed 16:48 JST** on Qwen 3.6, 2 in parallel mode: textkit-lib 10 8/8 delivered in 23 min; live run-5f90ad7f `notes-api-go 16`, run-45ded0b4 `web-todo 7`; run-970c2cb6 (pinned to inkling) stays paused. Earlier today on inkling: notes-api-hono 17 9/9, web-todo 1 7/10 (LF.1590), wordstats-cli 1 6/8 (false acceptance), textkit-lib 1 failed (LF.1594); diagnosis DX.1-7 (LF.1596-1603), re-diagnosed 12:16 (standard tier; minimal effort for steps on 2 samples; no guides kept). Medium 5 (Qwen) not resumed. Open: the plan. |
+| Harness | 5d8dc54 deployed 11-27 17:40 JST, into both live runs: LF.1503-1605 (details `docs/archive/plans/fix-log.md`); LF.1593 step-sized reasoning budget on. **Runs resumed 16:48 JST** on Qwen 3.6, 2 in parallel mode: textkit-lib 10 8/8 (23 min), notes-api-go 16 9/9, 8/8 (66 min, mixed). Host rebooted 18:26. Live: run-45ded0b4 `web-todo 7`, run-a753551e `fullstack-bookmarks 17` (18:39); run-970c2cb6 (pinned to inkling) stays paused. Earlier today on inkling: notes-api-hono 17 9/9, web-todo 1 7/10 (LF.1590), wordstats-cli 1 6/8 (false acceptance), textkit-lib 1 failed (LF.1594); diagnosis DX.1-7 (LF.1596-1603), re-diagnosed 12:16 (standard tier; minimal effort for steps on 2 samples; no guides kept). Medium 5 (Qwen) not resumed. Open: the plan. |
 | Switches | 53 fixes built in (always on). 29 optional switches (9 groups, `docs/measuring.md`); `WEB_LOOKUP_WHEN_STUCK` is off and set per run. Measure arms use `SWITCHES_OFF` per run. |
-| Operations | Nightly backups (`loop.sh backup --check`). At most 2 runs, parallel execution mode (`.env` `MAX_CONCURRENT_RUNS=2`). Audit cron every 15 minutes (11-27 16:50 JST). |
+| Operations | Nightly backups (`loop.sh backup --check`). At most 2 runs, parallel execution mode (`.env` `MAX_CONCURRENT_RUNS=2`). Audit cron every 15 minutes (recreated 11-27 18:32 JST). |
 | Suites | both green at 22,940 passed on 5d8dc54 (11-27), at SUITE_WORKERS=2. |
 
 ## Off until measured

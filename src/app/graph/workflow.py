@@ -379,6 +379,9 @@ _NODE_NAMES = frozenset(
         "tools_models",
         "stack_selector",
         "specialist_consultation",
+        # Parallel mode's consultations: see `app.graph.nodes.consultations`.
+        "consultation_worker",
+        "consultation_gather",
         "principal_architect",
         "architecture_review",
         "user_review_specification",
@@ -444,6 +447,8 @@ _ITERATED_STAGE_OWNERS = {
     "advice_review_": "advice_review",
     # A resume inside the reviews' fan-out re-enters the node that started it.
     "review_parallel": "security_review",
+    # And inside the consultations' fan-out, the node that started it.
+    "consultation_parallel": "specialist_consultation",
 }
 """Maps an iterated stage-name prefix to the node that owns it.
 
@@ -499,6 +504,10 @@ class WorkflowGraphState(TypedDict, total=False):
     # See `app.agents.specialist_advice`.
     consultation_roles: list[str]
     specialist_advice: dict[str, list[str]]
+    # Parallel mode's consultations (`app.graph.nodes.consultations`, LF.1595): the roles asked side by side, and the
+    # advice each returned until `consultation_gather` keeps it in `specialist_advice`.
+    consultations_in_flight: list[str]
+    consultation_results: Annotated[dict[str, list[str]], _merge_or_reset]
     # What each consulted specialist found of its adopted advice not built,
     # this sprint, and which review it belongs to. See `app.agents.advice_review`.
     advice_findings: dict[str, list[str]]
@@ -1738,6 +1747,14 @@ def _route_from_stage(state: WorkflowGraphState) -> str:
             Send("specialist_worker", {**state, "__worker_task": task, "__worker_index": index})
             for index, task in going
         ]
+
+    if stage == "consultation_parallel":
+        from app.graph.nodes import consultations
+
+        asked = consultations.pending(state)
+        if not asked:
+            return "consultation_gather"
+        return [Send("consultation_worker", {**state, "__consult_role": role}) for role in asked[: concurrent_requests()]]
 
     if stage == "review_parallel":
         pending = _reviews_pending(state)
@@ -10307,7 +10324,7 @@ def build_workflow_graph(
     # modules (`_a_stage`).
     from app.graph.context import GraphContext
     from app.graph.nodes import (
-        building, closing, fixes, gates, milestone, planning, reviews, specification, triage,
+        building, closing, consultations, fixes, gates, milestone, planning, reviews, specification, triage,
     )
 
     ctx = GraphContext(
@@ -10362,6 +10379,10 @@ def build_workflow_graph(
     graph.add_node("tools_models", _a_node(planning.tools_models_node, ctx), retry_policy=agent_retry_policy)
     graph.add_node("stack_selector", _a_node(planning.stack_selector_node, ctx), retry_policy=agent_retry_policy)
     graph.add_node("specialist_consultation", _a_node(planning.specialist_consultation_node, ctx), retry_policy=agent_retry_policy)
+    graph.add_node("consultation_worker", _a_node(consultations.consultation_worker_node, ctx), retry_policy=agent_retry_policy)
+    graph.add_node("consultation_gather", consultations.consultation_gather_node)
+    # A static edge, as for `specialist_worker`: one writer of `stage` per wave.
+    graph.add_edge("consultation_worker", "consultation_gather")
     graph.add_node("principal_architect", _a_node(specification.principal_architect_node, ctx), retry_policy=agent_retry_policy)
     graph.add_node("architecture_review", _a_node(specification.architecture_review_node, ctx), retry_policy=agent_retry_policy)
     graph.add_node("user_review_specification", gates.user_review_specification_node)
@@ -10417,6 +10438,7 @@ def build_workflow_graph(
         "tools_models",
         "stack_selector",
         "specialist_consultation",
+        "consultation_gather",
         "principal_architect",
         "architecture_review",
         "user_review_specification",

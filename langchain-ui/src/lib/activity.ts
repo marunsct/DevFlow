@@ -39,6 +39,14 @@ const STAGE_COPY: Record<string, StageCopy> = {
     title: 'Asking the specialists',
     blurb: "Getting the interface, data and service specialists' advice before the technical plan is written.",
   },
+  consultation_worker: {
+    title: 'Asking a specialist',
+    blurb: 'One specialist giving its advice beside the others.',
+  },
+  consultation_gather: {
+    title: 'Collecting the advice',
+    blurb: 'Putting the specialists’ advice together for the technical plan.',
+  },
   principal_architect: {
     title: 'Designing how it works',
     blurb: 'Writing the technical plan: the pieces, the data, and how they fit together.',

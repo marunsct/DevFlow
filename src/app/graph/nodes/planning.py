@@ -315,16 +315,18 @@ def stack_selector_node(state: WorkflowGraphState, config: RunnableConfig, ctx: 
 
 
 def specialist_consultation_node(state: WorkflowGraphState, config: RunnableConfig, ctx: GraphContext) -> dict[str, Any]:
-    """Ask each specialist this product needs for advice, one per entry. See `app.agents.specialist_advice`."""
-    from app.graph.workflow import (
-        _as_text, _fast_delivery, _hand_back, _handing_on, _run_gated_agent,
-        create_specialist_advice_agent,
-    )
+    """Ask each specialist this product needs for advice. See `app.agents.specialist_advice`.
 
-    from app.agents import domain_craft
-    from app.agents.specialist_advice import advice_from, build_advice_request, roles_to_consult
-    from app.stacks import framework_guidance
+    One per entry, or in parallel mode all together up to the server's slots (`app.graph.nodes.consultations`).
+    """
+    from app.graph.workflow import _handing_on
 
+    from app.agents.specialist_advice import roles_to_consult
+    from app.graph.nodes import consultations
+
+    if state.get("consultations_in_flight"):
+        # A resume after a consultation in the fan-out paused or was handed back.
+        return {"stage": consultations.FAN_OUT}
     brief = getattr(state.get("document"), "text", "") or ""
     roles = list(state.get("consultation_roles") or roles_to_consult(
         getattr(state.get("stack_selection"), "technology_stack", None), brief
@@ -333,34 +335,18 @@ def specialist_consultation_node(state: WorkflowGraphState, config: RunnableConf
     pending = [role for role in roles if role not in advice]
     if not pending:
         return _handing_on(stage="principal_architect", consultation_roles=roles, specialist_advice=advice)
+    if len(pending) > 1 and consultations.side_by_side() and not state.get("pending_inner_thread_id"):
+        # Each reads the brief, the intake, the stack and the repository, and none another's advice (LF.1595).
+        logger.info("Consulting %d specialists side by side: %s", len(pending), ", ".join(pending))
+        return {
+            "stage": consultations.FAN_OUT, "consultation_roles": roles,
+            "consultations_in_flight": pending, "consultation_results": {},
+        }
     role = pending[0]
-    agent = create_specialist_advice_agent(
-        role, model=ctx.model if _fast_delivery() else ctx.judgement_model, checkpointer=ctx.checkpointer,
-        repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories,
-    )
-    update = _run_gated_agent(
-        state,
-        config,
-        stage_name=f"consult_{role}",
-        agent=agent,
-        # The framework's own security or testing guidance for its release, for those two roles (plan HK.9); the
-        # data and service bars and the pack's design tokens (SK.2 with PQ.6 and PQ.9, off until measured).
-        initial_request=framework_guidance.for_a_consultant(domain_craft.for_an_adviser(build_advice_request(
-            role, brief, _as_text(state.get("product_intake")), _as_text(state.get("stack_selection"))
-        ), role, state.get("stack_pack")), role, getattr(state.get("stack_selection"), "technology_stack", None),
-            getattr(state.get("repository"), "root_path", None)),
-        output_key="__advice__",
-        next_stage="specialist_consultation",
-    )
-    if _hand_back(update, "__advice__"):
+    update, given = consultations.one_consultation(state, config, ctx, role)
+    if given is None:
         return update
-    from app.agents.advice_sized import sized
-
-    advice[role] = sized(advice_from(update.pop("__advice__")), role, brief)
-    logger.info(
-        "Consulted the %s specialist before the specification: %d recommendation(s)",
-        role, len(advice[role]),
-    )
+    advice[role] = given
     return _handing_on(**{
         **update,
         "consultation_roles": roles,

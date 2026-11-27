@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.stacks import custom_setup
+from setup_runners import reporting_failures
 
 DECLARED = {
     "kind": "http_api", "install": [["npm", "install"]],
@@ -26,7 +27,7 @@ def _runners(project, *, passing=True):
         outcome = "" if passing else "<failure message='no'/>"
         (project / report).write_text(f"<testsuites><testcase name='smoke'>{outcome}</testcase></testsuites>")
         return {"returncode": "0" if passing else "1"}
-    return run
+    return reporting_failures(run, project.parent)
 
 
 def test_a_failing_entry_is_set_aside_and_a_passing_one_kept(tmp_path, monkeypatch):

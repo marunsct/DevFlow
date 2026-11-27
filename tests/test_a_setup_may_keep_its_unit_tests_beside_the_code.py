@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from app.stacks.custom_setup import problems_with, read_declaration
+from setup_runners import reporting_failures
 
 DECLARED = {
     "kind": "http_api",
@@ -88,7 +89,7 @@ def test_such_a_setup_is_proven_and_recorded_as_a_pack_with_tests_beside_the_cod
 
     (project / "stack-setup.json").write_text(_written(project, unit_dir="the-product/"))
     stack = SimpleNamespace(language="python", framework="", frontend_framework="", testing_framework="pytest")
-    result = prove(tmp_path, project.name, stack, run=run)
+    result = prove(tmp_path, project.name, stack, run=reporting_failures(run, tmp_path))
     assert result.ok, result.problem
     assert contract.the_pack(tmp_path)[0].unit_dir == "."
 

@@ -261,6 +261,11 @@ def scaffold(state: Any, config: RunnableConfig, ctx: Context) -> dict[str, Any]
     )
 
     _stop_if_cancelled(config["configurable"].get(APP_RUN_ID_KEY))
+    from app.graph import runner_repair
+
+    if runner_repair.pending(state):
+        # The suite's runner crashed in the setup's own file: the setup stage repairs it (LF.1594).
+        return runner_repair.repair(state, config, ctx)
     root = _root(state)
     pack = pack_named(state.get("stack_pack"))
     update: dict[str, Any] = {}
@@ -1260,6 +1265,11 @@ def _reviewed_and_locked(state: Any, config: RunnableConfig, ctx: Context) -> di
         cannot = by_sprint.about_the_addition(root, cannot)
         partial = by_sprint.about_the_addition(root, partial)
     if not result.ran:
+        # A runner that crashed in the setup's own file is the setup's to repair, not the writers' (LF.1594).
+        from app.graph import runner_repair
+
+        if (to_the_setup := runner_repair.send_for_repair(state, root, result)) is not None:
+            return _handing_on(**to_the_setup)
         if rounds < MAX_ACCEPTANCE_ROUNDS + 2:
             logger.warning("Acceptance suite could not run (exit %s); sent back to QA", result.exit_code)
             return _handing_on(stage="acceptance_author", acceptance_feedback=problems)

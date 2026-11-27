@@ -19,6 +19,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.stacks import contract, custom_setup
+from setup_runners import reporting_failures
 from app.stacks.custom_setup import DECLARATION_FILE, PROVEN_SETUP, prove, read_declaration
 
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
@@ -78,7 +79,7 @@ def _runner(root: Path, failing: str = "", seen: list | None = None):
         report.write_text(FAILED if fails else PASSED)
         return {"returncode": "1" if fails else "0", "stdout": "AssertionError: smoke" if fails else ""}
 
-    return run
+    return reporting_failures(run, root)
 
 
 # --- the declaration ---------------------------------------------------------------
@@ -144,7 +145,9 @@ def test_a_setup_whose_smoke_tests_pass_is_recorded_like_a_pack(tmp_path):
     result = prove(tmp_path, "notes", STACK, title="Notes", run=_runner(tmp_path, seen=seen))
 
     assert result.ok, result.problem
-    assert [argv for argv, _ in seen] == [["npm", "install"], ["npm", "test"], ["npm", "run", "test:acceptance"]]
+    # Each runner twice: its smoke test, then a failing and a raising test (LF.1594).
+    assert [argv for argv, _ in seen] == [["npm", "install"], ["npm", "test"], ["npm", "run", "test:acceptance"],
+                                          ["npm", "test"], ["npm", "run", "test:acceptance"]]
     pack, record = contract.the_pack(tmp_path)
     assert pack.name == PROVEN_SETUP and record["pack"] == PROVEN_SETUP
     assert pack.kind == "fullstack" and pack.language == "typescript"

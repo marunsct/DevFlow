@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from app.acceptance import junit
 from app.stacks.custom_setup import _tests_beyond_the_smoke_tests
+from setup_runners import reporting_failures
 
 REPORT = """<testsuites><testsuite name="pytest" tests="3" failures="1">
 <testcase classname="acceptance.test_scaffold_smoke" name="test_health"/>
@@ -66,7 +67,7 @@ def test_the_proof_removes_them_and_asks_the_runners_again(tmp_path):
     stack = SimpleNamespace(language="TypeScript", framework="Hono", frontend_framework="", database="",
                             testing_framework="node:test", product_kind="http_api")
 
-    proven = custom_setup.prove(tmp_path, "notes", stack, run=run, keep=False)
+    proven = custom_setup.prove(tmp_path, "notes", stack, run=reporting_failures(run, tmp_path), keep=False)
 
     assert proven.ok, proven.problem
     assert not (project / "acceptance" / "notes.spec.ts").exists()

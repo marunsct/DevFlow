@@ -1048,6 +1048,22 @@ def prove(
             return result
         result.level = label
 
+    # A runner that passes a passing smoke test proves nothing about failures (LF.1594): measured, a setup's own
+    # JUnit wrapper crashed on the first failing test, and the suite never wrote a report. Each runner is run with a
+    # failing and a raising test added, and its report must name both as failed.
+    from app.stacks import runner_check
+
+    for label, argv, report, folder, pattern in (
+        ("unit", declared.unit_test, declared.unit_report, declared.unit_dir, declared.unit_pattern),
+        ("acceptance", declared.acceptance_test, declared.acceptance_report, declared.acceptance_dir,
+         declared.acceptance_pattern),
+    ):
+        checked = runner_check.reports_failures(project_root, argv, report, folder, pattern, run, project, label)
+        result.steps.append(checked.step)
+        if not checked.ok:
+            result.problem = checked.problem
+            return result
+
     if not keep:
         result.ok = True
         return result

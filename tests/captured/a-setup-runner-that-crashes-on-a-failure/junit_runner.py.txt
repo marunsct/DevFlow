@@ -1,0 +1,102 @@
+#!/usr/bin/env python3
+"""Run the unittest suite and write a JUnit XML report.
+
+Usage: python -m junit_runner <test_dir> <report_path>
+
+Discovers and runs every test_*.py file in <test_dir> with unittest, then writes
+an XML report in the JUnit format (testsuite/testcase/failure/error/skipped)
+to <report_path> and exits with 0 if all tests pass, 1 otherwise.
+
+Why a wrapper instead of pytest: the stack chose stdlib unittest for a
+stdlib-only library; pytest is not a dependency of this project. unittest has
+no built-in JUnit XML reporter, so this thin wrapper supplies it without adding
+any third-party dependency. It only builds a unittest.TestSuite from the test
+directory and uses unittest's own result collection - no product logic, no
+mocks, no re-implementation of the tests.
+"""
+import sys
+import time
+import unittest
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+
+def junit_escape(text):
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&apos;")
+    )
+
+
+def main():
+    test_dir = Path(sys.argv[1])
+    report = Path(sys.argv[2])
+    report.parent.mkdir(parents=True, exist_ok=True)
+
+    loader = unittest.TestLoader()
+    suite = loader.discover(start_dir=str(test_dir), pattern="test_*.py")
+
+    results = []
+
+    class CaptureResult(unittest.TestResult):
+        def addSuccess(self, test):
+            results.append(("pass", test))
+
+        def addError(self, test, err):
+            results.append(("error", test, err))
+
+        def addFailure(self, test, err):
+            results.append(("failure", test, err))
+
+        def addSkip(self, test, reason):
+            results.append(("skipped", test, reason))
+
+    result = CaptureResult()
+    started = time.time()
+    suite.run(result)
+    elapsed = time.time() - started
+
+    cases = []
+    for item in results:
+        status, test = item[0], item[1]
+        test_name = f"{type(test).__module__}.{type(test).__name__}.{test._testMethodName}"
+        cases.append((status, test_name, item[2] if len(item) > 2 else None))
+
+    passed = sum(1 for c in cases if c[0] == "pass")
+    failed = sum(1 for c in cases if c[0] in ("failure", "error"))
+    skipped = sum(1 for c in cases if c[0] == "skipped")
+
+    suite_el = ET.Element(
+        "testsuite",
+        {
+            "name": test_dir.name,
+            "tests": str(len(cases)),
+            "errors": str(sum(1 for c in cases if c[0] == "error")),
+            "failures": str(sum(1 for c in cases if c[0] == "failure")),
+            "skipped": str(skipped),
+            "time": str(elapsed),
+        },
+    )
+    for status, name, payload in cases:
+        case = ET.SubElement(suite_el, "testcase", {"classname": name.rsplit(".", 1)[0], "name": name.rsplit(".", 1)[1]})
+        if status == "error":
+            err_text = "".join(payload[1]) if payload else ""
+            ET.SubElement(case, "error", {"message": status, "type": "error"}).text = err_text
+        elif status == "failure":
+            err_text = "".join(payload[1]) if payload else ""
+            ET.SubElement(case, "failure", {"message": status, "type": "failure"}).text = err_text
+        elif status == "skipped":
+            reason = payload or ""
+            ET.SubElement(case, "skipped", {"message": "skipped"}).text = reason
+
+    ET.ElementTree(suite_el).write(str(report), encoding="UTF-8", xml_declaration=True)
+
+    print(f"junit_runner: {passed} passed, {failed} failed, {skipped} skipped; report written to {report}")
+    return 0 if failed == 0 else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

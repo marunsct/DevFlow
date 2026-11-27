@@ -1,0 +1,19 @@
+{
+  "kind": "library",
+  "install": [["python3", "-m", "venv", ".venv"]],
+  "unit_test": [".venv/bin/python", "-m", "junit_runner", "tests", "test-results/unit.xml"],
+  "unit_report": "test-results/unit.xml",
+  "unit_dir": "tests",
+  "unit_pattern": "test_*.py",
+  "acceptance_test": [".venv/bin/python", "-m", "junit_runner", "acceptance", "test-results/acceptance.xml"],
+  "acceptance_report": "test-results/acceptance.xml",
+  "acceptance_dir": "acceptance",
+  "acceptance_pattern": "test_*.py",
+  "kept_files": ["junit_runner.py"],
+  "smoke_files": [
+    "tests/test_scaffold_smoke.py",
+    "acceptance/test_scaffold_smoke.py"
+  ],
+  "guide": "Unit tests live in tests/ and are named test_*.py. They are unittest.TestCase classes that call the real textkit functions (never a re-implementation) and use plain unittest assertions. To write one, create tests/test_<name>.py with a class subclassing unittest.TestCase, add methods named test_*, and run python -m junit_runner tests test-results/unit.xml from the project directory (or .venv/bin/python -m unittest discover -s tests -v for verbose output). The runner discovers test_*.py under the given directory, writes JUnit XML to the report path, and exits non-zero on failure.",
+  "acceptance_guide": "Acceptance tests live in acceptance/ and are named test_*.py. They meet the product the way its user does: through the public import contract (import textkit; call textkit.slugify / textkit.word_count / textkit.truncate / textkit.title_case) and through the documented examples as bare-call docstring doctests. To write one, create acceptance/test_<name>.py with a unittest.TestCase class (or plain function that raises on failure), import textkit inside it, and run python -m junit_runner acceptance test-results/acceptance.xml from the project directory. The runner discovers test_*.py under acceptance/, writes JUnit XML to the report path, and exits non-zero on failure. There is no server, database, or browser in this product - it is a stateless library - so the acceptance suite exercises pure functions and the import path only."
+}

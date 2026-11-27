@@ -1,0 +1,17 @@
+"""Acceptance smoke test for the text-toolkit-library scaffold.
+
+The product package (textkit/) is built by later sprints; this smoke test
+proves the acceptance runner resolves and executes. It intentionally does not
+import the product yet. It must pass before the sprints build the four functions.
+"""
+import unittest
+
+
+class ScaffoldAcceptanceSmokeTest(unittest.TestCase):
+    def test_acceptance_runner_executes(self):
+        # Smoke check: the acceptance harness runs and reports a pass.
+        self.assertTrue(True)
+
+
+if __name__ == "__main__":
+    unittest.main()

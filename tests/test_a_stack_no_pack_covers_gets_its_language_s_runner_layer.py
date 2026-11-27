@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from app.stacks import pack_named
 from app.stacks.custom_setup import runner_layer
+from setup_runners import reporting_failures
 
 
 def test_the_python_service_pack_names_its_framework_files():
@@ -166,7 +167,7 @@ def _smoke_tests_that_need_the_layer(project):
             (project / report).parent.mkdir(parents=True, exist_ok=True)
             (project / report).write_text("<testsuites><testcase name='smoke'/></testsuites>")
         return {"returncode": "0", "stdout": "", "stderr": ""}
-    return run
+    return reporting_failures(run, project.parent)
 
 
 def test_the_proof_keeps_the_layer_s_framework_files_with_the_entry(tmp_path, monkeypatch):

@@ -1,0 +1,18 @@
+"""Unit smoke test for the text-toolkit-library scaffold.
+
+The product package (textkit/) is built by later sprints; this smoke test
+proves the unit test runner resolves, discovers tests, and can execute one.
+It intentionally does not import the product yet. It must pass before the
+sprints build the four functions.
+"""
+import unittest
+
+
+class ScaffoldSmokeTest(unittest.TestCase):
+    def test_unit_runner_executes(self):
+        # Smoke check: the unittest harness runs and reports a pass.
+        self.assertTrue(True)
+
+
+if __name__ == "__main__":
+    unittest.main()

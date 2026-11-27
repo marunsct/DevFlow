@@ -25,8 +25,9 @@ Two tiers (design 4.6). `QUICK` runs with every new model's diagnosis and on the
 (the most reasoning-heavy), as served, the least listed effort and one budget, two tries, replies capped at 4,000 -
 it answers "does this model reason past 4,000 tokens as served, and does a lower effort or a budget stop that with the
 answer still valid?", and so sets an effort and whether a budget is usable, never a budget or cap (a reply held to
-4,000 tokens cannot show what a stage needs above it). `FULL` starts only from the settings page (owner 2026-11-27): every request, as served, every
-listed effort and two budgets, three tries, the stage's cap; held to `FULL.most_output_tokens` and `most_seconds`,
+4,000 tokens cannot show what a stage needs above it). `FULL` starts only from the settings page (owner 2026-11-27):
+every request, as served, every listed effort and two budgets, three tries, the stage's cap; held to
+`FULL.most_output_tokens` and `most_seconds`,
 past which what is not yet asked is "not measured". Values are applied by `with_the_profile`, behind
 `PROFILE_FROM_DIAGNOSIS` (`diagnosis_profile`); an owner's run setting for the effort is never replaced.
 """
@@ -159,7 +160,8 @@ def _reading(item: Any, response: Any, seconds: float) -> dict:
     reasoning_text = str(message.get("reasoning_content") or message.get("reasoning") or "")
     reasoning = int(reported) if isinstance(reported, int) and reported > 0 else len(reasoning_text) // CHARS_PER_TOKEN
     passed, why = score(item, message, finish)
-    return {"measured": True, "passed": passed, "why": why, "reasoning": min(reasoning, output) if output else reasoning,
+    reasoning = min(reasoning, output) if output else reasoning
+    return {"measured": True, "passed": passed, "why": why, "reasoning": reasoning,
             "output": output, "seconds": round(seconds, 1), "finish": finish}
 
 
@@ -225,7 +227,8 @@ def measure(model: Any, name: str, tier: Tier = QUICK) -> dict[str, dict]:
                     for label, extra in arms_of(kind)]
             results = diagnosis_pool.side_by_side([lambda j=job: ask(*j) for job in jobs], model=model)
             return [{**(r if isinstance(r, dict) else {"measured": False, "why": str(r)}), "arm": label,
-                     "kind": item.kind, "item": item.id, "try": n} for (item, label, _extra, n), r in zip(jobs, results)]
+                     "kind": item.kind, "item": item.id, "try": n}
+                    for (item, label, _extra, n), r in zip(jobs, results)]
 
         effort_arms = [("as served", {})] + [(f"effort {level}", _effort_extra(level, route)) for level in efforts]
         replies = asked(lambda _kind: effort_arms)

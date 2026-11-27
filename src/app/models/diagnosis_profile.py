@@ -1,4 +1,5 @@
-"""The settings a model's diagnosis found, kept with their evidence, applied behind one switch, each overridable (DX.6, DX.7).
+"""The settings a model's diagnosis found, kept with their evidence, applied behind one switch, each overridable
+(DX.6, DX.7).
 
 The 2026-11-27 diagnosis design (section 4.2): one profile per model, one field per harness setting, each with its
 value, where it came from (measured, the owner), its evidence, and whether it is applied. The owner decided

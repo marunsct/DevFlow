@@ -170,7 +170,8 @@ class _Ledger:
     def count(self, response: Any) -> None:
         if not self.hosted:
             return
-        data = response if isinstance(response, dict) else getattr(response, "model_dump", lambda **_: {})(warnings=False)
+        dump = getattr(response, "model_dump", lambda **_: {})
+        data = response if isinstance(response, dict) else dump(warnings=False)
         usage = (data or {}).get("usage") or {}
         cost = self.price.usd_for(int(usage.get("prompt_tokens") or 0), int(usage.get("completion_tokens") or 0))
         with self.lock:

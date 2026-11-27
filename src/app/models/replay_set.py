@@ -1,4 +1,5 @@
-"""Real stage requests, frozen as the diagnosis's probes, and the checks that score a model's reply to one (DX.8, minimal).
+"""Real stage requests, frozen as the diagnosis's probes, and the checks that score a model's reply to one (DX.8,
+minimal).
 
 The 2026-11-27 diagnosis design (section 4.3): a probe is a recorded request of a real stage, with its tools and its
 answer schema, replayed against the model and scored by what the reply does - a call to a tool it was offered, with
@@ -326,7 +327,8 @@ def candidates(records: Iterable[dict], family: str) -> list[tuple[int, Item]]:
         item = Item(id=f"{kind}-{family}-{stage_kind}", kind=kind, family=family, messages=messages,
                     tools=tool_schemas(names), answer=answer_class(answer_tool) if answer_tool else "",
                     answer_tool=answer_tool,
-                    notes={"stage": stage_kind, "recorded_output_tokens": (record.get("usage") or {}).get("output_tokens"),
+                    notes={"stage": stage_kind,
+                           "recorded_output_tokens": (record.get("usage") or {}).get("output_tokens"),
                            "recorded_reasoning_chars": record.get("reasoning_chars"),
                            "recorded_calls": [str(call.get("name")) for call in calls]})
         out.append((int(record.get("reasoning_chars") or 0), item))
